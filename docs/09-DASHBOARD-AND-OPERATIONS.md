@@ -1,91 +1,93 @@
 # 09 — Dashboard, configuration and operational runbooks
 
-## Dashboard structure
+## Dashboard
 
-Use a small responsive server-rendered interface initially. Add a larger JavaScript application only if interaction complexity warrants it; portfolio accounting should not be duplicated in browser arithmetic. Server-side projections provide all authoritative money values and statuses, with native currency, EUR valuation basis, timestamps and provisional flags.
+Start with a responsive server-rendered interface backed by FastAPI. Server projections calculate money; do not duplicate authoritative arithmetic in the browser. Every value carries native units, EUR valuation basis, timestamp and provisional/stale status. The default account is USD10,000 virtual with EUR reporting, not EUR100.
 
-**Overview:** allocated and current equity, external cash flows, realized/unrealized trading results, trading fees, AI and other operating costs, net economic performance, drawdown and comparison to cash/declared benchmark. Show broker equity alongside all-in economic value so a profitable-looking exchange balance cannot hide externally paid AI costs. Display setup and recurring costs separately without removing either from all-in totals.
+**Overview:** allocated/current portfolio value, external flows, realized/unrealized results, trading fees, AI/other costs, net economic performance, drawdown and declared benchmark. Show simulated trading results, simulated net-economic results after allocated real expenses, and actual real-money spend distinctly. Separate setup/recurring views without excluding attributable costs from all-in performance.
 
-**Trading:** positions with entry thesis and invalidation, available/locked balances, active/pending/unknown orders, fills, current mandate/strategy/experiment and exposure. Show requested versus submitted sizing, rounding, fees and execution deviations. A stale mark or unresolved order receives a clear warning rather than a green healthy card.
+**Trading:** native cash/locked balances, positions/lots/theses/invalidation, active/pending/unknown orders and fills, current mandate/strategy/experiment/exposure. Show requested/submitted sizing, rounding, fees and execution deviations. Stale marks and uncertain orders are visibly degraded, not a healthy green portfolio.
 
-**Organisation:** current graph version, per-role state, active/blocked/overdue tasks, triggering events, queue/lease health, recent Leader/Trader decisions and concise rationale, research freshness, active lesson revisions and contradictory evidence. The graph view derives from actual task records, not invented agent animation.
+**Organisation:** active graph version, role/task state, owners/leases, active/blocked/overdue assignments, trigger events, decisions and concise rationale, research freshness, lesson revisions and counterevidence. Derive graph status from real journal/task records rather than invented agent animation.
 
-**Costs:** accrued/settled/uncertain costs, reservations, remaining budget/reserve, by role/task/root/run/model/provider/system version, token/cache/tool usage, failed and retried work, invoice adjustments and forecast versus actual. Make Engineer and Leadership expense visible. All-in economic reporting retains these expenses even when funded from a separate account.
+**Costs:** accrued/settled/uncertain expenses, reservations, remaining budgets/priority reserve, role/task/root/run/provider/model/version attribution, tokens/cache/tool units, failed/retried work and invoice adjustments. Leadership and Engineer spend stay visible even when paid outside the broker account. Paper resets cannot refill the real budget.
 
-**Improvements:** proposed/authorized tasks, diffs, validation results, activation/rollback timeline, before/after metrics and active artifact fingerprints. Evidence links open bounded redacted records. Private source text and credentials are never placed in a public URL or GitHub issue automatically.
+**Improvements:** authorised tasks, actual diffs/artifacts, independent test evidence, activation/rollback history and before/after metrics. Redact private evidence; never automatically publish trading journals or source secrets to GitHub.
 
-**Controls:** owner budgets, allowed venues/instruments/capability classes, model routing, pause profiles, manage-only/flatten, configuration history and live-enable prerequisites. A stop command for a nonflat portfolio requires choosing how existing positions/orders will be managed; individual trades do not require owner confirmation.
+**Owner controls:** budgets, allowed venues/instruments/permission classes, routing/configuration, explicit pause/manage-only/flatten controls and live prerequisites. Stop on a nonflat account must choose its order/position policy; routine trades need no owner confirmation.
 
-## API contract targets
+## Target API
 
-These routes are implementation targets, not currently running endpoints:
+These are implementation targets, not currently running endpoints:
 
 ```text
-GET  /api/v1/overview                 authoritative performance projection
-GET  /api/v1/positions                positions, lots, management plans
-GET  /api/v1/orders                   intents, uncertain status, fills
-GET  /api/v1/tasks                    durable ownership and status
-GET  /api/v1/decisions/{id}           rationale and original evidence refs
-GET  /api/v1/research                 current/revised findings
-GET  /api/v1/lessons                   revisions and counterevidence
-GET  /api/v1/costs                    native and EUR expense/usage detail
-GET  /api/v1/changes                  candidate/tests/activation history
-GET  /api/v1/events                   paginated journal or authenticated SSE
-GET  /api/v1/health                   readiness and degraded reasons
-POST /api/v1/owner/budgets            owner-only policy revision
-POST /api/v1/owner/config             versioned owner configuration
-POST /api/v1/owner/pause              explicit profile + scope
-POST /api/v1/owner/resume             cannot skip reconciliation readiness
-POST /api/v1/owner/enable-live        separately gated owner operation
-POST /api/v1/leader/tasks             scoped, bounded delegation
-POST /api/v1/leader/activate          tested permitted candidate only
+GET  /api/v1/overview
+GET  /api/v1/positions
+GET  /api/v1/orders
+GET  /api/v1/tasks
+GET  /api/v1/decisions/{id}
+GET  /api/v1/research
+GET  /api/v1/lessons
+GET  /api/v1/costs
+GET  /api/v1/changes
+GET  /api/v1/events
+GET  /api/v1/health
+POST /api/v1/owner/budgets
+POST /api/v1/owner/config
+POST /api/v1/owner/pause
+POST /api/v1/owner/resume
+POST /api/v1/owner/enable-live
+POST /api/v1/leader/tasks
+POST /api/v1/leader/activate
 ```
 
-Paginate histories and redact payloads at the API boundary. Use request IDs/idempotency keys for owner operations, optimistic configuration revisions and server-side authorization. Never let a dashboard graph edge editor create new runtime tools without validation. Protect live-enable and budget controls with an owner identity separate from role identities. Bind to loopback by default; remote deployment requires authenticated TLS/private access and appropriate browser-session protections.
+Use authenticated role/owner identities, pagination, redaction, request/idempotency IDs and optimistic revision checks. Events may use authenticated SSE. Owner resume cannot bypass reconciliation; Leader cannot lift an owner halt. Graph editing cannot invent new capabilities. Bind loopback by default; remote access requires authenticated TLS/private access and CSRF protection for cookie-based write sessions.
 
-## Configuration hierarchy
+## Configuration and secrets
 
-Owner policy is stored separately from agent-editable artifacts with a hash/revision and restricted writer. It establishes capital allocation, spending periods, provider/venue allowlists, capability classes, exposure limits, permitted price-card updates and live eligibility. Leader mandate/configuration must validate as a subset. A graph artifact cannot choose its own owner-policy file, database or secret path.
+Owner policy lives separately from agent-editable artifacts, with a hash/revision and restricted writer. It defines account allocations, expense periods, provider/venue allowlists, exposure bounds, live eligibility and change classes. Leader configuration validates as a subset. Candidate artifacts cannot select a new policy, DB or secret path.
 
-Public config/defaults.example.json is an illustrative setup profile. It contains no authority to use real money or paid APIs. The actual initialization flow asks the owner to set a budget and explicitly enable paid calls. Mode defaults to paper. Store secrets outside the repository, redact logs, and scope exchange keys to the kernel. .env.example documents variable names only.
+config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Initialization requires an explicit owner-approved real expense allowance. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
 
-## Target startup interface
+Store actual credentials outside Git and model contexts; broker keys belong only to the protected execution/kernel boundary. ChatGPT/coding-agent integrations do not supply deployed credentials automatically. Optional GitHub mirroring uses a separately scoped integration service, never the Engineer's direct access to an owner token.
 
-Implement an installed `trade-graph` CLI with commands equivalent to the following, then replace this target list with tested instructions in IMPLEMENTATION-STATUS.md:
+## Target startup CLI
+
+Implement equivalent commands, then replace targets with verified instructions in IMPLEMENTATION-STATUS.md:
 
 ```text
-trade-graph init --mode paper --capital-eur 100
-trade-graph doctor                     # configuration, DB, optional credentials
-trade-graph demo --offline              # complete scripted loop, no paid calls
-trade-graph run --mode paper            # requires explicit paid-call config
+trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
+trade-graph doctor
+trade-graph demo --offline
+trade-graph run --mode paper
 trade-graph pause --profile manage-only
 trade-graph backup --destination <private-path>
-trade-graph reconcile                  # never blindly resubmits orders
+trade-graph reconcile
 trade-graph report --format json
 ```
 
-Default startup must not download paid services, silently use a developer's key or switch to live based on an environment accident. `doctor` is read-only except an explicitly requested credential probe, whose cost is reserved and reported. A startup preflight validates SQLite schema/lock, prices and permissions, provider capabilities, feed rules, current budget and last recovery state.
+Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
-The currently shipped scripts/check_plan.py, scripts/next_task.py and scripts/cost_model.py only validate/select planning work and calculate estimates. They do not implement this CLI or start a trading process.
+Currently supplied scripts/check_plan.py, scripts/next_task.py and scripts/cost_model.py only inspect the plan, emit implementation work and calculate examples. They do not implement the future CLI or start a trading process.
 
 ## Runbooks
 
-**Budget exhausted:** stop new paid inference/research/engineering, retain deterministic management and reconciliation, display used/reserved/uncertain totals, and let the Leader act only if an already-authorized priority allocation remains. The owner may choose a larger budget; the Leader may not. Do not liquidate automatically unless the owner's predeclared policy requests it.
+**Budget exhaustion:** stop new paid inference/research/engineering, retain software reconciliation/protection and display actual/reserved/uncertain totals. Use priority reasoning only within its remaining approved allocation. Owner can raise allowance; Leader cannot. No forced liquidation unless predeclared.
 
-**Unknown order:** keep possible exposure reserved, inspect submission request/client ID, venue history/fills and balance differences, continue bounded queries, and block conflicting increases. Resolve with explicit evidence. A manual resolution writes an auditable correction; it never deletes the original attempt.
+**Unknown order:** reserve possible exposure; inspect stable request/client IDs, venue history/fills and balance discrepancies; use bounded queries; block conflicting increases. Resolve through evidence and append-only corrections, not deletion or blind resubmission.
 
-**Feed/provider outage:** show data-age and provider state, reconnect/backfill through software, avoid new exposure on stale context, use only an approved bounded model fallback, and keep protections/reconciliation active. No synthetic current market data is presented as a live feed.
+**Feed/provider outage:** expose data age/provider health, reconnect/backfill deterministically, avoid fresh increases on stale context and use only bounded approved fallback. Do not invent current market data or relabel failure as a deliberate hold.
 
-**Bad improvement/deployment:** stop new mutable-graph decisions, keep kernel execution/reconciliation, restore known-good artifact/image pointer, confirm version and state compatibility, reconcile account, then resume according to the strongest pause. Preserve all failed-candidate evidence and costs.
+**Bad improvement/deployment:** pause new mutable-graph decisions, preserve execution/reconciliation, restore known-good artifact/image pointer, confirm compatibility and reconcile before resuming under the strongest pause. Retain all costs and evidence. Rollback never restores an old financial portfolio.
 
-**Host restart:** restore consistent database backup only when needed, retain append-only evidence, acquire one worker lease, recover pending attempts, reconcile external account state and refresh feeds before allowing increased exposure. Never restore a database snapshot as a way of undoing a real trade.
+**Host restart:** obtain one lease, load persisted pause, recover pending attempts, reconcile external balances/orders/fills and refresh metadata/feed health before increases. Restore a consistent backup only when needed; it cannot undo real trades.
 
-**Stop/shutdown:** prefer manage-only or verified flatten. A hard host stop while inventory remains has residual risk; show which native protections will survive and what cannot be managed without connectivity. Do not label an unreachable exchange account flat.
+**Stop/shutdown:** choose manage-only or verified flatten while nonflat. Report which native protections survive an emergency shutdown and which management cannot continue offline. An unreachable venue is not a confirmed flat account.
 
-## Maintenance and evidence
+**Paper reset:** create a new account/experiment ID and opening event; preserve old results, actual receipts and deployment budget. Shared research costs are charged once globally and allocated with auditable weights. Synthetic replay receipts are isolated from real expense accounting.
 
-Schedule software checks for data age, account/ledger discrepancy, unresolved intents, task lease health, spend forecast/unknown receipts, disk headroom, backups and active version consistency. A health alarm does not automatically invoke multiple AI roles; route one bounded high-priority task only when reasoning is useful.
+## Maintenance
 
-Use local private alerts and dashboard status in R1; an optional email/webhook integration is an owner-configured later capability with its own credentials, privacy rules and any costs. Do not assume the user's ChatGPT Gmail/calendar connections exist in the deployed app.
+Software monitors data freshness, ledger/broker differences, unresolved orders, leases/queue backlog, forecast/uncertain expense, disk capacity, active versions and backups. Alerts do not automatically wake a committee; one bounded reasoning task is created when useful. R1 uses private dashboard/local alerts. Email/webhooks are optional later integrations requiring their own credentials, privacy controls and costs; no ChatGPT mail connection is assumed.
 
-Back up SQLite through a consistent snapshot/backup method, not by copying only the main database while WAL writes are in flight. Keep encrypted off-host copies where appropriate and test restoration. Keep audit/evidence exports private. Document retention, maximum disk use and what compaction may remove; never silently discard the evidence underpinning active lessons or financial results.
+Back up SQLite consistently through its backup/snapshot facilities, not by copying only a main DB file while WAL writes continue. Keep appropriate private/encrypted off-host copies and test restore. Record retention/compaction policy; do not silently drop evidence for active lessons or financial outcomes. Never commit runtime journals, private account data or secrets to the public repository.

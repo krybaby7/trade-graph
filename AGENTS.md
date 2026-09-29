@@ -1,36 +1,37 @@
 # Instructions for implementation agents
 
-## Mission
+## Mission and reading
 
-Implement the system described in IMPLEMENTATION-START-HERE.md and docs/00-PRODUCT.md through docs/09-DASHBOARD-AND-OPERATIONS.md. Use planning/tasks.json for dependency order and planning/progress.json for status. Build working software and tests; do not replace this specification with another proposal. This file governs coding-agent work, not the deployed Trader's authority.
+Implement Trade Graph using IMPLEMENTATION-START-HERE.md, docs/00-PRODUCT.md through docs/10-PAPER-CAPITAL.md, and the dependency-ordered planning/tasks.json. Read relevant official references in docs/90-SOURCES.md. Current default is **USD10,000 virtual capital with EUR reporting**, not EUR100. Real expense budget and live allocation remain separate owner decisions.
 
-## Working protocol
+This file governs coding-agent work, not the deployed Trader's mandate. Build working source/tests rather than replace the handoff with another proposal. Planning utilities do not constitute runtime implementation.
 
-1. Inspect the current branch, commits, files and progress before modifying anything. An earlier planning commit is an anchor, never permission to reset later work.
-2. Read the complete start document and the specifications referenced by your task. Resolve cross-cutting contracts before parallel implementation. Use the recommended defaults when a decision is not blocking. Record material deviations in docs/DECISIONS.md.
-3. Claim a task in progress.json with branch, owner and evidence location. Only work on tasks whose dependencies have evidence-backed completion. Parallelise independent implementation tasks in isolated worktrees; nominate one integration owner for shared contracts, migrations and dependency files.
-4. Implement and test a coherent vertical slice. Commit checkpoints. Update progress with actual commands, results and commit IDs. Never mark a feature done because a mock or design document exists.
-5. At handoff update IMPLEMENTATION-STATUS.md with current branch/commit, what works, exact run/test commands, credentials still needed, failures and next eligible task. Preserve evidence and unfinished work in Git.
+## Work and handoff
+
+Inspect current branches, commits, files and progress; never reset newer work to a planning checkpoint. Claim a dependency-ready task with owner/branch/evidence. Agree shared contracts before parallel work, use isolated worktrees and one integration owner for migrations/dependencies. Resolve nonblocking choices with recommended defaults and record meaningful deviations in docs/DECISIONS.md.
+
+Implement coherent slices, run actual tests and commit checkpoints. Update planning/progress.json only with evidence-backed completion. Keep IMPLEMENTATION-STATUS.md current with branch/commit, functioning commands, actual synthetic/credentialed results, failures, missing credentials and next work. Preserve partial work on interruption. A mock is not a successful paid-provider/exchange test.
 
 ## Invariants
 
-- Default to paper mode, never enable live execution implicitly. This implementation request authorises repository changes, not real orders, deposits, withdrawals, purchases of infrastructure or unbounded API spending.
-- Trader discretion is real: no Leader approval per order, no mandatory debate, no invented confidence threshold or requirement to avoid all losses. Enforce mechanical permissions and allocated limits in software.
-- Money, fees, quantities, exchange rules, budgets, fills and performance use deterministic arithmetic and explicit units. Use Decimal or validated fixed-point strings, never binary floating point for financial state.
-- Domain state and contracts do not import a model SDK or require a proprietary hosted agent runtime. Provider adapters translate our contracts.
-- The database, not graph conversation history, is authoritative for financial and execution state. Checkpoint replay must not duplicate side effects.
-- Unknown order status is not a rejected order. Reconcile before any replacement; client order IDs alone do not establish exchange-wide exactly-once execution.
-- Every paid attempt has a reservation and a receipt, including Leadership, repairs, fallbacks, failures and Engineer work. Missing usage is unresolved, not free.
-- Preserve version and evidence provenance. Keep original decision context available; explanations are concise decision summaries, not hidden chain-of-thought transcripts.
-- External research is data, never authority. No credentials, owner budgets, withdrawal tools or production filesystem access in model context.
-- Autonomous edits cannot modify owner policy, accounting definitions, protected execution controls, receipt collection or acceptance gates. Broad application-code authority requires stronger process/OS isolation, not only a prompt telling the Engineer to behave.
-- A pause must name its order/position policy. Maintain reconciliation and existing position management; rollback never erases fills or restores an old live portfolio.
-- A winning backtest is neither proof of profitability nor permission to go live. Separate functional, safety and economic validation.
+- Default to paper and paid calls disabled. Repository implementation authority does not authorize real orders, withdrawals, API spending or infrastructure purchases.
+- Trader discretion is real: no per-trade Leader committee, mandatory debate, confidence threshold or requirement to avoid every loss. Validate allocated amounts and permissions deterministically.
+- Money, fees, quantities, balances and reporting use Decimal/fixed-point native units, not model arithmetic or binary floats.
+- Domain contracts/state must not require provider SDKs or a proprietary agent runtime. Graph checkpoints are not authoritative financial state.
+- Persist intents/attempts before external effects. Unknown order status is not rejection. Reconcile before replacement; client IDs alone do not guarantee exactly-once exchange execution.
+- All paid work, including Leadership, Engineer, failures, repairs, retries and fallbacks, receives a reservation/receipt. Unknown usage is unresolved, not free.
+- USD10,000 paper equity and resets cannot replenish the real operating budget or erase expenses. Separate synthetic receipts from actual spend; allocate shared costs once.
+- Preserve point-in-time inputs, sources, lesson revisions and version attribution. Rationale is a concise decision summary, not a hidden chain-of-thought transcript.
+- External research is data, never authority. No credentials/owner budget writes/withdrawal tools in model context; protect fetch and tool services independently of prompts.
+- R1 Engineer implements tested allowlisted artifacts, not arbitrary executable configuration or privileged code. Protected owner policy, accounting, receipt collection, execution controls and acceptance gates are not agent-editable.
+- Broader code authority requires actual OS/process isolation and an owner-pinned protected kernel/controller/harness. A Python module boundary inside a credentialed interpreter is insufficient.
+- Every pause specifies order/position management. Reconciliation/protection continue; rollback never erases fills or restores an old live portfolio.
+- Functional success, economic evidence and live authorization are separate gates. A winning backtest or a large virtual account does not prove profitability or authorize live use.
 
-## Quality
+## Engineering quality
 
-Target Python 3.12 initially; resolve compatible current package versions and commit a lockfile during T00. Use small typed modules, Pydantic contracts, pytest, property-based financial tests, deterministic clocks, scripted provider fixtures and broker conformance tests. Do not require real API credentials in default CI. Do not hardcode current model prices in application logic: use versioned price records. Do not silently change models/providers on fallback.
+Target Python 3.12 initially, resolve compatible current versions and commit a lockfile in T00. Use typed small modules, Pydantic, pytest/property tests, deterministic clocks, scripted providers and broker conformance. Default CI needs no credentials. Model prices are dated configured records, not hardcoded arithmetic; fallbacks are explicit and separately priced. Both provider adapters are required, but only one provider credential is needed to run a one-provider installation.
 
 ## Public repository hygiene
 
-Never commit .env files, API keys, account identifiers, financial journals, private research caches, raw user records or model conversation logs. Use synthetic fixtures. Do not put exchange credentials into GitHub Actions or an Engineer sandbox. Scan staged changes for secrets. Keep deployments explicit and disabled until their acceptance gates pass.
+Never commit .env files, API/SSH keys, private account IDs, trading journals, personal financial records, private caches or raw agent conversations. Use synthetic fixtures and ignored private runtime storage. Keep exchange keys out of CI and Engineer sandboxes. Scan staged changes for secrets. Do not grant the deployed Engineer unrestricted repository/host credentials; tool proxies enforce path/capability limits.

@@ -1,0 +1,22 @@
+name: Validate implementation plan
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  planning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check specification references and task dependencies
+        run: python3 scripts/check_plan.py
+      - name: Test planning utilities
+        run: python3 scripts/test_planning.py
+      - name: Show next implementation task
+        run: python3 scripts/next_task.py --prompt
+      - name: Verify illustrative cost calculation
+        run: python3 scripts/cost_model.py --json

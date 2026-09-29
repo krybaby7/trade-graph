@@ -1,55 +1,59 @@
-# 07 — Illustrative operating costs and EUR100 economics
+# 07 — Operating costs and USD10,000 paper economics
 
-This is a reproducible planning model, not a usage quote, expected return or promise of model quality. Prices were read from official documentation on 2026-09-29 [S01, S02, S08]. Invocation counts, token sizes, retries, FX, hosting and trading volume below are explicit assumptions. Run `python3 scripts/cost_model.py` and edit planning/cost-assumptions.json to test alternatives. The runtime must use actual receipts, not this spreadsheet-like illustration.
+Reproducible planning model, not a usage quote or return prediction. Official rates checked on 2026-09-29 [S01, S02, S08]. Token sizes, cadence, extra-work buffer, FX, hosting and turnover are assumptions. Run `python3 scripts/cost_model.py`; edit planning/cost-assumptions.json for sensitivity. Runtime receipts, not this example, are authoritative.
 
-## Rates and assumptions
+## Inference and research
 
-Use standard short-context uncached inference: GPT-6 Luna input/output USD0.10/0.50 per million tokens; GPT-6.1 Sol USD2/10; Claude Sonnet 5.5 USD2/10. Provider web search is USD10 per 1,000 calls plus applicable content/model tokens [S01, S02]. The estimate assumes no batch discount, cache saving, fast-mode premium, regional premium or hosted-code session. Total billed output includes reasoning where the provider bills it; it is not merely visible prose.
+Standard short-context uncached prices used: GPT-6 Luna USD0.10 input / USD0.50 output per million tokens; GPT-6.1 Sol USD2 / USD10; Claude Sonnet 5.5 USD2 / USD10. Web search is USD10/1,000 calls plus applicable content/model tokens [S01, S02]. No cache/batch discounts, fast-mode premiums or hosted-code sessions assumed. Billed output includes reasoning where applicable, not just visible prose.
 
-Assume a 30-day month. The input sizes include system instructions, tool schemas and expected retrieved context. Calls mean paid model requests; actual multi-call tool loops must be counted individually. Research's average includes expected search-content billing; a larger or multi-request research loop increases the estimate and must be recalibrated from real receipts. Software accounting, Secretary assembly, price monitoring and order tracking have zero model calls, not zero infrastructure cost.
+A 30-day month and these paid request counts give:
 
-| Role | Monthly model calls | Input / output tokens per call | Model | USD/month |
+| Role | Requests/month | Input/output tokens each | Model | USD/month |
 |---|---:|---:|---|---:|
-| Trader | 180 (six/day) | 4,500 / 700 | Luna | 0.144 |
+| Trader | 180 | 4,500 / 700 | Luna | 0.144 |
 | Research | 30 | 6,000 / 1,000 | Luna | 0.033 |
 | Learning | 8 | 8,000 / 1,500 | Sol | 0.248 |
 | Optimisation | 4 | 8,000 / 1,000 | Sol | 0.104 |
-| Leader | 5 (startup plus reviews) | 10,000 / 1,500 | Sol | 0.175 |
-| Engineer | 20 (two tasks, ten calls each) | 20,000 / 4,000 | Sonnet 5.5 | 1.600 |
-| **Model subtotal** | **247** | | | **2.304** |
-| Paid search | 60 tool calls | Model content included above | USD0.01/search | 0.600 |
-| **Subtotal** | | | | **2.904** |
-| Retry/failure/extra-work allowance | 20% of subtotal | Planning buffer, not a new fee | | 0.5808 |
-| **Estimated paid AI/search** | | | | **3.4848** |
+| Leader | 5 | 10,000 / 1,500 | Sol | 0.175 |
+| Engineer | 20 | 20,000 / 4,000 | Sonnet 5.5 | 1.600 |
+| Model subtotal | 247 | | | 2.304 |
+| Paid search | 60 tool calls | USD0.01 each | | 0.600 |
+| Subtotal | | | | 2.904 |
+| Failed/retried/extra-work allowance | 20% | Planning buffer, not a fee | | 0.5808 |
+| **Paid AI/search estimate** | | | | **3.4848** |
 
-Using **the hypothetical planning rate USD1 = EUR0.90**, not a current FX quote, this is **EUR3.13632/month, approximately EUR3.14**. Adding an optional **EUR6 hosting allowance** gives **EUR9.13632/month, approximately EUR9.14**. The hosting figure is not a verified retail price. Replace it with the actual hosting, backup, electricity, taxes and conversion costs for the chosen deployment. Existing hardware may have zero new cash rental expense but still has attributable operating costs.
+Average input includes instructions, tool schemas and expected retrieved context. A provider-managed search request may invoke multiple searches inside one model response; the Research assumption is only valid if that workflow fits these request/content bounds. Application-managed multi-step search or larger results require more requests/tokens and new reservations. Every follow-up attempt is counted. Software monitoring, execution and Secretary work incur no model tokens but still use infrastructure.
 
-The proposed EUR5/month owner limit can fit the lean inference illustration on existing hardware with some headroom; it cannot also fit an additional EUR6 host. The EUR1 priority reserve sits inside EUR5. Actual engineering or exception-heavy weeks may exhaust that budget sooner than a monthly average suggests; the software must obey the cap rather than pursue the assumed cadence at any cost.
+At the **hypothetical planning rate USD1 = EUR0.90**, AI/search is **EUR3.13632/month**, approximately EUR3.14. A separately assumed EUR6 hosting allowance gives EUR9.13632; that allowance is not a verified vendor quote. Replace it with actual host, electricity, backup, taxes and conversion charges. Existing hardware does not make attributable costs disappear.
+
+The optional lean EUR5/month cap with EUR1 priority reserve inside it can fit this illustration without new hosting. Actual usage or a larger Engineer task can exhaust it. Paid calls are disabled until the owner configures a real allowance. USD10,000 virtual funds do not authorize spending or pay invoices.
 
 ## Cadence and model sensitivity
 
-At five-minute Trader intervals there would be 8,640 routine Trader calls per 30 days. With all other assumptions unchanged, the estimate becomes EUR10.44576 before hosting/trading fees. This still assumes the same small contexts and no increase in research/events; real high-frequency operation can be more expensive and needs very different execution/data design.
+Five-minute Trader intervals imply 8,640 Trader requests/month. Holding other assumptions fixed gives EUR10.44576 before hosting/trading fees. This is not a recommendation for high-frequency trading and excludes any extra data/research complexity that cadence would require.
 
-Using Sol rather than Luna for the six daily Trader calls changes the model's monthly Trader charge from USD0.144 to USD2.88, and the all-role AI/search estimate to EUR6.09120 before hosting. The initial EUR5 cap would then require a lower cadence, a different allocation, or an owner-approved increase. A more capable model is justified only by measured utility that exceeds its extra expense, not by title or prestige.
+Using Sol instead of Luna for the six daily Trader requests changes its monthly token bill to USD2.88 and total AI/search to EUR6.09120. This exceeds the optional EUR5 cap and requires a revised allocation/cadence or owner-approved budget. Choose models by tested utility, schema reliability and net economics, not price alone. Cheap-model trading quality has not been established.
 
-These are sensitivity calculations, not endorsements of either routing choice. Benchmark cheap-model decision quality, malformed-output frequency and need for fallbacks. One failed large engineering task can dominate the monthly cost of ordinary trading decisions.
+Two Engineer tasks with ten requests each are an illustration, not a permanent authority restriction. More extensive development can dominate ordinary trading cost. The budget gateway must reserve each task/attempt at the real approved output/tool limits.
 
-## Trading friction on EUR100
+## Larger paper account: fixed costs and turnover
 
-The public Kraken lowest-tier spot schedule observed lists 0.40% maker and 0.80% taker; account, region and pair-specific actual rates must be verified [S08, S12]. Illustrate 20 completed round trips, each with EUR20 entry notional and approximately EUR20 exit notional: EUR800 of two-sided turnover. At 0.80% taker fees on each side, estimated fees are EUR6.40. Add an assumed combined round-trip spread/slippage of 10 basis points on the EUR20 principal, giving EUR0.40 across the 20 trips.
+Default paper capital is **USD10,000**, or EUR9,000 only under the calculator's hypothetical FX assumption. USD3.4848 of AI/search is **0.034848%** of that virtual starting capital. With a EUR6 hosting allowance, total fixed expense is about **0.101515%** of the illustrative EUR9,000. These are break-even cost contributions, not expected returns.
 
-Under those simplified fixed-notional assumptions, friction is EUR6.80. Add EUR3.13632 AI/search and gross trading gains need to exceed **EUR9.93632, about 9.94% of the initial EUR100**, merely to break even economically that month, before hosting/tax and other omitted actual costs. With EUR6 hosting, that rises to EUR15.93632. Changing prices, fill sizes and fee currencies make real results different; the actual ledger is authoritative.
+For a deliberately simple trading-friction stress example, assume 20 round trips, each with USD2,000 entry and approximately USD2,000 exit notional. Two-sided turnover is USD80,000. Use a constant 0.80% taker fee reference from the public lowest spot tier [S08], giving USD640, plus an assumed combined round-trip spread/slippage of 10 basis points on principal, giving USD40. Total illustrative friction is USD680. With AI/search, gross gains must exceed USD683.4848 (6.834848% of the initial USD10,000) just to cover these example costs; with the EUR6 host allowance, about USD690.15147 (6.901515%).
 
-The spread/slippage assumption is not measured market data, and placing limits does not guarantee maker fills or profitability. Fewer, more selective opportunities or another eligible venue may change economics; the system should learn and compare rather than assume frequent action is best. The target is net returns, not a steadily rising dashboard or an artificially active Trader.
+**This fixed-tier example is intentionally conservative, not the expected Kraken fee bill at USD80,000 turnover.** Published fee tiers change with qualifying volume/assets and account/location [S08]. A proper simulator uses the applicable tier at each fill, with rolling-volume state or an explicit conservative fixed-tier assumption. Actual entry/exit values and liquidity differ. No claim is made that 20 such trips is an optimal strategy.
 
-## Initial build and later improvement spending
+The example shows why larger starting capital reduces fixed-AI cost pressure but does not remove percentage trading friction. Limit orders do not guarantee maker fees/fills. Compare venues only after eligibility and execution-capability checks. Record actual simulated/real fills, deduct incurred fees once, and do not subtract measured slippage again from equity-based P&L.
 
-Do not hide initial development costs. A purely illustrative 200-request coding effort at 20,000 input and 4,000 output tokens/request using USD2/10 rates costs USD16 before extras, or EUR17.28 with the same 20% buffer and FX assumption. This is not an estimate of how many requests the actual implementation will take. Human time, compute, API experiments and failed work are additional where attributable.
+## Setup and engineering visibility
 
-Show separate views for recurring operation, engineering/setup and all-in inception economics, with fixed owner-defined classification. The primary all-in measure still subtracts attributable expenses; an agent cannot move its mistakes out of the score. A separately funded build budget is accounting visibility, not free capital.
+A hypothetical 200-request build at 20,000 input and 4,000 output tokens/request using USD2/10 rates is USD16 before extras, or EUR17.28 with the same buffer/FX. This is arithmetic, not an estimate of the requests needed to build the application. Human time, compute, experiments and failed work are additional where attributable.
 
-## Runtime controls implied by the model
+Separate recurring, setup/engineering and all-in inception views. Keep the owner-defined classification fixed; the Leader cannot relabel mistakes as excluded overhead. Across paper resets, real expenses remain in the deployment ledger. Shared expenses are allocated once with auditable weights, not duplicated or erased. Simulated profits never replenish actual API funding.
 
-Reserve costs before every paid attempt using output/tool bounds. Refuse unpriced model/tier/tool combinations. Keep role, root-task, daily burst and monthly total limits; reserve capacity for exception handling inside the owner total. Batch nonurgent analysis only when delay is acceptable. Use cached research and bounded context; apply cache discounts only when actual provider receipts show them. Disable paid research/engineering before necessary management reasoning as funding runs low, while deterministic execution and reconciliation continue regardless of model budget.
+## Controls
 
-Track forecasts versus actuals, costs of discarded/failed candidates, percentage of work producing reusable evidence, and net economic performance. Let the Leader propose a cheaper schedule or model allocation. It may not raise its own cap or change the price/accounting definitions used to judge it.
+Reserve each paid attempt using bounded input/output/tool counts; reject unpriced models/tiers/tools; enforce nested owner/role/root/period limits. Keep a priority reserve inside the total. Batch only nonurgent work; apply cache savings only when usage confirms them. Reduce low-value research or engineering before management reasoning when funds run low, while deterministic reconciliation/protection continues.
+
+Track actual versus forecast cost, failed/discarded work, useful evidence per expense and net economic performance. The Leader may propose cheaper or better workflows and allocate within the limit. Only the owner can increase that limit or change protected accounting/price definitions.

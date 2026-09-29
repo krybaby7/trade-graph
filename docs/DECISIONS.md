@@ -1,24 +1,25 @@
 # Decision log
 
-## Accepted planning defaults
-
-| ID | Decision | Reason / revisit condition |
+| ID | Accepted planning decision | Reason / revisit condition |
 |---|---|---|
-| D01 | Modular Python, one paper-runtime process, isolated Engineer runner | Smallest operational footprint; separate protected kernel before broader mutable code |
-| D02 | SQLite for single-host paper R1, thin LangGraph orchestration | Durable inexpensive local experiment; PostgreSQL when multi-host/writer or live-service needs justify it |
-| D03 | Paper spot long-only with BTC/EUR and ETH/EUR where supported | Simple ledger/execution and EUR reporting; instrument choices are test fixtures, not investment advice |
-| D04 | Kraken public feed as technical reference; exchange-specific broker contract | Inspectable documented order semantics; no live eligibility conclusion |
-| D05 | Both provider adapters, per-role routing, one-provider installation allowed | Provider independence without requiring two paid accounts to start |
-| D06 | Six model roles; software Secretary/accounting/monitoring/execution | Preserve responsibilities without permanently running departments |
-| D07 | Automatic artifact/prompt/config changes in R1 | Full improvement loop with real implementation before granting arbitrary code authority |
-| D08 | EUR100 virtual capital, illustrative EUR5 monthly expense ceiling | Expose small-capital economics; owner must explicitly authorize actual spend |
-| D09 | Low-frequency event-driven Trader; deterministic protection between calls | Reduce token churn while retaining meaningful individual trade discretion |
-| D10 | Repository is a planning handoff, not a fake runtime scaffold | The coding orchestrator receives specifications, task DAG, validation targets and runnable planning utilities |
+| D01 | Modular Python, one paper-runtime process, isolated Engineer runner | Small footprint; protected kernel process before broader mutable code |
+| D02 | SQLite paper R1 and thin LangGraph | Local durable experiment; PostgreSQL when multi-host/writer requirements justify it |
+| D03 | USD10,000 virtual spot account, BTC/USD and ETH/USD where supported, EUR reporting | Updated owner instruction; amounts/currencies remain configurable |
+| D04 | Kraken public feed as technical reference; explicit broker capabilities | No live eligibility or fee-optimality conclusion |
+| D05 | Both provider adapters; one-provider installation allowed | Independence without requiring two paid accounts |
+| D06 | Six model roles with software administration/accounting/execution | Preserve responsibilities without permanent agent conversations |
+| D07 | R1 implements real tested artifact/prompt/config changes | Complete improvement loop before arbitrary code authority |
+| D08 | Real operating budget separate from virtual capital; paid calls disabled until configured | Optional lean EUR5/month example is not authorization or a permanent cap |
+| D09 | Event-driven low-frequency reasoning with continuous software management | Avoid unnecessary token use without a per-trade committee |
+| D10 | This repository handoff supplies a plan, task DAG and runnable planning utilities | Do not claim a runtime implementation exists |
+| D11 | Paper resets cannot erase real expenses or refill the API allowance | Native accounting and cross-experiment cost provenance remain auditable |
 
-## Decisions still required
+The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
-Owner/runtime setup: legal residence/entity and exchange eligibility; actual venue/pairs/fee tier; available model accounts and model-quality results; approved real API budget including taxes/FX/hosting; deployment host and availability; experiment loss/exposure envelope; live permission; broader engineering classes. Never commit the owner's private answers to a public repository.
+## Remaining decisions
 
-Implementation choices: exact compatible package versions and lockfile; operational credential store; sandbox mechanism on the actual host; market-depth retention; provider capability/snapshot pinning; venue-specific stop/OCO/amend/lookup support; independent test harness/attestation mechanism. Resolve these in their tasks and append concise evidence-backed entries here.
+Owner/runtime: legal residence/entity and exchange eligibility; actual venue/pairs/fee tier; model accounts and measured quality; actual expense budget including taxes/FX/hosting; deployment availability; exposure/loss/experiment envelope; live permission; broader engineering classes. Keep private answers out of public Git.
 
-No remaining choice should prevent offline R1 development. When a choice genuinely needs credentials, finish synthetic/contract work and mark credentialed verification pending rather than inventing a successful test. Completing a code task is not authorization to enable paid resources or live trading.
+Implementation: exact compatible versions/lockfile; credential store; real-host sandbox isolation; market-depth retention; provider capability/snapshot pinning; native stop/OCO/amend/lookup support; independent harness/attestation design. Resolve in the assigned tasks and append concise evidence-backed decisions.
+
+None prevents offline development. Mark credentialed verification pending when credentials are absent; do not invent successful tests or treat implementation completion as permission to trade or spend.

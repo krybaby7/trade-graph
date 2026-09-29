@@ -1,46 +1,50 @@
 # 00 — Product, scope and defaults
 
-## Objective and organisation
+## Objective and updated capital
 
-Trade Graph is an autonomous organisation, not an ensemble that chats continuously. Its objective is net economic performance in EUR: trading results after friction minus all attributable AI and operating costs. Show gross portfolio movement, cash flows and expenses separately. A €100 virtual allocation is a useful economic stress test; it does not imply that frequent trading or paid agents will be worthwhile.
+Trade Graph is an autonomous organisation, not an ensemble that chats continuously. Its objective is net economic performance in EUR: trading results after friction minus attributable AI and operating costs. Show portfolio movement, cash flows and expenses separately. Profitability is a hypothesis to test.
 
-Responsibilities are departments; deployment topology need not mirror the organisation. There are six model-capable roles initially: Leader, Researcher, Trader, Learning Analyst, Optimisation Analyst and Improvement Engineer. Secretary, usage accounting, evidence journaling, scheduling, indicators, broker execution and reconciliation are ordinarily software. The Secretary may use a model only when a specific synthesis task warrants it, with a separate receipt.
+**The initial virtual account is USD10,000, as requested by the owner on 2026-09-29. EUR100 is not the default or an architectural restriction.** Preserve USD as the native opening balance and EUR as the initial reporting currency. Runtime valuation uses attributed FX observations; the illustrative calculator's EUR0.90/USD is hypothetical and is never an opening-balance conversion instruction. Smaller EUR100 amounts elsewhere are mathematical unit-test fixtures or explicitly labeled sensitivity examples, not operating limits.
 
-The Leader chooses mandates, research priorities, resource allocation, schedules and tested improvements. The Trader makes individual decisions without a committee. Research can deliver findings directly to Trading under the mandate. Learning evaluates decision quality and strategies; Optimisation evaluates workflow utility and expense. Both use the same underlying evidence. The Engineer implements authorised changes rather than merely suggesting them.
+Virtual capital and real operating cash are separate. Paper gains do not replenish an API budget, and resetting a simulation does not erase real expenses. Display simulated trading/economic results separately from actual money spent. A larger paper account is not authorization to deploy USD10,000 live or enlarge paid-resource allowances. See 10-PAPER-CAPITAL.md for experiment and accounting implications.
 
-## Owner authority versus Leader authority
+## Organisation and autonomy
 
-Owner-only settings: allocated accounts/capital, live enablement, allowable venues and instruments, permission classes, maximum spend, maximum capital at risk, legally required eligibility confirmations, protected accounting semantics and the protected software baseline. The owner may make these permissive for a paper experiment. The Leader may allocate within them, choose less restrictive or more restrictive mandates within the envelope, pause/restart its own operations, and activate approved classes of tested changes. It cannot lift an owner halt, enlarge its allowance, create withdrawal capabilities or redefine success.
+Responsibilities are departments; deployment need not mirror the organisation. Six model-capable roles initially: Leader, Researcher, Trader, Learning Analyst, Optimisation Analyst and Improvement Engineer. Secretary, usage accounting, journaling, scheduling, indicators, execution and reconciliation are ordinary software. Secretary synthesis uses AI only for a specific useful task, with its own receipt.
 
-The software validates amounts, permissions and execution invariants; it does not add another approval agent. A valid order reaches the execution service even when the rationale explicitly acknowledges uncertainty. Do not hardcode a requirement for unanimous agents, a minimum model confidence score, positive results in every recent trade, or a minimum trade frequency. Confidence is metadata, not a calibrated probability.
+The Leader chooses mandates, research priorities, resource allocation, schedules and tested improvements. The Trader makes individual decisions without a committee. Research delivers findings directly to Trading under the mandate. Learning evaluates decisions/strategies; Optimisation evaluates workflow utility and expense. Both use shared evidence. The Engineer implements authorised changes, not just suggestions.
+
+Owner-only settings: real/virtual allocations, live enablement, venues/instruments, permission classes, maximum spend/capital at risk, eligibility confirmations and protected accounting/software baseline. The Leader allocates within these, selects or changes mandates, conducts experiments, pauses/resumes its own operations and activates permitted tested changes. It cannot lift an owner halt, enlarge its allowance, enable withdrawals or redefine success.
+
+Software validates permissions and mechanical invariants. Do not add a minimum model-confidence score, consensus, per-trade approval or a rule that every recent trade must be profitable. A valid uncertain trade reaches execution. Neither inactivity nor trade frequency is a success metric.
 
 ## Smallest coherent release: R1
 
-R1 comprises one portfolio, one virtual venue configuration, spot long-only instruments, one Trader, two simple strategy templates, durable tasks, six model roles, a real virtual broker, a deterministic financial ledger, provider adapters, a local web dashboard and automatic versioned configuration/prompt improvements. A reference dataset and scripted providers must exercise the entire loop without network access.
+One USD10,000 virtual portfolio, one venue configuration, spot long-only instruments, one Trader, two explicit strategy templates, durable tasks, all six model roles, a realistic-enough paper broker, deterministic ledger, both provider adapters, local dashboard and automatic configuration/prompt improvements. A synthetic offline scenario exercises the full loop without keys.
 
-Use BTC/EUR and ETH/EUR as the initial paper universe when the selected public feed supports them. These are test instruments, not recommendations to buy. Normalize venue-specific symbols and obtain precisions/minimums from venue metadata. Paper tests may additionally use synthetic instruments. Prefer native EUR pairs to avoid adding stablecoin exposure and a currency conversion leg solely for the demonstration. Venue and account eligibility remain unresolved for live trading.
+Initial paper instruments: BTC/USD and ETH/USD when supported by the selected public feed. They are test instruments, not investment recommendations. USD means fiat USD, not USDT/USDC. Normalize venue symbols and obtain precision/minimums from metadata. EUR pairs remain configurable; moving a USD account into EUR pairs requires an explicit simulated FX transaction, not silently relabeling USD as EUR.
 
-Seed two explicitly unproven hypotheses: a slow trend/pullback template and a range-reversion template. Each must define features, entry/exit conditions, sizing envelope, invalidation, costs, execution requirements and validation. The Trader can choose actions within the current hypothesis/mandate rather than merely echo a deterministic signal. Research can propose a replacement. The templates allow prompt/parameter improvement to be meaningful in R1 without granting arbitrary code execution.
+Seed two unproven hypotheses: slow trend/pullback and range reversion. Each defines features, entry/exit, sizing envelope, invalidation, execution requirements, costs and validation. The Trader exercises discretion within the active mandate rather than merely echoing a deterministic signal. Research may propose replacements. R1 templates make artifact improvements useful without granting arbitrary code execution.
 
-Not in R1: leverage, perpetuals, options, margin borrowing, on-chain signing, DEX execution, withdrawals, market making, cross-exchange arbitrage, multi-user custody, foundation-model retraining, a managed proprietary agent runtime, a vector database, autonomous infrastructure purchases or unrestricted code deployment. These are scope choices, not assumptions that those activities are inherently unprofitable.
+Excluded from R1: leverage, derivatives, margin borrowing, on-chain signing, DEX execution, withdrawals, market making, cross-venue arbitrage, multi-user custody, model-weight retraining, a proprietary hosted agent runtime, vector database, infrastructure purchases and unrestricted code deployment. These are scope choices, not profitability judgments.
 
-## Recommended initial paper settings
+## Recommended paper defaults
 
-- Virtual capital €100; operating budget example €5/month, with a €1 reserve inside that total for priority reasoning/recovery. A separate owner-approved engineering/setup budget is optional, but costs remain in all-in performance.
-- Maximum account gross exposure 80% and maximum one-asset exposure 50% as paper defaults; no leverage. The owner can change these. Leader sizing and experimentation allowances must fit inside the envelope. Losses beyond intended stop levels remain possible; a price stop is not a loss guarantee.
-- One-hour features and four-hour routine Trader opportunities, targeting six model decisions/day on average. Material events can wake it earlier within its run and monetary budgets. Data monitoring and deterministic exits remain active between decisions.
-- Daily market research, reusable strategy research, twice-weekly Learning when enough evidence exists, weekly Optimisation, weekly Leader review plus startup and material exceptions. Schedules are defaults and can be changed within the envelope.
-- At most two small authorised engineering tasks/month in the lean cost illustration. The runtime uses monetary reservations and step limits, not this number as a universal restriction.
-- Owner-reporting timezone may be configured; store all timestamps in UTC. Reporting currency EUR; store original native currencies and units.
+- Virtual balance USD10,000; reporting EUR. Real paid calls disabled until owner configuration. The lean illustration retains an optional EUR5/month expense ceiling with EUR1 reserved inside that total for priority reasoning. This is a proposed example, not spending permission or a requirement to fund the system forever at EUR5. Stronger-model/more-active profiles need their own reviewed budget.
+- Paper maximum gross exposure 80%, one-asset exposure 50%, no leverage. These are changeable owner envelope examples, not proven safe settings. Leader sizing and experiments fit within them. A stop cannot guarantee a maximum loss through price gaps.
+- One-hour features and four-hour routine Trader opportunities, targeting six calls/day; material events may wake it sooner within its budget. Software monitoring and protective management continue between model calls. A larger virtual balance does not itself justify more model calls.
+- Daily market research, reused strategy research, twice-weekly evidence-gated Learning, weekly Optimisation and weekly Leader review plus startup/material exceptions. These are Leader-adjustable defaults.
+- Illustrative two small engineering tasks/month, each bounded by actual spend and task-step limits. Not a permanent prohibition on more useful engineering when the owner funds it.
+- UTC storage timestamps; configurable display timezone. Preserve native units and reporting FX provenance.
 
-All numbers above are proposed configuration, not verified safety limits or empirically successful settings. Before live use, select an envelope consciously and check minimum order sizes against the actual allocation. Do not distort sizes just to satisfy an exchange minimum; return an actionable reason if the allocation cannot support a strategy.
+All numerical defaults above are proposed configurations, not validated trading parameters. Select a live envelope independently and check actual minimum orders; never raise size just to satisfy a venue minimum without a new authorised decision.
 
-## Meaningful autonomy and experimentation
+## Experimentation and learning
 
-Support an explicit `experiment_id`, baseline, hypothesis, expiry/review horizon and limited capital/spend allocation. In paper mode the Leader can deliberately test uncertain strategies; in live mode experimentation must fit the owner's envelope. A failed experiment produces evidence, not an automatic permanent restriction. A period of inactivity is not success; unnecessary trading is not success either. Measure decision opportunities, reasons for abstention, net returns, counterfactuals with caveats, and information gained per expense.
+Each experiment records its hypothesis, baseline, strategy/configuration versions, capital and spend allocation, data window, expiry/review horizon and validation criteria. Leader can take deliberate paper risks within the envelope. A loss is evidence, not automatically a new restriction. A winner is not automatically a good decision. Evaluate opportunity coverage, thesis quality, outcomes, friction and cost of useful information.
 
-Research should distinguish reproducible evidence from marketing claims of a successful trader or AI system. Do not infer a durable edge from screenshots or a provider benchmark. Testable proposals preserve the original source, point-in-time information and the expected mechanism.
+Keep a held-out forward-paper stream and record all attempted variants. Avoid selecting the best hindsight run and claiming it represents an achievable strategy. Research on successful human/AI traders distinguishes reproducible evidence from marketing/screenshots and converts useful findings into testable proposals.
 
-## Release exit condition
+## R1 exit
 
-The complete paper loop must run and recover reliably, financial results must reconcile, every paid call must be visible, at least one authorised artifact change must be implemented/tested/activated, and a failed change must not disturb the current version. R1 completion is a functional milestone, not a positive-return claim. See 08 for the separate economic and live gates.
+The paper loop must run and recover, financial results must reconcile, every paid attempt must be visible, an Engineer must implement/test an actual permitted artifact, the Leader must activate it, and a later decision must use that version. Demonstrate a rejected change too. Functional completion is not proof of positive returns or permission to go live.
