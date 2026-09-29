@@ -68,7 +68,7 @@ trade-graph report --format json
 
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
-Currently supplied scripts/check_plan.py, scripts/next_task.py and scripts/cost_model.py only inspect the plan, emit implementation work and calculate examples. They do not implement the future CLI or start a trading process.
+`trade-graph` implements those operator commands. `run` performs one paper recovery pass and does not enable paid calls, live trading, or new model decisions. Planning utilities `scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
 
 ## Runbooks
 

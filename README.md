@@ -2,7 +2,7 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: implementation plan and coding-orchestrator handoff. The trading application is not implemented yet.**
+**Status: paper runtime implemented on `cursor/trade-graph-r1-548a`. Paid calls and live trading stay disabled. Credentialed provider, exchange, and forward-paper checks are pending.**
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
@@ -43,4 +43,12 @@ Python, FastAPI, a small dashboard, one durable scheduler, SQLite, a thin LangGr
 
 R1 completes Research -> Trader -> paper execution -> evidence -> Learning/Optimisation -> Leader -> Improvement Engineer -> tested version -> further operation. No per-trade approval committee. Owner capital/spending/permissions remain software-enforced and outside agent control.
 
-Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for what was actually checked. Example future CLI commands in the specifications are implementation targets, not existing runtime features.
+Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for commands, synthetic results, and checks that are still pending credentials or an owner decision.
+
+```bash
+uv sync --frozen --group dev
+uv run ruff check src tests
+uv run pytest
+uv run trade-graph doctor
+uv run trade-graph demo --offline
+```

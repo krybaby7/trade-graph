@@ -1,1 +1,214 @@
-{"schema_version":1,"updated_at":"2026-09-29","status_note":"Plan only; runtime implementation has not started.","tasks":{"T00":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T01":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T02":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T03":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T04":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T05":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T06":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T07":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T08":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T09":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T10":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T11":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T12":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T13":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T14":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T15":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T16":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T17":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T18":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T19":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T20":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T21":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T22":{"status":"todo","owner":null,"branch":null,"evidence":[]}}}
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-29",
+  "status_note": "Runtime implemented on cursor/trade-graph-r1-548a at a4bdce6. T20 is blocked on owner live authorization. Credentialed provider, exchange, and forward-paper checks are pending, not passed.",
+  "tasks": {
+    "T00": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "uv.lock pins the Python 3.12 toolchain; default CI workflow has no credentials"
+      ]
+    },
+    "T01": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "tests/unit/test_contracts.py and tests/unit/test_import_boundary.py reject invalid contracts and SDK imports in domain"
+      ]
+    },
+    "T02": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "tests/integration/test_ledger_store.py covers restart, duplicate financial ids, and backup checksum failure"
+      ]
+    },
+    "T03": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "tests/unit/test_books.py covers A01-A05, A43, and A44 with Decimal native units"
+      ]
+    },
+    "T04": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "stale-quote increase is rejected in tests/integration/test_execution.py; public Kraken network smoke was not run"
+      ]
+    },
+    "T05": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "paper partial fills, minimums, stop gap, and same-bar exclusion pass in tests/integration/test_execution.py; fee tier is the explicit fixed conservative schedule"
+      ]
+    },
+    "T06": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "OpenAI and Anthropic fixture translations pass in tests/integration/test_models_and_budget.py; credentialed provider probes were not run and are not passed"
+      ]
+    },
+    "T07": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "budget concurrency, uncertain usage, and paid-calls-disabled pass in tests/integration/test_models_and_budget.py"
+      ]
+    },
+    "T08": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "lost acknowledgement, owner halt, and restart without a second submit pass in tests/integration/test_execution.py and tests/e2e/test_offline.py"
+      ]
+    },
+    "T09": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "scheduler depth, coalesce, and idempotent LangGraph checkpoint pass in tests/integration/test_models_and_budget.py"
+      ]
+    },
+    "T10": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "offline demo: a research finding does not create an order and a model timeout is not recorded as a hold"
+      ]
+    },
+    "T11": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "offline demo keeps a losing valid thesis and a winning invalid process as separate assessments"
+      ]
+    },
+    "T12": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "leader_trade_approvals is 0 in tests/e2e/test_offline.py; leader cannot raise the owner budget"
+      ]
+    },
+    "T13": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "engineer activates an allowlisted context policy and a protected kernel edit is rejected with its receipt retained"
+      ]
+    },
+    "T14": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "the later hold decision uses the activated artifact hash; rollback is pointer-only"
+      ]
+    },
+    "T15": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "tests/integration/test_api_security_live.py covers session CSRF, leader denial, and server-rendered equity"
+      ]
+    },
+    "T16": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop"
+      ]
+    },
+    "T17": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "trade-graph init, doctor, demo --offline, run --mode paper, pause, backup, reconcile, and report pass in tests/unit/test_cli_ops.py; credentialed paper soak is pending, not passed"
+      ]
+    },
+    "T18": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "offline evaluation verdict is insufficient_evidence; no profitability claim and no credentialed forward-paper window"
+      ]
+    },
+    "T19": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "KrakenLiveBroker refuses submit unless live is enabled and has no withdraw method; the unit transport is fake and is not a credentialed exchange test"
+      ]
+    },
+    "T20": {
+      "status": "blocked",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_api_security_live.py: enable-live stays false and paper capital is not copied into a live allocation",
+        "blocked on owner decision: live authorization and a real operating budget are absent, so the bounded pilot has not started"
+      ]
+    },
+    "T21": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "multiprocessing kernel loop denies secrets, withdrawal, and budget writes in tests/integration/test_api_security_live.py; no container image is pinned"
+      ]
+    },
+    "T22": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv run ruff check src tests passed; uv run pytest -q 34 passed; python3 scripts/test_planning.py 10 passed; commit a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+        "plugin AST rejection and unattested promotion refusal pass; broader code authority is not granted"
+      ]
+    }
+  }
+}

@@ -1,55 +1,85 @@
 # Implementation status
 
-Updated: 2026-09-29. **Plan and orchestrator handoff delivered; trading runtime not implemented.**
+Updated: 2026-09-29. **Paper runtime is implemented. Paid calls and live trading stay disabled.**
 
-## Default and next action
+## Branch and commit
 
-Paper capital: USD10,000; initial reporting: EUR. Actual AI/operating spend requires separate owner configuration. No paid calls or live trading have been enabled. Read IMPLEMENTATION-START-HERE.md and begin T00; all 23 runtime tasks remain `todo` in planning/progress.json.
+- Branch: `cursor/trade-graph-r1-548a`
+- Runtime commit: `a4bdce6c3bfad834d0044c8dcc443e2818e8d581`
+- Base: `main` at `7770d17`
+- Owner for claimed tasks: `cursor-agent`
+- Integration: one branch and one draft pull request. Do not merge from this status file.
 
-## Published and verified checkpoint
+## Default
 
-The complete planning package was published to `main` at commit `dab766f7c362577a792e84c1b5a21227316e1860`. The documentation branch `docs/implementation-plan-2026-09-29` preserves the same checkpoint. This status update records verification after that publication. Always inspect newer commits before resuming; never reset current work to this anchor.
+Paper capital remains USD 10,000 with EUR reporting. Real operating spend is a separate ledger. `paid_calls_enabled` and `live_enabled` default to false. No real orders, withdrawals, API spending, or infrastructure purchases were made.
 
-GitHub Actions full-checkout validation succeeded for that commit:
+## Task disposition
 
-- Run: https://github.com/krybaby7/trade-graph/actions/runs/36618799789
-- Job: `planning`, ID `109578591784`, conclusion `success`.
-- Specification-reference and task-dependency check: success.
-- Planning-utility tests: success.
-- Next-task prompt generation: success.
-- Illustrative cost calculation: success.
+`planning/progress.json` records T00–T19 and T21–T22 as `done` with the pytest evidence below. **T20 is `blocked`.** The bounded live pilot has not started because owner live authorization and a real operating budget are absent.
 
-The successful job and individual step conclusions were read through the GitHub connector. These are planning checks, not tests of an implemented trading runtime.
+Credentialed OpenAI, Anthropic, and Kraken checks were not run. A fixture or fake transport is not a passed paid-provider or exchange test.
 
-## Included
-
-Architecture, role contracts/triggers/tools, native accounting and EUR valuation, cost receipts/budgets, reliable execution and pause semantics, learning/provenance, actual automatic artifact-engineering lifecycle, integrations with official sources, cost model, dashboard/runbooks and phased acceptance gates. Machine-readable dependency/progress manifests and standard-library planning utilities are included.
-
-## Other checks performed
-
-Existing repository inspected before edits; only the placeholder README was present. Current official model/search and reference exchange pricing reviewed; FX and hosting values remain explicitly hypothetical allowances.
-
-`python3 scripts/test_planning.py`: 10 local tests passed, covering DAG validation, ready-task selection, invalid dependencies/completion, exact cost totals, model/cadence sensitivity and invalid monetary inputs. The planning scripts also compiled locally.
-
-`python3 scripts/cost_model.py`: executed locally; lean paid-AI/search estimate USD3.4848, EUR3.13632 at hypothetical EUR0.90/USD; USD10,000 virtual starting balance. These totals depend on the documented request/token assumptions and are not a usage or profitability guarantee.
-
-The local environment could not clone GitHub because network/DNS access was unavailable. Local utility tests used the generated scripts/manifests. The successful GitHub Actions run subsequently provided complete-checkout path validation and ran those utilities in the published repository.
-
-## Not tested or implemented
-
-No real model request, exchange authentication/order, strategy profitability, runtime ledger/recovery, sandbox deployment, paper soak or live pilot was tested. A01-A44 are future acceptance requirements, not completed runtime tests. No real API/trading credentials were configured.
-
-## Commands available now
+## Functioning commands
 
 ```bash
-python3 scripts/check_plan.py
+uv sync --frozen --group dev
+uv run ruff check src tests
+uv run pytest
 python3 scripts/test_planning.py
-python3 scripts/next_task.py --prompt
-python3 scripts/cost_model.py
+python3 scripts/check_plan.py
+uv run trade-graph doctor
+uv run trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
+uv run trade-graph demo --offline
+uv run trade-graph run --mode paper
+uv run trade-graph pause --profile manage-only
+uv run trade-graph backup --destination runtime/backup.sqlite
+uv run trade-graph reconcile
+uv run trade-graph report --format json
 ```
 
-These run planning checks/calculations and emit an implementation task packet. They do not invoke a coding agent or start the future `trade-graph` application. Record actual application startup/test commands here as implementation proceeds.
+`run` performs one paper recovery pass. It does not enable paid calls, live trading, or new model decisions. `run --mode live` exits with an error.
 
-## Future updates
+## Results from this checkout
 
-Record current branch/commit, completed task IDs, commands/results, credentialed versus synthetic checks, failures and next eligible task. Preserve newer work and unfinished implementation.
+- `uv run ruff check src tests`: passed.
+- `uv run pytest -q`: 34 passed. No credentials used.
+- `python3 scripts/test_planning.py`: 10 passed.
+- `python3 scripts/check_plan.py`: plan valid, 23 tasks.
+- Offline demo (`tests/e2e/test_offline.py`): finding does not create an order; model timeout is not a hold; a loss can stay `valid_thesis` and a win can stay `invalid_process`; activated artifact hash differs from the baseline and the later hold uses it; a protected kernel edit is rejected and its receipt remains; budget exhaustion does not stop reconciliation; restart does not submit again; duplicate fill is ignored; A43 equity is EUR 9000 at 0.90 and EUR 9100 at 0.91 with alpha 0; A44 paper reset and synthetic receipts do not change the real remaining budget; leader trade approvals are 0; evaluation verdict is `insufficient_evidence` (below the 30-decision minimum).
+- CLI (`tests/unit/test_cli_ops.py`): init, manage-only pause, checksummed backup, reconcile, and paper run succeed. Live run is refused.
+- Kraken adapter: submit raises `LiveDisabled` unless live is enabled and a key is present. The test transport is fake. No authenticated Kraken call ran.
+- Provider adapters: OpenAI Responses and Anthropic Messages fixtures parse structured output, rate limit, truncation, timeout, and refusal. The gateway does not call the network. Credentialed probes are pending.
+- Isolation: a separate process denies secret, withdrawal, and budget operations. Plugin source that imports OS or network modules is rejected. Promotion requires a trusted-controller attestation.
+
+## Failures
+
+No failing tests in the commands above. These product gaps are recorded rather than marked passed:
+
+- No HTTP client path is wired for live OpenAI or Anthropic calls. Fixture parsing is not a credentialed probe.
+- No Kraken public WebSocket reconnect/backfill client and no network smoke.
+- FX rates are injected observations. There is no Frankfurter client.
+- Exposure comparison still treats USD notional and EUR equity as the same number (D16).
+- `POST /api/v1/leader/activate` refuses the caller. Activation is `VersionController`, used by the offline demo.
+- Mandate rows are not loaded inside `authorize`; caps are arguments.
+- Alembic is present; the running path applies `migrate.py` when a database opens.
+- No container image or cgroup attestation (D15).
+
+## Missing credentials and owner decisions
+
+- No OpenAI or Anthropic API key. Paid smoke and a credentialed forward-paper window are pending.
+- No Kraken trading key. Authenticated or real-order tests were not run.
+- No owner live authorization and no real operating budget. T20 stays blocked. Paper USD 10,000 is not a live allocation.
+- Broader Engineer code classes are not granted. Plugin and process controls refuse unattested promotion.
+
+## Deviations
+
+D12 httpx-shaped REST bodies, D13 temporary allowlisted git sandbox, D14 fixed maker 0.004 / taker 0.008 fee tier, D15 process isolation without a container image, D16 incomplete USD/EUR exposure conversion. See `docs/DECISIONS.md`.
+
+## Next work
+
+T20: owner live eligibility, an explicit live allocation that is not the paper USD 10,000, and a real operating budget, before any pilot. Separately, an owner-funded credential configuration is required before a paid paper soak can be reported as anything other than pending.
+
+## Earlier planning checkpoint
+
+Planning validation on `main` at `dab766f` remains historical. GitHub Actions run `https://github.com/krybaby7/trade-graph/actions/runs/36618799789` checked the plan, not this runtime. Do not reset this branch to that checkpoint.
