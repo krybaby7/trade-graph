@@ -12,6 +12,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Archive tracked source for reproducible review
+        run: git archive --format=tar HEAD -o /tmp/trade-graph-source.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-${{ github.sha }}
+          path: /tmp/trade-graph-source.tar
+          retention-days: 7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -22,7 +29,15 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests
       - name: Unit and integration tests
-        run: uv run pytest
+        run: uv run pytest --junitxml=runtime-test-results.xml
         env:
           TRADE_GRAPH_PAID_CALLS_ENABLED: "false"
           TRADE_GRAPH_LIVE_ENABLED: "false"
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ github.sha }}
+          path: runtime-test-results.xml
+          if-no-files-found: ignore
+          retention-days: 7
