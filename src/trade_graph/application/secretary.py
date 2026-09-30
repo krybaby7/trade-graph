@@ -67,7 +67,26 @@ class Secretary:
             (portfolio_id, cursor["activity_row"]),
         ).fetchall()
         for event in events:
-            if any(word in event["kind"].lower() for word in ("incident", "failed", "blocked", "pause", "reconcil")):
+            if event["kind"] == "engineer_candidate":
+                # A completion event is only a lookup hint. Read scoped, persisted
+                # candidate/attestation facts rather than trusting its payload state.
+                candidate_id = json.loads(event["payload_json"]).get("candidate_id")
+                candidates = self.review_candidates(portfolio_id, candidate_ids=[candidate_id])
+                if candidates:
+                    candidate = candidates[0]
+                    refs = [candidate["candidate_id"], event["event_id"]]
+                    if candidate["attestation"]:
+                        refs.append(candidate["attestation"]["attestation_id"])
+                    self.report(
+                        portfolio_id,
+                        role="engineer",
+                        kind=f"candidate_{candidate['state'].lower()}",
+                        summary=f"{candidate['state']}: {candidate['objective']}. {candidate['known_limits']}",
+                        evidence_refs=refs,
+                        source_key=f"candidate:{candidate['candidate_id']}:{candidate['state']}",
+                        material=True,
+                    )
+            elif any(word in event["kind"].lower() for word in ("incident", "failed", "blocked", "pause", "reconcil")):
                 self.report(
                     portfolio_id,
                     role="system",
@@ -204,6 +223,46 @@ class Secretary:
                     (json.dumps({"digest_id": digest_id}), task_id),
                 )
         return task_id
+
+    def review_candidates(self, portfolio_id: str, *, candidate_ids: list[str] | None = None) -> list[dict]:
+        """Bounded factual cards; a recorded attestation is not activation authority."""
+        params: list = [portfolio_id]
+        selector = ""
+        if candidate_ids is not None:
+            ids = list(dict.fromkeys(ref for ref in candidate_ids if isinstance(ref, str)))[:40]
+            if not ids:
+                return []
+            selector = f" AND c.candidate_id IN ({','.join('?' for _ in ids)})"
+            params.extend(ids)
+        rows = self.database.execute(
+            """SELECT c.*, t.document_json AS task_json FROM candidates c
+            JOIN change_tasks t USING (change_id) WHERE t.portfolio_id = ?
+            AND c.state IN ('READY', 'APPROVED', 'FAILED')""" + selector + " ORDER BY c.rowid LIMIT 8",
+            tuple(params),
+        ).fetchall()
+        cards = []
+        for row in rows:
+            task, result = json.loads(row["task_json"]), json.loads(row["document_json"])
+            proof = self.database.execute(
+                """SELECT attestation_id, exit_code, content_hash, baseline_hash, checks_module_hash, task_hash
+                FROM candidate_attestations WHERE attestation_id = ? AND candidate_id = ?
+                AND portfolio_id = ? AND change_id = ?""",
+                (result.get("attestation_id"), row["candidate_id"], portfolio_id, row["change_id"]),
+            ).fetchone()
+            cards.append({
+                "candidate_id": row["candidate_id"],
+                "change_id": row["change_id"],
+                "state": row["state"],
+                "content_hash": row["content_hash"],
+                "baseline_hash": row["baseline_hash"],
+                "objective": task["objective"][:800],
+                "success_criteria": task["success_criteria"][:800],
+                "rollback_criteria": task["rollback_criteria"][:800],
+                "changed_files": result["changed_files"][:5],
+                "known_limits": result["known_limits"][:1200],
+                "attestation": dict(proof) if proof else None,
+            })
+        return cards
 
     def digest(self, portfolio_id: str) -> dict:
         row = self.database.execute(
