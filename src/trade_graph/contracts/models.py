@@ -559,12 +559,12 @@ class Observation(ContractModel):
 
 
 class ModelUsage(ContractModel):
-    uncached_input_tokens: int
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
-    billed_output_tokens: int
-    reasoning_tokens: int = 0
-    tool_units: int = 0
+    uncached_input_tokens: int = Field(ge=0)
+    cache_read_tokens: int = Field(default=0, ge=0)
+    cache_write_tokens: int = Field(default=0, ge=0)
+    billed_output_tokens: int = Field(ge=0)
+    reasoning_tokens: int = Field(default=0, ge=0)
+    tool_units: int = Field(default=0, ge=0)
     provider_request_id: str | None = None
 
 
@@ -607,6 +607,7 @@ class PriceCard(ContractModel):
     input_per_million: Decimal
     output_per_million: Decimal
     cache_read_per_million: Decimal | None = None
+    cache_write_per_million: Decimal | None = None
     search_per_call: Decimal | None = None
     effective_at: str
     verified_at: str
@@ -618,6 +619,7 @@ class PriceCard(ContractModel):
         "input_per_million",
         "output_per_million",
         "cache_read_per_million",
+        "cache_write_per_million",
         "search_per_call",
         mode="before",
     )
@@ -625,12 +627,16 @@ class PriceCard(ContractModel):
     def _decs(cls, value: Any) -> Decimal | None:
         if value is None:
             return None
-        return _dec(value)
+        result = _dec(value)
+        if result < 0:
+            raise ValueError("price rates must be nonnegative")
+        return result
 
     @field_serializer(
         "input_per_million",
         "output_per_million",
         "cache_read_per_million",
+        "cache_write_per_million",
         "search_per_call",
     )
     def _ser(self, value: Decimal | None) -> str | None:

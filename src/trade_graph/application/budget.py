@@ -6,7 +6,7 @@ import json
 import uuid
 from decimal import Decimal
 
-from trade_graph.adapters.persistence.db import Database
+from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.contracts.models import ModelUsage, PriceCard
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import BudgetExhausted, NotFound
@@ -21,6 +21,7 @@ class BudgetGateway:
         self.database = database
         self.clock = clock
 
+    @atomic
     def configure(
         self,
         *,
@@ -33,6 +34,11 @@ class BudgetGateway:
         root: Decimal,
         roles: dict[str, Decimal],
     ) -> None:
+        amounts = [total, period, priority_reserve, daily, root, *roles.values()]
+        if currency != "EUR" or any(not value.is_finite() or value < 0 for value in amounts):
+            raise ValueError("budgets require nonnegative finite EUR amounts")
+        if priority_reserve > total:
+            raise ValueError("priority reserve exceeds total")
         with self.database.immediate() as conn:
             conn.execute(
                 """INSERT INTO deployment_budget
@@ -70,10 +76,15 @@ class BudgetGateway:
     def seed_card(self, card: PriceCard) -> None:
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
+            existing = conn.execute("SELECT document_json FROM price_cards WHERE price_card_id = ?",
+                                    (card.price_card_id,)).fetchone()
+            if existing is not None:
+                if PriceCard.model_validate_json(existing["document_json"]) != card:
+                    raise ValueError("price-card IDs are immutable; use a new revision")
+                return
             conn.execute(
                 """INSERT INTO price_cards (price_card_id, document_json, created_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(price_card_id) DO UPDATE SET document_json=excluded.document_json""",
+                VALUES (?, ?, ?)""",
                 (card.price_card_id, card.model_dump_json(), now),
             )
 
@@ -87,6 +98,7 @@ class BudgetGateway:
             raise NotFound(price_card_id)
         return PriceCard.model_validate_json(row["document_json"])
 
+    @atomic
     def reserve(
         self,
         *,
@@ -106,7 +118,9 @@ class BudgetGateway:
     ) -> str:
         card = self.card(price_card_id)
         native = worst_case_cost(card, max_input, max_output, max_tools)
-        amount = native * fx_rate * fx_buffer
+        if not fx_rate.is_finite() or fx_rate <= 0 or not fx_buffer.is_finite() or fx_buffer < 1:
+            raise ValueError("FX must be positive and the reservation buffer at least one")
+        amount = native * (Decimal("1") if card.currency == "EUR" else fx_rate) * fx_buffer
         reservation_id = str(uuid.uuid4())
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
@@ -142,6 +156,7 @@ class BudgetGateway:
             )
         return reservation_id
 
+    @atomic
     def commit(
         self,
         reservation_id: str,
@@ -153,8 +168,20 @@ class BudgetGateway:
     ) -> str:
         row = self._reservation(reservation_id)
         card = self.card(row["price_card_id"])
+        if not fx_rate.is_finite() or fx_rate <= 0:
+            raise ValueError("FX must be positive")
         native = usage_cost(card, usage)
         reporting = native if card.currency == "EUR" else native * fx_rate
+        existing = self.database.execute("SELECT * FROM usage_receipts WHERE reservation_id = ?",
+                                         (reservation_id,)).fetchone()
+        if existing is not None:
+            if (existing["status"] == "committed" and existing["provider"] == provider
+                    and existing["model"] == model and existing["usage_json"] == usage.model_dump_json()
+                    and Decimal(existing["reporting_cost"]) == reporting):
+                return existing["receipt_id"]
+            raise ValueError("receipt conflict requires explicit reconciliation")
+        if row["state"] not in {"RESERVED", "UNCERTAIN"}:
+            raise ValueError("reservation is already settled")
         now = utc_iso(self.clock.now())
         receipt_id = str(uuid.uuid4())
         with self.database.immediate() as conn:
@@ -184,17 +211,25 @@ class BudgetGateway:
             )
         return receipt_id
 
+    @atomic
     def mark_uncertain(self, reservation_id: str) -> None:
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
             conn.execute(
                 """UPDATE budget_reservations SET state = 'UNCERTAIN', updated_at = ?
-                WHERE reservation_id = ?""",
+                WHERE reservation_id = ? AND state = 'RESERVED'""",
                 (now, reservation_id),
             )
 
+    @atomic
     def conservative_charge(self, reservation_id: str) -> str:
         row = self._reservation(reservation_id)
+        existing = self.database.execute("SELECT receipt_id FROM usage_receipts WHERE reservation_id = ?",
+                                         (reservation_id,)).fetchone()
+        if existing is not None:
+            return existing["receipt_id"]
+        if row["state"] not in {"RESERVED", "UNCERTAIN"}:
+            raise ValueError("reservation is already settled")
         now = utc_iso(self.clock.now())
         receipt_id = str(uuid.uuid4())
         with self.database.immediate() as conn:
@@ -227,7 +262,10 @@ class BudgetGateway:
             spent = self._sum(conn, deployment_id, synthetic=0)
         return Decimal(row["total_allowance"]) - spent
 
+    @atomic
     def allocate(self, receipt_id: str, weights: dict[str, Decimal]) -> None:
+        if any(not weight.is_finite() or weight < 0 for weight in weights.values()):
+            raise ValueError("allocation weights must be nonnegative and finite")
         if sum(weights.values(), Decimal("0")) != Decimal("1"):
             raise ValueError("allocation weights must sum to 1")
         row = self.database.execute(
@@ -236,6 +274,12 @@ class BudgetGateway:
         ).fetchone()
         if row is None:
             raise NotFound(receipt_id)
+        previous = self.database.execute("SELECT portfolio_id, weight FROM cost_allocations WHERE receipt_id = ?",
+                                         (receipt_id,)).fetchall()
+        if previous:
+            if {item["portfolio_id"]: Decimal(item["weight"]) for item in previous} == weights:
+                return
+            raise ValueError("receipt is already allocated")
         total = Decimal(row["reporting_cost"])
         with self.database.immediate() as conn:
             for portfolio_id, weight in weights.items():

@@ -191,7 +191,7 @@ def _fifo_consume(
         take = open_qty if open_qty <= remaining else remaining
         rem_cost = lot.open_cost()
         released = rem_cost if take == open_qty else rem_cost * take / open_qty
-        portion = proceeds if take == remaining else proceeds * take / quantity
+        portion = proceeds_left if take == remaining else proceeds * take / quantity
         if lot.cost_currency != proceeds_currency:
             raise BooksError("cost currency does not match proceeds")
         realized = portion - released
@@ -302,8 +302,10 @@ def apply_fill(
     _fifo_consume(
         books, fill.fee_asset, fee, identified, quote_asset, at, f"{fill.trade_id}:fee"
     )
-    _post(group, "cash", quote_asset, proceeds)
-    _post(group, "clearing", quote_asset, -proceeds)
+    # The fee left inventory, not quote cash. Net proceeds above are only for
+    # cost-basis attribution; deducting them from cash charges the fee twice.
+    _post(group, "cash", quote_asset, notional)
+    _post(group, "clearing", quote_asset, -notional)
     _post(group, "inventory", base_asset, -quantity)
     _post(group, "clearing", base_asset, quantity)
     _post(group, "inventory", fill.fee_asset, -fee)

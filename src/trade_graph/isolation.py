@@ -1,12 +1,12 @@
-"""Process boundary for the protected kernel and unprivileged plugins."""
+"""Protocol fixtures only; no OS sandbox or trusted promotion authority exists yet.
+
+An AST denylist and a same-UID child process are not security isolation. Broader
+executable plugins stay disabled; the R1 allowlisted data-artifact path is separate.
+"""
 
 from __future__ import annotations
 
 import ast
-import json
-import os
-import subprocess
-import sys
 from multiprocessing.connection import Connection
 
 BANNED_MODULES = {"os", "socket", "subprocess", "pathlib", "shutil", "ctypes"}
@@ -49,44 +49,8 @@ def validate_plugin(source: str) -> None:
 
 
 def run_plugin(source: str, snapshot: dict) -> dict:
-    validate_plugin(source)
-    wrapper = (
-        "import json,sys\n"
-        "from trade_graph.isolation import validate_plugin\n"
-        "payload=json.loads(sys.stdin.read())\n"
-        "validate_plugin(payload['source'])\n"
-        "namespace={}\n"
-        "exec(payload['source'], namespace, namespace)\n"
-        "result=namespace['on_snapshot'](payload['snapshot'])\n"
-        "json.dump(result, sys.stdout)\n"
-    )
-    completed = subprocess.run(
-        [sys.executable, "-c", wrapper],
-        input=json.dumps({"source": source, "snapshot": snapshot}),
-        text=True,
-        capture_output=True,
-        timeout=5,
-        check=False,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": os.environ.get("PYTHONPATH", "")},
-        preexec_fn=_limit,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(completed.stderr)
-    return json.loads(completed.stdout)
-
-
-def _limit() -> None:
-    try:
-        import resource
-
-        resource.setrlimit(resource.RLIMIT_CPU, (2, 2))
-    except (ImportError, ValueError, OSError):
-        return
+    raise PermissionError("executable plugins disabled: independently enforced OS sandbox is not implemented")
 
 
 def promote_staged(candidate: dict, *, controller_healthy: bool) -> dict:
-    if not controller_healthy:
-        raise RuntimeError("controller rollback does not depend on the candidate")
-    if candidate.get("attestation", {}).get("runner") != "trusted-controller":
-        raise RuntimeError("candidate cannot attest itself")
-    return {"promoted": True, "hash": candidate["content_hash"]}
+    raise RuntimeError("staged code promotion disabled: caller-supplied attestation is not trusted evidence")

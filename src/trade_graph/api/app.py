@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from trade_graph.api.auth import csrf_for_token, role_for_token
-from trade_graph.live_gate import evaluate_live_enablement
+from trade_graph.domain.errors import ValidationFailure
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "web" / "templates"))
 
@@ -79,34 +78,32 @@ def create_app(runtime) -> FastAPI:
         return {"actual_spend": str(runtime.actual_spend), "simulated": True}
 
     @app.post("/api/v1/owner/budgets")
-    async def budgets(request: Request) -> JSONResponse:
+    async def budgets(request: Request) -> dict:
         owner_write(request)
-        body = await request.json()
-        if Decimal(str(body.get("total", "0"))) < 0:
-            raise HTTPException(status_code=422, detail="invalid budget")
-        return JSONResponse({"updated": True, "by": "owner"})
+        raise HTTPException(status_code=501, detail="budget persistence is not wired to this API")
 
     @app.post("/api/v1/owner/pause")
     async def pause(request: Request) -> dict:
         owner_write(request)
         body = await request.json()
-        runtime.execution.set_pause(
-            runtime.portfolio_id, body["profile"], "owner", body.get("reason", "owner")
-        )
+        try:
+            runtime.execution.set_pause(
+                runtime.portfolio_id, body["profile"], "owner", body.get("reason", "owner")
+            )
+        except (KeyError, ValidationFailure) as exc:
+            raise HTTPException(status_code=422, detail="invalid pause profile") from exc
         return {"profile": body["profile"], "originator": "owner"}
 
     @app.post("/api/v1/owner/enable-live")
     async def enable_live(request: Request) -> dict:
         owner_write(request)
-        body = await request.json()
-        decision = evaluate_live_enablement(body)
-        return decision
+        return {"enabled": False, "reason": "live activation is not implemented; this API is paper-only"}
 
     @app.post("/api/v1/leader/activate")
     async def leader_activate(request: Request) -> dict:
         role = identity(request)
         if role != "leader":
             raise HTTPException(status_code=403, detail="leader role required")
-        raise HTTPException(status_code=403, detail="leader cannot raise the owner budget")
+        raise HTTPException(status_code=501, detail="leader activation is not wired to this API")
 
     return app

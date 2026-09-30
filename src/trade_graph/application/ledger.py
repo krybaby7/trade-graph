@@ -10,7 +10,7 @@ from decimal import Decimal
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import Clock, utc_iso
-from trade_graph.domain.errors import DuplicateRecord
+from trade_graph.domain.errors import DuplicateRecord, StaleState
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import (
     Books,
@@ -19,6 +19,7 @@ from trade_graph.kernel.books import (
     FxRate,
     Mark,
     Performance,
+    _convert,
     add_expense,
     apply_fill,
     deposit,
@@ -200,6 +201,13 @@ class Ledger:
             at=at,
         )
 
+    def reporting_value(self, portfolio_id: str, amount: Decimal, currency: str) -> Decimal:
+        at = self.now()
+        value, stale = _convert(amount, currency, self._reporting(portfolio_id), self._rates(at), at)
+        if value is None or stale:
+            raise StaleState(f"missing or stale reporting FX for {currency}")
+        return value
+
     def performance(self, portfolio_id: str, start: str, end: str) -> Performance:
         reporting = self._reporting(portfolio_id)
         start_books = self._books(portfolio_id, start)
@@ -243,6 +251,12 @@ class Ledger:
         at = self.now()
         try:
             with self.database.transaction() as conn:
+                duplicate = conn.execute(
+                    "SELECT 1 FROM ledger_events WHERE portfolio_id = ? AND external_ref = ?",
+                    (portfolio_id, external_ref),
+                ).fetchone()
+                if duplicate is not None:
+                    raise DuplicateRecord(external_ref)
                 books = self._books_conn(conn, portfolio_id, "9999")
                 before = len(books.groups)
                 self._mutate(books, kind, payload, at, external_ref)
@@ -321,7 +335,7 @@ class Ledger:
             raise ValueError(kind)
 
     def _books(self, portfolio_id: str, at: str) -> Books:
-        return self._books_conn(self.database._connection, portfolio_id, at)
+        return self._books_conn(self.database.connection, portfolio_id, at)
 
     def _books_conn(self, conn, portfolio_id: str, at: str) -> Books:
         rows = conn.execute(

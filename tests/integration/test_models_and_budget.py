@@ -137,7 +137,7 @@ def test_provider_fixtures_cover_failures() -> None:
     )
     assert parsed.ok is True
     assert parsed.usage is not None
-    assert parsed.usage.uncached_input_tokens == 5
+    assert parsed.usage.uncached_input_tokens == 8
     refusal = anthropic.parse(
         {"stop_reason": "refusal", "usage": {"input_tokens": 1, "output_tokens": 1}}
     )

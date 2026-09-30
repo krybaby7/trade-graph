@@ -44,7 +44,7 @@ class ModelGateway:
             return ModelResult(ok=False, failure="unsupported", message="sampling temperature is not supported")
         if request.context.get("forced_tool") and not caps["forced_tool"]:
             return ModelResult(ok=False, failure="unsupported", message="forced tool use is not supported")
-        synthetic = request.synthetic or request.provider == "scripted"
+        synthetic = request.provider == "scripted"
         try:
             reservation = self.budget.reserve(
                 deployment_id=deployment_id,
@@ -64,20 +64,21 @@ class ModelGateway:
         except BudgetExhausted as exc:
             return ModelResult(ok=False, failure="validation", message=str(exc))
         self.attempts.append(reservation)
-        if request.provider == "openai":
-            result = self.openai.parse(request.context["http_fixture"])
-        elif request.provider == "anthropic":
-            result = self.anthropic.parse(request.context["http_fixture"])
-        else:
-            result = self.scripted.complete(request)
-        if result.failure == "timeout_uncertain" or result.usage is None:
+        try:
+            if request.provider == "openai":
+                result = self.openai.parse(request.context["http_fixture"])
+            elif request.provider == "anthropic":
+                result = self.anthropic.parse(request.context["http_fixture"])
+            else:
+                result = self.scripted.complete(request)
+            if result.failure == "timeout_uncertain" or result.usage is None:
+                self.budget.mark_uncertain(reservation)
+                return result
+            self.budget.commit(
+                reservation, result.usage, provider=request.provider,
+                model=result.provider_model or request.model, fx_rate=fx_rate,
+            )
+        except (KeyError, TypeError, ValueError):
             self.budget.mark_uncertain(reservation)
-            return result
-        self.budget.commit(
-            reservation,
-            result.usage,
-            provider=request.provider,
-            model=result.provider_model or request.model,
-            fx_rate=fx_rate,
-        )
+            return ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
         return result

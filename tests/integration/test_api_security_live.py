@@ -57,7 +57,7 @@ def test_dashboard_reconciles_and_rejects_bad_auth(tmp_path) -> None:
         headers={"X-CSRF-Token": csrf},
         json={"total": "9"},
     )
-    assert allowed.status_code == 200
+    assert allowed.status_code == 501
     live = client.post(
         "/api/v1/owner/enable-live",
         headers=headers,
@@ -198,8 +198,8 @@ def test_kernel_process_hides_secret() -> None:
 def test_plugin_and_kernel_promotion() -> None:
     with pytest.raises(PermissionError):
         validate_plugin("import os\ndef on_snapshot(s):\n    return os.environ\n")
-    result = run_plugin("def on_snapshot(snapshot):\n    return {'value': snapshot['value'] + 1}\n", {"value": 1})
-    assert result == {"value": 2}
+    with pytest.raises(PermissionError, match="OS sandbox"):
+        run_plugin("def on_snapshot(snapshot):\n    return {'value': snapshot['value'] + 1}\n", {"value": 1})
     with pytest.raises(RuntimeError):
         promote_staged({"content_hash": "abc", "attestation": {"runner": "candidate"}}, controller_healthy=True)
     with pytest.raises(RuntimeError):
@@ -207,3 +207,15 @@ def test_plugin_and_kernel_promotion() -> None:
             {"content_hash": "abc", "attestation": {"runner": "trusted-controller"}},
             controller_healthy=False,
         )
+
+
+def test_denylist_bypass_cannot_read_host_file(tmp_path) -> None:
+    secret = tmp_path / "synthetic-secret.txt"
+    secret.write_text("fixture-only")
+    source = f"import io\ndef on_snapshot(s):\n    return {{'data': io.open({str(secret)!r}).read()}}\n"
+    # This bypasses the old AST denylist. Without an OS sandbox it must not run.
+    with pytest.raises(PermissionError, match="OS sandbox"):
+        run_plugin(source, {})
+    with pytest.raises(RuntimeError, match="caller-supplied"):
+        promote_staged({"content_hash": "abc", "attestation": {"runner": "trusted-controller"}},
+                       controller_healthy=True)

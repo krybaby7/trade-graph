@@ -45,9 +45,9 @@ class OpenAIAdapter:
         }
 
     def parse(self, payload: dict[str, Any]) -> ModelResult:
-        if payload.get("error", {}).get("code") == "rate_limit_exceeded":
+        if (payload.get("error") or {}).get("code") == "rate_limit_exceeded":
             return ModelResult(ok=False, failure="rate_limit", message="rate limit", usage=_openai_usage(payload))
-        if payload.get("error", {}).get("type") == "timeout":
+        if (payload.get("error") or {}).get("type") == "timeout":
             return ModelResult(ok=False, failure="timeout_uncertain", message="timeout")
         incomplete = (payload.get("incomplete_details") or {}).get("reason")
         if incomplete in {"max_output_tokens", "length"} or payload.get("status") == "incomplete":
@@ -67,6 +67,9 @@ class OpenAIAdapter:
             parsed = json.loads(text["text"])
         except json.JSONDecodeError:
             return ModelResult(ok=False, failure="validation", message="bad json", usage=_openai_usage(payload))
+        if not isinstance(parsed, dict):
+            return ModelResult(ok=False, failure="validation", message="output must be an object",
+                               usage=_openai_usage(payload))
         return ModelResult(
             ok=True,
             payload=parsed,
@@ -115,6 +118,9 @@ class AnthropicAdapter:
             parsed = json.loads(text)
         except json.JSONDecodeError:
             return ModelResult(ok=False, failure="validation", message="bad json", usage=_anthropic_usage(payload))
+        if not isinstance(parsed, dict):
+            return ModelResult(ok=False, failure="validation", message="output must be an object",
+                               usage=_anthropic_usage(payload))
         return ModelResult(
             ok=True,
             payload=parsed,
@@ -148,10 +154,12 @@ def _openai_usage(payload: dict[str, Any]) -> ModelUsage | None:
     if not usage:
         return None
     cached = int((usage.get("input_tokens_details") or {}).get("cached_tokens") or 0)
+    written = int((usage.get("input_tokens_details") or {}).get("cache_write_tokens") or 0)
     input_tokens = int(usage.get("input_tokens") or 0)
     reasoning = int((usage.get("output_tokens_details") or {}).get("reasoning_tokens") or 0)
     return ModelUsage(
-        uncached_input_tokens=max(input_tokens - cached, 0),
+        uncached_input_tokens=input_tokens - cached - written,
+        cache_write_tokens=written,
         cache_read_tokens=cached,
         billed_output_tokens=int(usage.get("output_tokens") or 0),
         reasoning_tokens=reasoning,
@@ -179,7 +187,7 @@ def _anthropic_usage(payload: dict[str, Any]) -> ModelUsage | None:
     cache_write = int(usage.get("cache_creation_input_tokens") or 0)
     input_tokens = int(usage.get("input_tokens") or 0)
     return ModelUsage(
-        uncached_input_tokens=max(input_tokens - cache_read - cache_write, 0),
+        uncached_input_tokens=input_tokens,
         cache_read_tokens=cache_read,
         cache_write_tokens=cache_write,
         billed_output_tokens=int(usage.get("output_tokens") or 0),
