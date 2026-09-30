@@ -16,6 +16,8 @@ from trade_graph.application.engineer import ArtifactEngineer
 from trade_graph.application.execution import Execution
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.ledger import Ledger
+from trade_graph.application.scheduler import Scheduler
+from trade_graph.application.worker import RoleWorker
 from trade_graph.contracts.models import (
     ChangeTask,
     Decision,
@@ -243,6 +245,20 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         }
     )
     execution.record_non_order(portfolio, hold)
+    scheduler = Scheduler(database, clock)
+    scheduler.add_task(
+        role="trader",
+        objective="decide under the activated artifact",
+        portfolio_id=portfolio,
+        expected_version=versions.current_hash(portfolio),
+    )
+    worker = RoleWorker(
+        scheduler,
+        owner="offline-worker",
+        system_version_id=versions.current_hash(portfolio),
+        reconcile=lambda: None,
+    )
+    worker_completed = worker.run_available({"trader": lambda _payload: {"action": "hold"}})
 
     rejected_result = engineer.implement(
         portfolio,
@@ -385,6 +401,7 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         "activated_hash": activated,
         "baseline_hash": baseline,
         "new_decision_version": hold.system_version_id,
+        "worker_completed": worker_completed,
         "context_cap": selected["lessons"].__len__(),
         "always_include": selected["always_include"],
         "rejected_change": rejected,

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T15 accepted on cursor/trade-graph-r1-548a. T15 persists an owner EUR budget through the authenticated API and serves organisation, cost and change projections. Live enablement stays closed. T16-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T15 accepted on cursor/trade-graph-r1-548a. The offline demo now completes one role-worker task after activation, and T16 remains todo until the fault catalogue is closed. T17-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -163,7 +163,7 @@
       "evidence": [
         "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop"
       ],
-      "remaining": "Exercise integrated role workers and production-equivalent offline paths through the full acceptance catalogue; the current scripted demo remains useful partial evidence."
+      "remaining": "The offline demo now runs one role-worker task after activation. The acceptance catalogue is still not closed as one fault suite: disk failure, a repository secret scan, and production-equivalent paths beyond the scripted demo remain open."
     },
     "T17": {
       "status": "todo",

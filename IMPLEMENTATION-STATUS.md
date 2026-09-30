@@ -70,6 +70,7 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T13 | **155 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T14 | **157 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T15 | **158 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after the offline role-worker step | **158 passed; 0 failed, 0 skipped**. T16 is not accepted |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
@@ -96,11 +97,11 @@ uv run trade-graph backup --destination runtime/backup.sqlite
 uv run trade-graph reconcile
 ```
 
-`demo --offline` is a scripted scenario, not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard now persists an owner budget and shows organisation, cost and change projections; it is still a local paper view, not a hosted operations console.
+`demo --offline` is a scripted scenario that now includes one role-worker task. It is not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard now persists an owner budget and shows organisation, cost and change projections; it is still a local paper view, not a hosted operations console.
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T16–T17 release acceptance.** The offline full loop still needs integrated role workers through the acceptance catalogue, and the packaged paper service still needs genuine doctor/report output. A credentialed soak stays pending without an owner budget and credentials.
+1. **Complete T16–T17 release acceptance.** The offline demo now runs one role-worker task after activation. The acceptance catalogue is still not one closed fault suite. `doctor` and `report` are still limited, and a credentialed soak stays pending without an owner budget and credentials.
 2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
