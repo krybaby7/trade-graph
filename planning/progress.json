@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T11 accepted on cursor/trade-graph-r1-548a. T11 appends lesson revisions without dropping counterevidence and grades process rather than outcome. No-trade marks ignore later quotes. T12-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T12 accepted on cursor/trade-graph-r1-548a. T12 lets the Leader assign work and install a tighter mandate, and blocks allowance increases, owner-halt removal and per-trade approval. T13-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -121,13 +121,13 @@
       ]
     },
     "T12": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "leader_trade_approvals is 0 in tests/e2e/test_offline.py; leader cannot raise the owner budget"
-      ],
-      "remaining": "Implement production Leader/Secretary routing, digests, mandates and schedule/resource allocation; retain no-per-trade-approval design."
+        "tests/integration/test_leader.py rejects an allowance increase, an attempt to clear an owner halt, and per-trade approval. The Leader assigns a research task, sets a coalesced schedule, and installs a tighter mandate. A wider mandate is rejected",
+        "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard."
+      ]
     },
     "T13": {
       "status": "todo",
