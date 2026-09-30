@@ -103,7 +103,9 @@ class Secretary:
                     summary=f"{task['role']} work is {kind}",
                     evidence_refs=[task["task_id"]],
                     source_key=f"task:{task['task_id']}:{kind}",
-                    material=True,
+                    # Record Leadership failures for review without recursively
+                    # commissioning new Leader roots for the same failing service.
+                    material=task["role"] != "leader",
                 )
         self.database.execute(
             "UPDATE secretary_inputs SET task_row = ? WHERE portfolio_id = ?",
@@ -157,6 +159,13 @@ class Secretary:
     @atomic
     def route(self, portfolio_id: str, digest: dict) -> str:
         # Material events coalesce by the durable digest identity, not current time.
+        existing = self.database.execute(
+            """SELECT task_id FROM tasks WHERE portfolio_id = ? AND role = 'leader'
+            AND json_extract(input_json, '$.digest_id') = ? ORDER BY created_at LIMIT 1""",
+            (portfolio_id, digest["digest_id"]),
+        ).fetchone()
+        if existing:
+            return existing["task_id"]
         policy = self.execution.authority.active_policy()
         task_id = self.scheduler.add_task(
             role="leader",
@@ -171,10 +180,29 @@ class Secretary:
     @atomic
     def scheduled(self, portfolio_id: str, interval_seconds: int = 3600) -> str | None:
         self.process(portfolio_id, route=False)
-        self.scheduler.ensure_schedule(portfolio_id, "leader-review", interval_seconds, "coalesce")
+        existing = self.database.execute(
+            "SELECT 1 FROM schedules WHERE portfolio_id = ? AND name = 'leader-review'", (portfolio_id,)
+        ).fetchone()
+        if existing is None:
+            self.scheduler.ensure_schedule(portfolio_id, "leader-review", interval_seconds, "coalesce")
         task_id = self.scheduler.coalesce_due(portfolio_id, "leader-review", "leader")
         if task_id:
             self.scheduler.allocate(task_id, self.execution.authority.active_policy().root_paid_limit.amount)
+            # A newer digest must not overwrite an older, as-yet-undelivered batch.
+            # Pin one bounded batch to this task, including across restarts.
+            pending = self.database.execute(
+                """SELECT d.digest_id FROM secretary_digests d WHERE d.portfolio_id = ?
+                AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.portfolio_id = d.portfolio_id
+                    AND t.role = 'leader' AND json_extract(t.input_json, '$.digest_id') = d.digest_id)
+                ORDER BY d.rowid LIMIT 1""",
+                (portfolio_id,),
+            ).fetchone()
+            digest_id = pending["digest_id"] if pending else self.digest(portfolio_id).get("digest_id")
+            if digest_id:
+                self.database.execute(
+                    "UPDATE tasks SET input_json = ? WHERE task_id = ?",
+                    (json.dumps({"digest_id": digest_id}), task_id),
+                )
         return task_id
 
     def digest(self, portfolio_id: str) -> dict:

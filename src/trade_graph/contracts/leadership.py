@@ -69,6 +69,7 @@ class LeaderReply(ContractModel):
 
 
 class DepartmentReply(ContractModel):
-    evidence_refs: list[str] = Field(min_length=1, max_length=40)
-    summary: str = Field(min_length=1, max_length=3000)
-    outcome: str = Field(min_length=1, max_length=2000)
+    # Together these fit the Secretary's 3,000-character/20-reference envelope.
+    evidence_refs: list[str] = Field(min_length=1, max_length=20)
+    summary: str = Field(min_length=1, max_length=1500)
+    outcome: str = Field(min_length=1, max_length=1400)

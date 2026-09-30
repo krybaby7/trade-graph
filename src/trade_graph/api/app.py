@@ -285,7 +285,10 @@ def _costs(runtime) -> dict:
 
 def _changes(runtime) -> dict:
     candidates = runtime.database.execute(
-        "SELECT candidate_id, state, content_hash FROM candidates ORDER BY created_at"
+        """SELECT c.candidate_id, c.state, c.content_hash FROM candidates c
+        JOIN change_tasks t ON t.change_id = c.change_id
+        WHERE t.portfolio_id = ? ORDER BY c.created_at""",
+        (runtime.portfolio_id,),
     ).fetchall()
     events = runtime.database.execute(
         """SELECT kind, from_hash, to_hash FROM version_events
