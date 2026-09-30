@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T09 accepted on cursor/trade-graph-r1-548a. T09 adds one fenced role worker: a reclaimed task reconciles before another effect, and a mismatched version does not run. Handlers are injected; Research and Trader workflows are still T10. T10-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T10 accepted on cursor/trade-graph-r1-548a. T10 caches sourced research and lets the Trader enter, hold or record no-action without Leader approval. A model timeout is not stored as a hold. T11-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -103,13 +103,13 @@
       ]
     },
     "T10": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "offline demo: a research finding does not create an order and a model timeout is not recorded as a hold"
-      ],
-      "remaining": "Implement actual cached Research and mandate-driven autonomous Trader workflows with validated tool dispatch and complete decision semantics, rather than hand-built demo decisions."
+        "tests/integration/test_research_trader.py covers stripped injection, private-URL rejection, immutable refresh, fresh-versus-stale context, an enter without a Leader row, an experimental hold with a counterfactual, and a timeout that does not add a hold",
+        "slow-trend-pullback and range-reversion are unproven templates. No credentialed search or live order was made."
+      ]
     },
     "T11": {
       "status": "todo",
