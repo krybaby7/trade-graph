@@ -376,6 +376,23 @@ STATEMENTS: list[tuple[str, list[str]]] = [
             "CREATE INDEX tasks_claimable ON tasks (status, due_at, lease_expires_at)",
         ],
     ),
+    (
+        "0003",
+        [
+            "ALTER TABLE budget_reservations ADD COLUMN system_version_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE budget_reservations ADD COLUMN attempt_kind TEXT NOT NULL DEFAULT 'primary'",
+            """CREATE TABLE invoice_reconciliations (
+                reconciliation_id TEXT PRIMARY KEY,
+                deployment_id TEXT NOT NULL,
+                invoice_id TEXT NOT NULL UNIQUE,
+                invoice_total TEXT NOT NULL,
+                recorded_total TEXT NOT NULL,
+                unexplained TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""",
+        ],
+    ),
 ]
 
 

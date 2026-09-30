@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T06 accepted on cursor/trade-graph-r1-548a. T06 adds a scripted provider HTTP transport, registered tool continuation, and one-provider routing. Receipts without an API key are synthetic. No credentialed provider probe was run. T07-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T07 accepted on cursor/trade-graph-r1-548a. T07 bounds schema repair, transport retry and priced fallback under the root-task limit, and persists an unexplained invoice difference. The invoice total is supplied, not a downloaded bill. T08-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -73,13 +73,14 @@
       ]
     },
     "T07": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "budget concurrency, uncertain usage, and paid-calls-disabled pass in tests/integration/test_models_and_budget.py"
-      ],
-      "remaining": "Integrate reservations and actual usage receipts with real provider failures/retries and invoice reconciliation. Fixture parsing must not become actual billed usage."
+        "tests/integration/test_models_and_budget.py still covers concurrent reservations, uncertain usage, paid-call refusal and cache/reasoning usage",
+        "tests/integration/test_expense_controls.py covers schema-repair and timeout-retry receipts, a root limit that stops the next retry, a fallback on a separate price card, leader and engineer receipts, role/task/version views, a persisted unexplained invoice difference, and an unchanged allowance after a EUR10000 paper deposit",
+        "Migration 0003 is additive. No provider invoice was downloaded and no credentialed model call was made."
+      ]
     },
     "T08": {
       "status": "todo",

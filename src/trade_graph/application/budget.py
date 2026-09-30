@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 
 from trade_graph.adapters.persistence.db import Database, atomic
@@ -14,6 +15,16 @@ from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.pricing import usage_cost, worst_case_cost
 
 OPEN_STATES = ("RESERVED", "COMMITTED", "UNCERTAIN", "RECONCILED", "CONSERVATIVE")
+
+
+@dataclass(frozen=True)
+class InvoiceReconciliation:
+    reconciliation_id: str
+    deployment_id: str
+    invoice_id: str
+    invoice_total: Decimal
+    recorded_total: Decimal
+    unexplained: Decimal
 
 
 class BudgetGateway:
@@ -115,6 +126,8 @@ class BudgetGateway:
         priority: bool,
         synthetic: bool,
         purpose: str,
+        system_version_id: str = "",
+        attempt_kind: str = "primary",
     ) -> str:
         card = self.card(price_card_id)
         native = worst_case_cost(card, max_input, max_output, max_tools)
@@ -137,8 +150,9 @@ class BudgetGateway:
             conn.execute(
                 """INSERT INTO budget_reservations
                 (reservation_id, deployment_id, role, task_id, root_task_id, amount, currency,
-                 state, price_card_id, purpose, synthetic, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', ?, ?, ?, ?, ?)""",
+                 state, price_card_id, purpose, synthetic, created_at, updated_at,
+                 system_version_id, attempt_kind)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     reservation_id,
                     deployment_id,
@@ -152,6 +166,8 @@ class BudgetGateway:
                     1 if synthetic else 0,
                     now,
                     now,
+                    system_version_id,
+                    attempt_kind,
                 ),
             )
         return reservation_id
@@ -302,7 +318,38 @@ class BudgetGateway:
         ).fetchall()
         return sum((Decimal(row["amount"]) for row in rows), Decimal("0"))
 
-    def reconcile_invoice(self, deployment_id: str, invoice_total: Decimal) -> Decimal:
+    def expense_views(self, deployment_id: str) -> dict[str, Decimal | dict[str, Decimal]]:
+        """Non-synthetic holds, including uncertain reservations that are not free."""
+        rows = self.database.execute(
+            """SELECT role, task_id, system_version_id, amount FROM budget_reservations
+            WHERE deployment_id = ? AND synthetic = 0 AND state IN ({})""".format(
+                ",".join("?" for _ in OPEN_STATES)
+            ),
+            (deployment_id, *OPEN_STATES),
+        ).fetchall()
+        by_role: dict[str, Decimal] = {}
+        by_task: dict[str, Decimal] = {}
+        by_version: dict[str, Decimal] = {}
+        total = Decimal("0")
+        for row in rows:
+            amount = Decimal(row["amount"])
+            total += amount
+            by_role[row["role"]] = by_role.get(row["role"], Decimal("0")) + amount
+            task_id = row["task_id"] or "unattributed"
+            by_task[task_id] = by_task.get(task_id, Decimal("0")) + amount
+            version = row["system_version_id"] or "unattributed"
+            by_version[version] = by_version.get(version, Decimal("0")) + amount
+        return {"global": total, "by_role": by_role, "by_task": by_task, "by_version": by_version}
+
+    @atomic
+    def reconcile_invoice(
+        self,
+        deployment_id: str,
+        invoice_id: str,
+        invoice_total: Decimal,
+    ) -> InvoiceReconciliation:
+        if not invoice_total.is_finite() or invoice_total < 0:
+            raise ValueError("invoice total must be a nonnegative finite amount")
         rows = self.database.execute(
             """SELECT reporting_cost FROM usage_receipts r
             JOIN budget_reservations b ON b.reservation_id = r.reservation_id
@@ -310,7 +357,56 @@ class BudgetGateway:
             (deployment_id,),
         ).fetchall()
         recorded = sum((Decimal(row["reporting_cost"]) for row in rows), Decimal("0"))
-        return invoice_total - recorded
+        unexplained = invoice_total - recorded
+        existing = self.database.execute(
+            "SELECT * FROM invoice_reconciliations WHERE invoice_id = ?",
+            (invoice_id,),
+        ).fetchone()
+        if existing is not None:
+            prior = self._invoice_row(existing)
+            if (
+                prior.deployment_id != deployment_id
+                or prior.invoice_total != invoice_total
+                or prior.recorded_total != recorded
+            ):
+                raise ValueError("invoice reconciliation conflict")
+            return prior
+        reconciliation_id = str(uuid.uuid4())
+        now = utc_iso(self.clock.now())
+        with self.database.immediate() as conn:
+            conn.execute(
+                """INSERT INTO invoice_reconciliations
+                (reconciliation_id, deployment_id, invoice_id, invoice_total, recorded_total,
+                 unexplained, currency, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?)""",
+                (
+                    reconciliation_id,
+                    deployment_id,
+                    invoice_id,
+                    canonical_decimal(invoice_total),
+                    canonical_decimal(recorded),
+                    canonical_decimal(unexplained),
+                    now,
+                ),
+            )
+        return InvoiceReconciliation(
+            reconciliation_id=reconciliation_id,
+            deployment_id=deployment_id,
+            invoice_id=invoice_id,
+            invoice_total=invoice_total,
+            recorded_total=recorded,
+            unexplained=unexplained,
+        )
+
+    def _invoice_row(self, row) -> InvoiceReconciliation:
+        return InvoiceReconciliation(
+            reconciliation_id=row["reconciliation_id"],
+            deployment_id=row["deployment_id"],
+            invoice_id=row["invoice_id"],
+            invoice_total=Decimal(row["invoice_total"]),
+            recorded_total=Decimal(row["recorded_total"]),
+            unexplained=Decimal(row["unexplained"]),
+        )
 
     def _assert_room(
         self,

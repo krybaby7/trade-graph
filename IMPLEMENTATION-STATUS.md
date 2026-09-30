@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T06 are accepted. The next dependency-ready work is expense-budget enforcement beyond the existing reservation gateway (T07), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T07 are accepted. The next dependency-ready work is pause, flatten and cancel-all workflows (T08), not a live pilot.
 
 ## Saved work
 
@@ -24,13 +24,15 @@ Public market data now has a Kraken REST and WebSocket client and a Frankfurter 
 
 Provider calls now use an injectable HTTP transport. OpenAI and Anthropic bodies include registered tools and tool results. The gateway continues only registered tools, reserves each step, and rejects an unlisted model or an unsupported sampling temperature before any post. An installation can enable one provider. A request with no API key writes synthetic receipts and does not reduce the real allowance. The supplied-fixture path used by the budget tests is unchanged and still non-synthetic. `HttpxProviderHttp` is implemented and was not called. No OpenAI or Anthropic credential was used.
 
+Expense control now treats schema repair, a transport retry and a provider fallback as separate reservations that share the root-task limit. A fallback names its own price card and model. An uncertain timeout stays reserved. Invoice reconciliation stores the difference between a supplied invoice total and recorded non-synthetic receipts, and a second total for the same invoice id conflicts. Expense views group the same holds by role, task and system version. A paper deposit of EUR10,000 does not increase the operating allowance. Migration `0003` adds those columns and the reconciliation table. No provider bill was downloaded.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
 
 Task deduplication, delegation ancestry/caps, schedule creation and schedule-to-task advancement are transactional. Deployment-wide tasks with a null portfolio now deduplicate. Five-minute occurrences no longer collapse into one hourly key. An overdue schedule creates one current opportunity rather than replaying obsolete opportunities.
 
-Additive migration `0002` installs task lease tokens and an index. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0002`.
+Additive migration `0002` installs task lease tokens and an index. Migration `0003` adds reservation version/attempt labels and an invoice-reconciliation table. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0003`.
 
 **Worker integration is still required:** `Scheduler.claim` now returns `TaskLease`, and `renew`, `note_attempt`, and `succeed` require that token. Reclaiming a task is not proof that its last external call failed. Reconcile persisted orders/usage first; never blindly replay paid calls or submissions.
 
@@ -43,11 +45,12 @@ Additive migration `0002` installs task lease tokens and an index. Migration app
 | Full pytest suite at the prior CI head `2e5f1d8` | **113 passed** in GitHub Actions run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463); JUnit artifact 11089725511 |
 | Local Python 3.12 `uv run pytest` after T04/T05 | **129 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T06 | **133 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T07 | **136 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
 | Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
-| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; Alembic upgrade-to-head twice and application reopen verified at `0002` |
+| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; application reopen now includes `0003` |
 | Whitespace check | `git diff --check` passed |
 
 Passing fixture/unit/integration tests is not evidence of paid provider access, exchange compatibility, economic performance, complete security isolation or full product delivery.
@@ -73,13 +76,12 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T07.** Reservations, uncertain usage and paid-call refusal already exist. Still missing bounded schema-repair/transport retries with shared attempt limits, priced fallbacks, and invoice reconciliation that can show an unexplained difference. A scripted provider transport is not a credentialed receipt.
-2. **Complete T08 management and protection.** Persisted mandate checks are in place. `CANCEL_ALL`, `FLATTEN` and verified `STOPPED` workflows are not. Owner pauses already cannot be lifted by the Leader.
-3. **Integrate T09–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
-4. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
+1. **Complete T08 management and protection.** Persisted mandate checks are in place. `CANCEL_ALL`, `FLATTEN` and verified `STOPPED` workflows are not. Owner pauses already cannot be lifted by the Leader.
+2. **Integrate T09–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
+3. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T06 are accepted. T07–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T07. Scripted provider HTTP is not a credentialed probe and not a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T07 are accepted. T08–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T08. A supplied invoice difference is not a downloaded provider bill, and scripted provider HTTP is not a live pilot.

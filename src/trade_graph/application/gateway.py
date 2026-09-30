@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
 from trade_graph.adapters.models.transport import ProviderHttp
@@ -12,6 +13,13 @@ from trade_graph.application.budget import BudgetGateway
 from trade_graph.contracts.models import ModelRequest, ModelResult
 from trade_graph.domain.errors import BudgetExhausted, PaidCallsDisabled
 from trade_graph.domain.protocols import InferenceAdapter
+
+
+@dataclass(frozen=True)
+class ProviderFallback:
+    provider: Literal["openai", "anthropic", "scripted"]
+    model: str
+    price_card_id: str
 
 
 class ModelGateway:
@@ -45,6 +53,7 @@ class ModelGateway:
         fx_rate: Decimal,
         fx_buffer: Decimal,
         priority: bool = False,
+        attempt_kind: str = "primary",
     ) -> ModelResult:
         if self.enabled_providers is not None and request.provider not in self.enabled_providers:
             return ModelResult(ok=False, failure="unsupported", message="provider is not enabled for this installation")
@@ -81,6 +90,7 @@ class ModelGateway:
                 fx_rate=fx_rate,
                 fx_buffer=fx_buffer,
                 priority=priority,
+                attempt_kind=attempt_kind,
             )
             if not result.ok or not result.tool_requests:
                 return result
@@ -100,6 +110,68 @@ class ModelGateway:
                 )
         return result
 
+    def invoke_bounded(
+        self,
+        request: ModelRequest,
+        *,
+        deployment_id: str,
+        price_card_id: str,
+        fx_rate: Decimal,
+        fx_buffer: Decimal,
+        priority: bool = False,
+        max_attempts: int = 3,
+        max_schema_repairs: int = 1,
+        fallback: ProviderFallback | None = None,
+    ) -> ModelResult:
+        """Repair, retry and fallback each reserve. They share the root-task limit."""
+        if max_attempts < 1 or max_schema_repairs < 0:
+            return ModelResult(ok=False, failure="validation", message="attempt bounds are invalid")
+        attempts_used = 0
+        repairs_used = 0
+        current = request
+        kind = "primary"
+        last = ModelResult(ok=False, failure="validation", message="no provider attempt")
+        while attempts_used < max_attempts:
+            attempts_used += 1
+            last = self.invoke(
+                current,
+                deployment_id=deployment_id,
+                price_card_id=price_card_id,
+                fx_rate=fx_rate,
+                fx_buffer=fx_buffer,
+                priority=priority,
+                attempt_kind=kind,
+            )
+            if last.ok or _budget_stop(last):
+                return last
+            if last.failure == "validation" and repairs_used < max_schema_repairs:
+                repairs_used += 1
+                kind = "schema_repair"
+                context = dict(current.context)
+                context["schema_repair"] = repairs_used
+                current = current.model_copy(update={"context": context})
+                continue
+            if last.failure in {"timeout_uncertain", "rate_limit"}:
+                kind = "transport_retry"
+                continue
+            break
+        if fallback is None or attempts_used >= max_attempts or last.ok or _budget_stop(last):
+            return last
+        context = dict(request.context)
+        context["fallback_from"] = f"{request.provider}:{request.model}"
+        fallback_request = request.model_copy(
+            update={"provider": fallback.provider, "model": fallback.model, "context": context}
+        )
+        return self.invoke(
+            fallback_request,
+            deployment_id=deployment_id,
+            price_card_id=fallback.price_card_id,
+            fx_rate=fx_rate,
+            fx_buffer=fx_buffer,
+            priority=priority,
+            attempt_kind="fallback",
+        )
+
     def _attempt(
         self,
         request: ModelRequest,
@@ -110,7 +182,11 @@ class ModelGateway:
         fx_rate: Decimal,
         fx_buffer: Decimal,
         priority: bool,
+        attempt_kind: str,
     ) -> ModelResult:
+        card = self.budget.card(price_card_id)
+        if request.provider != "scripted" and (card.provider != request.provider or card.model != request.model):
+            return ModelResult(ok=False, failure="unsupported", message="price card does not match the request")
         synthetic = request.provider == "scripted" or (
             "http_fixture" not in request.context and not self.api_keys.get(request.provider)
         )
@@ -129,6 +205,8 @@ class ModelGateway:
                 priority=priority,
                 synthetic=synthetic,
                 purpose=request.role,
+                system_version_id=request.system_version_id,
+                attempt_kind=attempt_kind,
             )
         except BudgetExhausted as exc:
             return ModelResult(ok=False, failure="validation", message=str(exc))
@@ -181,3 +259,7 @@ class ModelGateway:
         if provider == "scripted":
             return self.scripted
         raise PaidCallsDisabled(provider)
+
+
+def _budget_stop(result: ModelResult) -> bool:
+    return result.failure == "validation" and result.message.startswith("room ")
