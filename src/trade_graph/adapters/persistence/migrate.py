@@ -393,6 +393,22 @@ STATEMENTS: list[tuple[str, list[str]]] = [
             )""",
         ],
     ),
+    (
+        "0004",
+        [
+            """CREATE TABLE controller_attestations (
+                attestation_id TEXT PRIMARY KEY,
+                content_hash TEXT NOT NULL UNIQUE,
+                checks_module_hash TEXT NOT NULL,
+                exit_code INTEGER NOT NULL,
+                command TEXT NOT NULL,
+                stdout_sha256 TEXT NOT NULL,
+                stderr_sha256 TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""",
+        ],
+    ),
 ]
 
 

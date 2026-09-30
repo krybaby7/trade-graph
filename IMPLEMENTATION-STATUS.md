@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T12 are accepted. The next dependency-ready work is the isolated artifact Engineer (T13), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T13 are accepted. The next dependency-ready work is version activation and rollback (T14), not a live pilot.
 
 ## Saved work
 
@@ -36,13 +36,15 @@ Learning appends lesson revisions and refuses a revision that drops a prior coun
 
 The Leader can assign a task, create a coalesced schedule and install a mandate that stays inside the owner envelope. The Leader cannot raise the operating allowance, replace an owner halt, or approve an individual order. A wider mandate is rejected. A Secretary digest reports the pause profile and task count and does not create an order. This is not the dashboard.
 
+The artifact runner copies allowlisted paths into a temporary git tree and does not copy `.env` or kernel files. Checks run from the installed module in a scrubbed environment, so a checks module planted in the worktree is not on `sys.path`. The controller stores the exit code with the hash of `checks.py`. Activation accepts that row and ignores a caller-supplied `runner` label. Advice-only output, protected paths, a failed policy and a six-file patch leave the active hash unchanged and keep a candidate record. Migration `0004` adds `controller_attestations`. This local check does not call a model. Quiescent activation, dashboard controls and the packaged soak are still open.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
 
 Task deduplication, delegation ancestry/caps, schedule creation and schedule-to-task advancement are transactional. Deployment-wide tasks with a null portfolio now deduplicate. Five-minute occurrences no longer collapse into one hourly key. An overdue schedule creates one current opportunity rather than replaying obsolete opportunities.
 
-Additive migration `0002` installs task lease tokens and an index. Migration `0003` adds reservation version/attempt labels and an invoice-reconciliation table. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0003`.
+Additive migration `0002` installs task lease tokens and an index. Migration `0003` adds reservation version/attempt labels and an invoice-reconciliation table. Migration `0004` adds controller attestations. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0004`.
 
 **Worker integration is still required:** `Scheduler.claim` now returns `TaskLease`, and `renew`, `note_attempt`, and `succeed` require that token. Reclaiming a task is not proof that its last external call failed. Reconcile persisted orders/usage first; never blindly replay paid calls or submissions.
 
@@ -61,11 +63,12 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T10 | **147 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T11 | **150 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T12 | **151 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T13 | **155 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
 | Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
-| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; application reopen now includes `0003` |
+| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; application reopen now includes `0004` |
 | Whitespace check | `git diff --check` passed |
 
 Passing fixture/unit/integration tests is not evidence of paid provider access, exchange compatibility, economic performance, complete security isolation or full product delivery.
@@ -91,11 +94,11 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T13–T17 release acceptance.** The Engineer still needs a secret-free artifact runner whose attestations are independently trusted. Activation, dashboard controls, the offline full loop and a packaged paper soak remain open. A caller-supplied attestation label is not independent controller evidence.
+1. **Complete T14–T17 release acceptance.** Activation still needs a quiescent decision boundary, observation and rollback tests. Dashboard controls, the offline full loop and a packaged paper soak remain open.
 2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T12 are accepted. T13–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T13. Leader routing is not a dashboard, lesson grades are not a forward-paper study, and scripted provider HTTP is not a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T13 are accepted. T14–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T14. A trusted artifact attestation is not activation, a dashboard, or an OS sandbox.

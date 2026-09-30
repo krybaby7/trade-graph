@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 
+from trade_graph.adapters.engineering.provenance import checks_module_hash
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import StaleState, ValidationFailure
@@ -39,11 +40,21 @@ class VersionController:
         return row["artifact_hash"]
 
     def activate(self, portfolio_id: str, candidate: dict) -> None:
-        attestation = candidate.get("attestation") or {}
-        if attestation.get("runner") != "trusted-controller" or attestation.get("exit_code") != 0:
+        content_hash = candidate.get("content_hash")
+        row = None
+        if content_hash:
+            row = self.database.execute(
+                """SELECT exit_code, checks_module_hash FROM controller_attestations
+                WHERE content_hash = ?""",
+                (content_hash,),
+            ).fetchone()
+        trusted = (
+            row is not None
+            and row["exit_code"] == 0
+            and row["checks_module_hash"] == checks_module_hash()
+        )
+        if not trusted:
             raise ValidationFailure("missing trusted attestation")
-        if attestation.get("content_hash") != candidate.get("content_hash"):
-            raise ValidationFailure("attestation hash mismatch")
         current = self.current_hash(portfolio_id)
         if current != candidate["baseline_hash"]:
             raise StaleState("baseline moved; revalidate")

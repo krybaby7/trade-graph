@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
-from trade_graph.adapters.engineering.runner import EngineerRunner
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
 from trade_graph.application.authority import seed_paper_authority
 from trade_graph.application.budget import BudgetGateway
+from trade_graph.application.engineer import ArtifactEngineer
 from trade_graph.application.execution import Execution
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import (
+    ChangeTask,
     Decision,
     FillRecord,
     InstrumentRules,
@@ -28,6 +29,7 @@ from trade_graph.contracts.models import (
 )
 from trade_graph.domain.clock import FrozenClock, utc_iso
 from trade_graph.domain.errors import BudgetExhausted
+from trade_graph.domain.money import Money
 from trade_graph.evaluation import evaluate_forward
 from trade_graph.roles.judgement import classify_decision, select_context
 
@@ -183,24 +185,53 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     graded = classify_decision("valid_thesis", "loss")
     winner = classify_decision("invalid_process", "gain")
 
-    runner = EngineerRunner(source_root)
-    stage = work / "stage"
-    baseline = runner.stage(stage)
+    engineer = ArtifactEngineer(database, clock, source_root, ledger)
+    baseline = engineer.baseline(work / "baseline")
     versions.ensure(portfolio, "v1", baseline)
     policy = {
         "schema_version": 1,
         "max_general_lessons": 5,
         "always_include": ["mandate_obligations", "active_safety"],
     }
-    runner.apply_files(stage, {"artifacts/context_policy.json": json.dumps(policy)})
-    attestation = runner.attest(stage)
-    candidate = {
-        "candidate_id": "cand-1",
-        "baseline_hash": baseline,
-        "content_hash": attestation["content_hash"],
-        "attestation": attestation,
-    }
-    versions.activate(portfolio, candidate)
+    change = ChangeTask(
+        record_id="change-1",
+        created_at_utc=clock.now(),
+        run_id="offline",
+        task_id="change-1",
+        root_task_id="change-1",
+        portfolio_id=portfolio,
+        mode="paper",
+        system_version_id=baseline,
+        trace_id="change-1",
+        objective="cap general lessons at five",
+        baseline_version="v1",
+        baseline_hash=baseline,
+        allowed_classes=["artifact_config"],
+        allowed_paths=["artifacts/context_policy.json"],
+        invariants=["mandate_obligations", "active_safety"],
+        max_spend=Money(amount="1", currency="EUR"),
+        max_steps=5,
+        test_plan="trusted context-policy checks",
+        success_criteria="checks exit 0",
+        rollback_criteria="restore the previous artifact pointer",
+        expires_at_utc=clock.now() + timedelta(days=1),
+    )
+    engineer.commission(portfolio, change)
+    ready = engineer.implement(
+        portfolio,
+        change.record_id,
+        {"artifacts/context_policy.json": json.dumps(policy)},
+        work / "stage",
+    )
+    versions.activate(
+        portfolio,
+        {
+            "candidate_id": ready.candidate_id,
+            "baseline_hash": baseline,
+            "content_hash": ready.content_hash,
+            "attestation": {"runner": "candidate-prose", "exit_code": 0},
+        },
+    )
     selected = select_context(policy, [{"id": str(i), "relevance": i} for i in range(10)])
     clock.advance(1)
     hold = _decision(clock, portfolio, "hold-new", "hold", None)
@@ -213,11 +244,13 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     )
     execution.record_non_order(portfolio, hold)
 
-    rejected = False
-    try:
-        runner.apply_files(stage, {"src/trade_graph/kernel/books.py": "cash = 1"})
-    except PermissionError:
-        rejected = True
+    rejected_result = engineer.implement(
+        portfolio,
+        change.record_id,
+        {"src/trade_graph/kernel/books.py": "cash = 1"},
+        work / "rejected",
+    )
+    rejected = rejected_result.state == "FAILED"
     reservation = budget.reserve(
         deployment_id="deployment",
         role="engineer",

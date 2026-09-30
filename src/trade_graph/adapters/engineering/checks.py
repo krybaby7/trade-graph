@@ -7,6 +7,15 @@ import sys
 from pathlib import Path
 
 REQUIRED = ("mandate_obligations", "active_safety")
+FORBIDDEN = (
+    "subprocess",
+    "os.system",
+    "DROP TABLE",
+    "169.254.169.254",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "BEGIN PRIVATE KEY",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,8 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         if not path.is_file() or ".git" in path.parts:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
-        if "subprocess" in text or "os.system" in text or "DROP TABLE" in text:
-            print(f"forbidden content in {path}")
+        if any(marker in text for marker in FORBIDDEN):
+            print(f"forbidden content in {path.name}")
             return 1
     print("ok")
     return 0

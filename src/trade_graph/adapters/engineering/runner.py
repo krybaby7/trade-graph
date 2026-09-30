@@ -6,8 +6,10 @@ import hashlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
+from trade_graph.adapters.engineering.provenance import scrubbed_env
 from trade_graph.kernel.authority import path_is_protected
 
 ALLOWLIST_PREFIXES = ("artifacts/", "prompts/", "strategies/templates/")
@@ -58,6 +60,8 @@ class EngineerRunner:
         changed = []
         for relative, content in files.items():
             normalized = relative.replace("\\", "/").lstrip("./")
+            if ".." in Path(normalized).parts:
+                raise PermissionError(normalized)
             if path_is_protected(normalized) or not normalized.startswith(ALLOWLIST_PREFIXES):
                 raise PermissionError(normalized)
             target = (root / normalized).resolve()
@@ -69,21 +73,26 @@ class EngineerRunner:
         return changed
 
     def attest(self, root: Path) -> dict:
-        completed = subprocess.run(
-            [sys.executable, "-m", "trade_graph.adapters.engineering.checks", str(root)],
-            cwd=self.source_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+        """Run the installed checks module. The worktree is an argument, not ``sys.path``."""
+        neutral = Path(tempfile.mkdtemp(prefix="tg-checks-"))
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "trade_graph.adapters.engineering.checks", str(root)],
+                cwd=neutral,
+                env=scrubbed_env(),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        finally:
+            shutil.rmtree(neutral, ignore_errors=True)
         return {
             "command": f"{sys.executable} -m trade_graph.adapters.engineering.checks",
             "exit_code": completed.returncode,
             "stdout": completed.stdout,
             "stderr": completed.stderr,
             "content_hash": self.hash_tree(root),
-            "runner": "trusted-controller",
         }
 
     def hash_tree(self, root: Path) -> str:
