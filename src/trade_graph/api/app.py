@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.application.activation import VersionController
 from trade_graph.application.budget import BudgetGateway
-from trade_graph.domain.errors import StaleState, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.live_gate import evaluate_live_enablement
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "web" / "templates"))
@@ -43,24 +44,26 @@ def create_app(runtime) -> FastAPI:
 
     def identity(request: Request) -> str:
         header = request.headers.get("authorization", "")
-        token = header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else None
-        if token is None:
-            token = request.cookies.get("tg_session")
+        parts = header.split()
+        bearer = len(parts) == 2 and parts[0].lower() == "bearer"
+        token = parts[1] if bearer else request.cookies.get("tg_session")
         role = role_for_token(runtime.database, token)
         if role is None:
             raise HTTPException(status_code=401, detail="authentication required")
         request.state.token = token
         request.state.role = role
+        request.state.auth_mechanism = "bearer" if bearer else "cookie"
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and not bearer:
+            expected = csrf_for_token(runtime.database, token)
+            provided = request.headers.get("x-csrf-token", "")
+            if not expected or not secrets.compare_digest(provided, expected):
+                raise HTTPException(status_code=403, detail="csrf")
         return role
 
     def owner_write(request: Request) -> str:
         role = identity(request)
         if role != "owner":
             raise HTTPException(status_code=403, detail="owner authority required")
-        if request.cookies.get("tg_session") and not request.headers.get("authorization"):
-            expected = csrf_for_token(runtime.database, request.state.token)
-            if request.headers.get("x-csrf-token") != expected:
-                raise HTTPException(status_code=403, detail="csrf")
         return role
 
     def budget() -> BudgetGateway:
@@ -228,6 +231,8 @@ def create_app(runtime) -> FastAPI:
             raise HTTPException(status_code=422, detail="candidate fields required") from exc
         except ValidationFailure as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except AuthorityDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except StaleState as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"artifact_hash": versions().current_hash(runtime.portfolio_id)}
