@@ -55,9 +55,20 @@ def test_dashboard_reconciles_and_rejects_bad_auth(tmp_path) -> None:
     allowed = client.post(
         "/api/v1/owner/budgets",
         headers={"X-CSRF-Token": csrf},
-        json={"total": "9"},
+        json={
+            "total": "9",
+            "period": "9",
+            "priority_reserve": "1",
+            "daily": "9",
+            "root": "9",
+            "roles": {"leader": "1"},
+        },
     )
-    assert allowed.status_code == 501
+    assert allowed.status_code == 200
+    assert allowed.json()["total"] == "9"
+    assert allowed.json()["currency"] == "EUR"
+    assert allowed.json()["simulated_equity_separate"] is True
+    assert "sk-" not in allowed.text
     live = client.post(
         "/api/v1/owner/enable-live",
         headers=headers,

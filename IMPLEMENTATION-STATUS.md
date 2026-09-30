@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T14 are accepted. The next dependency-ready work is the dashboard and owner controls (T15), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T15 are accepted. The next dependency-ready work is the offline full loop (T16), not a live pilot.
 
 ## Saved work
 
@@ -38,7 +38,9 @@ The Leader can assign a task, create a coalesced schedule and install a mandate 
 
 The artifact runner copies allowlisted paths into a temporary git tree and does not copy `.env` or kernel files. Checks run from the installed module in a scrubbed environment, so a checks module planted in the worktree is not on `sys.path`. The controller stores the exit code with the hash of `checks.py`. Activation accepts that row and ignores a caller-supplied `runner` label. Advice-only output, protected paths, a failed policy and a six-file patch leave the active hash unchanged and keep a candidate record. Migration `0004` adds `controller_attestations`. This local check does not call a model.
 
-Activation refuses to move the pointer while a trader task is leased or running. A queued trader task pinned to another version is cancelled. A stale baseline is rejected. Rollback writes the previous artifact hash and does not delete fills, receipts or the version stored on an earlier decision. Reopening the database keeps that restored pointer. Dashboard controls and the packaged soak are still open.
+Activation refuses to move the pointer while a trader task is leased or running. A queued trader task pinned to another version is cancelled. A stale baseline is rejected. Rollback writes the previous artifact hash and does not delete fills, receipts or the version stored on an earlier decision. Reopening the database keeps that restored pointer.
+
+The dashboard now has organisation, cost and change pages plus matching JSON projections. An owner can persist an EUR operating allowance; a leader cannot, and a cookie session still needs the CSRF header. Resume reconciles before it sets `RUNNING`. Leader activation calls the version controller and fails closed without a stored attestation. An UNKNOWN order is labeled degraded. Task text that looks like a provider key is replaced with `[redacted]`. Paper equity and actual spend stay on separate lines. `enable-live` still returns disabled. The offline full loop and the packaged soak are still open.
 
 The scheduler recovery below remains in force.
 
@@ -67,6 +69,7 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T12 | **151 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T13 | **155 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T14 | **157 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T15 | **158 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
@@ -93,15 +96,15 @@ uv run trade-graph backup --destination runtime/backup.sqlite
 uv run trade-graph reconcile
 ```
 
-`demo --offline` is a scripted scenario, not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard is partial; owner-budget and activation endpoints deliberately return not-implemented responses.
+`demo --offline` is a scripted scenario, not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard now persists an owner budget and shows organisation, cost and change projections; it is still a local paper view, not a hosted operations console.
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T15–T17 release acceptance.** Dashboard organisation, cost and change views, persisted owner controls, the offline full loop and a packaged paper soak remain open.
+1. **Complete T16–T17 release acceptance.** The offline full loop still needs integrated role workers through the acceptance catalogue, and the packaged paper service still needs genuine doctor/report output. A credentialed soak stays pending without an owner budget and credentials.
 2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T14 are accepted. T15–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T15. Pointer rollback is not a dashboard or an OS sandbox.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T15 are accepted. T16–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T16. The dashboard does not authorize live trading or an OS sandbox.

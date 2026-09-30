@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Costs</title>
+  <style>body { font-family: sans-serif; margin: 1.5rem; } .label { color: #444; }</style>
+</head>
+<body>
+  <p><a href="/">Overview</a> <a href="/organization">Organisation</a> <a href="/changes">Changes</a></p>
+  <h1>Costs</h1>
+  <p class="label">Actual operating spend ({{ currency }})</p>
+  <p id="actual">{{ actual_spend }}</p>
+  <p class="label">Simulated trading result is separate and does not refill this allowance</p>
+  <p id="remaining">{{ remaining_allowance }}</p>
+  <p class="label">Uncertain reservations</p>
+  <p id="uncertain">{{ uncertain_reservations }}</p>
+</body>
+</html>

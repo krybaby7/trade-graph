@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T14 accepted on cursor/trade-graph-r1-548a. T14 activates only at a quiescent trader boundary and rolls the artifact pointer back without erasing fills, receipts or decision versions. T15-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T15 accepted on cursor/trade-graph-r1-548a. T15 persists an owner EUR budget through the authenticated API and serves organisation, cost and change projections. Live enablement stays closed. T16-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -148,13 +148,13 @@
       ]
     },
     "T15": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "tests/integration/test_api_security_live.py covers session CSRF, leader denial, and server-rendered equity"
-      ],
-      "remaining": "Complete organization/cost/change views and persisted authenticated owner controls. Budget and activation endpoints deliberately return not-implemented; basic UI/auth tests are not complete dashboard delivery."
+        "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
+        "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422"
+      ]
     },
     "T16": {
       "status": "todo",

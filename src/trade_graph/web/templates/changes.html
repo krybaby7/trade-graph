@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Changes</title>
+  <style>body { font-family: sans-serif; margin: 1.5rem; } .label { color: #444; }</style>
+</head>
+<body>
+  <p><a href="/">Overview</a> <a href="/organization">Organisation</a> <a href="/costs">Costs</a></p>
+  <h1>Changes</h1>
+  <p class="label">Activation history. Private evidence stays in the database.</p>
+  <ul>
+    {% for event in events %}
+    <li>{{ event.kind }} {{ event.from_hash }} {{ event.to_hash }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

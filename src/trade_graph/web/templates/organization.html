@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Organisation</title>
+  <style>body { font-family: sans-serif; margin: 1.5rem; } .label { color: #444; }</style>
+</head>
+<body>
+  <p><a href="/">Overview</a> <a href="/costs">Costs</a> <a href="/changes">Changes</a></p>
+  <h1>Organisation</h1>
+  <p class="label">Active artifact, from the task journal</p>
+  <p id="artifact">{{ artifact_hash }}</p>
+  <ul>
+    {% for task in tasks %}
+    <li>{{ task.role }} {{ task.status }} {{ task.objective }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
