@@ -11,12 +11,16 @@ ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT")
 
 
 def checks_module_hash() -> str:
-    return hashlib.sha256(CHECKS_FILE.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    for name in ("checks.py", "sandbox.py", "artifact_policy.py", "artifact_files.py", "process.py", "runner.py"):
+        digest.update(name.encode())
+        digest.update((CHECKS_FILE.parent / name).read_bytes())
+    return digest.hexdigest()
 
 
 def scrubbed_env() -> dict[str, str]:
     """Pass only the interpreter path and locale. Drop keys, homes and PYTHONPATH."""
-    env = {key: os.environ[key] for key in ENV_ALLOWLIST if key in os.environ}
+    env = {"PATH": os.defpath, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
     return env

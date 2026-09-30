@@ -1,49 +1,50 @@
-"""Trusted artifact checks. Candidate code cannot replace this module."""
+"""Independent checker: trusted code, bounded data via stdin, zero filesystem authority."""
 
 from __future__ import annotations
 
+import hashlib
 import json
-import sys
+import os
+import runpy
 from pathlib import Path
 
-REQUIRED = ("mandate_obligations", "active_safety")
-FORBIDDEN = (
-    "subprocess",
-    "os.system",
-    "DROP TABLE",
-    "169.254.169.254",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "BEGIN PRIVATE KEY",
-)
+# Absolute trusted siblings are loaded before confinement, never from a worktree,
+# PYTHONPATH, a model path or an editable candidate test suite. -I -S -B is mandatory.
+HERE = Path(__file__).resolve().parent
+SANDBOX = runpy.run_path(str(HERE / "sandbox.py"))
+POLICY = runpy.run_path(str(HERE / "artifact_policy.py"))
 
 
-def main(argv: list[str] | None = None) -> int:
-    root = Path((argv or sys.argv[1:])[0])
-    policy_path = root / "artifacts" / "context_policy.json"
-    if not policy_path.is_file():
-        print("missing context policy")
+def main() -> int:
+    try:
+        isolation = SANDBOX["confine"]()
+        chunks, size = [], 0
+        while True:
+            chunk = os.read(0, min(65536, SANDBOX["INPUT_BYTES"] + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > SANDBOX["INPUT_BYTES"]:
+                raise ValueError("checker input limit exceeded")
+        raw = b"".join(chunks)
+        payload = json.loads(raw)
+        files = payload["files"]
+        if (set(payload) != {"files"} or not isinstance(files, dict) or not 1 <= len(files) <= 32
+                or any(type(k) is not str or type(v) is not str for k, v in files.items())
+                or sum(len(v.encode()) for v in files.values()) > 262144):
+            raise ValueError("bounded artifact snapshot required")
+        failures = POLICY["validate"](files)
+        result = {"isolation": isolation, "input_sha256": hashlib.sha256(raw).hexdigest(),
+                  "failures": failures, "passed": not failures}
+        encoded = json.dumps(result, sort_keys=True, ensure_ascii=False).encode()
+        if len(encoded) > SANDBOX["OUTPUT_BYTES"]:
+            raise ValueError("checker findings limit exceeded")
+        os.write(1, encoded)
+        return 1 if failures else 0
+    except Exception as exc:
+        os.write(2, f"checker failed closed: {type(exc).__name__}: {str(exc)[:500]}".encode())
         return 1
-    policy = json.loads(policy_path.read_text(encoding="utf-8"))
-    if not isinstance(policy.get("max_general_lessons"), int):
-        print("max_general_lessons must be an integer")
-        return 1
-    if not 1 <= policy["max_general_lessons"] <= 8:
-        print("lesson cap out of range")
-        return 1
-    include = policy.get("always_include") or []
-    if any(item not in include for item in REQUIRED):
-        print("required lessons missing")
-        return 1
-    for path in root.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
-            continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if any(marker in text for marker in FORBIDDEN):
-            print(f"forbidden content in {path.name}")
-            return 1
-    print("ok")
-    return 0
 
 
 if __name__ == "__main__":
