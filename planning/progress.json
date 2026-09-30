@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T08 accepted on cursor/trade-graph-r1-548a. T08 advances each pause profile to a verified achieved state on the paper broker. Flatten stays incomplete until the exit fill is recorded. No live venue outage was run. T09-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T09 accepted on cursor/trade-graph-r1-548a. T09 adds one fenced role worker: a reclaimed task reconciles before another effect, and a mismatched version does not run. Handlers are injected; Research and Trader workflows are still T10. T10-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -93,14 +93,14 @@
       ]
     },
     "T09": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "scheduler depth, coalesce, and idempotent LangGraph checkpoint pass in tests/integration/test_models_and_budget.py",
-        "2026-09-30 review: Python 3.12 locked CI run 36699717463 passed lint and 113 tests at 2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0; this is test evidence, not full-product acceptance."
-      ],
-      "remaining": "Wire fenced task leases into a long-running worker and role graph, durable contexts/version checks and bounded retry/recovery. A reclaimed task must reconcile prior effects before another call/order."
+        "tests/integration/test_scheduler_recovery.py covers lease fencing, coalesced missed runs, deduplication and delegation depth",
+        "tests/integration/test_models_and_budget.py reruns one LangGraph checkpoint without a second visit",
+        "tests/integration/test_role_worker.py covers a single process lease, reconciliation before a reclaimed effect, a version mismatch with zero attempts, and a snapshot written only when a handler runs. The worker does not call a provider. Role behavior itself remains T10."
+      ]
     },
     "T10": {
       "status": "todo",

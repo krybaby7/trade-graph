@@ -20,6 +20,7 @@ class TaskLease:
     task_id: str
     owner: str
     token: str
+    reclaimed: bool = False
 
 
 class Scheduler:
@@ -50,6 +51,7 @@ class Scheduler:
         max_attempts: int = 3,
         due_at: str | None = None,
         payload: dict | None = None,
+        expected_version: str | None = None,
     ) -> str:
         self._positive(max_attempts, "max_attempts")
         task_id = str(uuid.uuid4())
@@ -86,9 +88,9 @@ class Scheduler:
             (task_id, root_task_id, parent_id, portfolio_id, role, objective, status, due_at,
              priority, dedup_key, expected_version, allocated_spend, max_steps, max_attempts,
              attempts_used, input_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?, 0, ?, NULL, NULL, 3, ?, 0, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?, 0, ?, ?, NULL, 3, ?, 0, ?, ?)""",
             (task_id, root, parent_id, portfolio_id, role, objective, due_at or self.now(),
-             dedup_key, max_attempts, json.dumps(payload or {}), self.now()),
+             dedup_key, expected_version, max_attempts, json.dumps(payload or {}), self.now()),
         )
         return task_id
 
@@ -104,7 +106,7 @@ class Scheduler:
             raise ValidationFailure("lease owner is required")
         now = self.now()
         row = self.database.execute(
-            """SELECT task_id FROM tasks WHERE
+            """SELECT task_id, status FROM tasks WHERE
             (status = 'QUEUED' AND (due_at IS NULL OR due_at <= ?)) OR
             (status IN ('LEASED', 'RUNNING') AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
             ORDER BY priority DESC, COALESCE(due_at, created_at), created_at, task_id LIMIT 1""",
@@ -112,7 +114,12 @@ class Scheduler:
         ).fetchone()
         if row is None:
             return None
-        lease = TaskLease(str(row["task_id"]), owner, uuid.uuid4().hex)
+        lease = TaskLease(
+            str(row["task_id"]),
+            owner,
+            uuid.uuid4().hex,
+            reclaimed=row["status"] in {"LEASED", "RUNNING"},
+        )
         expiry = utc_iso(self.clock.now() + timedelta(seconds=ttl_seconds))
         self.database.execute(
             """UPDATE tasks SET status = 'LEASED', lease_owner = ?, lease_expires_at = ?, lease_token = ?
@@ -135,6 +142,19 @@ class Scheduler:
         self._leased(lease)
         expiry = utc_iso(self.clock.now() + timedelta(seconds=ttl_seconds))
         self.database.execute("UPDATE tasks SET lease_expires_at = ? WHERE task_id = ?", (expiry, lease.task_id))
+
+    def leased_row(self, lease: TaskLease) -> sqlite3.Row:
+        return self._leased(lease)
+
+    @atomic
+    def skip(self, lease: TaskLease, output: dict) -> None:
+        """Terminal skip. Does not count as another external attempt."""
+        self._leased(lease)
+        self.database.execute(
+            """UPDATE tasks SET status = 'DEAD_LETTER', output_json = ?, lease_owner = NULL,
+            lease_token = NULL, lease_expires_at = NULL WHERE task_id = ?""",
+            (json.dumps(output), lease.task_id),
+        )
 
     @atomic
     def succeed(self, lease: TaskLease, output: dict) -> None:

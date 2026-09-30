@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T08 are accepted. The next dependency-ready work is durable graph scheduling (T09), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T09 are accepted. The next dependency-ready work is cached Research and the mandate-driven Trader (T10), not a live pilot.
 
 ## Saved work
 
@@ -28,6 +28,8 @@ Expense control now treats schema repair, a transport retry and a provider fallb
 
 Pause advance now applies the persisted profile. `PAUSE_DECISIONS` and `MANAGE_ONLY` leave resting orders in place. `NO_NEW_EXPOSURE` cancels buys and keeps a protective sell. `CANCEL_ALL` cancels every outstanding order, including protection, and does not call the portfolio flat. `FLATTEN` cancels those orders, submits one reduce-only exit, and stays `flattening` until that fill is recorded and inventory is gone. `STOPPED` stays blocked while inventory or an outstanding order remains. An unknown cancel is not recorded as cleared. A lost acknowledgement can be cancelled from broker state without a second submit. Paper fill history now ends on an empty page so reconciliation can finish after a fill. No live venue outage was run.
 
+One role worker holds the `role-worker` process lease. A second owner does not claim work while that lease is live. Reclaiming an expired task runs the supplied reconciliation before the role handler. A task whose expected version does not match the worker is dead-lettered with no attempt and no snapshot. A matching task writes a context snapshot, then counts one attempt. Handlers are injected. This worker does not call a model provider and does not implement Research or Trader decisions.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
@@ -49,6 +51,7 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T06 | **133 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T07 | **136 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T08 | **142 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T09 | **144 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
@@ -79,11 +82,11 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Integrate T09–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
+1. **Integrate T10–T12 into a working paper service.** The scheduler and role worker now recover fenced tasks. Research, autonomous trading, learning, optimization and leadership workflows are still not implemented. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
 2. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T08 are accepted. T09–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T09. Paper pause results are not a live venue test, a supplied invoice difference is not a downloaded bill, and scripted provider HTTP is not a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T09 are accepted. T10–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T10. An injected role handler is not a Trader, paper pause results are not a live venue test, a supplied invoice difference is not a downloaded bill, and scripted provider HTTP is not a live pilot.
