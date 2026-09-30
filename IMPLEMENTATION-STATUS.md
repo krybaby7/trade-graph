@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T13 are accepted. The next dependency-ready work is version activation and rollback (T14), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T14 are accepted. The next dependency-ready work is the dashboard and owner controls (T15), not a live pilot.
 
 ## Saved work
 
@@ -36,7 +36,9 @@ Learning appends lesson revisions and refuses a revision that drops a prior coun
 
 The Leader can assign a task, create a coalesced schedule and install a mandate that stays inside the owner envelope. The Leader cannot raise the operating allowance, replace an owner halt, or approve an individual order. A wider mandate is rejected. A Secretary digest reports the pause profile and task count and does not create an order. This is not the dashboard.
 
-The artifact runner copies allowlisted paths into a temporary git tree and does not copy `.env` or kernel files. Checks run from the installed module in a scrubbed environment, so a checks module planted in the worktree is not on `sys.path`. The controller stores the exit code with the hash of `checks.py`. Activation accepts that row and ignores a caller-supplied `runner` label. Advice-only output, protected paths, a failed policy and a six-file patch leave the active hash unchanged and keep a candidate record. Migration `0004` adds `controller_attestations`. This local check does not call a model. Quiescent activation, dashboard controls and the packaged soak are still open.
+The artifact runner copies allowlisted paths into a temporary git tree and does not copy `.env` or kernel files. Checks run from the installed module in a scrubbed environment, so a checks module planted in the worktree is not on `sys.path`. The controller stores the exit code with the hash of `checks.py`. Activation accepts that row and ignores a caller-supplied `runner` label. Advice-only output, protected paths, a failed policy and a six-file patch leave the active hash unchanged and keep a candidate record. Migration `0004` adds `controller_attestations`. This local check does not call a model.
+
+Activation refuses to move the pointer while a trader task is leased or running. A queued trader task pinned to another version is cancelled. A stale baseline is rejected. Rollback writes the previous artifact hash and does not delete fills, receipts or the version stored on an earlier decision. Reopening the database keeps that restored pointer. Dashboard controls and the packaged soak are still open.
 
 The scheduler recovery below remains in force.
 
@@ -64,6 +66,7 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T11 | **150 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T12 | **151 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T13 | **155 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T14 | **157 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
@@ -94,11 +97,11 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T14–T17 release acceptance.** Activation still needs a quiescent decision boundary, observation and rollback tests. Dashboard controls, the offline full loop and a packaged paper soak remain open.
+1. **Complete T15–T17 release acceptance.** Dashboard organisation, cost and change views, persisted owner controls, the offline full loop and a packaged paper soak remain open.
 2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T13 are accepted. T14–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T14. A trusted artifact attestation is not activation, a dashboard, or an OS sandbox.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T14 are accepted. T15–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T15. Pointer rollback is not a dashboard or an OS sandbox.

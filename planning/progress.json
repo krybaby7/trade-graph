@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T13 accepted on cursor/trade-graph-r1-548a. T13 records check results under the installed checks-module hash and ignores a caller-supplied runner label. T14-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T14 accepted on cursor/trade-graph-r1-548a. T14 activates only at a quiescent trader boundary and rolls the artifact pointer back without erasing fills, receipts or decision versions. T15-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -139,13 +139,13 @@
       ]
     },
     "T14": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "the later hold decision uses the activated artifact hash; rollback is pointer-only"
-      ],
-      "remaining": "Bind activation to independently persisted controller attestations and complete quiescence/observation/recovery/rollback tests before exposing activation."
+        "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",
+        "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored."
+      ]
     },
     "T15": {
       "status": "todo",

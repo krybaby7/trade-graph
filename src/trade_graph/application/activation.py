@@ -60,6 +60,13 @@ class VersionController:
             raise StaleState("baseline moved; revalidate")
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
+            busy = conn.execute(
+                """SELECT COUNT(*) AS n FROM tasks
+                WHERE portfolio_id = ? AND role = 'trader' AND status IN ('LEASED', 'RUNNING')""",
+                (portfolio_id,),
+            ).fetchone()["n"]
+            if busy:
+                raise ValidationFailure("decision boundary is not quiescent")
             cursor = conn.execute(
                 """UPDATE active_versions
                 SET version_id = ?, artifact_hash = ?, fingerprint_json = ?, activated_at = ?
@@ -76,6 +83,16 @@ class VersionController:
             if cursor.rowcount != 1:
                 raise StaleState("compare-and-set failed")
             conn.execute(
+                """UPDATE tasks SET status = 'CANCELLED'
+                WHERE portfolio_id = ? AND role = 'trader' AND status = 'QUEUED'
+                AND expected_version IS NOT NULL AND expected_version != ?""",
+                (portfolio_id, candidate["content_hash"]),
+            )
+            conn.execute(
+                "UPDATE candidates SET state = 'OBSERVING' WHERE candidate_id = ?",
+                (candidate["candidate_id"],),
+            )
+            conn.execute(
                 """INSERT INTO version_events
                 (event_id, portfolio_id, kind, from_hash, to_hash, created_at, details_json)
                 VALUES (?, ?, 'activate', ?, ?, ?, ?)""",
@@ -89,14 +106,36 @@ class VersionController:
                 ),
             )
 
+    def fingerprint(self, portfolio_id: str) -> str:
+        return self.current_hash(portfolio_id)
+
     def rollback(self, portfolio_id: str, previous_hash: str, version_id: str) -> None:
         current = self.current_hash(portfolio_id)
+        if previous_hash != current:
+            known = self.database.execute(
+                """SELECT event_id FROM version_events
+                WHERE portfolio_id = ? AND (from_hash = ? OR to_hash = ?)""",
+                (portfolio_id, previous_hash, previous_hash),
+            ).fetchone()
+            if known is None:
+                raise ValidationFailure("unknown artifact pointer")
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
             conn.execute(
-                """UPDATE active_versions SET version_id = ?, artifact_hash = ?, activated_at = ?
+                """UPDATE active_versions
+                SET version_id = ?, artifact_hash = ?, fingerprint_json = ?, activated_at = ?
                 WHERE portfolio_id = ?""",
-                (version_id, previous_hash, now, portfolio_id),
+                (
+                    version_id,
+                    previous_hash,
+                    json.dumps({"artifact": previous_hash}),
+                    now,
+                    portfolio_id,
+                ),
+            )
+            conn.execute(
+                "UPDATE candidates SET state = 'ROLLED_BACK' WHERE content_hash = ?",
+                (current,),
             )
             conn.execute(
                 """INSERT INTO version_events
