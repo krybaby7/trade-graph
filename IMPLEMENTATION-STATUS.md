@@ -92,7 +92,7 @@ uv run trade-graph reconcile
 ## Remaining implementation, not merely missing credentials
 
 1. **Complete T13–T17 release acceptance.** The Engineer still needs a secret-free artifact runner whose attestations are independently trusted. Activation, dashboard controls, the offline full loop and a packaged paper soak remain open. A caller-supplied attestation label is not independent controller evidence.
-2. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
+2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
