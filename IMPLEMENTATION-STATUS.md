@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T10 are accepted. The next dependency-ready work is Learning and Optimisation (T11), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T11 are accepted. The next dependency-ready work is Leader and Secretary routing (T12), not a live pilot.
 
 ## Saved work
 
@@ -32,6 +32,8 @@ One role worker holds the `role-worker` process lease. A second owner does not c
 
 Research ingest accepts only public HTTPS, strips scripts, and stores publication, retrieval, availability, expiry and a source hash. A later fetch inserts a new finding and leaves the old document unchanged. Stale and untrusted pages stay out of the fresh context. The Trader can enter or record a hold from a validated payload without a Leader approval, including an explicit experiment. A low confidence value does not block a valid enter. A model timeout is stored as a model failure and does not add a hold. The two strategy templates are unproven. No search provider was called.
 
+Learning appends lesson revisions and refuses a revision that drops a prior counterexample. The stored grade follows the process assessment. A no-trade mark uses only quotes whose event and availability times are at or before the decision. A bar that becomes available later is not an entry price. Optimisation can record a proposal and cannot turn reconciliation off. This is not a forward-paper profitability result.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
@@ -55,6 +57,7 @@ Additive migration `0002` installs task lease tokens and an index. Migration `00
 | Local Python 3.12 `uv run pytest` after T08 | **142 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T09 | **144 passed; 0 failed, 0 skipped** |
 | Local Python 3.12 `uv run pytest` after T10 | **147 passed; 0 failed, 0 skipped** |
+| Local Python 3.12 `uv run pytest` after T11 | **150 passed; 0 failed, 0 skipped** |
 | `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
@@ -85,11 +88,11 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Integrate T11–T12 into a working paper service.** Research cache and Trader decisions now exist. Learning, optimisation, Leader and Secretary workflows are still not implemented. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
+1. **Integrate T12 into a working paper service.** Research, Trader, Learning and Optimisation records now exist. Leader and Secretary routing, mandates and schedule allocation are still not implemented. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee.
 2. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T10 are accepted. T11–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T11. Research fixtures are not a credentialed search, paper pause results are not a live venue test, a supplied invoice difference is not a downloaded bill, and scripted provider HTTP is not a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T11 are accepted. T12–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T12. Lesson grades are not a forward-paper study, research fixtures are not a credentialed search, and scripted provider HTTP is not a live pilot.

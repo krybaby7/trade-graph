@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T10 accepted on cursor/trade-graph-r1-548a. T10 caches sourced research and lets the Trader enter, hold or record no-action without Leader approval. A model timeout is not stored as a hold. T11-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T11 accepted on cursor/trade-graph-r1-548a. T11 appends lesson revisions without dropping counterevidence and grades process rather than outcome. No-trade marks ignore later quotes. T12-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -112,13 +112,13 @@
       ]
     },
     "T11": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "offline demo keeps a losing valid thesis and a winning invalid process as separate assessments"
-      ],
-      "remaining": "Implement triggered Learning/Optimisation workflows, persisted evidence/lesson revisions and counterevidence; supplied process labels are not an autonomous analysis pipeline."
+        "tests/integration/test_learning.py keeps prior counterexamples across a revision, reloads the contradicted revision after restart, grades an invalid winning process and a valid losing thesis by process, and values a no-trade at the quote available then rather than a later high",
+        "An optimisation proposal that disables reconciliation is rejected. Cost per decision uses Decimal. No model call was made."
+      ]
     },
     "T12": {
       "status": "todo",
