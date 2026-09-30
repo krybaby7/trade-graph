@@ -11,6 +11,7 @@ from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
 from trade_graph.adapters.engineering.runner import EngineerRunner
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
+from trade_graph.application.authority import seed_paper_authority
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.execution import Execution
 from trade_graph.application.gateway import ModelGateway
@@ -84,13 +85,11 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     portfolio = ledger.create_portfolio(reporting_currency="EUR", mode="paper")
     ledger.deposit(portfolio, "USD", Decimal("10000"), "open")
     ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.90"), source="fixture", kind="reference", stale=False)
+    seed_paper_authority(database, clock, portfolio)
     _quote(execution, clock, "99", "100", "seed", "1")
     opened = utc_iso(clock.now())
     buy = _decision(clock, portfolio, "buy-1", "enter", "0.01")
-    intent = execution.authorize(
-        portfolio, buy, venue="paper", account_id="paper", mode="paper",
-        max_quote_age_seconds=30, gross_cap=Decimal("0.80"), asset_cap=Decimal("0.50"),
-    )
+    intent = execution.authorize(portfolio, buy)
     _run(execution.dispatch())
     clock.advance(1)
     execution.on_observation(_observation(clock, "99", "100", "part", "0.004"))
@@ -102,10 +101,7 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     _quote(execution, clock, "100", "101", "exit-quote", "1")
     clock.advance(1)
     sell = _decision(clock, portfolio, "sell-1", "exit", "0.01")
-    sell_intent = execution.authorize(
-        portfolio, sell, venue="paper", account_id="paper", mode="paper",
-        max_quote_age_seconds=30, gross_cap=Decimal("0.80"), asset_cap=Decimal("0.50"),
-    )
+    sell_intent = execution.authorize(portfolio, sell)
     _run(execution.dispatch())
     clock.advance(1)
     execution.on_observation(_observation(clock, "100", "101", "sold", "1"))
@@ -116,10 +112,7 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     clock.advance(1)
     _quote(execution, clock, "99", "100", "again", "1")
     lost = _decision(clock, portfolio, "lost-ack", "enter", "0.01")
-    lost_intent = execution.authorize(
-        portfolio, lost, venue="paper", account_id="paper", mode="paper",
-        max_quote_age_seconds=30, gross_cap=Decimal("0.80"), asset_cap=Decimal("0.50"),
-    )
+    lost_intent = execution.authorize(portfolio, lost)
     _run(execution.dispatch())
     assert execution.intent_state(lost_intent) == "UNKNOWN"
     clock.advance(1)

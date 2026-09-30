@@ -6,14 +6,16 @@ import json
 import uuid
 from decimal import ROUND_CEILING, Decimal
 
-from trade_graph.adapters.brokers.paper import floor_to_increment, new_client_id
 from trade_graph.adapters.persistence.db import Database, atomic
+from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import (
     AuthorizedOrderIntent,
+    CancelRequest,
     Decision,
     FillRecord,
     InstrumentRules,
+    Mode,
     Observation,
     OrderLookup,
     PauseProfile,
@@ -27,17 +29,33 @@ from trade_graph.domain.errors import (
     ValidationFailure,
 )
 from trade_graph.domain.money import canonical_decimal
+from trade_graph.domain.precision import floor_to_increment, new_client_id
+from trade_graph.domain.protocols import Broker
 from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
 
 TAKER = Decimal("0.008")
 
 
 class Execution:
-    def __init__(self, database: Database, ledger: Ledger, clock: Clock, broker) -> None:
+    def __init__(
+        self,
+        database: Database,
+        ledger: Ledger,
+        clock: Clock,
+        broker: Broker,
+        *,
+        venue: str = "paper",
+        account_id: str = "paper",
+        mode: Mode = "paper",
+    ) -> None:
         self.database = database
         self.ledger = ledger
         self.clock = clock
         self.broker = broker
+        self.venue = venue
+        self.account_id = account_id
+        self.mode = mode
+        self.authority = AuthorityRecord(database, clock)
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
@@ -141,18 +159,7 @@ class Execution:
         return [Observation.model_validate_json(row["document_json"]) for row in rows]
 
     @atomic
-    def authorize(
-        self,
-        portfolio_id: str,
-        decision: Decision,
-        *,
-        venue: str,
-        account_id: str,
-        mode: str,
-        max_quote_age_seconds: int,
-        gross_cap: Decimal,
-        asset_cap: Decimal,
-    ) -> str:
+    def authorize(self, portfolio_id: str, decision: Decision) -> str:
         if decision.action not in {"enter", "exit"}:
             raise ValidationFailure("authorize requires enter/exit; resize and adjustment need explicit semantics")
         portfolio = self.database.execute(
@@ -160,8 +167,12 @@ class Execution:
         ).fetchone()
         if portfolio is None or decision.portfolio_id != portfolio_id:
             raise AuthorityDenied("decision portfolio mismatch")
-        if portfolio["mode"] != mode or decision.mode != mode:
+        if portfolio["mode"] != self.mode:
             raise AuthorityDenied("decision mode mismatch")
+        policy, mandate = self.authority.require_for_decision(
+            decision, venue=self.venue, mode=self.mode
+        )
+        gross_cap, asset_cap, max_quote_age_seconds = self.authority.limits(policy, mandate)
         if not (Decimal("0") < asset_cap <= gross_cap <= Decimal("1")):
             raise ValidationFailure("spot exposure caps must satisfy 0 < asset <= gross <= 1")
         if decision.symbol is None or decision.quantity is None:
@@ -173,6 +184,7 @@ class Execution:
             raise AuthorityDenied(f"pause {profile} blocks new exposure")
         if not increase and not pause_allows_reduction(profile):  # type: ignore[arg-type]
             raise AuthorityDenied(f"pause {profile} blocks reduction")
+        venue = self.venue
         if increase and not self.quote_fresh(decision.symbol, max_quote_age_seconds, venue):
             raise StaleState("stale or missing quote")
         rules = self.instrument(venue, decision.symbol)
@@ -199,22 +211,17 @@ class Execution:
             raise ValidationFailure("below venue minimum; size was not increased")
         books = self.ledger.books(portfolio_id)
         base, quote = rules.base_asset, rules.quote_asset
-        equity = self.ledger.equity(portfolio_id)
         if increase:
-            if equity.equity is None or equity.provisional:
-                raise StaleState("provisional valuation")
-            if equity.equity <= 0:
-                raise AuthorityDenied("no equity")
-            def reporting(amount: Decimal) -> Decimal:
-                return self.ledger.reporting_value(portfolio_id, amount, quote)
-            pending_gross, pending_asset = self._pending_exposure(portfolio_id, base)
-            proposed = reporting(notional)
-            projected_asset = reporting(self._position_value(books, decision.symbol, price)) + pending_asset + proposed
-            projected_gross = (equity.inventory_reporting or Decimal("0")) + pending_gross + proposed
-            if projected_asset / equity.equity > asset_cap:
-                raise AuthorityDenied("single asset exposure")
-            if projected_gross / equity.equity > gross_cap:
-                raise AuthorityDenied("gross exposure")
+            self._assert_increase_exposure(
+                portfolio_id,
+                decision.symbol,
+                quantity,
+                price,
+                quote,
+                base,
+                gross_cap,
+                asset_cap,
+            )
         fee_reserve = notional * TAKER
         if side == "buy":
             need_asset, need_amount = quote, notional + fee_reserve
@@ -231,9 +238,9 @@ class Execution:
         intent = AuthorizedOrderIntent(
             intent_id=intent_id,
             portfolio_id=portfolio_id,
-            account_id=account_id,
+            account_id=self.account_id,
             venue=venue,
-            mode=mode,  # type: ignore[arg-type]
+            mode=self.mode,
             client_order_id=client_order_id,
             symbol=decision.symbol,
             side=side,
@@ -254,6 +261,8 @@ class Execution:
         payload = json.loads(intent.model_dump_json())
         payload["reserve_asset"] = need_asset
         payload["reserve_amount"] = canonical_decimal(need_amount)
+        payload["policy_revision"] = policy.revision_id
+        payload["mandate_revision"] = str(mandate.revision)
         now = self.now()
         with self.database.immediate() as conn:
             conn.execute(
@@ -294,12 +303,23 @@ class Execution:
         return intent_id
 
     async def dispatch(self) -> int:
+        await self._require_broker_binding()
         rows = self.database.execute(
             """SELECT payload_ref FROM outbox WHERE kind = 'submit' AND status = 'pending'"""
         ).fetchall()
         sent = 0
         for row in rows:
             intent_id = row["payload_ref"]
+            if self.intent_state(intent_id) != "SUBMISSION_PENDING":
+                continue
+            intent = self._intent_model(intent_id)
+            if intent.side == "buy":
+                block = self._unsent_increase_block(intent)
+                if block == "reject":
+                    self._abandon_unsent(intent_id, "authority")
+                    continue
+                if block == "hold":
+                    continue
             if not self._mark_submitting(intent_id):
                 continue
             intent = self._intent_model(intent_id)
@@ -428,7 +448,7 @@ class Execution:
         payload = self._payload(intent_id)
         self._set_state(intent_id, "CANCEL_PENDING", {})
         await self.broker.cancel(
-            __import__("trade_graph.contracts.models", fromlist=["CancelRequest"]).CancelRequest(
+            CancelRequest(
                 intent_id=intent_id,
                 client_order_id=payload["client_order_id"],
                 venue_order_id=payload.get("venue_order_id"),
@@ -437,7 +457,7 @@ class Execution:
         )
         await self.reconcile()
 
-    async def replace(self, intent_id: str, decision: Decision, **authorize_kwargs) -> str:
+    async def replace(self, intent_id: str, decision: Decision) -> str:
         await self.cancel(intent_id)
         if self.intent_state(intent_id) not in {"CANCELLED", "FILLED"}:
             raise UncertainExternal("replacement requires reconciled cancellation of the original")
@@ -446,7 +466,7 @@ class Execution:
         remaining = Decimal(payload["quantity"]) - filled
         if decision.quantity is None or decision.quantity.amount > remaining:
             raise ValidationFailure("replacement exceeds remaining quantity")
-        return self.authorize(payload["portfolio_id"], decision, **authorize_kwargs)
+        return self.authorize(payload["portfolio_id"], decision)
 
     @atomic
     def place_protection(
@@ -542,6 +562,111 @@ class Execution:
         ).fetchone()
         return row["state"]
 
+    async def _require_broker_binding(self) -> None:
+        caps = await self.broker.capabilities()
+        if caps.withdrawals:
+            raise AuthorityDenied("withdrawals are not a broker capability")
+        if caps.venue != self.venue or caps.mode != self.mode:
+            raise AuthorityDenied("broker binding does not match execution venue and mode")
+        if not caps.client_id_lookup:
+            raise AuthorityDenied("broker cannot look up orders by client id")
+
+    def _unsent_increase_block(self, intent: AuthorizedOrderIntent) -> str:
+        try:
+            policy = self.authority.active_policy()
+            mandate = self.authority.active_mandate(intent.portfolio_id)
+        except AuthorityDenied:
+            return "reject"
+        if self.authority.mandate_expired(mandate):
+            return "reject"
+        if intent.symbol not in mandate.symbols or intent.symbol not in policy.allowed_symbols:
+            return "reject"
+        if intent.venue not in policy.allowed_venues or intent.mode != self.mode:
+            return "reject"
+        if intent.mode == "live" and not policy.live_enabled:
+            return "reject"
+        if intent.order_type not in mandate.allowed_order_types:
+            return "reject"
+        gross_cap, asset_cap, max_age = self.authority.limits(policy, mandate)
+        if not self.quote_fresh(intent.symbol, max_age, intent.venue):
+            return "hold"
+        price = intent.limit_price or self._reference_price(intent.symbol, "buy", intent.venue)
+        if price is None or price <= 0:
+            return "hold"
+        rules = self.instrument(intent.venue, intent.symbol)
+        try:
+            self._assert_increase_exposure(
+                intent.portfolio_id,
+                intent.symbol,
+                intent.quantity,
+                price,
+                rules.quote_asset,
+                rules.base_asset,
+                gross_cap,
+                asset_cap,
+                exclude_intent_id=intent.intent_id,
+            )
+        except AuthorityDenied:
+            return "reject"
+        except StaleState:
+            return "hold"
+        return "submit"
+
+    def _abandon_unsent(self, intent_id: str, reason: str) -> None:
+        payload = self._payload(intent_id)
+        payload["error"] = reason
+        now = self.now()
+        with self.database.immediate() as conn:
+            conn.execute(
+                """UPDATE order_intents
+                SET state = 'REJECTED', payload_json = ?, updated_at = ?
+                WHERE intent_id = ? AND state = 'SUBMISSION_PENDING'""",
+                (json.dumps(payload), now, intent_id),
+            )
+            conn.execute(
+                "UPDATE position_reservations SET state = 'released' WHERE intent_id = ? AND state = 'held'",
+                (intent_id,),
+            )
+            conn.execute(
+                """UPDATE outbox SET status = 'cancelled'
+                WHERE kind = 'submit' AND payload_ref = ? AND status = 'pending'""",
+                (intent_id,),
+            )
+
+    def _assert_increase_exposure(
+        self,
+        portfolio_id: str,
+        symbol: str,
+        quantity: Decimal,
+        price: Decimal,
+        quote_asset: str,
+        base_asset: str,
+        gross_cap: Decimal,
+        asset_cap: Decimal,
+        *,
+        exclude_intent_id: str | None = None,
+    ) -> None:
+        books = self.ledger.books(portfolio_id)
+        equity = self.ledger.equity(portfolio_id)
+        if equity.equity is None or equity.provisional:
+            raise StaleState("provisional valuation")
+        if equity.equity <= 0:
+            raise AuthorityDenied("no equity")
+
+        def reporting(amount: Decimal) -> Decimal:
+            return self.ledger.reporting_value(portfolio_id, amount, quote_asset)
+
+        pending_gross, pending_asset = self._pending_exposure(
+            portfolio_id, base_asset, exclude_intent_id=exclude_intent_id
+        )
+        proposed = reporting(price * quantity)
+        projected_asset = reporting(self._position_value(books, symbol, price)) + pending_asset + proposed
+        projected_gross = (equity.inventory_reporting or Decimal("0")) + pending_gross + proposed
+        if projected_asset / equity.equity > asset_cap:
+            raise AuthorityDenied("single asset exposure")
+        if projected_gross / equity.equity > gross_cap:
+            raise AuthorityDenied("gross exposure")
+
     @atomic
     def _mark_submitting(self, intent_id: str) -> bool:
         intent = self._intent_model(intent_id)
@@ -608,13 +733,21 @@ class Execution:
     def _owned(self, books, asset: str) -> Decimal:
         return sum((lot.open_quantity() for lot in books.lots if lot.asset == asset), Decimal("0"))
 
-    def _pending_exposure(self, portfolio_id: str, asset: str) -> tuple[Decimal, Decimal]:
+    def _pending_exposure(
+        self,
+        portfolio_id: str,
+        asset: str,
+        *,
+        exclude_intent_id: str | None = None,
+    ) -> tuple[Decimal, Decimal]:
         gross = single = Decimal("0")
         rows = self.database.execute(
             """SELECT intent_id, payload_json FROM order_intents WHERE portfolio_id = ?
             AND state NOT IN ('FILLED', 'CANCELLED', 'REJECTED')""", (portfolio_id,)
         ).fetchall()
         for row in rows:
+            if row["intent_id"] == exclude_intent_id:
+                continue
             intent = json.loads(row["payload_json"])
             if intent["side"] != "buy":
                 continue

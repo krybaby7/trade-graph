@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "Review checkpoint: partial offline prototype, not a completed R1 service. T00 remains done. T01-T19 and T21-T22 are reopened todo for missing acceptance work or incomplete dependencies; their implemented source and historical evidence are retained. T20 remains blocked. todo here does not mean starting again. Start with the T01 contract/authority gap, then revalidate retained foundations and complete public-data/provider integrations. No paid calls or live authority.",
+  "status_note": "T00-T03 accepted on cursor/trade-graph-r1-548a after the review recovery. T01 closed provider-neutral broker/inference protocols and bound authorization to persisted owner/mandate revisions. T02 and T03 were revalidated against that closure; their earlier ledger, backup and accounting tests still pass. T04-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -13,32 +13,34 @@
       ]
     },
     "T01": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "tests/unit/test_contracts.py and tests/unit/test_import_boundary.py reject invalid contracts and SDK imports in domain"
-      ],
-      "remaining": "Complete provider-neutral and broker Protocol interfaces (Execution currently accepts an untyped broker) and bind authority to persisted owner/mandate revisions. Retain existing validated Pydantic schemas."
+        "tests/unit/test_contracts.py and tests/unit/test_import_boundary.py reject invalid contracts and SDK imports in domain",
+        "tests/unit/test_protocols.py checks Broker, InferenceAdapter and point-in-time MarketData",
+        "tests/integration/test_authority_binding.py binds caps to persisted revisions and rejects immutable-policy, expiry, withdrawal and binding mismatches",
+        "2026-09-30 local Python 3.12 uv run pytest: 124 passed after T01; ruff check src tests passed. Not a paid-provider or exchange result."
+      ]
     },
     "T02": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_ledger_store.py covers restart, duplicate financial ids, and backup checksum failure",
-        "2026-09-30 review: Python 3.12 locked CI run 36699717463 passed lint and 113 tests at 2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0; this is test evidence, not full-product acceptance."
-      ],
-      "remaining": "Revalidate persistence/outbox/immutable-revision/restore acceptance after T01 closure. Existing atomic ledger, backup and new migration tests are retained; dependency completion is not yet established."
+        "Revalidated after T01 on 2026-09-30: full local pytest 124 passed, including ledger restart/duplicate/backup coverage. Dependency T01 is now done."
+      ]
     },
     "T03": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "tests/unit/test_books.py covers A01-A05, A43, and A44 with Decimal native units"
-      ],
-      "remaining": "Reconfirm A01-A05/A43-A44 against accepted T01/T02 contracts. Tested ledger and FX corrections are retained; reopening does not mean the accounting source is absent."
+        "tests/unit/test_books.py covers A01-A05 and A43 with Decimal native units, including the USD10,000 EUR FX case",
+        "tests/e2e/test_offline.py asserts A44 synthetic receipts do not change real budget across a paper reset; tests/integration/test_review_regressions.py covers shared-cost allocation once",
+        "Revalidated after T01/T02 on 2026-09-30: those tests passed in the 124-test local suite."
+      ]
     },
     "T04": {
       "status": "todo",

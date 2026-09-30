@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from trade_graph.contracts.models import ModelRequest, ModelResult, ModelUsage
+from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage
 
 CAPABILITIES: dict[str, dict[str, bool]] = {
     "openai:gpt-6-luna": {"structured_output": True, "forced_tool": True, "sampling_temperature": False},
@@ -23,8 +23,25 @@ def capability_key(provider: str, model: str) -> str:
     return f"{provider}:{model}"
 
 
+def lookup_capabilities(provider: str, model: str) -> ModelCapabilities | None:
+    raw = CAPABILITIES.get(capability_key(provider, model))
+    if raw is None:
+        return None
+    return ModelCapabilities(
+        provider=provider,  # type: ignore[arg-type]
+        model=model,
+        structured_output=raw["structured_output"],
+        forced_tool=raw["forced_tool"],
+        sampling_temperature=raw["sampling_temperature"],
+    )
+
+
 class OpenAIAdapter:
+    provider = "openai"
     endpoint = "https://api.openai.com/v1/responses"
+
+    def capabilities(self, model: str) -> ModelCapabilities | None:
+        return lookup_capabilities(self.provider, model)
 
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
         return {
@@ -80,7 +97,11 @@ class OpenAIAdapter:
 
 
 class AnthropicAdapter:
+    provider = "anthropic"
     endpoint = "https://api.anthropic.com/v1/messages"
+
+    def capabilities(self, model: str) -> ModelCapabilities | None:
+        return lookup_capabilities(self.provider, model)
 
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
         schema = dict(request.output_schema)
@@ -131,8 +152,30 @@ class AnthropicAdapter:
 
 
 class ScriptedAdapter:
+    provider = "scripted"
+
     def __init__(self, outputs: dict[str, dict[str, Any]] | None = None) -> None:
         self.outputs = outputs or {}
+
+    def capabilities(self, model: str) -> ModelCapabilities | None:
+        return lookup_capabilities(self.provider, model)
+
+    def build_body(self, request: ModelRequest) -> dict[str, Any]:
+        return {"model": request.model, "input": request.instructions, "scripted": True}
+
+    def parse(self, payload: dict[str, Any]) -> ModelResult:
+        failure = payload.get("failure")
+        if failure:
+            return ModelResult(ok=False, failure=failure, message=str(payload.get("message", "")))
+        body = payload.get("payload")
+        if not isinstance(body, dict):
+            return ModelResult(ok=False, failure="validation", message="no scripted payload")
+        return ModelResult(
+            ok=True,
+            payload=body,
+            usage=ModelUsage(uncached_input_tokens=0, billed_output_tokens=0, provider_request_id="scripted"),
+            provider_model="scripted",
+        )
 
     def complete(self, request: ModelRequest) -> ModelResult:
         scripted = request.context.get("scripted_result")

@@ -6,6 +6,7 @@ import pytest
 
 from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.authority import seed_paper_authority
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import Decision, InstrumentRules, Observation, Quantity
@@ -81,22 +82,14 @@ def _stack(tmp_path, broker_factory=PaperBroker):
     portfolio = ledger.create_portfolio(reporting_currency="USD")
     ledger.deposit(portfolio, "USD", Decimal("10000"), "open")
     ledger.observe_fx(base="USD", quote="USD", rate=Decimal("1"), source="identity", kind="identity", stale=False)
+    seed_paper_authority(database, clock, portfolio)
     return clock, ledger, execution, broker, portfolio
 
 
 def test_partial_fill_minimum_and_pause(tmp_path) -> None:
     clock, ledger, execution, broker, portfolio = _stack(tmp_path)
     execution.save_observation(_quote(clock, "99", "100", size="0.004", observation_id="q1"))
-    intent = execution.authorize(
-        portfolio,
-        _decision(clock, portfolio),
-        venue="paper",
-        account_id="paper",
-        mode="paper",
-        max_quote_age_seconds=30,
-        gross_cap=Decimal("0.80"),
-        asset_cap=Decimal("0.50"),
-    )
+    intent = execution.authorize(portfolio, _decision(clock, portfolio))
     asyncio.run(execution.dispatch())
     clock.advance(1)
     execution.on_observation(_quote(clock, "99", "100", size="0.004", observation_id="q2"))
@@ -110,25 +103,10 @@ def test_partial_fill_minimum_and_pause(tmp_path) -> None:
         execution.authorize(
             portfolio,
             _decision(clock, portfolio, record_id="tiny", quantity=Quantity(amount="0.00001", asset="BTC")),
-            venue="paper",
-            account_id="paper",
-            mode="paper",
-            max_quote_age_seconds=30,
-            gross_cap=Decimal("0.80"),
-            asset_cap=Decimal("0.50"),
         )
     execution.set_pause(portfolio, "NO_NEW_EXPOSURE", "owner", "risk")
     with pytest.raises(AuthorityDenied):
-        execution.authorize(
-            portfolio,
-            _decision(clock, portfolio, record_id="blocked"),
-            venue="paper",
-            account_id="paper",
-            mode="paper",
-            max_quote_age_seconds=30,
-            gross_cap=Decimal("0.80"),
-            asset_cap=Decimal("0.50"),
-        )
+        execution.authorize(portfolio, _decision(clock, portfolio, record_id="blocked"))
     with pytest.raises(AuthorityDenied):
         execution.set_pause(portfolio, "RUNNING", "leader", "resume")
 
@@ -143,17 +121,10 @@ def test_unknown_ack_is_recovered_without_resubmit(tmp_path) -> None:
     execution.register_instrument(_rules())
     portfolio = ledger.create_portfolio(reporting_currency="USD")
     ledger.deposit(portfolio, "USD", Decimal("10000"), "open")
+    ledger.observe_fx(base="USD", quote="USD", rate=Decimal("1"), source="identity", kind="identity", stale=False)
+    seed_paper_authority(database, clock, portfolio)
     execution.save_observation(_quote(clock, "99", "100"))
-    intent = execution.authorize(
-        portfolio,
-        _decision(clock, portfolio, record_id="lost"),
-        venue="paper",
-        account_id="paper",
-        mode="paper",
-        max_quote_age_seconds=30,
-        gross_cap=Decimal("0.80"),
-        asset_cap=Decimal("0.50"),
-    )
+    intent = execution.authorize(portfolio, _decision(clock, portfolio, record_id="lost"))
     asyncio.run(execution.dispatch())
     assert execution.intent_state(intent) == "UNKNOWN"
     assert inner.submit_count == 1
@@ -170,16 +141,7 @@ def test_stale_quote_blocks_increase_and_stop_gaps(tmp_path) -> None:
     execution.save_observation(_quote(clock, "99", "100", observation_id="old"))
     clock.advance(60)
     with pytest.raises(StaleState):
-        execution.authorize(
-            portfolio,
-            _decision(clock, portfolio, record_id="stale"),
-            venue="paper",
-            account_id="paper",
-            mode="paper",
-            max_quote_age_seconds=15,
-            gross_cap=Decimal("0.80"),
-            asset_cap=Decimal("0.50"),
-        )
+        execution.authorize(portfolio, _decision(clock, portfolio, record_id="stale"))
     clock = FrozenClock(datetime(2026, 1, 1, tzinfo=UTC))
     database = Database(tmp_path / "stop.sqlite")
     ledger = Ledger(database, clock)
@@ -188,17 +150,10 @@ def test_stale_quote_blocks_increase_and_stop_gaps(tmp_path) -> None:
     execution.register_instrument(_rules())
     portfolio = ledger.create_portfolio(reporting_currency="USD")
     ledger.deposit(portfolio, "USD", Decimal("10000"), "open")
+    ledger.observe_fx(base="USD", quote="USD", rate=Decimal("1"), source="identity", kind="identity", stale=False)
+    seed_paper_authority(database, clock, portfolio)
     execution.save_observation(_quote(clock, "99", "100"))
-    execution.authorize(
-        portfolio,
-        _decision(clock, portfolio, record_id="buy-stop"),
-        venue="paper",
-        account_id="paper",
-        mode="paper",
-        max_quote_age_seconds=30,
-        gross_cap=Decimal("0.80"),
-        asset_cap=Decimal("0.50"),
-    )
+    execution.authorize(portfolio, _decision(clock, portfolio, record_id="buy-stop"))
     asyncio.run(execution.dispatch())
     clock.advance(1)
     execution.on_observation(_quote(clock, "99", "100", observation_id="fill"))
@@ -224,16 +179,7 @@ def test_same_bar_limit_does_not_fill(tmp_path) -> None:
         limit_price=Money(amount="100", currency="USD"),
         quantity=Quantity(amount="0.01", asset="BTC"),
     )
-    intent = execution.authorize(
-        portfolio,
-        decision,
-        venue="paper",
-        account_id="paper",
-        mode="paper",
-        max_quote_age_seconds=30,
-        gross_cap=Decimal("0.80"),
-        asset_cap=Decimal("0.50"),
-    )
+    intent = execution.authorize(portfolio, decision)
     asyncio.run(execution.dispatch())
     execution.on_observation(bar)
     assert execution.owned_quantity(portfolio, "BTC") == Decimal("0")

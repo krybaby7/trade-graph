@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from trade_graph.adapters.models.providers import (
-    CAPABILITIES,
-    AnthropicAdapter,
-    OpenAIAdapter,
-    ScriptedAdapter,
-    capability_key,
-)
+from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.contracts.models import ModelRequest, ModelResult
 from trade_graph.domain.errors import BudgetExhausted, PaidCallsDisabled
+from trade_graph.domain.protocols import InferenceAdapter
 
 
 class ModelGateway:
@@ -37,12 +32,13 @@ class ModelGateway:
     ) -> ModelResult:
         if request.provider != "scripted" and not self.paid_calls_enabled:
             raise PaidCallsDisabled(request.provider)
-        caps = CAPABILITIES.get(capability_key(request.provider, request.model))
+        adapter = self._adapter(request.provider)
+        caps = adapter.capabilities(request.model)
         if caps is None:
             return ModelResult(ok=False, failure="unsupported", message="model is not on the approved registry")
-        if request.context.get("temperature") is not None and not caps["sampling_temperature"]:
+        if request.context.get("temperature") is not None and not caps.sampling_temperature:
             return ModelResult(ok=False, failure="unsupported", message="sampling temperature is not supported")
-        if request.context.get("forced_tool") and not caps["forced_tool"]:
+        if request.context.get("forced_tool") and not caps.forced_tool:
             return ModelResult(ok=False, failure="unsupported", message="forced tool use is not supported")
         synthetic = request.provider == "scripted"
         try:
@@ -65,12 +61,10 @@ class ModelGateway:
             return ModelResult(ok=False, failure="validation", message=str(exc))
         self.attempts.append(reservation)
         try:
-            if request.provider == "openai":
-                result = self.openai.parse(request.context["http_fixture"])
-            elif request.provider == "anthropic":
-                result = self.anthropic.parse(request.context["http_fixture"])
-            else:
+            if request.provider == "scripted":
                 result = self.scripted.complete(request)
+            else:
+                result = adapter.parse(request.context["http_fixture"])
             if result.failure == "timeout_uncertain" or result.usage is None:
                 self.budget.mark_uncertain(reservation)
                 return result
@@ -82,3 +76,12 @@ class ModelGateway:
             self.budget.mark_uncertain(reservation)
             return ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
         return result
+
+    def _adapter(self, provider: str) -> InferenceAdapter:
+        if provider == "openai":
+            return self.openai
+        if provider == "anthropic":
+            return self.anthropic
+        if provider == "scripted":
+            return self.scripted
+        raise PaidCallsDisabled(provider)

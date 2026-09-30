@@ -12,6 +12,7 @@ import pytest
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.authority import seed_paper_authority
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
@@ -74,14 +75,14 @@ def stack(tmp_path):
     portfolio = ledger.create_portfolio(reporting_currency="EUR")
     ledger.deposit(portfolio, "USD", D("10000"), "seed")
     ledger.observe_fx(base="USD", quote="EUR", rate=D("0.9"), source="fixture", kind="spot", stale=False)
+    seed_paper_authority(database, clock, portfolio)
     yield clock, database, ledger, execution, broker, portfolio
     database.close()
 
 
 def authorize(stack, **updates):
     _, _, _, execution, _, portfolio = stack
-    return execution.authorize(portfolio, decision(portfolio, **updates), venue="paper", account_id="paper",
-                               mode="paper", max_quote_age_seconds=30, gross_cap=D("0.8"), asset_cap=D("0.5"))
+    return execution.authorize(portfolio, decision(portfolio, **updates))
 
 
 def test_fifo_disposals_conserve_total_proceeds():
@@ -393,10 +394,7 @@ def test_uncertain_cancellation_cannot_submit_replacement(stack):
 
     broker.cancel = cancel
     with pytest.raises(UncertainExternal):
-        asyncio.run(execution.replace(
-            intent, decision(portfolio, record_id="replacement"), venue="paper", account_id="paper",
-            mode="paper", max_quote_age_seconds=30, gross_cap=D("0.8"), asset_cap=D("0.5"),
-        ))
+        asyncio.run(execution.replace(intent, decision(portfolio, record_id="replacement")))
     assert database.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 1
 
 

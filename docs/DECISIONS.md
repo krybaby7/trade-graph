@@ -19,6 +19,7 @@
 | D15 | Superseded security claim: the multiprocessing/RPC example is only a protocol fixture, not an OS sandbox | Executable plugins and trusted promotion are disabled. Build and adversarially test a real protected boundary before broader code authority |
 | D16 | Fixed in `9e908d4`: compare aggregate exposure and equity in the same currency using identified FX provenance | Numeric USD-versus-EUR comparisons are invalid even in a demo. Preserve the currency regression tests |
 | D17 | Durable scheduler claims carry unique fencing tokens; schema migration 0002 is additive and transactional | Reclaim stale work without stale-worker result writes. Reconcile prior external effects before retry; task recovery never authorizes duplicate orders or free retries |
+| D18 | Authorization reads the active persisted owner policy and mandate. Exposure and quote-age limits are the tighter of those revisions. `Execution` is bound to a `Broker` whose capabilities must match venue/mode, support client-id lookup, and declare withdrawals disabled. OpenAI, Anthropic and scripted adapters implement `InferenceAdapter` | Caller-supplied exposure caps are not authority. Fixture `parse` is not a network call. A discretionary mandate may name a strategy that is not prelisted; a non-discretionary mandate may not |
 
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
@@ -26,6 +27,6 @@ The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR1
 
 Owner/runtime: legal residence/entity and exchange eligibility; actual venue/pairs/fee tier; model accounts and measured quality; actual expense budget including taxes/FX/hosting; deployment availability; exposure/loss/experiment envelope; live permission; broader engineering classes. Keep private answers out of public Git.
 
-Implemented and tested slices: lockfile at `uv.lock`, fixed paper fee assumptions D14, currency correction D16, scheduler/migration recovery D17. D12 network transport and D15 security isolation are not complete. Still open: credential store, real-host container/cgroup attestation, market-depth retention beyond the paper participation model, native stop/OCO/amend proof on a live venue, and an owner grant of broader code classes.
+Implemented and tested slices: lockfile at `uv.lock`, fixed paper fee assumptions D14, currency correction D16, scheduler/migration recovery D17, persisted mandate authority and provider-neutral protocols D18. D12 network transport and D15 security isolation are not complete. Still open: credential store, real-host container/cgroup attestation, market-depth retention beyond the paper participation model, native stop/OCO/amend proof on a live venue, and an owner grant of broader code classes.
 
 None prevents offline development. Mark credentialed verification pending when credentials are absent; do not invent successful tests or treat implementation completion as permission to trade or spend.

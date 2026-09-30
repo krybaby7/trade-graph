@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from decimal import Decimal
 
 from trade_graph.adapters.brokers.matching import plan_fill
@@ -26,6 +25,7 @@ from trade_graph.contracts.models import (
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import UncertainExternal
 from trade_graph.domain.money import canonical_decimal
+from trade_graph.domain.precision import floor_to_increment, new_client_id
 
 
 class PaperBroker:
@@ -253,12 +253,4 @@ class DropAckBroker:
         return self.inner.match(observation)
 
 
-def floor_to_increment(value: Decimal, increment: Decimal) -> Decimal:
-    if increment <= 0:
-        raise ValueError("increment")
-    steps = (value / increment).to_integral_value(rounding="ROUND_FLOOR")
-    return steps * increment
-
-
-def new_client_id() -> str:
-    return uuid.uuid4().hex
+__all__ = ["DropAckBroker", "PaperBroker", "floor_to_increment", "new_client_id"]

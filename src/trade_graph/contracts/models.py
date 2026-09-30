@@ -558,6 +558,21 @@ class Observation(ContractModel):
         return canonical_decimal(value)
 
 
+class ModelCapabilities(ContractModel):
+    provider: Literal["openai", "anthropic", "scripted"]
+    model: str
+    structured_output: bool
+    forced_tool: bool
+    sampling_temperature: bool
+    tool_continuation: bool = False
+
+
+class ToolRequest(ContractModel):
+    call_id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class ModelUsage(ContractModel):
     uncached_input_tokens: int = Field(ge=0)
     cache_read_tokens: int = Field(default=0, ge=0)
@@ -593,6 +608,7 @@ class ModelResult(ContractModel):
     failure: ModelFailureKind | None = None
     message: str = ""
     usage: ModelUsage | None = None
+    tool_requests: list[ToolRequest] = Field(default_factory=list)
     provider_model: str | None = None
     elapsed_ms: int = 0
     raw_redacted: str = ""
@@ -664,6 +680,7 @@ SCHEMA_MODELS: dict[str, type[ContractModel]] = {
     "AuthorizedOrderIntent": AuthorizedOrderIntent,
     "FillRecord": FillRecord,
     "Observation": Observation,
+    "ModelCapabilities": ModelCapabilities,
     "ModelRequest": ModelRequest,
     "ModelResult": ModelResult,
     "PriceCard": PriceCard,
