@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "Recovery review: T12 in progress; T13-T15 reopened. T16 is not dependency-ready. Historical test evidence is retained, not recertified. Paid calls/live remain disabled.",
+  "status_note": "2026-09-30 continuation: recovered and reran the exact 0025141 source (229 tests); 5d5ce35 adds ten Engineer-result-to-Leader regressions (239 tests). T12 application workflow is complete; T13 is next. T13-T15 retain implemented slices but remain open. T16 is not dependency-ready; R1 is not a continuous autonomous service. No paid calls or live trading.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -121,15 +121,19 @@
       ]
     },
     "T12": {
-      "status": "in_progress",
+      "status": "done",
       "owner": "implementation-review",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_leader.py rejects an allowance increase, an attempt to clear an owner halt, and per-trade approval. The Leader assigns a research task, sets a coalesced schedule, and installs a tighter mandate. A wider mandate is rejected",
         "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard.",
-        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "66d6f9a and 0025141 persisted Secretary reports, bounded/deduplicated digests, scheduled gateway-backed Leader decisions, atomic allowed effects, receipt attribution and completed departmental consultations under the same bounded root. Full original 229-test suite reproduced locally.",
+        "tests/integration/test_leadership_workflow.py and test_leadership_followup.py exercise positive assignments, consultation return and evidence incorporation, schedules across restart, mandate/resource changes, own-pause resume, invalid/stale decisions, atomic failure and crash recovery before another model call.",
+        "5d5ce35: tests/integration/test_candidate_review_flow.py adds ten initially failing regressions. Real commissioned READY/FAILED artifacts now produce scoped Secretary completion reports and bounded candidate cards in persisted Leader snapshots. Gateway decisions activate/reject only reviewed, cited and unchanged candidates; cross-portfolio/guessed/stale results are blocked and committed effects recover without another model call.",
+        "Full Python 3.12.14 locked-dependency suite: 239 passed, zero failures/errors/skips; Ruff passed. Credential-free runtime CI 36744681382 and planning CI 36744681372. See docs/reviews/2026-09-30-continuation.md for exact scope and verification."
       ],
-      "remaining": "Integrated scheduled gateway-backed Leader and deterministic persisted Secretary, bounded dispatch/completion of consultations and authorized commissions; acceptance reopened."
+      "acceptance_scope": "T12 application workflows only. Scripted inference exercises the real gateway, persisted worker, authority and effects. This does not complete the Engineer model/worker lifecycle (T13), artifact consumption/observation (T14), or continuous operator service (T17)."
     },
     "T13": {
       "status": "todo",
@@ -138,9 +142,10 @@
       "evidence": [
         "tests/integration/test_engineer.py covers a scrubbed check environment, a worktree that omits .env and kernel files, a shadowed checks module that cannot make a failing policy pass, advice-only and protected-path failures, a file-limit failure that leaves the active hash unchanged, and rejection of a forged runner label and a mismatched checks hash",
         "Migration 0004 stores controller_attestations. The local check is not a paid model call. No production secret or database was mounted.",
-        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Authorization now binds commissions to real persisted Leader decisions, owner/mandate revisions, task hash, portfolio and worker. Nonrunnable changes cannot stage; revocation during checks retains failed evidence. Existing authorization/Engineer suites passed in the full 239-test run."
       ],
-      "remaining": "Authorization repairs and complete fenced Engineer worker crash/retry/failure acceptance. Restricted artifact checks are not OS isolation."
+      "remaining": "Integrate the commissioned Engineer task with a gateway-backed worker, bounded patch/repair/model-attempt receipts, fenced crash/retry/terminal-failure recovery and production-appropriate resource/path isolation. Existing allowlisted staging and scrubbed trusted-check subprocess are not proof of OS isolation or complete A27-A30/A33 acceptance."
     },
     "T14": {
       "status": "todo",
@@ -149,9 +154,10 @@
       "evidence": [
         "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",
         "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored.",
-        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Revalidated persisted candidate/commission/attestation binding, no-side-effect unauthorized rejection, baseline CAS, trader quiescence, concurrent activation and pointer rollback. New candidate-review tests exercise actual Leader gateway activation without manually injecting a candidate ID."
       ],
-      "remaining": "Scoped candidate authorization plus artifact-consumer reload, controlled restart, observation monitoring and automatic rollback remain to verify."
+      "remaining": "Implement artifact-consumer reload, controlled restart, observation health criteria and automatic rollback. Prove the next decision consumes the new artifact, not just its version label. Pointer switching and unchanged ledger history are retained foundations, not full delivery."
     },
     "T15": {
       "status": "todo",
@@ -160,16 +166,18 @@
       "evidence": [
         "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
         "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
-        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass."
       ],
-      "remaining": "Cookie-write repairs plus full docs/09 dashboard/API/owner-control audit remain; no blanket acceptance from a few security tests."
+      "remaining": "Complete docs/09 financial/organisation/cost/change views and evidence navigation; missing positions, decision detail, research, lessons and events APIs; full authenticated owner configuration/task controls and authoritative reconciliation/provisional-state coverage. A few security/projection tests do not certify the dashboard."
     },
     "T16": {
       "status": "todo",
       "owner": null,
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop"
+        "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
+        "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload."
       ],
       "remaining": "The offline demo now runs one role-worker task after activation. The acceptance catalogue is still not closed as one fault suite: disk failure, a repository secret scan, and production-equivalent paths beyond the scripted demo remain open."
     },
@@ -230,21 +238,41 @@
     }
   },
   "review_checkpoint": {
-    "implementation_commit": "2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0",
-    "preserved_previous_fix_commit": "9e908d4ca22786d1ee49bff963ac98179c79e0b3",
-    "runtime_ci_run": 36699717463,
-    "python": "3.12",
-    "tests": 113,
+    "implementation_commit": "5d5ce35a7a0f955f14cbb4ef4c7ca920e4432c09",
+    "implementation_tree": "308d552fc2bb424b1bcb660f9a3678c8627faa5a",
+    "preserved_previous_head": "0025141e7b094a5536deb6fbceb873574c4160a1",
+    "runtime_ci_run": 36744681382,
+    "planning_ci_run": 36744681372,
+    "python": "3.12.14",
+    "tests": 239,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "new_scheduler_regression_cases": 31,
-    "historical_evidence_note": "Existing evidence below records the earlier submission; it is not a new certification of full task acceptance. See IMPLEMENTATION-STATUS.md."
+    "new_candidate_review_regression_cases": 10,
+    "next_dependency_ready_task": "T13",
+    "acceptance_note": "T12 workflow closure, not complete autonomous R1, production isolation, paid-provider verification or profitability.",
+    "junit_artifact_id": 11111353237,
+    "runtime_ci_conclusion": "success",
+    "planning_ci_conclusion": "success"
   },
   "historical_submission": {
     "commit": "a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
     "owner": "cursor-agent",
     "reported_tests": 34,
     "note": "Original per-task evidence is retained below; shared original lint/test claim is recorded here once. This historical submission overclaimed full completion and is superseded by the review status."
-  }
+  },
+  "review_checkpoint_history": [
+    {
+      "implementation_commit": "2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0",
+      "preserved_previous_fix_commit": "9e908d4ca22786d1ee49bff963ac98179c79e0b3",
+      "runtime_ci_run": 36699717463,
+      "python": "3.12",
+      "tests": 113,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "new_scheduler_regression_cases": 31,
+      "historical_evidence_note": "Existing evidence below records the earlier submission; it is not a new certification of full task acceptance. See IMPLEMENTATION-STATUS.md."
+    }
+  ]
 }
