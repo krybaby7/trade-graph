@@ -1,6 +1,6 @@
-# Implementation status — T01 authority closure
+# Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T03 are accepted. The next dependency-ready work is public market data (T04) and provider transports (T06), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T05 are accepted. The next dependency-ready work is the budgeted provider transport (T06), not a live pilot.
 
 ## Saved work
 
@@ -20,6 +20,8 @@ The previous commit preserves FIFO and third-asset-fee accounting corrections, c
 
 T01 is closed. `Broker` and `InferenceAdapter` are provider-neutral protocols. `Execution` accepts a `Broker` and refuses a capability set that enables withdrawals, lacks client-id lookup, or names a different venue or mode. Order authorization loads the active owner-policy revision and mandate from SQLite. Exposure caps and quote age are the tighter of those documents. A decision that cites a stale revision is rejected. An expired mandate blocks new exposure and still allows a reduction. Tightening the active mandate rejects an unsent increase before submit and releases its reservation. Policy and mandate revisions are immutable. Leader and trader roles cannot write owner policy or enable withdrawals.
 
+Public market data now has a Kraken REST and WebSocket client and a Frankfurter ECB reference-rate client. Both take an injectable transport. Scripted tests cover reconnect, REST backfill after a dropped socket, ignoring an older ticker, and hiding observations that were not yet available. A normalized public book can partially fill a paper order. The fixed paper fee tier is unchanged. The public smoke above is separate from those tests and did not submit an order.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
@@ -37,8 +39,9 @@ Additive migration `0002` installs task lease tokens and an index. Migration app
 | GitHub Actions Python 3.12, locked dependencies | Runtime run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463), job 109836047214: success |
 | Ruff on `src tests` | Passed in that CI job |
 | Full pytest suite at the prior CI head `2e5f1d8` | **113 passed** in GitHub Actions run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463); JUnit artifact 11089725511 |
-| Local Python 3.12 `uv run pytest` after T01 | **124 passed; 0 failed, 0 skipped** |
-| `uv run ruff check src tests` | Passed locally after T01 |
+| Local Python 3.12 `uv run pytest` after T04/T05 | **129 passed; 0 failed, 0 skipped** |
+| `uv run ruff check src tests` | Passed locally after the public-market client |
+| Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
 | Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
 | Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; Alembic upgrade-to-head twice and application reopen verified at `0002` |
@@ -67,7 +70,7 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T04/T06 integrations.** Market normalization is not a public REST/WebSocket reconnect/backfill client. FX observations are injected, with no attributed FX network client. Both provider adapters currently parse supplied HTTP fixtures; wire real budgeted transports, model capabilities and tool continuations before any paid probe. A protocol fixture is not that client.
+1. **Complete T06.** Both provider adapters currently parse supplied HTTP fixtures. Wire budgeted transports, tool continuations and one-provider routing before any paid probe. A fixture parse is not a credentialed provider call. Public market data and reference FX now have clients; that does not authorize model spend.
 2. **Integrate T07–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
 3. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
@@ -75,4 +78,4 @@ Forward-paper economic evaluation and any live pilot come later. Broader executa
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T03 are accepted. T04–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility now selects T04 and T06. T04 is the public-data client. T06 is still fixture parsing until a budgeted transport exists. Neither is a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T05 are accepted. T06–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T06. Provider adapters still parse fixtures. That is not a live pilot.

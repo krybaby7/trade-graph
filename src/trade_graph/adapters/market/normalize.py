@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from trade_graph.contracts.models import InstrumentRules, Observation
+from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.money import parse_decimal
 
 _ASSET = {"XBT": "BTC", "XXBT": "BTC", "ETH": "ETH", "XETH": "ETH", "ZUSD": "USD", "USD": "USD"}
 
@@ -29,21 +32,39 @@ def normalize_pair(name: str, info: dict) -> InstrumentRules:
     )
 
 
-def normalize_ticker(message: dict, *, observation_id: str, available_at: datetime) -> Observation:
+def _price(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        raise ValidationFailure("binary float is not a market price")
+    return parse_decimal(value)
+
+
+def normalize_ticker(
+    message: dict,
+    *,
+    observation_id: str,
+    available_at: datetime,
+    event_time: datetime | None = None,
+    source: str = "kraken_public",
+) -> Observation:
     data = message.get("data", message)
     symbol = str(data["symbol"]).replace("XBT", "BTC")
+    occurred = event_time or available_at
+    if occurred > available_at:
+        raise ValidationFailure("event time cannot be after the observation was available")
     return Observation(
         observation_id=observation_id,
         venue="kraken",
         symbol=symbol,
-        event_time_utc=available_at,
+        event_time_utc=occurred,
         available_at_utc=available_at,
-        bid=Decimal(str(data["bid"])),
-        ask=Decimal(str(data["ask"])),
-        last=Decimal(str(data["last"])) if data.get("last") is not None else None,
-        bid_size=Decimal(str(data["bid_qty"])) if data.get("bid_qty") is not None else None,
-        ask_size=Decimal(str(data["ask_qty"])) if data.get("ask_qty") is not None else None,
-        volume=Decimal(str(data["volume"])) if data.get("volume") is not None else None,
+        bid=_price(data.get("bid")),
+        ask=_price(data.get("ask")),
+        last=_price(data.get("last")),
+        bid_size=_price(data.get("bid_qty")),
+        ask_size=_price(data.get("ask_qty")),
+        volume=_price(data.get("volume")),
         kind="quote",
-        source="kraken_public",
+        source=source,
     )

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T03 accepted on cursor/trade-graph-r1-548a after the review recovery. T01 closed provider-neutral broker/inference protocols and bound authorization to persisted owner/mandate revisions. T02 and T03 were revalidated against that closure; their earlier ledger, backup and accounting tests still pass. T04-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T05 accepted on cursor/trade-graph-r1-548a. T04 adds scripted-tested public Kraken and Frankfurter clients, with a separately labeled public smoke and no orders. T05 paper fills now consume a normalized public book. T06-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -43,22 +43,24 @@
       ]
     },
     "T04": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "stale-quote increase is rejected in tests/integration/test_execution.py; public Kraken network smoke was not run"
-      ],
-      "remaining": "Implement public REST/WebSocket clients with reconnect, gap backfill and point-in-time replay; current market module normalizes supplied observations only. Add attributed FX client."
+        "tests/integration/test_public_market.py covers REST metadata/ticker, attributed ECB FX, websocket reconnect/backfill, out-of-order quotes, and point-in-time replay",
+        "A13 stale increase remains covered in tests/integration/test_execution.py and by the stale public-book authorization case",
+        "2026-09-30 public smoke, labeled separately from unit tests: Kraken AssetPairs XBTUSD, REST ticker, one WebSocket v2 snapshot, Frankfurter ECB USD/EUR 0.88067 for 2026-09-29. No credentials, no orders, live reconnect not exercised."
+      ]
     },
     "T05": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "paper partial fills, minimums, stop gap, and same-bar exclusion pass in tests/integration/test_execution.py; fee tier is the explicit fixed conservative schedule"
-      ],
-      "remaining": "Complete broker protocol conformance and replay with real normalized feed inputs after T04; preserve partial-fill/fee/matching regression coverage."
+        "paper partial fills, minimums, stop gap, and same-bar exclusion pass in tests/integration/test_execution.py; fee tier is the explicit fixed conservative schedule",
+        "tests/integration/test_public_market.py::test_normalized_public_book_drives_paper_partial_fill uses a normalized Kraken ticker shape on the paper ledger path",
+        "2026-09-30 local Python 3.12 uv run pytest: 129 passed, 0 failed, 0 skipped; ruff check src tests passed."
+      ]
     },
     "T06": {
       "status": "todo",
