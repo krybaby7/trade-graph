@@ -1,65 +1,75 @@
-# Implementation status — recovered continuation
+# Implementation status — Engineer continuation
 
-Updated: 2026-09-30. **Partial offline prototype; autonomous R1 is not complete.**
+Updated: 2026-10-01. **T00–T13 complete at their recorded application scopes; autonomous R1 is not complete.**
 Repository: `krybaby7/trade-graph`; branch: `cursor/trade-graph-r1-548a`.
-PR #1 remains draft, open and unmerged. Paid calls, live trading and broader executable Engineer extensions remain disabled.
-Default USD10,000 virtual capital, EUR reporting; actual operating allowance and future live allocation are separate.
+Implementation checkpoint: `a503cacd481f6f84c1e37723ebcfa2293c26cf07`.
+Default USD10,000 virtual capital with EUR reporting. Paid calls, live trading and executable Engineer extensions stay disabled.
 
-## Saved progress and resumed work
+## Recovery and completed work
 
-The crashed session had pushed `5a732f7`, `66d6f9a` and `0025141e7b094a5536deb6fbceb873574c4160a1`.
-Its security/authority fixes and integrated leadership work were not lost. Unsaved local edits cannot be certified.
-The source recovered from CI has Git tree `0a9317bf8ae85f035b3f69dc0801e842c44da457`, exactly matching that head.
-All 229 baseline tests were rerun successfully before the new change. Older status text was behind the code.
+The onboarding checkout was still on planning-only `main` (`7770d17`). The latest implementation was recovered
+from the existing remote branch at `9376d2d`; no newer work was reset. Its full 280-test baseline passed locally.
+The saved task/status documents lagged the two latest Engineer foundation commits:
+`f3231b7` added durable gateway invocations; `9376d2d` added the Linux seccomp data-only checker.
 
-New implementation commit: **`5d5ce35a7a0f955f14cbb4ef4c7ca920e4432c09`**.
-Its parent is `0025141`; its complete tree `308d552fc2bb424b1bcb660f9a3678c8627faa5a` matches the tested source.
-Completed Engineer candidates now reach the Secretary and the Leader's persisted decision context automatically.
-Bounded, portfolio-scoped review cards expose actual independent-check facts. Activation/rejection requires
-candidate-specific evidence and unchanged reviewed state; existing commission and controller gates remain in force.
-Ten new tests cover positive and denied paths, failed candidates, cross-portfolio routing and crash recovery.
+T12 was already complete at application-workflow scope. **T13 was unfinished and is now complete for registered,
+allowlisted data artifacts.** Persisted Leader commissions now run through `EngineerHandler`, `RoleWorker` and
+the real budget gateway. The Engineer generates actual files, independent checks attest them, bounded repairs
+receive their own receipts, and completion evidence reaches the Secretary and Leader. Unknown model dispatches
+wait for reconciliation without replay. Revoked authority cannot erase billing facts. Expired/replaced workers
+cannot publish candidates. Local recovery preserves old work directories and stops after three recoveries per invocation.
 
-## Verification
+The offline demo now uses this path for a rejected protected patch and its successful repair, then routes
+the independently checked candidate through the Secretary to a gateway-backed Leader activation decision.
+It no longer manufactures the Engineer's rejected-attempt receipt or supplies its successful files directly.
 
-- Full Python 3.12.14 locked-dependency suite: **239 passed; zero failures, errors or skips**. No test exclusions.
-- Ruff passed; planning validation and all 10 planning tests passed; the standalone offline demo passed.
-- Credential-free runtime CI passed: [36744681382](https://github.com/krybaby7/trade-graph/actions/runs/36744681382).
-- Planning CI passed: [36744681372](https://github.com/krybaby7/trade-graph/actions/runs/36744681372).
-- Downloaded CI JUnit artifact `11111353237` independently confirms 239 tests, with no failures, errors or skips.
-- Local tests used the saved CI Python/dependency environment with a byte-identical `uv.lock`; network installation was unavailable locally.
-- Scripted model/HTTP fixtures are not billed-provider success. No new public-data smoke, credentialed call or real order was made.
+## Verified commands and results
 
-## Current acceptance and next task
+```bash
+uv sync --frozen --group dev
+uv run ruff check src tests
+uv run pytest
+python3 scripts/check_plan.py
+python3 scripts/test_planning.py
+uv run trade-graph demo --offline --work <fresh-private-directory>
+```
 
-**T12 is complete at application-workflow scope; T13 is the next dependency-ready task.**
-Persisted reports/digests, scheduled gateway-backed Leader decisions, same-root completed consultations,
-mandate/resource/schedule effects, authorized commissions and candidate-result review are integrated and tested.
-The Leader still cannot increase owner funds, lift owner/system halts or approve individual trades.
+- Python **3.12.14**, unchanged `uv.lock`, installed successfully in this cloud machine.
+- Full suite: **349 passed; zero failures, errors or skips**. JUnit counts verified.
+- Ruff and all **10 planning tests** passed; planning references/DAG and cost calculation passed.
+- **40 Engineer workflow regressions** and **29 HTTPX failure regressions** were added.
+- Standalone CLI demo passed: two commissioned Engineer attempts/receipts, rejected patch, actual trusted checks,
+  Secretary-routed Leader activation, four fills preserved across restart and zero restart submissions.
+- Staged source/test hygiene scan passed. Runtime data, credentials and environments are not tracked.
+- These are local, credential-free results. CI results for the new checkpoint were not retrieved: GitHub GraphQL
+  access returned Forbidden. Earlier CI results remain historical evidence in `planning/progress.json`.
 
-**T13 remains open:** integrate the commissioned Engineer with the real worker/gateway attempt lifecycle,
-bounded repairs and receipts, fenced crash/retry/failure recovery, and appropriate execution/resource isolation.
-Allowlisted artifact staging and a scrubbed trusted-check subprocess are retained foundations, not an OS sandbox.
+Use a fresh private demo directory: the demo deliberately retains its prior database and artifact evidence.
+No provider API call, credentialed exchange operation or new public-market smoke was performed.
+HTTPX tests use mocked HTTP responses. Synthetic receipts are not actual provider bills.
 
-**T14 remains open:** artifact-consumer reload, controlled restart, observation and automatic rollback.
-Current activation checks and pointer CAS do not prove that the next decision consumes changed artifacts.
+## Next dependency-ready task: T14
 
-**T15 remains open:** complete dashboard/API/owner-control and authoritative financial reconciliation coverage.
-The CSRF defects are fixed; that is not full dashboard acceptance.
+Implement artifact-consumer reload, controlled restart, deterministic observation health criteria and automatic rollback.
+The demo's context selection still receives its policy explicitly; changing a pointer/version label does not prove
+that a running consumer loaded the activated artifact. Existing quiescence, baseline CAS, attestation and financial
+history preservation tests remain foundations for T14.
 
-**T16–T17 remain open:** complete the offline fault catalogue, then package the continuous paper service,
-genuine diagnostics/reporting and deployment/backup procedures. `run --mode paper` currently performs one
-recovery pass; `doctor` and `report` are still placeholders. A credentialed paper soak needs a separate owner budget.
+**T15:** complete financial/organisation/cost/change views, missing APIs, evidence navigation and owner controls.
+**T16:** complete the acceptance fault catalogue and production-equivalent full-loop paths beyond the scripted demo.
+**T17:** replace one-pass `run` and placeholder `doctor`/`report` with a continuous paper service, genuine diagnostics,
+deployment/backup procedures, then separately funded credentialed paper verification.
+**T18–T22:** forward-paper economic evaluation, live-adapter verification, separately authorized live pilot and
+protected-kernel isolation before broader executable engineering. No live pilot or paid soak is authorized here.
 
-**T18–T22 follow later:** forward-paper economic evaluation, complete live adapter, separately authorized live
-pilot, real-host protected-kernel isolation, and broader engineering classes. The live pilot remains blocked.
-No profitability claim; the offline evaluation returns `insufficient_evidence`.
+## Scope and handoff
 
-## Continue from GitHub
+The independent checker covers owner-pinned registered data grammars, required obligations, paths, manifests,
+content/harness identity and Linux data-pipe confinement. Task prose cannot replace the gates. Unsupported model
+assignments/graph edges and executable classes stay rejected. Prompt changes require an explicit owner/commission
+class; `artifact_config` retains historical compatibility for registered JSON data only.
 
-Read `AGENTS.md`, `IMPLEMENTATION-START-HERE.md`, the complete task-referenced specs,
-`planning/tasks.json`, `planning/progress.json`, and `docs/reviews/2026-09-30-continuation.md`.
-Inspect the current remote head before editing. This checkpoint is an anchor, never permission to reset newer work.
-Preserve the working implementation and historical evidence. Do not close T13–T15 from small passing test subsets.
-
-Historical `docs/history/STATUS-0b5ba2b.md` is audit material only. Earlier completion labels and the old
-113-test review checkpoint are superseded; the old checkpoint remains in `review_checkpoint_history`.
+This is not strategy-quality, token-savings, profitability or arbitrary-code isolation evidence. Those evaluations,
+T14 observation, T17 operating-service integration and T21 protected-host boundaries remain distinct.
+Read `AGENTS.md`, `IMPLEMENTATION-START-HERE.md`, task-referenced specs and
+`docs/reviews/2026-10-01-engineer.md` before continuing. Inspect current Git state and remote head; never reset newer work.
