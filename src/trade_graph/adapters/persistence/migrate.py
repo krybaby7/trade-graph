@@ -368,7 +368,14 @@ STATEMENTS: list[tuple[str, list[str]]] = [
                 PRIMARY KEY (portfolio_id, name)
             )""",
         ],
-    )
+    ),
+    (
+        "0002",
+        [
+            "ALTER TABLE tasks ADD COLUMN lease_token TEXT",
+            "CREATE INDEX tasks_claimable ON tasks (status, due_at, lease_expires_at)",
+        ],
+    ),
 ]
 
 
@@ -382,16 +389,35 @@ def applied_versions(connection: sqlite3.Connection) -> set[str]:
 
 
 def apply_migrations(connection: sqlite3.Connection, applied_at: str) -> list[str]:
-    done = applied_versions(connection)
-    ran: list[str] = []
-    for version, statements in STATEMENTS:
-        if version in done:
-            continue
-        for statement in statements:
-            connection.execute(statement)
-        connection.execute(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-            (version, applied_at),
-        )
-        ran.append(version)
-    return ran
+    """Apply the pending schema atomically, also when called inside Alembic.
+
+    A writer lock is acquired before reading versions on standalone startup.
+    Nested callers retain ownership of their outer transaction.
+    """
+    nested = connection.in_transaction
+    if nested:
+        connection.execute("SAVEPOINT trade_graph_migrations")
+    else:
+        connection.execute("BEGIN IMMEDIATE")
+    try:
+        done = applied_versions(connection)
+        ran: list[str] = []
+        for version, statements in STATEMENTS:
+            if version in done:
+                continue
+            for statement in statements:
+                connection.execute(statement)
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (version, applied_at),
+            )
+            ran.append(version)
+        connection.execute("RELEASE SAVEPOINT trade_graph_migrations" if nested else "COMMIT")
+        return ran
+    except BaseException:
+        if nested:
+            connection.execute("ROLLBACK TO SAVEPOINT trade_graph_migrations")
+            connection.execute("RELEASE SAVEPOINT trade_graph_migrations")
+        elif connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
