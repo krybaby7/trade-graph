@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from tests.leadership_support import commission
 
 from trade_graph.adapters.engineering.provenance import scrubbed_env
 from trade_graph.adapters.engineering.runner import EngineerRunner
@@ -93,7 +94,7 @@ def test_worktree_excludes_secrets_and_shadowed_checks_do_not_pass(tmp_path: Pat
     assert not any(path.name == ".env" or "kernel" in path.parts for path in staged)
     versions.ensure(portfolio, "v1", baseline)
     task = _task(clock, portfolio, baseline)
-    engineer.commission(portfolio, task)
+    commission(engineer, portfolio, task)
     destination = tmp_path / "stage"
     result = engineer.implement(
         portfolio,
@@ -140,7 +141,7 @@ def test_advice_protected_paths_and_failed_checks_leave_the_active_hash(tmp_path
     baseline = engineer.baseline(tmp_path / "base")
     versions.ensure(portfolio, "v1", baseline)
     task = _task(clock, portfolio, baseline, max_steps=5)
-    engineer.commission(portfolio, task)
+    commission(engineer, portfolio, task)
     with pytest.raises(AuthorityDenied):
         engineer.commission(
             portfolio,
@@ -175,7 +176,7 @@ def test_advice_protected_paths_and_failed_checks_leave_the_active_hash(tmp_path
     assert events == 4
     assert failed.content_hash is not None
     stored = database.execute(
-        "SELECT exit_code FROM controller_attestations WHERE content_hash = ?",
+        "SELECT exit_code FROM candidate_attestations WHERE content_hash = ?",
         (failed.content_hash,),
     ).fetchone()
     assert stored["exit_code"] != 0
@@ -186,7 +187,7 @@ def test_file_limit_is_visible_and_a_wrong_checks_hash_cannot_activate(tmp_path:
     baseline = engineer.baseline(tmp_path / "base")
     versions.ensure(portfolio, "v1", baseline)
     task = _task(clock, portfolio, baseline, allowed_paths=["artifacts/"])
-    engineer.commission(portfolio, task)
+    commission(engineer, portfolio, task)
     files = {f"artifacts/note-{index}.json": "{}" for index in range(6)}
     limited = engineer.implement(portfolio, task.record_id, files, tmp_path / "limited")
     assert limited.state == "FAILED"

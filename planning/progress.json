@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T15 accepted on cursor/trade-graph-r1-548a. The offline demo now completes one role-worker task after activation, and T16 remains todo until the fault catalogue is closed. T17-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "Recovery review: T12 in progress; T13-T15 reopened. T16 is not dependency-ready. Historical test evidence is retained, not recertified. Paid calls/live remain disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -121,40 +121,48 @@
       ]
     },
     "T12": {
-      "status": "done",
-      "owner": "cursor-agent",
+      "status": "in_progress",
+      "owner": "implementation-review",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_leader.py rejects an allowance increase, an attempt to clear an owner halt, and per-trade approval. The Leader assigns a research task, sets a coalesced schedule, and installs a tighter mandate. A wider mandate is rejected",
-        "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard."
-      ]
+        "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+      ],
+      "remaining": "Integrated scheduled gateway-backed Leader and deterministic persisted Secretary, bounded dispatch/completion of consultations and authorized commissions; acceptance reopened."
     },
     "T13": {
-      "status": "done",
-      "owner": "cursor-agent",
+      "status": "todo",
+      "owner": null,
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_engineer.py covers a scrubbed check environment, a worktree that omits .env and kernel files, a shadowed checks module that cannot make a failing policy pass, advice-only and protected-path failures, a file-limit failure that leaves the active hash unchanged, and rejection of a forged runner label and a mismatched checks hash",
-        "Migration 0004 stores controller_attestations. The local check is not a paid model call. No production secret or database was mounted."
-      ]
+        "Migration 0004 stores controller_attestations. The local check is not a paid model call. No production secret or database was mounted.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+      ],
+      "remaining": "Authorization repairs and complete fenced Engineer worker crash/retry/failure acceptance. Restricted artifact checks are not OS isolation."
     },
     "T14": {
-      "status": "done",
-      "owner": "cursor-agent",
+      "status": "todo",
+      "owner": null,
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",
-        "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored."
-      ]
+        "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+      ],
+      "remaining": "Scoped candidate authorization plus artifact-consumer reload, controlled restart, observation monitoring and automatic rollback remain to verify."
     },
     "T15": {
-      "status": "done",
-      "owner": "cursor-agent",
+      "status": "todo",
+      "owner": null,
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
-        "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422"
-      ]
+        "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance."
+      ],
+      "remaining": "Cookie-write repairs plus full docs/09 dashboard/API/owner-control audit remain; no blanket acceptance from a few security tests."
     },
     "T16": {
       "status": "todo",

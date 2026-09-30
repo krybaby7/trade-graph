@@ -137,6 +137,7 @@ class BudgetGateway:
         reservation_id = str(uuid.uuid4())
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
+            self._assert_task_room(conn, task_id, root_task_id, role, amount, synthetic)
             if not synthetic:
                 self._assert_room(
                     conn,
@@ -171,6 +172,23 @@ class BudgetGateway:
                 ),
             )
         return reservation_id
+
+    def _assert_task_room(self, conn, task_id, root_task_id, role, amount, synthetic) -> None:
+        task = conn.execute('SELECT * FROM tasks WHERE task_id = ?', (task_id,)).fetchone()
+        if task is None:
+            return  # Legacy standalone callers still have deployment/period/root budget enforcement.
+        if task['root_task_id'] != root_task_id or task['role'] != role:
+            raise BudgetExhausted('task attribution mismatch')
+        for identity, column in ((task_id, 'task_id'), (root_task_id, 'root_task_id')):
+            bound = conn.execute('SELECT allocated_spend FROM tasks WHERE task_id = ?', (identity,)).fetchone()
+            if bound is None or bound['allocated_spend'] is None:
+                continue
+            rows = conn.execute(f"""SELECT amount FROM budget_reservations WHERE {column} = ?
+                AND synthetic = ? AND state IN ('RESERVED', 'UNCERTAIN', 'COMMITTED', 'CONSERVATIVE', 'RECONCILED')""",
+                (identity, int(synthetic))).fetchall()
+            used = sum((Decimal(r['amount']) for r in rows), Decimal('0'))
+            if used + amount > Decimal(bound['allocated_spend']):
+                raise BudgetExhausted('room in shared task/root allocation exhausted')
 
     @atomic
     def commit(

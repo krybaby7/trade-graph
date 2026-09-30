@@ -259,6 +259,8 @@ class OptimisationProposal(Envelope):
 
 
 class LeaderDecision(Envelope):
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    snapshot_id: str | None = None
     rationale: str
     intended_outcome: str
     mandate_id: str | None = None

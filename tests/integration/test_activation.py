@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from tests.leadership_support import commission
 
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
@@ -55,7 +56,7 @@ def _ready(tmp_path):
         rollback_criteria="pointer only",
         expires_at_utc=clock.now() + timedelta(days=1),
     )
-    engineer.commission(portfolio, task)
+    commission(engineer, portfolio, task)
     result = engineer.implement(
         portfolio,
         task.record_id,
@@ -142,7 +143,7 @@ def test_rollback_restores_the_pointer_and_keeps_fills_costs_and_decision_versio
     versions.rollback(portfolio, baseline, "v1")
     assert versions.current_hash(portfolio) == baseline
     assert database.execute("SELECT COUNT(*) AS n FROM fills").fetchone()["n"] == 1
-    assert database.execute("SELECT COUNT(*) AS n FROM usage_receipts").fetchone()["n"] == 1
+    assert database.execute("SELECT COUNT(*) AS n FROM usage_receipts").fetchone()["n"] == 2
     opening = database.execute(
         "SELECT system_version_id FROM decisions WHERE decision_id = 'open'"
     ).fetchone()["system_version_id"]

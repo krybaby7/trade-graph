@@ -15,6 +15,8 @@ from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.engineer import ArtifactEngineer
 from trade_graph.application.execution import Execution
 from trade_graph.application.gateway import ModelGateway
+from trade_graph.application.leader import LeaderOffice, Secretary
+from trade_graph.application.leadership import LeaderHandler
 from trade_graph.application.ledger import Ledger
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.application.worker import RoleWorker
@@ -218,7 +220,29 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         rollback_criteria="restore the previous artifact pointer",
         expires_at_utc=clock.now() + timedelta(days=1),
     )
-    engineer.commission(portfolio, change)
+    engineer.propose(portfolio, change)
+    scheduler = Scheduler(database, clock)
+    secretary = Secretary(execution, scheduler)
+    report_id = secretary.report(portfolio, role="optimisation", kind="proposal",
+        summary="Eight general lessons repeatedly crowd out relevant evidence.",
+        evidence_refs=[change.record_id, "lesson-1-r1"], source_key="context-policy-review")
+    secretary.scheduled(portfolio)
+    gateway.scripted.outputs["leader"] = {
+        "evidence_refs": [report_id],
+        "rationale": "Test a smaller context while retaining safety and mandate obligations.",
+        "intended_outcome": "Five general lessons with critical context unchanged.",
+        "review_criteria": "Independent context-policy checks and later quality observation.",
+        "actions": [{"kind": "commission", "change_id": change.record_id}],
+    }
+    leader = LeaderHandler(LeaderOffice(execution, scheduler, budget), secretary, gateway,
+        deployment_id="deployment", price_card_id=card.price_card_id)
+    worker = RoleWorker(scheduler, owner="offline-worker", system_version_id=baseline, reconcile=lambda: None)
+    worker_completed = worker.run_available({"leader": leader})
+    leader_decision_id = database.execute("SELECT decision_id FROM leader_decisions").fetchone()[0]
+    # The failed attempt belongs to the same authorized envelope, before activation.
+    rejected_result = engineer.implement(portfolio, change.record_id,
+        {"src/trade_graph/kernel/books.py": "cash = 1"}, work / "rejected")
+    rejected = rejected_result.state == "FAILED"
     ready = engineer.implement(
         portfolio,
         change.record_id,
@@ -245,28 +269,6 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         }
     )
     execution.record_non_order(portfolio, hold)
-    scheduler = Scheduler(database, clock)
-    scheduler.add_task(
-        role="trader",
-        objective="decide under the activated artifact",
-        portfolio_id=portfolio,
-        expected_version=versions.current_hash(portfolio),
-    )
-    worker = RoleWorker(
-        scheduler,
-        owner="offline-worker",
-        system_version_id=versions.current_hash(portfolio),
-        reconcile=lambda: None,
-    )
-    worker_completed = worker.run_available({"trader": lambda _payload: {"action": "hold"}})
-
-    rejected_result = engineer.implement(
-        portfolio,
-        change.record_id,
-        {"src/trade_graph/kernel/books.py": "cash = 1"},
-        work / "rejected",
-    )
-    rejected = rejected_result.state == "FAILED"
     reservation = budget.reserve(
         deployment_id="deployment",
         role="engineer",
@@ -402,6 +404,8 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         "baseline_hash": baseline,
         "new_decision_version": hold.system_version_id,
         "worker_completed": worker_completed,
+        "leader_decision_id": leader_decision_id,
+        "secretary_report_id": report_id,
         "context_cap": selected["lessons"].__len__(),
         "always_include": selected["always_include"],
         "rejected_change": rejected,

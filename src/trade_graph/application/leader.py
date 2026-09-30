@@ -7,6 +7,7 @@ from decimal import Decimal
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.execution import Execution
 from trade_graph.application.scheduler import Scheduler
+from trade_graph.application.secretary import Secretary as Secretary
 from trade_graph.contracts.models import Mandate, PauseProfile
 from trade_graph.domain.errors import AuthorityDenied
 
@@ -18,6 +19,11 @@ class LeaderOffice:
         self.budget = budget
 
     def set_pause(self, portfolio_id: str, profile: PauseProfile, reason: str) -> None:
+        pause = self.execution.pause(portfolio_id)
+        if pause and pause['profile'] != 'RUNNING' and pause['originator'] != 'leader':
+            raise AuthorityDenied('Leader cannot clear or replace another originator pause')
+        if profile == 'RUNNING' and pause and pause['originator'] != 'leader':
+            raise AuthorityDenied('Leader may resume only its own pauses')
         self.execution.set_pause(portfolio_id, profile, "leader", reason)
 
     def raise_allowance(self, deployment_id: str, total: Decimal) -> None:
@@ -39,22 +45,3 @@ class LeaderOffice:
 
     def install_mandate(self, mandate: Mandate) -> None:
         self.execution.authority.install_mandate(mandate, role="leader")
-
-
-class Secretary:
-    def __init__(self, execution: Execution, scheduler: Scheduler) -> None:
-        self.execution = execution
-        self.scheduler = scheduler
-
-    def digest(self, portfolio_id: str) -> dict[str, str | int]:
-        pause = self.execution.pause(portfolio_id)
-        rows = self.scheduler.database.execute(
-            "SELECT status FROM tasks WHERE portfolio_id = ?",
-            (portfolio_id,),
-        ).fetchall()
-        return {
-            "portfolio_id": portfolio_id,
-            "pause": pause["profile"] if pause else "RUNNING",
-            "tasks": len(rows),
-            "orders_created": 0,
-        }

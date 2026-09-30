@@ -7,6 +7,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.domain.clock import Clock, utc_iso
@@ -52,6 +53,8 @@ class Scheduler:
         due_at: str | None = None,
         payload: dict | None = None,
         expected_version: str | None = None,
+        allocated_spend: Decimal | None = None,
+        deadline_at: str | None = None,
     ) -> str:
         self._positive(max_attempts, "max_attempts")
         task_id = str(uuid.uuid4())
@@ -92,10 +95,46 @@ class Scheduler:
             (task_id, root, parent_id, portfolio_id, role, objective, due_at or self.now(),
              dedup_key, expected_version, max_attempts, json.dumps(payload or {}), self.now()),
         )
+        if allocated_spend is not None:
+            self.allocate(task_id, allocated_spend)
+        self.database.execute('UPDATE tasks SET deadline_at = ? WHERE task_id = ?', (deadline_at, task_id))
         return task_id
 
     @atomic
-    def claim(self, owner: str, ttl_seconds: int = 30) -> TaskLease | None:
+    def allocate(self, task_id: str, amount: Decimal) -> None:
+        if not amount.is_finite() or amount < 0:
+            raise ValidationFailure('nonnegative finite task budget required')
+        row = self.database.execute('SELECT * FROM tasks WHERE task_id = ?', (task_id,)).fetchone()
+        if row is None:
+            raise ValidationFailure('unknown task allocation')
+        if row['allocated_spend'] is not None and Decimal(row['allocated_spend']) != amount:
+            raise AuthorityDenied('task commitment is immutable')
+        if row['parent_id']:
+            parent = self.database.execute('SELECT * FROM tasks WHERE task_id = ?', (row['parent_id'],)).fetchone()
+            if parent['allocated_spend'] is None:
+                raise AuthorityDenied('parent requires a shared monetary ceiling')
+            children = self.database.execute("""SELECT allocated_spend FROM tasks
+                WHERE parent_id = ? AND task_id != ?""", (row['parent_id'], task_id)).fetchall()
+            committed = sum((Decimal(c['allocated_spend'] or '0') for c in children), Decimal('0'))
+            holds = self.database.execute("""SELECT amount, synthetic FROM budget_reservations
+                WHERE task_id = ? AND state IN ('RESERVED', 'UNCERTAIN', 'COMMITTED', 'CONSERVATIVE', 'RECONCILED')""",
+                (row['parent_id'],)).fetchall()
+            used = max((sum((Decimal(h['amount']) for h in holds if h['synthetic'] == mode), Decimal('0'))
+                        for mode in (0, 1)), default=Decimal('0'))
+            if committed + used + amount > Decimal(parent['allocated_spend']):
+                raise AuthorityDenied('shared parent monetary commitment exceeded')
+        self.database.execute('UPDATE tasks SET allocated_spend = ? WHERE task_id = ?', (str(amount), task_id))
+
+    @atomic
+    def finish(self, lease: TaskLease, output: dict, status: str) -> None:
+        if status not in {'SUCCEEDED', 'FAILED', 'BLOCKED_BUDGET', 'WAITING_EXTERNAL'}:
+            raise ValidationFailure('invalid task completion state')
+        self._leased(lease)
+        self.database.execute("""UPDATE tasks SET status = ?, output_json = ?, lease_expires_at = NULL,
+            lease_token = NULL, lease_owner = NULL WHERE task_id = ?""", (status, json.dumps(output), lease.task_id))
+
+    @atomic
+    def claim(self, owner: str, ttl_seconds: int = 30, roles: set[str] | None = None) -> TaskLease | None:
         """Reclaim expired work; the worker must reconcile before retrying effects.
 
         WAITING_EXTERNAL and terminal tasks are not automatically retried. Taking
@@ -105,12 +144,16 @@ class Scheduler:
         if not owner.strip():
             raise ValidationFailure("lease owner is required")
         now = self.now()
+        if roles is not None and not roles:
+            return None
+        role_filter = '' if roles is None else ' AND role IN (' + ','.join('?' for _ in roles) + ')'
         row = self.database.execute(
-            """SELECT task_id, status FROM tasks WHERE
+            """SELECT task_id, status FROM tasks WHERE (
             (status = 'QUEUED' AND (due_at IS NULL OR due_at <= ?)) OR
-            (status IN ('LEASED', 'RUNNING') AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
-            ORDER BY priority DESC, COALESCE(due_at, created_at), created_at, task_id LIMIT 1""",
-            (now, now),
+            (status IN ('LEASED', 'RUNNING') AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))
+            """ + role_filter + """ ORDER BY priority DESC, COALESCE(due_at, created_at),
+            created_at, task_id LIMIT 1""",
+            (now, now, *(sorted(roles) if roles is not None else [])),
         ).fetchone()
         if row is None:
             return None

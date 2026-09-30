@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage, ToolRequest
@@ -240,7 +241,7 @@ class ScriptedAdapter:
         usage = ModelUsage(
             uncached_input_tokens=int(request.context.get("input_tokens", 10)),
             billed_output_tokens=int(request.context.get("output_tokens", 5)),
-            provider_request_id=f"scripted-{request.task_id}",
+            provider_request_id=f"scripted-{request.task_id}-{uuid.uuid4().hex}",
         )
         return ModelResult(ok=True, payload=payload, usage=usage, provider_model="scripted")
 
