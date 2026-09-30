@@ -26,6 +26,22 @@ jobs:
         run: |
           python -m pip install -U pip uv
           uv sync --frozen --group dev
+      - name: Prepare locked review environment (no runtime data)
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p /tmp/tg-review
+          UV_PYTHON_INSTALL_DIR=/tmp/tg-review/python uv python install 3.12
+          cp -a .venv/lib/python3.12/site-packages /tmp/tg-review/site-packages
+          cp uv.lock /tmp/tg-review/uv.lock
+          tar -czf /tmp/trade-graph-review-env.tar.gz -C /tmp/tg-review .
+      - name: Retain locked review environment
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-env-${{ github.sha }}
+          path: /tmp/trade-graph-review-env.tar.gz
+          if-no-files-found: error
+          retention-days: 1
       - name: Retain pinned lint tool for network-restricted review
         uses: actions/upload-artifact@v4
         with:

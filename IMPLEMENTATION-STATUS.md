@@ -1,111 +1,46 @@
-# Implementation status — public market data
+# Implementation status — recovery and authorization review
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T15 are accepted. The next dependency-ready work is the offline full loop (T16), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype, not complete autonomous R1.**
+Branch: `cursor/trade-graph-r1-548a`; PR #1 stays draft and unmerged.
+Paid model calls, live trading and executable Engineer extensions stay disabled.
+Default USD10,000 virtual capital, EUR reporting; real budgets remain separate.
 
-## Saved work
+## Recovery verified
 
-- Repository: `krybaby7/trade-graph`.
-- Integration branch: `cursor/trade-graph-r1-548a`; draft PR #1 remains unmerged.
-- Previous review fixes preserved: `9e908d4ca22786d1ee49bff963ac98179c79e0b3`.
-- New scheduler/migration fixes: `2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0`.
-- Authority closure on the same branch, after `7e0aab1`. Inspect the latest remote head before continuing; never reset it to one of these anchors.
+Remote head at entry: `0b5ba2b18384b717b9a9e99388622b4ced2a910d` (parent `18ab1b25773a7be67b16638ddc40c0a2c275a4af`).
+Previous-session local implementation and recovery archive were unavailable in this fresh runtime.
+CI source artifact 11096454025 from run 36718371771 was extracted and its complete Git tree
+verified as `223c22d74106014389d994916162a517bcdd90ea`, identical to the remote head.
+Only that historical remote source was recovered, not the previously reported new implementation.
+The previous session's 45/23/185 local-test claims are not verification of this tree.
 
-The default stays USD10,000 virtual capital with EUR reporting. Actual operating expenses and any future live allocation are separate. No paid model calls, private exchange calls or real orders were made in this continuation.
+## Current work
 
-## What the interrupted review had already fixed
+T12 is reopened and in progress: replace helper-only Leader/Secretary with persisted reports,
+bounded digests, scheduled gateway-backed decisions, scoped consultation and authorized commissions.
+The six reproduced defects require regression-backed activation, engineering and CSRF repairs.
+T13–T15 are reopened; small passing test subsets do not establish task acceptance.
+T16 is not dependency-ready. Existing foundations and all historical evidence are preserved.
 
-The previous commit preserves FIFO and third-asset-fee accounting corrections, currency-aware aggregate exposure, atomic fill recording/replay, pause and cancellation recovery, provider usage/price-card/allocation checks, and explicit refusal of unsafe or unwired prototype controls. Those changes were not lost.
+## Acceptance still open
 
-## What this continuation added
+- T13: full Engineer worker crash/retry/failure lifecycle and authorization. The restricted
+  artifact subprocess is not an OS sandbox; arbitrary executable work remains disabled.
+- T14: artifact-consumer reload, controlled restart, observation and automatic rollback.
+  Pointer switching alone is not delivery of these requirements.
+- T15: audit the full dashboard/API/owner-control specification, not just CSRF.
+- T16 onward: complete offline fault catalogue, packaged continuous runtime and real diagnostics,
+  separately funded paper soak, economic evaluation and separately authorized live progression.
 
-T01 is closed. `Broker` and `InferenceAdapter` are provider-neutral protocols. `Execution` accepts a `Broker` and refuses a capability set that enables withdrawals, lacks client-id lookup, or names a different venue or mode. Order authorization loads the active owner-policy revision and mandate from SQLite. Exposure caps and quote age are the tighter of those documents. A decision that cites a stale revision is rejected. An expired mandate blocks new exposure and still allows a reduction. Tightening the active mandate rejects an unsent increase before submit and releases its reservation. Policy and mandate revisions are immutable. Leader and trader roles cannot write owner policy or enable withdrawals.
+## Verification
 
-Public market data now has a Kraken REST and WebSocket client and a Frankfurter ECB reference-rate client. Both take an injectable transport. Scripted tests cover reconnect, REST backfill after a dropped socket, ignoring an older ticker, and hiding observations that were not yet available. A normalized public book can partially fill a paper order. The fixed paper fee tier is unchanged. The public smoke above is separate from those tests and did not submit an order.
+Local `uv sync --frozen --group dev --python 3.12` could not fetch the interpreter because
+this runtime has no network DNS. Python 3.13 available-dependency tests are supplemental only.
+Full locked Python 3.12 checks must run in credential-free GitHub CI without exclusions.
+No paid provider calls or real orders have been authorized or performed.
 
-Provider calls now use an injectable HTTP transport. OpenAI and Anthropic bodies include registered tools and tool results. The gateway continues only registered tools, reserves each step, and rejects an unlisted model or an unsupported sampling temperature before any post. An installation can enable one provider. A request with no API key writes synthetic receipts and does not reduce the real allowance. The supplied-fixture path used by the budget tests is unchanged and still non-synthetic. `HttpxProviderHttp` is implemented and was not called. No OpenAI or Anthropic credential was used.
+## Historical record
 
-Expense control now treats schema repair, a transport retry and a provider fallback as separate reservations that share the root-task limit. A fallback names its own price card and model. An uncertain timeout stays reserved. Invoice reconciliation stores the difference between a supplied invoice total and recorded non-synthetic receipts, and a second total for the same invoice id conflicts. Expense views group the same holds by role, task and system version. A paper deposit of EUR10,000 does not increase the operating allowance. Migration `0003` adds those columns and the reconciliation table. No provider bill was downloaded.
-
-Pause advance now applies the persisted profile. `PAUSE_DECISIONS` and `MANAGE_ONLY` leave resting orders in place. `NO_NEW_EXPOSURE` cancels buys and keeps a protective sell. `CANCEL_ALL` cancels every outstanding order, including protection, and does not call the portfolio flat. `FLATTEN` cancels those orders, submits one reduce-only exit, and stays `flattening` until that fill is recorded and inventory is gone. `STOPPED` stays blocked while inventory or an outstanding order remains. An unknown cancel is not recorded as cleared. A lost acknowledgement can be cancelled from broker state without a second submit. Paper fill history now ends on an empty page so reconciliation can finish after a fill. No live venue outage was run.
-
-One role worker holds the `role-worker` process lease. A second owner does not claim work while that lease is live. Reclaiming an expired task runs the supplied reconciliation before the role handler. A task whose expected version does not match the worker is dead-lettered with no attempt and no snapshot. A matching task writes a context snapshot, then counts one attempt. Handlers are injected. This worker does not call a model provider.
-
-Research ingest accepts only public HTTPS, strips scripts, and stores publication, retrieval, availability, expiry and a source hash. A later fetch inserts a new finding and leaves the old document unchanged. Stale and untrusted pages stay out of the fresh context. The Trader can enter or record a hold from a validated payload without a Leader approval, including an explicit experiment. A low confidence value does not block a valid enter. A model timeout is stored as a model failure and does not add a hold. The two strategy templates are unproven. No search provider was called.
-
-Learning appends lesson revisions and refuses a revision that drops a prior counterexample. The stored grade follows the process assessment. A no-trade mark uses only quotes whose event and availability times are at or before the decision. A bar that becomes available later is not an entry price. Optimisation can record a proposal and cannot turn reconciliation off. This is not a forward-paper profitability result.
-
-The Leader can assign a task, create a coalesced schedule and install a mandate that stays inside the owner envelope. The Leader cannot raise the operating allowance, replace an owner halt, or approve an individual order. A wider mandate is rejected. A Secretary digest reports the pause profile and task count and does not create an order. This is not the dashboard.
-
-The artifact runner copies allowlisted paths into a temporary git tree and does not copy `.env` or kernel files. Checks run from the installed module in a scrubbed environment, so a checks module planted in the worktree is not on `sys.path`. The controller stores the exit code with the hash of `checks.py`. Activation accepts that row and ignores a caller-supplied `runner` label. Advice-only output, protected paths, a failed policy and a six-file patch leave the active hash unchanged and keep a candidate record. Migration `0004` adds `controller_attestations`. This local check does not call a model.
-
-Activation refuses to move the pointer while a trader task is leased or running. A queued trader task pinned to another version is cancelled. A stale baseline is rejected. Rollback writes the previous artifact hash and does not delete fills, receipts or the version stored on an earlier decision. Reopening the database keeps that restored pointer.
-
-The dashboard now has organisation, cost and change pages plus matching JSON projections. An owner can persist an EUR operating allowance; a leader cannot, and a cookie session still needs the CSRF header. Resume reconciles before it sets `RUNNING`. Leader activation calls the version controller and fails closed without a stored attestation. An UNKNOWN order is labeled degraded. Task text that looks like a provider key is replaced with `[redacted]`. Paper equity and actual spend stay on separate lines. `enable-live` still returns disabled. The offline full loop and the packaged soak are still open.
-
-The scheduler recovery below remains in force.
-
-Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
-
-Task deduplication, delegation ancestry/caps, schedule creation and schedule-to-task advancement are transactional. Deployment-wide tasks with a null portfolio now deduplicate. Five-minute occurrences no longer collapse into one hourly key. An overdue schedule creates one current opportunity rather than replaying obsolete opportunities.
-
-Additive migration `0002` installs task lease tokens and an index. Migration `0003` adds reservation version/attempt labels and an invoice-reconciliation table. Migration `0004` adds controller attestations. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0004`.
-
-**Worker integration is still required:** `Scheduler.claim` now returns `TaskLease`, and `renew`, `note_attempt`, and `succeed` require that token. Reclaiming a task is not proof that its last external call failed. Reconcile persisted orders/usage first; never blindly replay paid calls or submissions.
-
-## Verification actually performed
-
-| Check | Result |
-|---|---|
-| GitHub Actions Python 3.12, locked dependencies | Runtime run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463), job 109836047214: success |
-| Ruff on `src tests` | Passed in that CI job |
-| Full pytest suite at the prior CI head `2e5f1d8` | **113 passed** in GitHub Actions run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463); JUnit artifact 11089725511 |
-| Local Python 3.12 `uv run pytest` after T04/T05 | **129 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T06 | **133 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T07 | **136 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T08 | **142 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T09 | **144 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T10 | **147 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T11 | **150 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T12 | **151 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T13 | **155 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T14 | **157 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after T15 | **158 passed; 0 failed, 0 skipped** |
-| Local Python 3.12 `uv run pytest` after the offline role-worker step | **158 passed; 0 failed, 0 skipped**. T16 is not accepted |
-| `uv run ruff check src tests` | Passed locally after the provider transport |
-| Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
-| New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
-| Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
-| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; application reopen now includes `0004` |
-| Whitespace check | `git diff --check` passed |
-
-Passing fixture/unit/integration tests is not evidence of paid provider access, exchange compatibility, economic performance, complete security isolation or full product delivery.
-
-## Commands and their present limits
-
-```bash
-uv sync --frozen --group dev
-uv run ruff check src tests
-uv run pytest
-python3 scripts/test_planning.py
-python3 scripts/check_plan.py
-python3 scripts/next_task.py --prompt
-uv run trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
-uv run trade-graph demo --offline
-uv run trade-graph run --mode paper
-uv run trade-graph pause --profile manage-only
-uv run trade-graph backup --destination runtime/backup.sqlite
-uv run trade-graph reconcile
-```
-
-`demo --offline` is a scripted scenario that now includes one role-worker task. It is not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard now persists an owner budget and shows organisation, cost and change projections; it is still a local paper view, not a hosted operations console.
-
-## Remaining implementation, not merely missing credentials
-
-1. **Complete T16–T17 release acceptance.** The offline demo now runs one role-worker task after activation. The acceptance catalogue is still not one closed fault suite. `doctor` and `report` are still limited, and a credentialed soak stays pending without an owner budget and credentials.
-2. **T18, T19, T21 and T22 stay after those gates.** Forward-paper evaluation, a conditionally eligible live adapter, a protected kernel boundary, and plugin/code classes are not accepted. T20 stays blocked on owner live authorization.
-
-Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
-
-## Task status interpretation
-
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T15 are accepted. T16–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T16. The dashboard does not authorize live trading or an OS sandbox.
+`docs/history/STATUS-0b5ba2b.md` preserves the previous status verbatim for audit only.
+Its T12–T15 completion labels and T16-next statement are superseded, not current acceptance.
+`planning/progress.json` retains prior evidence under reopened tasks.
