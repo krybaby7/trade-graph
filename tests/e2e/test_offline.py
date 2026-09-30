@@ -11,7 +11,11 @@ def test_offline_loop(tmp_path) -> None:
     assert report["invalid_win_not_good_grade"] is True
     assert report["activated_hash"] != report["baseline_hash"]
     assert report["new_decision_version"] == report["activated_hash"]
-    assert report["worker_completed"] == 1
+    assert report["worker_completed"] == 2
+    assert report["leader_activation_decision_id"] != report["leader_decision_id"]
+    assert report["engineer_worker_completed"] == 2
+    assert len(report["engineer_usage_reservations"]) == 2
+    assert report["engineer_candidate_id"]
     assert report["context_cap"] == 5
     assert report["always_include"] == ["mandate_obligations", "active_safety"]
     assert report["rejected_change"] is True

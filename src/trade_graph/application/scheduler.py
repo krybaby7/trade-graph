@@ -134,6 +134,17 @@ class Scheduler:
             lease_token = NULL, lease_owner = NULL WHERE task_id = ?""", (status, json.dumps(output), lease.task_id))
 
     @atomic
+    def defer(self, lease: TaskLease, output: dict, delay_seconds: int) -> None:
+        """Retry at a durable future due time, preserving attempts and allocations."""
+        self._positive(delay_seconds, "delay_seconds")
+        self._leased(lease)
+        self.database.execute(
+            """UPDATE tasks SET status = 'QUEUED', output_json = ?, due_at = ?,
+            lease_expires_at = NULL, lease_token = NULL, lease_owner = NULL WHERE task_id = ?""",
+            (json.dumps(output), utc_iso(self.clock.now() + timedelta(seconds=delay_seconds)), lease.task_id),
+        )
+
+    @atomic
     def claim(self, owner: str, ttl_seconds: int = 30, roles: set[str] | None = None) -> TaskLease | None:
         """Reclaim expired work; the worker must reconcile before retrying effects.
 

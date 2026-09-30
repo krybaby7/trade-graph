@@ -13,6 +13,7 @@ from trade_graph.application.activation import VersionController
 from trade_graph.application.authority import seed_paper_authority
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.engineer import ArtifactEngineer
+from trade_graph.application.engineering_workflow import EngineerHandler
 from trade_graph.application.execution import Execution
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.leader import LeaderOffice, Secretary
@@ -239,25 +240,46 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     worker = RoleWorker(scheduler, owner="offline-worker", system_version_id=baseline, reconcile=lambda: None)
     worker_completed = worker.run_available({"leader": leader})
     leader_decision_id = database.execute("SELECT decision_id FROM leader_decisions").fetchone()[0]
-    # The failed attempt belongs to the same authorized envelope, before activation.
-    rejected_result = engineer.implement(portfolio, change.record_id,
-        {"src/trade_graph/kernel/books.py": "cash = 1"}, work / "rejected")
-    rejected = rejected_result.state == "FAILED"
-    ready = engineer.implement(
-        portfolio,
-        change.record_id,
-        {"artifacts/context_policy.json": json.dumps(policy)},
-        work / "stage",
+    # Both the rejected patch and its bounded repair use the commissioned worker
+    # and real receipt path. No hand-written files or fabricated Engineer receipts.
+    handler = EngineerHandler(
+        engineer, scheduler, gateway, deployment_id="deployment", price_card_id=card.price_card_id,
+        workspace_root=work / "engineering", secretary=secretary, fx_rate=Decimal("0.90"),
     )
-    versions.activate(
-        portfolio,
-        {
-            "candidate_id": ready.candidate_id,
-            "baseline_hash": baseline,
-            "content_hash": ready.content_hash,
-            "attestation": {"runner": "candidate-prose", "exit_code": 0},
-        },
-    )
+    gateway.scripted.outputs["engineer"] = {
+        "files": [{"path": "src/trade_graph/kernel/books.py", "content": "cash = 1"}],
+        "summary": "Deliberately rejected protected-path fixture",
+    }
+    engineer_completed = worker.run_available({"engineer": handler})
+    rejected = database.execute("SELECT COUNT(*) FROM candidates WHERE state = 'FAILED'").fetchone()[0] == 1
+    rejected_receipt = database.execute(
+        """SELECT r.receipt_id FROM usage_receipts r JOIN budget_reservations b USING (reservation_id)
+        WHERE b.role = 'engineer' ORDER BY b.created_at LIMIT 1""",
+    ).fetchone()[0]
+    clock.advance(30)
+    gateway.scripted.outputs["engineer"] = {
+        "files": [{"path": "artifacts/context_policy.json", "content": json.dumps(policy)}],
+        "summary": "Cap general lessons while preserving required context",
+    }
+    engineer_completed += worker.run_available({"engineer": handler})
+    completed_engineer = database.execute("SELECT output_json FROM tasks WHERE role = 'engineer'").fetchone()
+    engineer_output = json.loads(completed_engineer[0])
+    assert engineer_output["_status"] == "SUCCEEDED"
+    candidate_id = engineer_output["candidate_id"]
+    secretary.process(portfolio)
+    gateway.scripted.outputs["leader"] = {
+        "evidence_refs": [candidate_id],
+        "rationale": "Activate the commissioned artifact after reviewing its independent checks.",
+        "intended_outcome": "Observe the smaller context with obligations preserved.",
+        "review_criteria": "Retain independent evidence; evaluate later quality separately.",
+        "actions": [{"kind": "activate", "candidate_id": candidate_id}],
+    }
+    worker_completed += worker.run_available({"leader": leader})
+    activation_decision_id = database.execute(
+        "SELECT decision_id FROM leader_decisions WHERE json_extract(document_json, '$.actions[0].candidate_id') = ?",
+        (candidate_id,),
+    ).fetchone()[0]
+    assert versions.current_hash(portfolio) != baseline
     selected = select_context(policy, [{"id": str(i), "relevance": i} for i in range(10)])
     clock.advance(1)
     hold = _decision(clock, portfolio, "hold-new", "hold", None)
@@ -269,28 +291,6 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         }
     )
     execution.record_non_order(portfolio, hold)
-    reservation = budget.reserve(
-        deployment_id="deployment",
-        role="engineer",
-        task_id="reject-1",
-        root_task_id="reject-1",
-        price_card_id=card.price_card_id,
-        max_input=100,
-        max_output=20,
-        max_tools=0,
-        fx_rate=Decimal("0.90"),
-        fx_buffer=Decimal("1"),
-        priority=False,
-        synthetic=True,
-        purpose="rejected-candidate",
-    )
-    receipt = budget.commit(
-        reservation,
-        ModelUsage(uncached_input_tokens=100, billed_output_tokens=20, provider_request_id="rej-1"),
-        provider="scripted",
-        model="scripted",
-        fx_rate=Decimal("0.90"),
-    )
     real_before = budget.remaining("deployment")
     try:
         budget.reserve(
@@ -404,12 +404,16 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         "baseline_hash": baseline,
         "new_decision_version": hold.system_version_id,
         "worker_completed": worker_completed,
+        "engineer_worker_completed": engineer_completed,
+        "engineer_candidate_id": candidate_id,
+        "engineer_usage_reservations": engineer_output["usage_reservations"],
         "leader_decision_id": leader_decision_id,
+        "leader_activation_decision_id": activation_decision_id,
         "secretary_report_id": report_id,
         "context_cap": selected["lessons"].__len__(),
         "always_include": selected["always_include"],
         "rejected_change": rejected,
-        "rejected_receipt": receipt,
+        "rejected_receipt": rejected_receipt,
         "budget_exhausted": exhausted,
         "fill_count": fill_count,
         "fill_count_after_restart": fill_count_after,

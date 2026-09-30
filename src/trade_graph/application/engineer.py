@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
+from trade_graph.adapters.engineering.artifact_policy import artifact_class
 from trade_graph.adapters.engineering.provenance import checks_module_hash
 from trade_graph.adapters.engineering.runner import ALLOWLIST_PREFIXES, EngineerRunner
 from trade_graph.adapters.persistence.db import Database
@@ -53,19 +56,43 @@ class ArtifactEngineer:
             )
         return task.record_id
 
-    def implement(self, portfolio_id: str, change_id: str, files: dict[str, str], destination: Path) -> ChangeResult:
+    def implement(
+        self, portfolio_id: str, change_id: str, files: dict[str, str], destination: Path,
+        *, authorize: Callable[[], None] | None = None, operation_id: str | None = None,
+        fence: Callable[[], None] | None = None,
+    ) -> ChangeResult:
         # No worktree or files touched until lifecycle, commission, scope and baseline pass.
         token = uuid.uuid4().hex
+        patch_hash = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
         with self.database.immediate() as conn:
+            if fence:
+                fence()
+            if authorize:
+                authorize()
             task, row, commission = authorized_change(self.database, self.clock, portfolio_id, change_id)
+            previous = conn.execute(
+                """SELECT * FROM engineering_attempts WHERE change_id = ?
+                AND json_extract(details_json, '$.operation_id') = ? ORDER BY number DESC LIMIT 1""",
+                (change_id, operation_id),
+            ).fetchone() if operation_id else None
+            if previous and json.loads(previous["details_json"])["patch_hash"] != patch_hash:
+                raise StaleState("artifact operation reused for a different patch")
+            if previous and previous["state"] in {"READY", "FAILED"}:
+                candidate_id = json.loads(previous["details_json"])["candidate_id"]
+                cached = conn.execute("SELECT document_json FROM candidates WHERE candidate_id = ?",
+                                      (candidate_id,)).fetchone()
+                return ChangeResult.model_validate_json(cached["document_json"])
+            if previous and len(json.loads(previous["details_json"]).get("recoveries", [])) >= 3:
+                raise ValidationFailure("local validation recovery limit reached")
             recovering = (
                 row["state"] == "DEVELOPING"
-                and row["lease_expires_at"] is not None
-                and row["lease_expires_at"] <= utc_iso(self.clock.now())
+                and ((previous is not None and authorize is not None)
+                     or (row["lease_expires_at"] is not None
+                         and row["lease_expires_at"] <= utc_iso(self.clock.now())))
             )
             if row["state"] not in {"AUTHORIZED", "FAILED"} and not recovering:
                 raise AuthorityDenied("change lifecycle is not runnable")
-            if row["attempts_used"] >= task.max_steps:
+            if not previous and row["attempts_used"] >= task.max_steps:
                 raise ValidationFailure("attempt limit reached")
             if recovering:
                 conn.execute(
@@ -73,17 +100,28 @@ class ArtifactEngineer:
                 )
             expiry = utc_iso(self.clock.now() + timedelta(seconds=90))
             conn.execute(
-                """UPDATE change_tasks SET state = 'DEVELOPING', attempts_used = attempts_used + 1,
+                """UPDATE change_tasks SET state = 'DEVELOPING', attempts_used = attempts_used + ?,
                 lease_token = ?, lease_expires_at = ? WHERE change_id = ?""",
-                (token, expiry, change_id),
+                (0 if previous else 1, token, expiry, change_id),
             )
-            conn.execute(
-                """INSERT INTO engineering_attempts VALUES (?, ?, ?, 'RUNNING', '{}', ?)""",
-                (token, change_id, row["attempts_used"] + 1, utc_iso(self.clock.now())),
-            )
+            details = {"operation_id": operation_id, "destination": str(destination), "patch_hash": patch_hash}
+            if previous:
+                old = json.loads(previous["details_json"])
+                details["recoveries"] = old.get("recoveries", []) + [
+                    {"attempt_id": previous["attempt_id"], "destination": old["destination"]},
+                ]
+                conn.execute(
+                    "UPDATE engineering_attempts SET attempt_id = ?, state = 'RUNNING', details_json = ? "
+                    "WHERE attempt_id = ?", (token, json.dumps(details), previous["attempt_id"]),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO engineering_attempts VALUES (?, ?, ?, 'RUNNING', ?, ?)""",
+                    (token, change_id, row["attempts_used"] + 1, json.dumps(details), utc_iso(self.clock.now())),
+                )
         report = None
         changed = list(files)
-        reason = "independent checks recorded; artifact subprocess is not an OS sandbox"
+        reason = "independent checks recorded with a confined, data-only checker; no executable-code authority"
         try:
             self._bounds(task, files)
             baseline = self.runner.stage(destination)
@@ -91,6 +129,9 @@ class ArtifactEngineer:
                 raise StaleState("source baseline moved; revalidate")
             changed = self.runner.apply_files(destination, files)
             report = self.runner.attest(destination)
+            if report["exit_code"] != 0:
+                findings = report.get("failures") or [report.get("stderr") or "checker failed"]
+                reason = "independent checks failed: " + "; ".join(str(f)[:200] for f in findings[:5])
             if report["content_hash"] != self.runner.hash_tree(destination):
                 report["exit_code"] = 1
                 reason = "artifact changed after testing"
@@ -99,11 +140,15 @@ class ArtifactEngineer:
         candidate_id, attestation_id = str(uuid.uuid4()), str(uuid.uuid4()) if report else None
         state = "READY" if report and report["exit_code"] == 0 else "FAILED"
         with self.database.immediate() as conn:
+            if fence:
+                fence()
             # Recheck immediately before publication: a lease or an earlier approval is not current authority.
             current = conn.execute("SELECT * FROM change_tasks WHERE change_id = ?", (change_id,)).fetchone()
             if current["lease_token"] != token or current["lease_expires_at"] <= utc_iso(self.clock.now()):
                 raise StaleState("engineering lease expired or replaced")
             try:
+                if authorize:
+                    authorize()
                 authorized_change(self.database, self.clock, portfolio_id, change_id)
                 if current["state"] != "DEVELOPING":
                     raise AuthorityDenied("change lifecycle moved during implementation")
@@ -168,7 +213,7 @@ class ArtifactEngineer:
             )
             conn.execute(
                 "UPDATE engineering_attempts SET state = ?, details_json = ? WHERE attempt_id = ?",
-                (state, json.dumps({"candidate_id": candidate_id, "reason": reason}), token),
+                (state, json.dumps({**details, "candidate_id": candidate_id, "reason": reason}), token),
             )
             self.ledger._activity(
                 portfolio_id, "engineer_candidate", {"candidate_id": candidate_id, "state": state, "limits": reason}
@@ -186,6 +231,12 @@ class ArtifactEngineer:
             raise ValidationFailure("line limit exceeded")
         for relative in files:
             self._assert_path(relative, task.allowed_paths)
+            kind = artifact_class(relative)
+            # Historical commissions use artifact_config for validated JSON data.
+            # Prompt authority is separate and never implied by that umbrella.
+            if (kind not in task.allowed_classes
+                    and not (kind != "prompt" and "artifact_config" in task.allowed_classes)):
+                raise AuthorityDenied("artifact class outside commissioned scope")
 
     def _assert_path(self, relative: str, allowed_paths: list[str]) -> None:
         normalized = relative.replace("\\", "/")

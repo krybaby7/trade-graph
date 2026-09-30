@@ -10,7 +10,7 @@ import pytest
 from tests.integration.test_engineer import POLICY, _stack, _task
 from tests.leadership_support import commission
 
-from trade_graph.application.authority import paper_owner_policy
+from trade_graph.application.authority import paper_owner_policy, seed_paper_authority
 from trade_graph.application.engineering_workflow import EngineerHandler
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.worker import RoleWorker
@@ -67,13 +67,20 @@ class Flow:
         self.gateway = gateway
 
 
-def _flow(tmp_path, *, max_steps=3, max_spend="1"):
+def _flow(tmp_path, *, max_steps=3, max_spend="1", owner_classes=None, **change_updates):
     clock, db, pid, source, engineer, versions = _stack(tmp_path)
     (source / "artifacts" / "context_policy.json").write_text(json.dumps(POLICY), encoding="utf-8")
     (source / "private.sqlite").write_bytes(b"PRIVATE DATABASE CONTENT")
     baseline = engineer.baseline(tmp_path / "baseline")
     versions.ensure(pid, "v1", baseline)
-    proposal = _task(clock, pid, baseline, max_steps=max_steps, max_spend=Money(amount=max_spend, currency="EUR"))
+    if owner_classes is not None:
+        authority = seed_paper_authority(db, clock, pid)
+        authority.install_policy(
+            paper_owner_policy(revision_id="2").model_copy(update={"allowed_change_classes": owner_classes}),
+            role="owner",
+        )
+    proposal = _task(clock, pid, baseline, max_steps=max_steps,
+                     max_spend=Money(amount=max_spend, currency="EUR"), **change_updates)
     office, secretary, gateway, _, root = commission(engineer, pid, proposal)
     tid = db.execute("SELECT worker_task_id FROM engineering_commissions").fetchone()[0]
     workspace = tmp_path / "engineering-work"
@@ -690,3 +697,55 @@ def test_zero_spend_commission_is_blocked_before_provider_dispatch(tmp_path):
     assert flow.gateway.attempts == []
     assert not flow.receipts()
     assert flow.db.execute("SELECT COUNT(*) FROM candidates").fetchone()[0] == 0
+
+
+def test_source_changed_between_hash_and_snapshot_never_reaches_provider(flow, monkeypatch):
+    original = flow.engineer.runner.source_files
+    reads = 0
+
+    def transient_source():
+        nonlocal reads
+        reads += 1
+        files = original()
+        if reads == 2:
+            files["artifacts/context_policy.json"] = json.dumps({**POLICY, "max_general_lessons": 1})
+        return files
+
+    monkeypatch.setattr(flow.engineer.runner, "source_files", transient_source)
+    assert flow.run() == 1
+    assert flow.row()["status"] == "FAILED"
+    assert flow.row()["attempts_used"] == 0
+    assert not flow.receipts() and flow.gateway.attempts == []
+    assert flow.db.execute("SELECT COUNT(*) FROM model_invocations").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("kind", ["prompt_cannot_edit_json", "json_cannot_edit_prompt"])
+def test_commissioned_class_limits_apply_in_addition_to_permitted_paths(tmp_path, kind):
+    if kind == "prompt_cannot_edit_json":
+        flow = _flow(tmp_path, max_steps=1, owner_classes=["prompt"], allowed_classes=["prompt"])
+    else:
+        flow = _flow(tmp_path, max_steps=1, allowed_paths=["prompts/leader.md"])
+        flow.gateway.scripted.outputs["engineer"] = {
+            "files": [{"path": "prompts/leader.md", "content": "Review evidence and retain required obligations."}],
+            "summary": "A prompt needs its own permission class",
+        }
+    assert flow.run() == 1
+    assert flow.row()["status"] == "FAILED"
+    assert "class outside commissioned scope" in flow.output()["reason"]
+    assert len(flow.receipts()) == 1
+    assert flow.db.execute("SELECT COUNT(*) FROM candidates WHERE state = 'READY'").fetchone()[0] == 0
+    assert flow.versions.current_hash(flow.pid) == flow.baseline
+
+
+def test_explicit_prompt_commission_generates_tested_data_only_prompt(tmp_path):
+    flow = _flow(tmp_path, max_steps=1, owner_classes=["prompt"],
+                 allowed_classes=["prompt"], allowed_paths=["prompts/leader.md"])
+    flow.gateway.scripted.outputs["engineer"] = {
+        "files": [{"path": "prompts/leader.md", "content": "Review evidence and retain required obligations."}],
+        "summary": "An explicitly commissioned prompt change",
+    }
+    assert flow.run() == 1
+    assert flow.row()["status"] == "SUCCEEDED"
+    candidate = flow.db.execute("SELECT document_json FROM candidates").fetchone()[0]
+    assert json.loads(candidate)["changed_files"] == ["prompts/leader.md"]
+    assert len(flow.receipts()) == 1

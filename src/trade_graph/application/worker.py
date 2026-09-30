@@ -52,10 +52,14 @@ class RoleWorker:
         context = getattr(handler, "context", None)
         task["snapshot"] = context(task) if context else {"input": task["input"]}
         task["snapshot_id"] = self._snapshot(row, task["snapshot"])
-        self.scheduler.note_attempt(lease)
+        if not getattr(handler, "manages_attempts", False):
+            self.scheduler.note_attempt(lease)
         self._finish(lease, handler(task))
 
     def _finish(self, lease: TaskLease, output: dict) -> None:
+        if "_retry_after_seconds" in output:
+            self.scheduler.defer(lease, output, output["_retry_after_seconds"])
+            return
         self.scheduler.finish(lease, output, output.get("_status", "SUCCEEDED"))
 
     def _snapshot(self, row, context: dict) -> str:
