@@ -26,6 +26,13 @@ jobs:
         run: |
           python -m pip install -U pip uv
           uv sync --frozen --group dev
+      - name: Retain pinned lint tool for network-restricted review
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-tool-${{ runner.os }}-${{ github.sha }}
+          path: .venv/bin/ruff
+          if-no-files-found: error
+          retention-days: 1
       - name: Lint
         run: uv run ruff check src tests
       - name: Unit and integration tests
