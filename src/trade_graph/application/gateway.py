@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from inspect import Parameter, signature
 from typing import Any, Literal
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
-from trade_graph.adapters.models.transport import ProviderHttp
+from trade_graph.adapters.models.transport import ProviderHttp, ProviderHttpResponseError
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.model_invocations import InvocationJournal
 from trade_graph.contracts.models import ModelRequest, ModelResult
@@ -237,6 +238,12 @@ class ModelGateway:
                 result = adapter.parse(self._payload(request, adapter))
         except (TimeoutError, OSError):
             result = ModelResult(ok=False, failure="timeout_uncertain", message="provider transport outcome uncertain")
+        except ProviderHttpResponseError as exc:
+            try:
+                usage = adapter.parse(exc.usage_payload).usage
+            except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
+                usage = None
+            result = ModelResult(ok=False, failure=exc.failure, message=str(exc), usage=usage)
         except (KeyError, TypeError, ValueError, RuntimeError):
             result = ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
         # Recording cost facts must survive revoked authority or a stale worker. Only
@@ -271,10 +278,15 @@ class ModelGateway:
             return fixture
         if self.transport is None:
             raise RuntimeError("provider transport is not configured")
-        return self.transport.post_json(
-            getattr(adapter, "endpoint"),
-            adapter.build_body(request),
-            self._headers(request.provider),
+        post = self.transport.post_json
+        parameters = signature(post).parameters
+        kwargs = {"timeout_seconds": request.timeout_seconds} if (
+            "timeout_seconds" in parameters or any(p.kind == Parameter.VAR_KEYWORD for p in parameters.values())
+        ) else {}
+        # Legacy/custom transports keep their three-argument contract. Inspect before
+        # calling: retrying after TypeError could duplicate an already-dispatched request.
+        return post(
+            getattr(adapter, "endpoint"), adapter.build_body(request), self._headers(request.provider), **kwargs,
         )
 
     def _headers(self, provider: str) -> dict[str, str]:
