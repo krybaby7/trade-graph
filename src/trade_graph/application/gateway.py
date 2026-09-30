@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
+from typing import Any
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
+from trade_graph.adapters.models.transport import ProviderHttp
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.contracts.models import ModelRequest, ModelResult
 from trade_graph.domain.errors import BudgetExhausted, PaidCallsDisabled
@@ -12,9 +15,22 @@ from trade_graph.domain.protocols import InferenceAdapter
 
 
 class ModelGateway:
-    def __init__(self, budget: BudgetGateway, *, paid_calls_enabled: bool = False) -> None:
+    def __init__(
+        self,
+        budget: BudgetGateway,
+        *,
+        paid_calls_enabled: bool = False,
+        transport: ProviderHttp | None = None,
+        api_keys: dict[str, str] | None = None,
+        enabled_providers: set[str] | None = None,
+        tools: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
+    ) -> None:
         self.budget = budget
         self.paid_calls_enabled = paid_calls_enabled
+        self.transport = transport
+        self.api_keys = {name: value for name, value in (api_keys or {}).items() if value}
+        self.enabled_providers = enabled_providers
+        self.tools = tools or {}
         self.openai = OpenAIAdapter()
         self.anthropic = AnthropicAdapter()
         self.scripted = ScriptedAdapter()
@@ -30,6 +46,8 @@ class ModelGateway:
         fx_buffer: Decimal,
         priority: bool = False,
     ) -> ModelResult:
+        if self.enabled_providers is not None and request.provider not in self.enabled_providers:
+            return ModelResult(ok=False, failure="unsupported", message="provider is not enabled for this installation")
         if request.provider != "scripted" and not self.paid_calls_enabled:
             raise PaidCallsDisabled(request.provider)
         adapter = self._adapter(request.provider)
@@ -40,7 +58,62 @@ class ModelGateway:
             return ModelResult(ok=False, failure="unsupported", message="sampling temperature is not supported")
         if request.context.get("forced_tool") and not caps.forced_tool:
             return ModelResult(ok=False, failure="unsupported", message="forced tool use is not supported")
-        synthetic = request.provider == "scripted"
+        if (
+            request.provider != "scripted"
+            and "http_fixture" not in request.context
+            and self.transport is None
+        ):
+            return ModelResult(ok=False, failure="unsupported", message="provider transport is not configured")
+        transcript = [dict(item) for item in request.context.get("tool_results") or []]
+        result = ModelResult(ok=False, failure="validation", message="provider attempt did not run")
+        for step in range(request.max_tool_calls + 1):
+            current = request
+            if step:
+                context = dict(request.context)
+                context["tool_results"] = transcript
+                context.pop("http_fixture", None)
+                current = request.model_copy(update={"context": context})
+            result = self._attempt(
+                current,
+                adapter,
+                deployment_id=deployment_id,
+                price_card_id=price_card_id,
+                fx_rate=fx_rate,
+                fx_buffer=fx_buffer,
+                priority=priority,
+            )
+            if not result.ok or not result.tool_requests:
+                return result
+            if step == request.max_tool_calls:
+                return ModelResult(
+                    ok=False,
+                    failure="validation",
+                    message="tool continuation exceeded the reserved steps",
+                    usage=result.usage,
+                )
+            for call in result.tool_requests:
+                handler = self.tools.get(call.name)
+                if handler is None:
+                    return ModelResult(ok=False, failure="validation", message=f"tool {call.name} is not registered")
+                transcript.append(
+                    {"call_id": call.call_id, "name": call.name, "output": handler(dict(call.arguments))}
+                )
+        return result
+
+    def _attempt(
+        self,
+        request: ModelRequest,
+        adapter: InferenceAdapter,
+        *,
+        deployment_id: str,
+        price_card_id: str,
+        fx_rate: Decimal,
+        fx_buffer: Decimal,
+        priority: bool,
+    ) -> ModelResult:
+        synthetic = request.provider == "scripted" or (
+            "http_fixture" not in request.context and not self.api_keys.get(request.provider)
+        )
         try:
             reservation = self.budget.reserve(
                 deployment_id=deployment_id,
@@ -64,18 +137,41 @@ class ModelGateway:
             if request.provider == "scripted":
                 result = self.scripted.complete(request)
             else:
-                result = adapter.parse(request.context["http_fixture"])
+                result = adapter.parse(self._payload(request, adapter))
             if result.failure == "timeout_uncertain" or result.usage is None:
                 self.budget.mark_uncertain(reservation)
                 return result
             self.budget.commit(
-                reservation, result.usage, provider=request.provider,
-                model=result.provider_model or request.model, fx_rate=fx_rate,
+                reservation,
+                result.usage,
+                provider=request.provider,
+                model=result.provider_model or request.model,
+                fx_rate=fx_rate,
             )
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, RuntimeError):
             self.budget.mark_uncertain(reservation)
             return ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
         return result
+
+    def _payload(self, request: ModelRequest, adapter: InferenceAdapter) -> dict[str, Any]:
+        fixture = request.context.get("http_fixture")
+        if isinstance(fixture, dict):
+            return fixture
+        if self.transport is None:
+            raise RuntimeError("provider transport is not configured")
+        return self.transport.post_json(
+            getattr(adapter, "endpoint"),
+            adapter.build_body(request),
+            self._headers(request.provider),
+        )
+
+    def _headers(self, provider: str) -> dict[str, str]:
+        key = self.api_keys.get(provider, "")
+        if not key:
+            return {}
+        if provider == "anthropic":
+            return {"x-api-key": key}
+        return {"Authorization": f"Bearer {key}"}
 
     def _adapter(self, provider: str) -> InferenceAdapter:
         if provider == "openai":

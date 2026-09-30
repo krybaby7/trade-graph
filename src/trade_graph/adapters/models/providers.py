@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage
+from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage, ToolRequest
 
 CAPABILITIES: dict[str, dict[str, bool]] = {
     "openai:gpt-6-luna": {"structured_output": True, "forced_tool": True, "sampling_temperature": False},
@@ -44,7 +44,7 @@ class OpenAIAdapter:
         return lookup_capabilities(self.provider, model)
 
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "model": request.model,
             "input": [
                 {"role": "system", "content": request.instructions},
@@ -60,6 +60,18 @@ class OpenAIAdapter:
             },
             "max_output_tokens": request.max_output_tokens,
         }
+        tools = request.context.get("tools")
+        if tools:
+            body["tools"] = tools
+        for item in request.context.get("tool_results") or []:
+            body["input"].append(
+                {
+                    "type": "function_call_output",
+                    "call_id": item["call_id"],
+                    "output": json.dumps(item["output"]),
+                }
+            )
+        return body
 
     def parse(self, payload: dict[str, Any]) -> ModelResult:
         if (payload.get("error") or {}).get("code") == "rate_limit_exceeded":
@@ -75,6 +87,17 @@ class OpenAIAdapter:
                     message=str(incomplete),
                     usage=_openai_usage(payload),
                 )
+        tool_requests = _openai_tools(payload)
+        if isinstance(tool_requests, ModelResult):
+            return tool_requests
+        if tool_requests:
+            return ModelResult(
+                ok=True,
+                tool_requests=tool_requests,
+                usage=_openai_usage(payload),
+                provider_model=payload.get("model"),
+                raw_redacted=json.dumps({"id": payload.get("id")}),
+            )
         text = _openai_text(payload)
         if payload.get("status") == "refusal" or (text and text.get("refusal")):
             return ModelResult(ok=False, failure="refusal", message="refusal", usage=_openai_usage(payload))
@@ -106,13 +129,32 @@ class AnthropicAdapter:
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
         schema = dict(request.output_schema)
         schema.setdefault("additionalProperties", False)
-        return {
+        body: dict[str, Any] = {
             "model": request.model,
             "max_tokens": request.max_output_tokens,
             "system": request.instructions,
             "messages": [{"role": "user", "content": json.dumps(request.context, default=str)}],
             "output_config": {"format": {"type": "json_schema", "schema": schema}},
         }
+        tools = request.context.get("tools")
+        if tools:
+            body["tools"] = tools
+        results = request.context.get("tool_results") or []
+        if results:
+            body["messages"].append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": item["call_id"],
+                            "content": json.dumps(item["output"]),
+                        }
+                        for item in results
+                    ],
+                }
+            )
+        return body
 
     def parse(self, payload: dict[str, Any]) -> ModelResult:
         error = payload.get("error") or {}
@@ -132,6 +174,17 @@ class AnthropicAdapter:
         if stop == "refusal":
             return ModelResult(ok=False, failure="refusal", message="refusal", usage=_anthropic_usage(payload))
         blocks = payload.get("content") or []
+        tool_requests = _anthropic_tools(blocks)
+        if isinstance(tool_requests, ModelResult):
+            return tool_requests
+        if tool_requests:
+            return ModelResult(
+                ok=True,
+                tool_requests=tool_requests,
+                usage=_anthropic_usage(payload),
+                provider_model=payload.get("model"),
+                raw_redacted=json.dumps({"id": payload.get("id")}),
+            )
         text = next((block.get("text") for block in blocks if block.get("type") == "text"), None)
         if not text:
             return ModelResult(ok=False, failure="validation", message="empty", usage=_anthropic_usage(payload))
@@ -208,6 +261,57 @@ def _openai_usage(payload: dict[str, Any]) -> ModelUsage | None:
         reasoning_tokens=reasoning,
         provider_request_id=payload.get("id"),
     )
+
+
+def _openai_tools(payload: dict[str, Any]) -> list[ToolRequest] | ModelResult:
+    requests: list[ToolRequest] = []
+    for item in payload.get("output") or []:
+        if item.get("type") != "function_call":
+            continue
+        arguments = item.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return ModelResult(
+                    ok=False,
+                    failure="validation",
+                    message="bad tool arguments",
+                    usage=_openai_usage(payload),
+                )
+        if not isinstance(arguments, dict):
+            return ModelResult(
+                ok=False,
+                failure="validation",
+                message="tool arguments must be an object",
+                usage=_openai_usage(payload),
+            )
+        requests.append(
+            ToolRequest(
+                call_id=str(item.get("call_id") or ""),
+                name=str(item.get("name") or ""),
+                arguments=arguments,
+            )
+        )
+    return requests
+
+
+def _anthropic_tools(blocks: list[dict[str, Any]]) -> list[ToolRequest] | ModelResult:
+    requests: list[ToolRequest] = []
+    for block in blocks:
+        if block.get("type") != "tool_use":
+            continue
+        arguments = block.get("input")
+        if not isinstance(arguments, dict):
+            return ModelResult(ok=False, failure="validation", message="tool arguments must be an object")
+        requests.append(
+            ToolRequest(
+                call_id=str(block.get("id") or ""),
+                name=str(block.get("name") or ""),
+                arguments=arguments,
+            )
+        )
+    return requests
 
 
 def _openai_text(payload: dict[str, Any]) -> dict[str, Any] | None:

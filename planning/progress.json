@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T05 accepted on cursor/trade-graph-r1-548a. T04 adds scripted-tested public Kraken and Frankfurter clients, with a separately labeled public smoke and no orders. T05 paper fills now consume a normalized public book. T06-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T06 accepted on cursor/trade-graph-r1-548a. T06 adds a scripted provider HTTP transport, registered tool continuation, and one-provider routing. Receipts without an API key are synthetic. No credentialed provider probe was run. T07-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -63,13 +63,14 @@
       ]
     },
     "T06": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "OpenAI and Anthropic fixture translations pass in tests/integration/test_models_and_budget.py; credentialed provider probes were not run and are not passed"
-      ],
-      "remaining": "Wire actual HTTP transports for both providers, capability/routing configuration and tool continuations. Current adapters parse supplied fixtures. Credentialed probes remain separately opt-in."
+        "tests/integration/test_models_and_budget.py covers structured output, usage, refusal, truncation, rate limit and timeout fixtures for both adapters",
+        "tests/integration/test_provider_transport.py covers scripted HTTP, one registered tool continuation, one-provider rejection, unregistered tools, unsupported temperature, unknown models and bad JSON. Calls without an API key write synthetic receipts and leave the real allowance unchanged",
+        "Credentialed OpenAI/Anthropic probes were not run. HttpxProviderHttp was not invoked. A scripted transport is not a billed provider success."
+      ]
     },
     "T07": {
       "status": "todo",
@@ -87,7 +88,7 @@
       "evidence": [
         "lost acknowledgement, owner halt, and restart without a second submit pass in tests/integration/test_execution.py and tests/e2e/test_offline.py"
       ],
-      "remaining": "Load and validate active persisted owner policy/mandate at authorization and revalidate before dispatch. Complete management/protection integration; retain atomic fill, pause and reconciliation fixes."
+      "remaining": "Mandate loading and dispatch revalidation landed in T01. Still open: exercised CANCEL_ALL, FLATTEN and STOPPED workflows with verified achieved states, including protective-order handling. Owner halt already cannot be lifted by Leader."
     },
     "T09": {
       "status": "todo",

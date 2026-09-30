@@ -1,6 +1,6 @@
 # Implementation status — public market data
 
-Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T05 are accepted. The next dependency-ready work is the budgeted provider transport (T06), not a live pilot.
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. T00–T06 are accepted. The next dependency-ready work is expense-budget enforcement beyond the existing reservation gateway (T07), not a live pilot.
 
 ## Saved work
 
@@ -22,6 +22,8 @@ T01 is closed. `Broker` and `InferenceAdapter` are provider-neutral protocols. `
 
 Public market data now has a Kraken REST and WebSocket client and a Frankfurter ECB reference-rate client. Both take an injectable transport. Scripted tests cover reconnect, REST backfill after a dropped socket, ignoring an older ticker, and hiding observations that were not yet available. A normalized public book can partially fill a paper order. The fixed paper fee tier is unchanged. The public smoke above is separate from those tests and did not submit an order.
 
+Provider calls now use an injectable HTTP transport. OpenAI and Anthropic bodies include registered tools and tool results. The gateway continues only registered tools, reserves each step, and rejects an unlisted model or an unsupported sampling temperature before any post. An installation can enable one provider. A request with no API key writes synthetic receipts and does not reduce the real allowance. The supplied-fixture path used by the budget tests is unchanged and still non-synthetic. `HttpxProviderHttp` is implemented and was not called. No OpenAI or Anthropic credential was used.
+
 The scheduler recovery below remains in force.
 
 Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
@@ -40,7 +42,8 @@ Additive migration `0002` installs task lease tokens and an index. Migration app
 | Ruff on `src tests` | Passed in that CI job |
 | Full pytest suite at the prior CI head `2e5f1d8` | **113 passed** in GitHub Actions run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463); JUnit artifact 11089725511 |
 | Local Python 3.12 `uv run pytest` after T04/T05 | **129 passed; 0 failed, 0 skipped** |
-| `uv run ruff check src tests` | Passed locally after the public-market client |
+| Local Python 3.12 `uv run pytest` after T06 | **133 passed; 0 failed, 0 skipped** |
+| `uv run ruff check src tests` | Passed locally after the provider transport |
 | Separately labeled public smoke | 2026-09-30: Kraken `AssetPairs` XBTUSD, REST ticker, one WebSocket v2 ticker snapshot, Frankfurter ECB USD/EUR 0.88067 dated 2026-09-29. No API key and no order. Live reconnect was not part of that smoke |
 | New scheduler/migration regressions | 31 cases included in the prior CI suite and still present |
 | Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
@@ -70,12 +73,13 @@ uv run trade-graph reconcile
 
 ## Remaining implementation, not merely missing credentials
 
-1. **Complete T06.** Both provider adapters currently parse supplied HTTP fixtures. Wire budgeted transports, tool continuations and one-provider routing before any paid probe. A fixture parse is not a credentialed provider call. Public market data and reference FX now have clients; that does not authorize model spend.
-2. **Integrate T07–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
-3. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
+1. **Complete T07.** Reservations, uncertain usage and paid-call refusal already exist. Still missing bounded schema-repair/transport retries with shared attempt limits, priced fallbacks, and invoice reconciliation that can show an unexplained difference. A scripted provider transport is not a credentialed receipt.
+2. **Complete T08 management and protection.** Persisted mandate checks are in place. `CANCEL_ALL`, `FLATTEN` and verified `STOPPED` workflows are not. Owner pauses already cannot be lifted by the Leader.
+3. **Integrate T09–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
+4. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
 Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
 ## Task status interpretation
 
-`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T05 are accepted. T06–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T06. Provider adapters still parse fixtures. That is not a live pilot.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00–T06 are accepted. T07–T19 and T21–T22 stay `todo`; their existing source remains intact and is not a fresh start. T20 stays `blocked`. The next-task utility selects T07. Scripted provider HTTP is not a credentialed probe and not a live pilot.
