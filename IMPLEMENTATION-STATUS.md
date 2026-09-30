@@ -1,26 +1,47 @@
-# Implementation status
+# Implementation status — review recovery checkpoint
 
-Updated: 2026-09-29. **Paper runtime is implemented. Paid calls and live trading stay disabled.**
+Updated: 2026-09-30. **Partial offline prototype; the autonomous R1 service is not complete.** Paid model calls and live trading remain disabled. Do not jump to the live pilot merely because the earlier task list said `done`.
 
-## Branch and commit
+## Saved work
 
-- Branch: `cursor/trade-graph-r1-548a`
-- Runtime commit: `a4bdce6c3bfad834d0044c8dcc443e2818e8d581`
-- Base: `main` at `7770d17`
-- Owner for claimed tasks: `cursor-agent`
-- Integration: one branch and one draft pull request. Do not merge from this status file.
+- Repository: `krybaby7/trade-graph`.
+- Integration branch: `cursor/trade-graph-r1-548a`; draft PR #1 remains unmerged.
+- Previous review fixes preserved: `9e908d4ca22786d1ee49bff963ac98179c79e0b3`.
+- New scheduler/migration fixes: `2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0`.
+- This document is a later documentation checkpoint on the same branch. Inspect the latest remote head before continuing; never reset it to one of these anchors.
 
-## Default
+The default stays USD10,000 virtual capital with EUR reporting. Actual operating expenses and any future live allocation are separate. No paid model calls, private exchange calls or real orders were made in this continuation.
 
-Paper capital remains USD 10,000 with EUR reporting. Real operating spend is a separate ledger. `paid_calls_enabled` and `live_enabled` default to false. No real orders, withdrawals, API spending, or infrastructure purchases were made.
+## What the interrupted review had already fixed
 
-## Task disposition
+The previous commit preserves FIFO and third-asset-fee accounting corrections, currency-aware aggregate exposure, atomic fill recording/replay, pause and cancellation recovery, provider usage/price-card/allocation checks, and explicit refusal of unsafe or unwired prototype controls. Those changes were not lost.
 
-`planning/progress.json` records T00–T19 and T21–T22 as `done` with the pytest evidence below. **T20 is `blocked`.** The bounded live pilot has not started because owner live authorization and a real operating budget are absent.
+## What this continuation added
 
-Credentialed OpenAI, Anthropic, and Kraken checks were not run. A fixture or fake transport is not a passed paid-provider or exchange test.
+Expired LEASED/RUNNING tasks can be reclaimed after a crash without resetting their attempt count. Each claim has a unique fencing token; an old worker cannot renew, spend another recorded attempt or overwrite the result of a recovered task. Terminal and WAITING_EXTERNAL tasks are not automatically retried. Attempt exhaustion now commits DEAD_LETTER before raising an error.
 
-## Functioning commands
+Task deduplication, delegation ancestry/caps, schedule creation and schedule-to-task advancement are transactional. Deployment-wide tasks with a null portfolio now deduplicate. Five-minute occurrences no longer collapse into one hourly key. An overdue schedule creates one current opportunity rather than replaying obsolete opportunities.
+
+Additive migration `0002` installs task lease tokens and an index. Migration application is atomic, including nested callers; a failed upgrade rolls back schema and version records together. Existing tasks and attempts survive upgrade. The Alembic bridge advances to `0002`.
+
+**Worker integration is still required:** `Scheduler.claim` now returns `TaskLease`, and `renew`, `note_attempt`, and `succeed` require that token. Reclaiming a task is not proof that its last external call failed. Reconcile persisted orders/usage first; never blindly replay paid calls or submissions.
+
+## Verification actually performed
+
+| Check | Result |
+|---|---|
+| GitHub Actions Python 3.12, locked dependencies | Runtime run [36699717463](https://github.com/krybaby7/trade-graph/actions/runs/36699717463), job 109836047214: success |
+| Ruff on `src tests` | Passed in that CI job |
+| Full pytest suite | **113 passed; 0 failures, 0 errors, 0 skipped**; JUnit artifact 11089725511 downloaded and inspected |
+| New scheduler/migration regressions | 31 cases included in the full suite |
+| Local available Python 3.13 tests | 98 passed; full local suite was not run because LangGraph/Hypothesis were unavailable and dependency installation was network-blocked |
+| Planning validation | 23-task DAG/reference checks passed; 10 planning tests passed |
+| Database upgrade | Legacy-task preservation and failed-upgrade rollback tested; Alembic upgrade-to-head twice and application reopen verified at `0002` |
+| Whitespace check | `git diff --check` passed |
+
+Passing fixture/unit/integration tests is not evidence of paid provider access, exchange compatibility, economic performance, complete security isolation or full product delivery.
+
+## Commands and their present limits
 
 ```bash
 uv sync --frozen --group dev
@@ -28,58 +49,26 @@ uv run ruff check src tests
 uv run pytest
 python3 scripts/test_planning.py
 python3 scripts/check_plan.py
-uv run trade-graph doctor
+python3 scripts/next_task.py --prompt
 uv run trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
 uv run trade-graph demo --offline
 uv run trade-graph run --mode paper
 uv run trade-graph pause --profile manage-only
 uv run trade-graph backup --destination runtime/backup.sqlite
 uv run trade-graph reconcile
-uv run trade-graph report --format json
 ```
 
-`run` performs one paper recovery pass. It does not enable paid calls, live trading, or new model decisions. `run --mode live` exits with an error.
+`demo --offline` is a scripted scenario, not a continuously operating organization. `run --mode paper` performs one recovery/reconciliation pass and exits without generating new decisions. `doctor` and `report` currently return limited/static status rather than complete diagnostics or financial reporting. `run --mode live` refuses execution. The dashboard is partial; owner-budget and activation endpoints deliberately return not-implemented responses.
 
-## Results from this checkout
+## Remaining implementation, not merely missing credentials
 
-- `uv run ruff check src tests`: passed.
-- `uv run pytest -q`: 34 passed. No credentials used.
-- `python3 scripts/test_planning.py`: 10 passed.
-- `python3 scripts/check_plan.py`: plan valid, 23 tasks.
-- Offline demo (`tests/e2e/test_offline.py`): finding does not create an order; model timeout is not a hold; a loss can stay `valid_thesis` and a win can stay `invalid_process`; activated artifact hash differs from the baseline and the later hold uses it; a protected kernel edit is rejected and its receipt remains; budget exhaustion does not stop reconciliation; restart does not submit again; duplicate fill is ignored; A43 equity is EUR 9000 at 0.90 and EUR 9100 at 0.91 with alpha 0; A44 paper reset and synthetic receipts do not change the real remaining budget; leader trade approvals are 0; evaluation verdict is `insufficient_evidence` (below the 30-decision minimum).
-- CLI (`tests/unit/test_cli_ops.py`): init, manage-only pause, checksummed backup, reconcile, and paper run succeed. Live run is refused.
-- Kraken adapter: submit raises `LiveDisabled` unless live is enabled and a key is present. The test transport is fake. No authenticated Kraken call ran.
-- Provider adapters: OpenAI Responses and Anthropic Messages fixtures parse structured output, rate limit, truncation, timeout, and refusal. The gateway does not call the network. Credentialed probes are pending.
-- Isolation: a separate process denies secret, withdrawal, and budget operations. Plugin source that imports OS or network modules is rejected. Promotion requires a trusted-controller attestation.
+1. **Close T01 contracts/authority.** Pydantic schemas exist, but shared broker/provider Protocol interfaces and persisted policy/mandate authority are incomplete. `Execution.authorize` still receives exposure caps as arguments instead of loading the authoritative active mandate. Revalidate the retained T02/T03 foundations after this closure.
+2. **Complete T04/T06 integrations.** Market normalization is not a public REST/WebSocket reconnect/backfill client. FX observations are injected, with no attributed FX network client. Both provider adapters currently parse supplied HTTP fixtures; wire real budgeted transports, model capabilities and tool continuations before any paid probe.
+3. **Integrate T07–T12 into a working paper service.** Connect persisted scheduling, recovery, research, autonomous trading, learning, optimization and leadership. Keep decisions autonomous within the owner's mandate, without a per-trade approval committee. Distinguish fixture costs from actual receipts.
+4. **Finish T13–T17 release acceptance.** Independently trusted artifact checks/attestations, activation/quiescence/rollback, complete dashboard controls and reporting, a production-equivalent offline full loop, then an explicitly owner-funded paper soak. A caller-supplied attestation label is not independent controller evidence.
 
-## Failures
+Forward-paper economic evaluation and any live pilot come later. Broader executable Engineer/plugin support remains disabled: the multiprocessing protocol fixture is not an OS sandbox. T20 requires unfinished software prerequisites as well as separate owner eligibility, allocation and spending authorization.
 
-No failing tests in the commands above. These product gaps are recorded rather than marked passed:
+## Task status interpretation
 
-- No HTTP client path is wired for live OpenAI or Anthropic calls. Fixture parsing is not a credentialed probe.
-- No Kraken public WebSocket reconnect/backfill client and no network smoke.
-- FX rates are injected observations. There is no Frankfurter client.
-- Exposure comparison still treats USD notional and EUR equity as the same number (D16).
-- `POST /api/v1/leader/activate` refuses the caller. Activation is `VersionController`, used by the offline demo.
-- Mandate rows are not loaded inside `authorize`; caps are arguments.
-- Alembic is present; the running path applies `migrate.py` when a database opens.
-- No container image or cgroup attestation (D15).
-
-## Missing credentials and owner decisions
-
-- No OpenAI or Anthropic API key. Paid smoke and a credentialed forward-paper window are pending.
-- No Kraken trading key. Authenticated or real-order tests were not run.
-- No owner live authorization and no real operating budget. T20 stays blocked. Paper USD 10,000 is not a live allocation.
-- Broader Engineer code classes are not granted. Plugin and process controls refuse unattested promotion.
-
-## Deviations
-
-D12 httpx-shaped REST bodies, D13 temporary allowlisted git sandbox, D14 fixed maker 0.004 / taker 0.008 fee tier, D15 process isolation without a container image, D16 incomplete USD/EUR exposure conversion. See `docs/DECISIONS.md`.
-
-## Next work
-
-T20: owner live eligibility, an explicit live allocation that is not the paper USD 10,000, and a real operating budget, before any pilot. Separately, an owner-funded credential configuration is required before a paid paper soak can be reported as anything other than pending.
-
-## Earlier planning checkpoint
-
-Planning validation on `main` at `dab766f` remains historical. GitHub Actions run `https://github.com/krybaby7/trade-graph/actions/runs/36618799789` checked the plan, not this runtime. Do not reset this branch to that checkpoint.
+`planning/progress.json` supersedes the old all-but-T20-done claim. T00 remains accepted. T01–T19 and T21–T22 are reopened `todo` for missing deliverables or dependency revalidation; their existing source and historical test evidence remain intact. T20 stays `blocked`. Here `todo` means **remaining acceptance work, not starting over**. Each reopened task records its remaining work; the next-task utility now selects T01 rather than misleadingly directing the next agent to live trading.

@@ -2,11 +2,13 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: paper runtime implemented on `cursor/trade-graph-r1-548a`. Paid calls and live trading stay disabled. Credentialed provider, exchange, and forward-paper checks are pending.**
+**Status: partial offline prototype on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+
+The interrupted review has been recovered. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the preserved fixes, 113-test CI checkpoint, actual command limits and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
-## Start implementation
+## Continue implementation
 
 Give your coding orchestrator [IMPLEMENTATION-START-HERE.md](IMPLEMENTATION-START-HERE.md). Repository instructions are [AGENTS.md](AGENTS.md). [planning/tasks.json](planning/tasks.json) contains dependency-ordered deliverables and acceptance criteria; [planning/progress.json](planning/progress.json) records actual completion evidence.
 
@@ -41,7 +43,7 @@ These prepare implementation work; they do not run a trading bot or launch a pro
 
 Python, FastAPI, a small dashboard, one durable scheduler, SQLite, a thin LangGraph layer, provider-neutral model adapters, and deterministic broker/execution/accounting services. Departments are responsibilities, not permanent processes.
 
-R1 completes Research -> Trader -> paper execution -> evidence -> Learning/Optimisation -> Leader -> Improvement Engineer -> tested version -> further operation. No per-trade approval committee. Owner capital/spending/permissions remain software-enforced and outside agent control.
+The required R1 release must complete Research -> Trader -> paper execution -> evidence -> Learning/Optimisation -> Leader -> Improvement Engineer -> tested version -> further operation. No per-trade approval committee. Owner capital/spending/permissions remain software-enforced and outside agent control.
 
 Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for commands, synthetic results, and checks that are still pending credentials or an owner decision.
 

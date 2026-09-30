@@ -13,11 +13,12 @@
 | D09 | Event-driven low-frequency reasoning with continuous software management | Avoid unnecessary token use without a per-trade committee |
 | D10 | The 2026-09-29 handoff supplied a plan, task DAG and runnable planning utilities | Historical. Runtime code landed later at `a4bdce6`; this row does not describe the current tree |
 | D11 | Paper resets cannot erase real expenses or refill the API allowance | Native accounting and cross-experiment cost provenance remain auditable |
-| D12 | Provider adapters speak documented REST with httpx-shaped bodies, not vendor SDKs | Domain and kernel stay free of provider SDKs. Revisit if an official SDK becomes the only supported wire |
+| D12 | Provider-neutral adapters target REST bodies rather than vendor SDKs; current implementations are fixture parsers only | Real HTTP transport, capability handling and credentialed verification remain unfinished. Do not label fixture success as network success |
 | D13 | The Engineer sandbox is a fresh temporary git repository of allowlisted files | A worktree of the product repo would mount deployment git credentials. Revisit only with a scoped remote that cannot push protected paths |
 | D14 | Paper and reserve fees use an explicit fixed conservative tier, maker 0.004 and taker 0.008 | Rolling venue volume is not known offline. Replace with the owner's actual fee schedule when a venue account exists |
-| D15 | The P6 kernel boundary is a separate OS process with scoped RPC, a sanitized environment and `RLIMIT_CPU` | A container image and cgroup attestation need owner infrastructure. A Python import boundary is not treated as isolation |
-| D16 | Exposure checks compare USD notional with reporting-currency equity numerically | Demo sizes stay inside the cap. Convert through an identified FX rate before any live or larger-notional use |
+| D15 | Superseded security claim: the multiprocessing/RPC example is only a protocol fixture, not an OS sandbox | Executable plugins and trusted promotion are disabled. Build and adversarially test a real protected boundary before broader code authority |
+| D16 | Fixed in `9e908d4`: compare aggregate exposure and equity in the same currency using identified FX provenance | Numeric USD-versus-EUR comparisons are invalid even in a demo. Preserve the currency regression tests |
+| D17 | Durable scheduler claims carry unique fencing tokens; schema migration 0002 is additive and transactional | Reclaim stale work without stale-worker result writes. Reconcile prior external effects before retry; task recovery never authorizes duplicate orders or free retries |
 
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
@@ -25,6 +26,6 @@ The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR1
 
 Owner/runtime: legal residence/entity and exchange eligibility; actual venue/pairs/fee tier; model accounts and measured quality; actual expense budget including taxes/FX/hosting; deployment availability; exposure/loss/experiment envelope; live permission; broader engineering classes. Keep private answers out of public Git.
 
-Implementation resolved in code: lockfile at `uv.lock` (D12–D16 above); paper fee tier D14; process isolation D15. Still open: credential store, real-host container/cgroup attestation, market-depth retention beyond the paper participation model, native stop/OCO/amend proof on a live venue, and an owner grant of broader code classes.
+Implemented and tested slices: lockfile at `uv.lock`, fixed paper fee assumptions D14, currency correction D16, scheduler/migration recovery D17. D12 network transport and D15 security isolation are not complete. Still open: credential store, real-host container/cgroup attestation, market-depth retention beyond the paper participation model, native stop/OCO/amend proof on a live venue, and an owner grant of broader code classes.
 
 None prevents offline development. Mark credentialed verification pending when credentials are absent; do not invent successful tests or treat implementation completion as permission to trade or spend.
