@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-09-30",
-  "status_note": "T00-T07 accepted on cursor/trade-graph-r1-548a. T07 bounds schema repair, transport retry and priced fallback under the root-task limit, and persists an unexplained invoice difference. The invoice total is supplied, not a downloaded bill. T08-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
+  "status_note": "T00-T08 accepted on cursor/trade-graph-r1-548a. T08 advances each pause profile to a verified achieved state on the paper broker. Flatten stays incomplete until the exit fill is recorded. No live venue outage was run. T09-T19 and T21-T22 remain todo. T20 remains blocked. No paid calls or live authority.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -83,13 +83,14 @@
       ]
     },
     "T08": {
-      "status": "todo",
-      "owner": null,
+      "status": "done",
+      "owner": "cursor-agent",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
-        "lost acknowledgement, owner halt, and restart without a second submit pass in tests/integration/test_execution.py and tests/e2e/test_offline.py"
-      ],
-      "remaining": "Mandate loading and dispatch revalidation landed in T01. Still open: exercised CANCEL_ALL, FLATTEN and STOPPED workflows with verified achieved states, including protective-order handling. Owner halt already cannot be lifted by Leader."
+        "tests/integration/test_execution.py and tests/integration/test_review_regressions.py cover lost acknowledgement, duplicate-fill rejection, cancel/fill reservation hold, stale quotes, owner halt, and restart without a second submit",
+        "tests/integration/test_pause_profiles.py covers PAUSE_DECISIONS, MANAGE_ONLY, NO_NEW_EXPOSURE, CANCEL_ALL, FLATTEN and STOPPED achieved states. Protective sells survive no-new-exposure and are cancelled by cancel-all. Flatten stays flattening until the exit fill, then STOPPED is reached only when flat",
+        "An unknown cancel stays cancelling-orders. A lost acknowledgement is cancelled from broker state without a second submit. Paper fill pagination now ends on an empty page. No live venue outage was run."
+      ]
     },
     "T09": {
       "status": "todo",

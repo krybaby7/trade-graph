@@ -101,7 +101,9 @@ class PaperBroker:
                 fills.append(FillRecord.model_validate(payload))
         if cursor:
             fills = [fill for fill in fills if fill.trade_id > cursor]
-        return FillPage(fills=fills, next_cursor=fills[-1].trade_id if fills else cursor)
+        if not fills:
+            return FillPage(fills=[], next_cursor=None)
+        return FillPage(fills=fills, next_cursor=fills[-1].trade_id)
 
     async def submit(self, intent: AuthorizedOrderIntent) -> SubmitResult:
         self.submit_count += 1

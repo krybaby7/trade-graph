@@ -19,6 +19,7 @@ from trade_graph.contracts.models import (
     Observation,
     OrderLookup,
     PauseProfile,
+    Quantity,
 )
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import (
@@ -444,6 +445,47 @@ class Execution:
         await self.reconcile()
         await self.dispatch()
 
+    async def advance_pause(self, portfolio_id: str) -> str:
+        """Apply the persisted pause profile and record only a verified achieved state."""
+        current = self.pause(portfolio_id)
+        profile = current["profile"] if current else "RUNNING"
+        if profile == "RUNNING":
+            if current:
+                self._set_achieved(portfolio_id, "running")
+            return "running"
+        if profile == "PAUSE_DECISIONS":
+            self._set_achieved(portfolio_id, "decisions-paused")
+            return "decisions-paused"
+        if profile == "MANAGE_ONLY":
+            self._set_achieved(portfolio_id, "managing")
+            return "managing"
+        if profile == "NO_NEW_EXPOSURE":
+            await self._cancel_for_pause(portfolio_id, sides={"buy"}, keep_flatten_exits=False)
+            buy_left = self._has_outstanding(portfolio_id, sides={"buy"})
+            achieved = "cancelling-increases" if buy_left else "increases-cleared"
+            self._set_achieved(portfolio_id, achieved)
+            return achieved
+        if profile == "CANCEL_ALL":
+            await self._cancel_for_pause(portfolio_id, sides=None, keep_flatten_exits=False)
+            achieved = "cancelling-orders" if self._has_outstanding(portfolio_id) else "orders-cleared"
+            self._set_achieved(portfolio_id, achieved)
+            return achieved
+        if profile == "FLATTEN":
+            await self._cancel_for_pause(portfolio_id, sides=None, keep_flatten_exits=True)
+            if self._flatten_ready(portfolio_id):
+                self._set_achieved(portfolio_id, "flat-verified")
+                return "flat-verified"
+            if not self._has_blocking(portfolio_id) and self._has_inventory(portfolio_id):
+                self._queue_flatten_exits(portfolio_id)
+                await self.dispatch()
+            self._set_achieved(portfolio_id, "flattening")
+            return "flattening"
+        if profile == "STOPPED":
+            achieved = "stopped" if self._flatten_ready(portfolio_id) else "blocked-until-flat"
+            self._set_achieved(portfolio_id, achieved)
+            return achieved
+        raise ValidationFailure("unsupported pause profile")
+
     async def cancel(self, intent_id: str) -> None:
         payload = self._payload(intent_id)
         self._set_state(intent_id, "CANCEL_PENDING", {})
@@ -553,6 +595,138 @@ class Execution:
                     self.now(),
                     decision.task_id,
                 ),
+            )
+
+    _OUTSTANDING = frozenset({
+        "SUBMISSION_PENDING",
+        "SUBMITTING",
+        "OPEN",
+        "PARTIALLY_FILLED",
+        "UNKNOWN",
+        "CANCEL_PENDING",
+    })
+
+    def _set_achieved(self, portfolio_id: str, achieved: str) -> None:
+        with self.database.immediate() as conn:
+            conn.execute(
+                "UPDATE pause_states SET achieved = ? WHERE portfolio_id = ?",
+                (achieved, portfolio_id),
+            )
+
+    def _order_rows(self, portfolio_id: str) -> list:
+        return self.database.execute(
+            "SELECT intent_id, state, payload_json FROM order_intents WHERE portfolio_id = ?",
+            (portfolio_id,),
+        ).fetchall()
+
+    def _has_outstanding(self, portfolio_id: str, *, sides: set[str] | None = None) -> bool:
+        for row in self._order_rows(portfolio_id):
+            if row["state"] not in self._OUTSTANDING:
+                continue
+            if sides is not None and json.loads(row["payload_json"]).get("side") not in sides:
+                continue
+            return True
+        return False
+
+    def _has_blocking(self, portfolio_id: str) -> bool:
+        for row in self._order_rows(portfolio_id):
+            if row["state"] not in self._OUTSTANDING:
+                continue
+            if json.loads(row["payload_json"]).get("flatten_exit"):
+                continue
+            return True
+        return False
+
+    def _flatten_ready(self, portfolio_id: str) -> bool:
+        return not self._has_outstanding(portfolio_id) and not self._has_inventory(portfolio_id)
+
+    def _has_inventory(self, portfolio_id: str) -> bool:
+        return any(quantity > 0 for _, quantity, _rules in self._inventory(portfolio_id))
+
+    def _inventory(self, portfolio_id: str) -> list[tuple[str, Decimal, InstrumentRules]]:
+        rows = self.database.execute("SELECT document_json FROM instruments").fetchall()
+        held: list[tuple[str, Decimal, InstrumentRules]] = []
+        for row in rows:
+            rules = InstrumentRules.model_validate_json(row["document_json"])
+            quantity = self.owned_quantity(portfolio_id, rules.base_asset)
+            if quantity > 0:
+                held.append((rules.symbol, quantity, rules))
+        return held
+
+    async def _cancel_for_pause(
+        self,
+        portfolio_id: str,
+        *,
+        sides: set[str] | None,
+        keep_flatten_exits: bool,
+    ) -> None:
+        for row in self._order_rows(portfolio_id):
+            if row["state"] not in self._OUTSTANDING:
+                continue
+            payload = json.loads(row["payload_json"])
+            if sides is not None and payload.get("side") not in sides:
+                continue
+            if keep_flatten_exits and payload.get("flatten_exit"):
+                continue
+            if row["state"] == "SUBMISSION_PENDING":
+                self._abandon_unsent(row["intent_id"], "pause")
+                continue
+            if row["state"] == "CANCEL_PENDING":
+                continue
+            await self.cancel(row["intent_id"])
+        await self.reconcile()
+
+    def _queue_flatten_exits(self, portfolio_id: str) -> None:
+        policy = self.authority.active_policy()
+        mandate = self.authority.active_mandate(portfolio_id)
+        for symbol, quantity, rules in self._inventory(portfolio_id):
+            if self._flatten_exit_outstanding(portfolio_id, symbol):
+                continue
+            decision_id = f"flatten-{uuid.uuid4()}"
+            decision = Decision(
+                record_id=decision_id,
+                created_at_utc=self.clock.now(),
+                run_id="pause",
+                task_id="flatten",
+                root_task_id="flatten",
+                portfolio_id=portfolio_id,
+                mode=self.mode,
+                system_version_id="pause",
+                trace_id=decision_id,
+                action="exit",
+                symbol=symbol,
+                quantity=Quantity(amount=quantity, asset=rules.base_asset),
+                rationale="close verified remaining inventory",
+                invalidation="owner flatten",
+                horizon_seconds=3600,
+                strategy_id="slow-trend",
+                snapshot_id="pause",
+                mandate_revision=str(mandate.revision),
+                policy_revision=policy.revision_id,
+            )
+            try:
+                intent_id = self.authorize(portfolio_id, decision)
+            except (ValidationFailure, AuthorityDenied, StaleState) as exc:
+                self._incident("flatten_exit_not_submitted", {"symbol": symbol, "reason": str(exc)})
+                continue
+            self._mark_flatten_exit(intent_id)
+
+    def _flatten_exit_outstanding(self, portfolio_id: str, symbol: str) -> bool:
+        for row in self._order_rows(portfolio_id):
+            if row["state"] not in self._OUTSTANDING:
+                continue
+            payload = json.loads(row["payload_json"])
+            if payload.get("flatten_exit") and payload.get("symbol") == symbol:
+                return True
+        return False
+
+    def _mark_flatten_exit(self, intent_id: str) -> None:
+        payload = self._payload(intent_id)
+        payload["flatten_exit"] = True
+        with self.database.immediate() as conn:
+            conn.execute(
+                "UPDATE order_intents SET payload_json = ? WHERE intent_id = ?",
+                (json.dumps(payload), intent_id),
             )
 
     def intent_state(self, intent_id: str) -> str:
