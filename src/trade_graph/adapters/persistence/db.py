@@ -69,8 +69,11 @@ class Database:
                 yield active
                 active.execute(f"RELEASE SAVEPOINT {savepoint}")
             except BaseException:
-                active.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                active.execute(f"RELEASE SAVEPOINT {savepoint}")
+                # SQLITE_FULL and RAISE(ROLLBACK) can end the whole transaction,
+                # including its savepoints. Preserve the original storage error.
+                if active.in_transaction:
+                    active.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    active.execute(f"RELEASE SAVEPOINT {savepoint}")
                 raise
             return
         with self.connect() as connection:
