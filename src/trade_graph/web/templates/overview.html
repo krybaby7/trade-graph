@@ -10,7 +10,7 @@
 {% set capital = data.get('allocated_capital', {}) %}
 {% set current = data.get('current_value', {}) %}
 {% set flows = data.get('external_flows', {}) %}
-{% if data.get('provisional', provisional|default(false)) or valuation.get('provisional') %}<div class="notice notice-warning" role="status"><strong>Provisional valuation.</strong> Missing or stale marks and FX observations may leave the reported value incomplete. Native balances remain visible in <a href="/trading">Trading</a>.</div>{% endif %}
+{% if data.get('provisional', provisional|default(false)) or valuation.get('provisional') %}<div class="notice notice-warning" role="status"><strong>Provisional financial result.</strong> Valuation, operating expenses or reconciliation evidence is incomplete. Native balances remain visible in <a href="/trading">Trading</a>.</div>{% endif %}
 {% if data.get('degraded') %}<div class="notice notice-danger"><strong>Degraded operations.</strong> Review uncertain orders and reconciliation before increasing exposure.</div>{% endif %}
 <section class="metrics" aria-label="Financial summary">
   {{ metric('Allocated virtual capital', capital.get('reporting_amount'), currency, 'Opening capital valued on its recorded FX basis.', 'simulated') }}

@@ -40,7 +40,7 @@ def test_overview_keeps_precise_values_and_actual_expense_currency() -> None:
     )
     assert "10000.000000000000000001" in page
     assert "-0.000000000000000001" in page
-    assert "Provisional valuation" in page
+    assert "Provisional financial result" in page
     assert "Simulated trading P&amp;L" in page
     assert "Simulated net-economic P&amp;L" in page
     actual_metric = page.split('class="metric actual"', 1)[1].split("</article>", 1)[0]
@@ -127,3 +127,40 @@ def test_cost_and_order_projections_preserve_uncertainty_and_native_units() -> N
     assert "0.123456789" in trading and "BTC" in trading
     assert "UNKNOWN" in trading and "Degraded" in trading
     assert "An unknown outcome is not a rejection" in trading
+
+
+def test_receipt_native_expense_keeps_currency_separate_from_reporting_value() -> None:
+    page = render(
+        "costs.html",
+        {
+            "receipts": [
+                {"native_cost": "1.25", "native_currency": "USD", "reporting_cost": "1.10", "reporting_currency": "EUR"}
+            ]
+        },
+    )
+    native = page.split("<dt>Native expense</dt>", 1)[1].split("</dd>", 1)[0]
+    reporting = page.split("<dt>Reporting expense</dt>", 1)[1].split("</dd>", 1)[0]
+    assert "1.25" in native and "USD" in native and "EUR" not in native
+    assert "1.10" in reporting and "EUR" in reporting
+
+
+def test_research_and_lessons_display_the_persisted_contract() -> None:
+    page = render(
+        "organization.html",
+        {
+            "research": {
+                "findings": [{"question": "What changed?", "claim": "Observed spread widened", "stale": True}]
+            },
+            "lessons": {"lessons": [{"observation": "A missed fill", "explanation": "Queue position was uncertain"}]},
+        },
+    )
+    assert "What changed?" in page and "Observed spread widened" in page
+    assert "A missed fill" in page and "Queue position was uncertain" in page
+
+
+def test_owner_has_explicit_emergency_manage_only_control() -> None:
+    page = render("owner.html", role="owner", csrf="proof")
+    assert "data-emergency" in page
+    emergency = page.split("data-emergency", 1)[1].split("</form>", 1)[0]
+    assert 'value="MANAGE_ONLY"' in emergency
+    assert "FLATTEN" not in emergency

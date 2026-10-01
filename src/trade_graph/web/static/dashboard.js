@@ -38,7 +38,13 @@
   }
 
   function detail(body) {
-    return typeof body.detail === "string" ? body.detail.slice(0, 700) : "The service rejected this request.";
+    if (typeof body.detail === "string") return body.detail.slice(0, 1200);
+    if (body.detail && typeof body.detail === "object") {
+      const reason = typeof body.detail.reason === "string" ? body.detail.reason : "The service rejected this request.";
+      const barriers = Array.isArray(body.detail.barriers) ? body.detail.barriers.map(item => typeof item === "string" ? item : JSON.stringify(item)).join("; ") : "";
+      return `${reason}${barriers ? `: ${barriers}` : ""}`.slice(0, 1200);
+    }
+    return "The service rejected this request.";
   }
 
   function integer(input, label) {
@@ -109,6 +115,16 @@
     for (const form of ownerForms) form.querySelector("[data-owner-fields]").disabled = !enabled;
   }
 
+  function allowRecoveryControls() {
+    if (!csrf || ownerBusy) return;
+    for (const form of ownerForms) {
+      if (form.hasAttribute("data-emergency") || pending.has(form)) {
+        form.querySelector("[data-owner-fields]").disabled = false;
+        if (pending.has(form)) for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = true;
+      }
+    }
+  }
+
   async function loadOwner(populate = true) {
     try {
       const response = await fetch("/api/v1/owner/config", {credentials: "same-origin", cache: "no-store"});
@@ -130,11 +146,12 @@
           }
         }
       }
-      const blocked = Array.isArray(body.pending_commands) && body.pending_commands.length > 0;
-      ownerStatus.textContent = blocked ? "A protected command is in progress. Reconcile it before issuing another command." :
+      const blocked = Array.isArray(body.pending_commands) && body.pending_commands.length > 0 || ownerForms.some(form => pending.has(form));
+      ownerStatus.textContent = blocked ? "A protected command outcome is pending. Reconcile it before further changes; emergency manage-only remains available." :
         csrf ? `Protected owner revision ${ownerRevision} loaded. Every change is checked against this revision.` :
           `Protected owner revision ${ownerRevision} loaded for reading. Browser writes require a cookie session.`;
       ownerFields(Boolean(csrf) && !blocked && !ownerBusy);
+      allowRecoveryControls();
       return true;
     } catch (error) {
       ownerFields(false);
@@ -145,6 +162,7 @@
 
   async function submitCommand(form, endpoint, revision, isOwner) {
     if (activeForms.has(form)) return;
+    const wasUnknown = pending.has(form);
     let body = pending.get(form);
     if (!body) {
       try { body = buildCommand(form, revision); }
@@ -159,19 +177,23 @@
     if (isOwner) { ownerBusy = true; ownerFields(false); }
     result(form, "Sending the protected command…");
     let retainPending = false;
+    let reloadCurrentInputs = false;
     try {
       const response = await fetch(endpoint, {
         method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
-        body: JSON.stringify(body)
+        body: JSON.stringify(body), signal: AbortSignal.timeout(15000)
       });
       const output = await jsonResponse(response);
       if (!response.ok) {
         const message = detail(output);
-        retainPending = response.status >= 500 || response.status === 409 && message.includes("in progress");
-        result(form, `${message}${retainPending ? " Retry this same request after reconciliation." : " Review the current state before submitting again."}`, true);
+        const stale = response.status === 409 && output.detail?.reason === "stale revision";
+        const terminal = output.detail?.command_state === "FAILED" && output.detail?.command_id === body.request_id;
+        retainPending = response.status >= 500 && !terminal || response.status === 409 && message.includes("in progress") || wasUnknown && !stale && !terminal;
+        reloadCurrentInputs = stale && !retainPending;
+        result(form, `${message}${retainPending ? " Retry this same request after reconciliation." : reloadCurrentInputs ? " Inputs are being reloaded from the current state; review them before submitting again." : " Review the current state before submitting again."}`, true);
       } else {
         const revisionNote = output.revision === undefined ? "" : ` Revision ${output.revision}.`;
-        if (form.dataset.command === "pause") result(form, `Management profile: ${output.profile || body.profile}.${output.achieved === false ? " Requested outcome is not yet verified." : ""}${revisionNote}`);
+        if (form.dataset.command === "pause") result(form, `Management profile: ${output.profile || body.profile}. Achieved state: ${output.achieved || "not reported"}.${revisionNote}`);
         else if (form.dataset.command === "resume") result(form, `Reconciled state: ${output.profile || "RUNNING"}.${revisionNote}`);
         else if (form.hasAttribute("data-leader-task")) {
           form.dataset.revision = String(output.revision);
@@ -193,9 +215,10 @@
           form.querySelector("[data-owner-fields]").disabled = false;
           for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = true;
           ownerStatus.textContent = "A command outcome is pending. Retry its existing request ID before issuing further changes.";
+          allowRecoveryControls();
         } else {
           for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = false;
-          await loadOwner(false);
+          await loadOwner(reloadCurrentInputs);
         }
       } else if (retainPending) {
         for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = true;
@@ -212,9 +235,10 @@
 
   if (ownerForms.length) {
     loadOwner();
-    for (const form of ownerForms) form.addEventListener("submit", event => {
+    for (const form of ownerForms) form.addEventListener("submit", async event => {
       event.preventDefault();
       if (!csrf || ownerRevision === null || ownerBusy) return;
+      if (form.hasAttribute("data-emergency") && !pending.has(form) && !await loadOwner(false)) return;
       submitCommand(form, `/api/v1/owner/${form.dataset.command}`, ownerRevision, true);
     });
   }
