@@ -34,7 +34,7 @@
 
   async function jsonResponse(response) {
     try { return await response.json(); }
-    catch (_) { return {detail: `The service returned HTTP ${response.status} without a JSON response.`}; }
+    catch (_) { throw new Error(`The service returned HTTP ${response.status} without a valid JSON acknowledgement.`); }
   }
 
   function detail(body) {
@@ -67,6 +67,18 @@
   function requestId() {
     if (!globalThis.crypto?.randomUUID) throw new Error("A browser secure context is required for request IDs.");
     return crypto.randomUUID();
+  }
+
+  function completedReceipt(output, form) {
+    if (!output || typeof output !== "object" || Array.isArray(output) ||
+        !Number.isSafeInteger(output.revision) || output.revision < 0) return false;
+    const command = form.dataset.command;
+    if (command === "pause") return typeof output.profile === "string" && typeof output.achieved === "string";
+    if (command === "resume") return typeof output.profile === "string" && output.reconciled === true;
+    if (command === "budgets") return typeof output.total === "string";
+    if (command === "config") return output.policy !== null && typeof output.policy === "object" && !Array.isArray(output.policy);
+    if (form.hasAttribute("data-leader-task")) return typeof output.task_id === "string" && Boolean(output.task_id);
+    return false;
   }
 
   function buildCommand(form, revision) {
@@ -192,6 +204,7 @@
         reloadCurrentInputs = stale && !retainPending;
         result(form, `${message}${retainPending ? " Retry this same request after reconciliation." : reloadCurrentInputs ? " Inputs are being reloaded from the current state; review them before submitting again." : " Review the current state before submitting again."}`, true);
       } else {
+        if (!completedReceipt(output, form)) throw new Error("No authoritative command receipt was returned.");
         const revisionNote = output.revision === undefined ? "" : ` Revision ${output.revision}.`;
         if (form.dataset.command === "pause") result(form, `Management profile: ${output.profile || body.profile}. Achieved state: ${output.achieved || "not reported"}.${revisionNote}`);
         else if (form.dataset.command === "resume") result(form, `Reconciled state: ${output.profile || "RUNNING"}.${revisionNote}`);
@@ -271,6 +284,7 @@
       });
       const body = await jsonResponse(response);
       if (!response.ok) throw new Error(detail(body));
+      if (!body || body.authenticated !== true) throw new Error("The service did not acknowledge an authenticated session.");
       field.value = "";
       window.location.assign("/");
     } catch (error) { field.value = ""; result(login, error.message, true); }
