@@ -2,9 +2,9 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: T00–T15 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+**Status: T00–T16 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
 
-Implementation is complete through T15 at the recorded scopes; T16 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the dashboard, authenticated owner controls, verified artifact consumption and rollback, test evidence and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
+Implementation is complete through T16 at the recorded scopes; T17 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the offline acceptance gate, dashboard, authenticated owner controls, verified artifact consumption and rollback, test evidence and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
@@ -51,9 +51,15 @@ Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for commands, syntheti
 uv sync --frozen --group dev
 uv run ruff check src tests
 uv run pytest
+uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-offline-evidence.json
 uv run trade-graph doctor
-uv run trade-graph demo --offline
+uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
 ```
+
+Use a fresh demo work directory. Its private `evidence.json` records actual checked outcomes and
+request/receipt/version provenance. The mapped acceptance gate covers all 40 applicable offline criteria;
+paid-provider, continuous-service, economic and live gates remain separate. `doctor` remains a placeholder
+until T17.
 
 Run the authenticated dashboard against a private paper database:
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-01",
-  "status_note": "T00-T15 remain complete at recorded scopes. T16 in progress on codex/t16-offline-fault-suite from af8e64e; paid calls/live trading remain disabled.",
+  "status_note": "T00-T16 complete at recorded application scopes; T16 verified clean implementation 1cddb349 (808 full tests, 465 mapped tests, all 40 local criteria accepted). T17 is next: continuous paper service, real diagnostics/model routing/recovery/deployment and separately owner-funded verification. Paid calls and live trading remain disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -191,16 +191,26 @@
       "acceptance_scope": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
     },
     "T16": {
-      "status": "in_progress",
+      "status": "done",
       "owner": "codex-orchestrator",
-      "branch": "codex/t16-offline-fault-suite",
+      "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
         "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
         "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths.",
-        "2026-10-01: recovered remote T15 checkpoint af8e64e and claimed dependency-ready T16 in an isolated worktree; completing real offline role paths, A14/A16 storage faults and machine-readable acceptance evidence."
+        "2026-10-01: recovered remote T15 checkpoint af8e64e and claimed dependency-ready T16 in an isolated worktree; completing real offline role paths, A14/A16 storage faults and machine-readable acceptance evidence.",
+        "1cddb349492a8b83f83ba1424f1709533e95d687 (tree f8c609b673d61e88b7fe722340ceb36781d4aedf): verified T16 application-local offline closure from recovered T15 af8e64e; no newer work reset.",
+        "Offline demo now routes all three executable entry/exit/lost-ack decisions through TraderHandler, ModelGateway and RoleWorker. Typed LearningJournal and OptimisationReview preserve actual decision links and counterevidence; all six roles produce synthetic gateway receipts. Actual commissioned Engineer repairs/checks and Secretary-routed Leader activation remain, followed by loaded-byte consumption, restart, observation and rollback. Saved evidence.json contains 14 checked outcomes and request/snapshot/receipt/version traces; failed checks cannot return successful verification.",
+        "tests/property/test_accounting_invariants.py runs 200 deterministic generated conservation/cash-flow examples. test_trader_snapshot.py proves coherent authoritative cash/inventory/reservations/orders and venue/event/availability-filtered market snapshots, including concurrent deposit and stale inputs. test_evidence_acceptance.py proves cursor/routing atomicity, root step exhaustion, rejected graph cycles, unavailable data/budget versus hold, retirement and future evidence exclusion, and unchanged persisted live prerequisites across reset.",
+        "tests/integration/test_storage_faults.py adds 47 real SQLite/full-disk/commit/journal/response/fill fault and abrupt-process-death cases. UNKNOWN/pending orders retain reservations through outage; reconciliation precedes another increase. Restore validates a self-consistent-checksum corrupt database, preserves prior data on failure, and uses a private validated atomic replacement only for an offline destination without sidecars.",
+        "tests/integration/test_execution_acceptance.py adds 28 cases: a fill completed before a lost acknowledgement, partial cancel/replace and final-fill races, unsupported feature/minimum/rounding refusals, conservative broker-fee coverage, and the actual public-feed health gate while deterministic protection remains available.",
+        "tests/integration/test_cost_acceptance.py adds 148 cases for supplied invoice corrections/historical reporting, independent concurrent caps and paid-tool bounds, and both providers structured output/tool/schema/settings failures. Complete bounded Draft 2020-12 validation denies external schema retrieval and retains supplied usage/model attribution. New direct dependencies jsonschema 4.26.0 and referencing 0.37.0 are locked; earlier dependency versions remain unchanged.",
+        "planning/offline-acceptance.json maps all 40 applicable A01-A38/A43-A44 to concrete node IDs. scripts/verify_offline_acceptance.py runs each selected test once with no inherited credentials, isolated XDG/Git configuration and denied Python socket connections in its pytest process. Commit/tree/working bytes/lock/Python and actual collected JUnit outcomes are bound to the report; missing, skipped, interrupted or partial coverage cannot close T16.",
+        "Final documented uv run pytest: 808 passed, zero failures/errors/skips, independently parsed /tmp/t16-final-results.xml. Final mapped acceptance: 465 passed, all 40 accepted, gate_complete=true; report /tmp/trade-graph-t16-final-acceptance.json binds clean source 1cddb349 and lock SHA256 1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39. Ruff, ten planning tests, DAG/reference and cost illustration passed.",
+        "Fresh git-archive checkout of 1cddb349 installed its frozen Python 3.12.14 environment from the package cache and completed standalone offline CLI demo: all 14 checks passed, four fills retained, zero restart submissions. Generated JUnit, acceptance JSON and demo JSON passed exact-byte credential/private-runtime scan. CI now gates mapped acceptance and scans generated evidence before upload; no new CI conclusion is claimed.",
+        "Final integration corrected harness test loading under uv run pytest and a fixture assumption about random outbox ID order. The earlier rejected report is retained privately; final completion uses only the corrected passing run."
       ],
-      "remaining": "The offline demo uses real commissioned Engineer attempts, Secretary-routed gateway Leader activation, loaded artifact consumption, observation/rollback and restart. Complete the acceptance fault catalogue (including disk failure and production-equivalent role paths beyond the scripted demo), machine-readable evidence and applicable A01-A38/A43-A44 coverage. T15 dashboard and hygiene cases are available as evidence; T16 is not yet claimed or complete."
+      "acceptance_scope": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated."
     },
     "T17": {
       "status": "todo",
@@ -259,18 +269,23 @@
     }
   },
   "review_checkpoint": {
-    "implementation_commit": "8760fb2667d4e677cac67646a01e86bdb4d563eb",
-    "implementation_tree": "a75fe189ae9dfb5b639fe1aae4cacef961602f9e",
-    "preserved_previous_head": "85bfb1c424cbcde9947ab4d31dc10c5a5125343f",
+    "implementation_commit": "1cddb349492a8b83f83ba1424f1709533e95d687",
+    "implementation_tree": "f8c609b673d61e88b7fe722340ceb36781d4aedf",
+    "preserved_previous_head": "af8e64e1a85400b19d75f5dbb0133c7d9b4151b0",
     "python": "3.12.14",
-    "tests": 534,
+    "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+    "tests": 808,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "baseline_tests": 391,
-    "next_dependency_ready_task": "T16",
-    "validation_scope": "Local locked full suite, independently parsed JUnit, Ruff, ten planning tests, dependency/reference validation, cost illustration, actual offline-loop dashboard evidence, Chromium desktop/mobile/control-response checks, wheel packaging and staged repository hygiene. No new CI result is claimed.",
-    "acceptance_note": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
+    "baseline_tests": 534,
+    "mapped_tests": 465,
+    "applicable_acceptance_cases": 40,
+    "accepted_cases": 40,
+    "gate_complete": true,
+    "next_dependency_ready_task": "T17",
+    "validation_scope": "Local locked full suite and independently parsed JUnit, strict mapped offline acceptance, Ruff/planning/hygiene, and fresh-checkout frozen installation/standalone demo. New CI is pending verification.",
+    "acceptance_note": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated."
   },
   "historical_submission": {
     "commit": "a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
@@ -339,6 +354,20 @@
       "next_dependency_ready_task": "T15",
       "validation_scope": "Local full locked suite, JUnit, Ruff, ten planning tests, standalone offline demo and staged hygiene scan. No new CI result is claimed.",
       "acceptance_note": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    },
+    {
+      "implementation_commit": "8760fb2667d4e677cac67646a01e86bdb4d563eb",
+      "implementation_tree": "a75fe189ae9dfb5b639fe1aae4cacef961602f9e",
+      "preserved_previous_head": "85bfb1c424cbcde9947ab4d31dc10c5a5125343f",
+      "python": "3.12.14",
+      "tests": 534,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 391,
+      "next_dependency_ready_task": "T16",
+      "validation_scope": "Local locked full suite, independently parsed JUnit, Ruff, ten planning tests, dependency/reference validation, cost illustration, actual offline-loop dashboard evidence, Chromium desktop/mobile/control-response checks, wheel packaging and staged repository hygiene. No new CI result is claimed.",
+      "acceptance_note": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
     }
   ]
 }
