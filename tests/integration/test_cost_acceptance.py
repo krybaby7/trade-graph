@@ -10,8 +10,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from threading import Barrier
 from types import SimpleNamespace
+from typing import Annotated, Literal
 
 import pytest
+from pydantic import BaseModel, Field
 
 from trade_graph.adapters.models.transport import ScriptedProviderHttp
 from trade_graph.adapters.persistence.db import Database
@@ -531,4 +533,239 @@ def test_a17_malformed_local_schema_retains_supplied_usage(tmp_path, provider):
     assert result.usage.uncached_input_tokens == 7 and result.usage.billed_output_tokens == 3
     assert runtime.database.execute("SELECT synthetic FROM usage_receipts").fetchone()[0] == 1
     assert runtime.database.execute("SELECT state FROM budget_reservations").fetchone()[0] == "COMMITTED"
+    runtime.database.close()
+
+
+SCHEMA_CASES = [
+    pytest.param({"oneOf": [{"type": "integer"}, {"type": "string"}]}, "TEST", True, id="oneOf-valid"),
+    pytest.param({"oneOf": [{"type": "number"}, {"type": "integer"}]}, 7, False, id="oneOf-ambiguous"),
+    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 3, True, id="allOf-valid"),
+    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 1, False, id="allOf-invalid"),
+    pytest.param({"type": "number", "minimum": 2}, 1, False, id="minimum"),
+    pytest.param({"type": "string", "pattern": "^[A-Z]+$"}, "bad", False, id="pattern"),
+    pytest.param({"type": "string", "minLength": 2}, "X", False, id="minLength"),
+    pytest.param({"type": "array", "maxItems": 1}, [1, 2], False, id="maxItems"),
+    pytest.param({"enum": [1]}, True, False, id="enum-bool-is-not-number"),
+    pytest.param({"const": 1}, True, False, id="const-bool-is-not-number"),
+    pytest.param({"type": "not-a-json-type"}, "TEST", False, id="bad-schema-type"),
+    pytest.param({"oneOf": []}, "TEST", False, id="bad-schema-oneOf"),
+    pytest.param({"type": "string", "pattern": "["}, "TEST", False, id="bad-schema-pattern"),
+]
+
+
+def _assert_billed_fixture(runtime, result, *, valid, calls):
+    assert result.ok is valid
+    assert result.failure == (None if valid else "validation")
+    assert result.usage.uncached_input_tokens == 7 and result.usage.billed_output_tokens == 3
+    rows = runtime.database.execute("SELECT * FROM usage_receipts ORDER BY rowid").fetchall()
+    assert len(rows) == calls
+    assert all(row["synthetic"] == 1 and row["status"] == "committed" for row in rows)
+    assert all(Decimal(row["native_cost"]) == Decimal("0.000013") for row in rows)
+    assert runtime.budget.remaining("fixture") == 10
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+@pytest.mark.parametrize("target", ["output", "tool"])
+@pytest.mark.parametrize("constraint,value,valid", SCHEMA_CASES)
+def test_a17_complete_json_schema_constraints_retain_both_provider_usage(
+    tmp_path,
+    provider,
+    target,
+    constraint,
+    value,
+    valid,
+):
+    runtime = _stack(tmp_path)
+    schema = {"type": "object", "properties": {"symbol": constraint}, "required": ["symbol"]}
+    request = _request(provider)
+    data = {"symbol": value}
+    payloads = [_response(provider, json.dumps(data))]
+    handlers = []
+    if target == "output":
+        request = request.model_copy(update={"output_schema": schema})
+    else:
+        field = "parameters" if provider == "openai" else "input_schema"
+        request.context["tools"][0][field] = schema
+        payloads = [_response(provider, arguments=data, tool=True, request_id="tool"), _response(provider)]
+    transport = ScriptedProviderHttp(payloads)
+    gateway = ModelGateway(
+        runtime.budget,
+        paid_calls_enabled=True,
+        transport=transport,
+        tools={"lookup": lambda args: handlers.append(args) or {}},
+    )
+    result = gateway.invoke(
+        request, deployment_id="fixture", price_card_id=provider, fx_rate=Decimal("0.9"), fx_buffer=Decimal("1")
+    )
+    expected_calls = 2 if target == "tool" and valid else 1
+    assert len(transport.calls) == expected_calls
+    assert handlers == ([data] if target == "tool" and valid else [])
+    _assert_billed_fixture(runtime, result, valid=valid, calls=expected_calls)
+    runtime.database.close()
+
+
+class _HoldFixture(BaseModel):
+    action: Literal["hold"]
+    count: int = Field(ge=1)
+
+
+class _LookupFixture(BaseModel):
+    action: Literal["lookup"]
+    symbol: str = Field(pattern="^[A-Z]+$")
+
+
+class _ReplyFixture(BaseModel):
+    decision: Annotated[_HoldFixture | _LookupFixture, Field(discriminator="action")]
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+@pytest.mark.parametrize(
+    "decision,valid",
+    [
+        ({"action": "hold", "count": 1}, True),
+        ({"action": "lookup", "symbol": "TEST"}, True),
+        ({"action": "hold", "count": 0}, False),
+        ({"action": "lookup", "symbol": "bad"}, False),
+    ],
+    ids=["hold-valid", "lookup-valid", "minimum-invalid", "pattern-invalid"],
+)
+def test_a17_pydantic_discriminated_output_oneOf_and_local_refs(tmp_path, provider, decision, valid):
+    runtime = _stack(tmp_path)
+    schema = _ReplyFixture.model_json_schema()
+    assert "oneOf" in schema["properties"]["decision"] and "$defs" in schema
+    transport = ScriptedProviderHttp([_response(provider, json.dumps({"decision": decision}))])
+    gateway = ModelGateway(runtime.budget, paid_calls_enabled=True, transport=transport)
+    result = gateway.invoke(
+        _request(provider, output_schema=schema),
+        deployment_id="fixture",
+        price_card_id=provider,
+        fx_rate=Decimal("0.9"),
+        fx_buffer=Decimal("1"),
+    )
+    _assert_billed_fixture(runtime, result, valid=valid, calls=1)
+    if valid:
+        assert result.payload == {"decision": decision}
+    runtime.database.close()
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+@pytest.mark.parametrize("target", ["output", "tool"])
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "#/$defs/symbol",
+        "https://example.invalid/schema",
+        "http://example.invalid/schema",
+        "file:///nonexistent/schema",
+    ],
+    ids=["local", "https-denied", "http-denied", "file-denied"],
+)
+def test_a17_local_refs_work_and_external_retrieval_is_denied_with_usage(
+    tmp_path,
+    monkeypatch,
+    provider,
+    target,
+    reference,
+):
+    import socket
+    import urllib.request
+
+    def deny_io(*args, **kwargs):
+        pytest.fail("schema validation attempted external I/O")
+
+    monkeypatch.setattr(socket, "create_connection", deny_io)
+    monkeypatch.setattr(urllib.request, "urlopen", deny_io)
+    runtime = _stack(tmp_path)
+    schema = {
+        "type": "object",
+        "$defs": {"symbol": {"type": "string", "pattern": "^[A-Z]+$"}},
+        "properties": {"symbol": {"$ref": reference}},
+        "required": ["symbol"],
+    }
+    request = _request(provider)
+    payloads = [_response(provider, '{"symbol":"TEST"}')]
+    handlers = []
+    if target == "output":
+        request = request.model_copy(update={"output_schema": schema})
+    else:
+        field = "parameters" if provider == "openai" else "input_schema"
+        request.context["tools"][0][field] = schema
+        payloads = [
+            _response(provider, arguments={"symbol": "TEST"}, tool=True, request_id="tool"),
+            _response(provider),
+        ]
+    transport = ScriptedProviderHttp(payloads)
+    gateway = ModelGateway(
+        runtime.budget,
+        paid_calls_enabled=True,
+        transport=transport,
+        tools={"lookup": lambda args: handlers.append(args) or {}},
+    )
+    result = gateway.invoke(
+        request, deployment_id="fixture", price_card_id=provider, fx_rate=Decimal("0.9"), fx_buffer=Decimal("1")
+    )
+    valid = reference.startswith("#")
+    expected_calls = 2 if target == "tool" and valid else 1
+    assert handlers == ([{"symbol": "TEST"}] if target == "tool" and valid else [])
+    assert len(transport.calls) == expected_calls
+    _assert_billed_fixture(runtime, result, valid=valid, calls=expected_calls)
+    runtime.database.close()
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+@pytest.mark.parametrize(
+    "target,bound",
+    [
+        pytest.param(target, bound, id=f"{target}-{bound}")
+        for target in ("output", "tool")
+        for bound in ("data-depth", "data-size", "data-nodes", "schema-depth", "schema-size", "decode-depth")
+        if target == "output" or bound != "decode-depth"
+    ],
+)
+def test_a17_schema_and_provider_data_bounds_fail_safely_with_usage(tmp_path, provider, target, bound):
+    runtime = _stack(tmp_path)
+    data = {"action": "hold"}
+    schema = {"type": "object"}
+    if bound.endswith("depth") and bound != "decode-depth":
+        nested = "TEST"
+        for _ in range(70):
+            nested = {"child": nested}
+        if bound == "data-depth":
+            data = nested
+        else:
+            schema["default"] = nested
+    elif bound == "data-size":
+        data["large"] = "X" * (256 * 1024 + 1)
+    elif bound == "schema-size":
+        schema["description"] = "X" * (256 * 1024 + 1)
+    elif bound == "data-nodes":
+        data["wide"] = [0] * 10_001
+    text = json.dumps(data) if bound != "decode-depth" else '{"deep":' + "[" * 1100 + "0" + "]" * 1100 + "}"
+    request = _request(provider)
+    payload = _response(provider, text)
+    if target == "output":
+        request = request.model_copy(update={"output_schema": schema})
+    else:
+        field = "parameters" if provider == "openai" else "input_schema"
+        request.context["tools"][0][field] = schema
+        payload = _response(provider, arguments=data, tool=True)
+    transport = ScriptedProviderHttp([payload])
+    handlers = []
+    gateway = ModelGateway(
+        runtime.budget,
+        paid_calls_enabled=True,
+        transport=transport,
+        tools={"lookup": lambda args: handlers.append(args) or {}},
+    )
+    result = gateway.invoke(
+        request,
+        deployment_id="fixture",
+        price_card_id=provider,
+        fx_rate=Decimal("0.9"),
+        fx_buffer=Decimal("1"),
+    )
+    _assert_billed_fixture(runtime, result, valid=False, calls=1)
+    assert result.provider_model == PROVIDERS[provider]
+    assert len(transport.calls) == 1
+    assert handlers == []
     runtime.database.close()

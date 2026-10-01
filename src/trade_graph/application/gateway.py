@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from inspect import Parameter, signature
 from math import isfinite
 from typing import Any, Literal
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError, ValidationError
+from referencing import Registry
+from referencing.exceptions import NoSuchResource, Unresolvable
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
 from trade_graph.adapters.models.transport import ProviderHttp, ProviderHttpResponseError
@@ -233,7 +239,7 @@ class ModelGateway:
             if request.provider == "scripted":
                 result = self.scripted.complete(request)
             else:
-                result = adapter.parse(self._payload(request, adapter))
+                result = _parse_provider_result(adapter, self._payload(request, adapter))
         except (TimeoutError, OSError):
             result = ModelResult(ok=False, failure="timeout_uncertain", message="provider transport outcome uncertain")
         except ProviderHttpResponseError as exc:
@@ -246,7 +252,8 @@ class ModelGateway:
             result = ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
         try:
             result = _validate_result(request, result)
-        except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
+        except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError,
+                SchemaError, ValidationError, Unresolvable):
             result = _invalid_result(result, "invalid output or tool schema")
         # Recording cost facts must survive revoked authority or a stale worker. Only
         # the application effect/publication is fenced, never the real bill.
@@ -323,9 +330,9 @@ def _validate_result(request: ModelRequest, result: ModelResult) -> ModelResult:
     if not result.ok:
         return result
     if not result.tool_requests:
-        if not _schema_shape(result.payload, request.output_schema):
-            return _invalid_result(result, "output does not match the declared schema")
+        _validate_schema(result.payload, request.output_schema)
         return result
+    _bounded_json([call.arguments for call in result.tool_requests])
     definitions = request.context.get("tools") or []
     allowed = {}
     for definition in definitions:
@@ -340,61 +347,71 @@ def _validate_result(request: ModelRequest, result: ModelResult) -> ModelResult:
         call_ids.add(call.call_id)
         definition = allowed[call.name]
         schema = definition.get("parameters", definition.get("input_schema", {}))
-        if not _schema_shape(call.arguments, schema):
-            return _invalid_result(result, "tool arguments do not match the declared schema")
+        _validate_schema(call.arguments, schema)
     return result
 
 
-def _schema_shape(value: Any, schema: Any, root: dict | None = None, depth: int = 0) -> bool:
-    """Check JSON structure locally; application contracts still enforce business rules.
+def _deny_reference(uri: str):
+    raise NoSuchResource(ref=uri)
 
-    Covers object/array/scalar types, required fields, extra fields, enum/const and
-    local references/unions in provider output schemas without another dependency.
-    """
-    if depth > 64:
-        return False
-    if isinstance(schema, bool):
-        return schema
-    if not isinstance(schema, dict):
-        return False
-    root = schema if root is None else root
 
-    def matches(item, subschema):
-        return _schema_shape(item, subschema, root, depth + 1)
+_LOCAL_SCHEMA_REGISTRY = Registry(retrieve=_deny_reference)
+_MAX_JSON_DEPTH = 64
+_MAX_JSON_NODES = 10_000
+_MAX_JSON_BYTES = 256 * 1024
 
-    if "$ref" in schema:
-        reference = schema["$ref"]
-        if not isinstance(reference, str) or not reference.startswith("#/"):
-            return False
-        target = root
-        for key in reference[2:].split("/"):
-            if not isinstance(target, dict):
-                return False
-            target = target.get(key.replace("~1", "/").replace("~0", "~"))
-        if not matches(value, target):
-            return False
-    if "anyOf" in schema and not any(matches(value, item) for item in schema["anyOf"]):
-        return False
-    if "enum" in schema and value not in schema["enum"]:
-        return False
-    if "const" in schema and value != schema["const"]:
-        return False
-    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
-    types = {"object": isinstance(value, dict), "array": isinstance(value, list),
-             "string": isinstance(value, str), "boolean": isinstance(value, bool), "null": value is None,
-             "number": numeric and isfinite(value),
-             "integer": numeric and isfinite(value) and value == int(value)}
-    kind = schema.get("type")
-    if kind is not None and not any(types.get(item, False) for item in (kind if isinstance(kind, list) else [kind])):
-        return False
-    if isinstance(value, dict):
-        if any(key not in value for key in schema.get("required", [])):
-            return False
-        properties = schema.get("properties", {})
-        for key, item in value.items():
-            subschema = properties.get(key, schema.get("additionalProperties", True))
-            if not matches(item, subschema):
-                return False
-    if isinstance(value, list) and "items" in schema and not all(matches(item, schema["items"]) for item in value):
-        return False
-    return True
+
+def _validate_schema(value: Any, schema: Any) -> None:
+    _bounded_json(schema)
+    _bounded_json(value)
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema, registry=_LOCAL_SCHEMA_REGISTRY).validate(value)
+
+
+def _bounded_json(value: Any) -> None:
+    """Bound schemas and data before recursive validation, including raw responses."""
+    pending = [(value, 0)]
+    nodes = size = 0
+    while pending:
+        item, depth = pending.pop()
+        nodes += 1
+        if depth > _MAX_JSON_DEPTH or nodes > _MAX_JSON_NODES:
+            raise ValueError("JSON depth or node bound exceeded")
+        if isinstance(item, dict):
+            if nodes + len(pending) + len(item) > _MAX_JSON_NODES:
+                raise ValueError("JSON node bound exceeded")
+            size += 2 + max(0, len(item) - 1) + len(item)
+            for key, child in item.items():
+                if not isinstance(key, str) or len(key) > _MAX_JSON_BYTES:
+                    raise ValueError("invalid or oversized JSON key")
+                size += len(json.dumps(key, ensure_ascii=False).encode("utf-8"))
+                pending.append((child, depth + 1))
+        elif isinstance(item, list):
+            if nodes + len(pending) + len(item) > _MAX_JSON_NODES:
+                raise ValueError("JSON node bound exceeded")
+            size += 2 + max(0, len(item) - 1)
+            pending.extend((child, depth + 1) for child in item)
+        else:
+            if (not isinstance(item, (str, int, float, bool, type(None)))
+                    or (isinstance(item, float) and not isfinite(item))
+                    or (isinstance(item, str) and len(item) > _MAX_JSON_BYTES)):
+                raise ValueError("invalid or oversized JSON scalar")
+            size += len(json.dumps(item, ensure_ascii=False).encode("utf-8"))
+        if size > _MAX_JSON_BYTES or nodes + len(pending) > _MAX_JSON_NODES:
+            raise ValueError("JSON size or node bound exceeded")
+
+
+def _parse_provider_result(adapter: InferenceAdapter, payload: dict[str, Any]) -> ModelResult:
+    try:
+        _bounded_json(payload)
+        return adapter.parse(payload)
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
+        # Parse only billing metadata if the response exceeds bounds or cannot be
+        # decoded. Failure must not erase usage or the actual model attribution.
+        metadata = {key: payload.get(key) for key in ("id", "model", "usage")} if isinstance(payload, dict) else {}
+        try:
+            billing = adapter.parse(metadata)
+        except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
+            billing = ModelResult(ok=False, failure="validation")
+        return _invalid_result(billing.model_copy(update={"provider_model": metadata.get("model")}),
+                               "invalid or oversized provider output")
