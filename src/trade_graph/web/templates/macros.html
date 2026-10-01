@@ -1,0 +1,37 @@
+{% macro value(item) -%}
+  {%- if item is none or item is undefined -%}<span class="muted">Unavailable</span>
+  {%- elif item is sameas true -%}Yes
+  {%- elif item is sameas false -%}No
+  {%- else -%}{{ item }}{%- endif -%}
+{%- endmacro %}
+
+{% macro money(item, currency='') -%}
+  {%- if item is mapping -%}{{ value(item.get('amount', item.get('value', item.get('reporting_amount')))) }}{% if item.get('currency', item.get('asset', currency)) %} <span class="amount-unit">{{ item.get('currency', item.get('asset', currency)) }}</span>{% endif %}
+  {%- else -%}{{ value(item) }}{% if item is not none and item is not undefined and currency %} <span class="amount-unit">{{ currency }}</span>{% endif %}{%- endif -%}
+{%- endmacro %}
+
+{% macro badge(text, tone='neutral') -%}<span class="badge {{ tone }}">{{ text }}</span>{%- endmacro %}
+{% macro state(text) -%}
+  {%- set normalized = text|string|upper -%}
+  {{ badge(text|default('Unavailable', true), 'danger' if normalized in ['UNKNOWN', 'FAILED', 'REJECTED', 'REVOKED', 'EXPIRED'] else 'warning' if normalized in ['UNCERTAIN', 'STALE', 'BLOCKED', 'OVERDUE', 'SUBMITTING', 'PENDING', 'PROVISIONAL', 'DEGRADED'] else 'neutral') }}
+{%- endmacro %}
+
+{% macro metric(label, amount, currency='', note='', kind='') %}
+<article class="metric{% if kind %} {{ kind }}{% endif %}"><p class="metric-label">{{ label }}</p><p class="metric-value">{{ money(amount, currency) }}</p>{% if note %}<p class="metric-note">{{ note }}</p>{% endif %}</article>
+{% endmacro %}
+
+{% macro empty(text) %}<p class="empty-state">{{ text }}</p>{% endmacro %}
+
+{% macro pagination(projection, path) %}
+{% if projection.get('total') is not none %}<div class="pagination"><span class="small muted">{{ projection.get('total') }} journal records · offset {{ projection.get('offset', 0) }}</span>{% if projection.get('next_offset') is not none or projection.get('has_more') %}<a href="{{ path }}?offset={{ projection.get('next_offset', projection.get('offset', 0) + projection.get('limit', 50)) }}&amp;limit={{ projection.get('limit', 50) }}">Next records →</a>{% endif %}</div>{% endif %}
+{% endmacro %}
+
+{% macro data_tree(item) %}
+{% if item is mapping %}<dl class="key-values">{% for key, field in item.items() %}<div class="key-value"><dt class="label">{{ key|replace('_', ' ') }}</dt><dd class="value">{% if field is mapping or (field is sequence and field is not string) %}{{ data_tree(field) }}{% elif key in ['decision_id', 'opening_decision_id', 'closing_decision_id'] and field %}{{ detail_link('decisions', field, field) }}{% elif key == 'candidate_id' and field %}{{ detail_link('changes', field, field) }}{% else %}{{ value(field) }}{% endif %}</dd></div>{% endfor %}</dl>
+{% elif item is sequence and item is not string %}{% if item %}<ul class="record-list">{% for field in item %}<li class="record-body">{{ data_tree(field) }}</li>{% endfor %}</ul>{% else %}<span class="muted">No records</span>{% endif %}
+{% else %}{{ value(item) }}{% endif %}
+{% endmacro %}
+
+{% macro detail_link(kind, identifier, label='Open evidence') -%}
+{% if identifier %}<a href="/{{ kind }}/{{ identifier|string|urlencode|replace('/', '%2F') }}">{{ label }}</a>{% else %}<span class="muted">No linked evidence</span>{% endif %}
+{%- endmacro %}

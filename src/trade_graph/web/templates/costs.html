@@ -1,19 +1,22 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Costs</title>
-  <style>body { font-family: sans-serif; margin: 1.5rem; } .label { color: #444; }</style>
-</head>
-<body>
-  <p><a href="/">Overview</a> <a href="/organization">Organisation</a> <a href="/changes">Changes</a></p>
-  <h1>Costs</h1>
-  <p class="label">Actual operating spend ({{ currency }})</p>
-  <p id="actual">{{ actual_spend }}</p>
-  <p class="label">Simulated trading result is separate and does not refill this allowance</p>
-  <p id="remaining">{{ remaining_allowance }}</p>
-  <p class="label">Uncertain reservations</p>
-  <p id="uncertain">{{ uncertain_reservations }}</p>
-</body>
-</html>
+{% extends 'base.html' %}
+{% from 'macros.html' import metric, money, value, badge, state, empty, data_tree, pagination %}
+{% block title %}Costs{% endblock %}
+{% block heading %}Operating costs{% endblock %}
+{% block description %}Receipts, outstanding commitments and attribution across all roles, including Leadership and Engineer work.{% endblock %}
+{% block content %}
+{% set currency = data.get('currency', currency|default('EUR')) %}
+{% set summary = data.get('summary', {}) %}
+{% set receipt_data = data.get('receipts', []) %}
+{% set receipts = receipt_data.get('receipts', receipt_data.get('items', [])) if receipt_data is mapping else receipt_data %}
+{% set reservation_data = data.get('reservations', []) %}
+{% set reservations = reservation_data.get('reservations', reservation_data.get('items', [])) if reservation_data is mapping else reservation_data %}
+<div class="notice"><strong>Actual operating spend is separate from simulated trading.</strong> Simulated trading does not refill this allowance; paper resets preserve actual expenses. Synthetic replay receipts remain in their own namespace.</div>
+{% if data.get('provisional') %}<div class="notice notice-warning"><strong>Provisional cost evidence.</strong> Unresolved usage, FX conversion, allocation or invoice differences remain visible below.</div>{% endif %}
+<section class="metrics" aria-label="Operating expense summary">{{ metric('Actual operating spend', data.get('actual_spend', actual_spend|default(none)), currency, 'Authoritative real-money receipts and adjustments.', 'actual') }}{{ metric('Allocated actual spend', data.get('allocated_actual_spend'), currency, 'Attributed once to this portfolio.', 'actual') }}{{ metric('Remaining actual allowance', data.get('remaining_allowance', remaining_allowance|default(none)), currency, 'After accrued spend and outstanding commitments.', 'actual') }}{{ metric('Synthetic expense evidence', data.get('synthetic_spend'), currency, 'Offline test receipts; not actual spend.', 'simulated') }}</section>
+<div class="grid-two"><section class="panel"><div class="panel-heading"><h2 class="panel-title">Accruals and commitments</h2></div><dl class="key-values">{% for label, key in [('Actual accrued', 'actual_accrued'), ('Actual settled', 'actual_settled'), ('Synthetic accrued', 'synthetic_accrued'), ('Reserved', 'reserved'), ('Uncertain usage exposure', 'uncertain'), ('Embedded operating expenses', 'embedded_operating')] %}<div class="key-value"><dt>{{ label }}</dt><dd>{{ money(summary.get(key), currency) }}</dd></div>{% endfor %}<div class="key-value"><dt>Uncertain reservations</dt><dd>{{ value(data.get('uncertain_reservations', uncertain_reservations|default(none))) }} {{ badge('Unresolved usage is not free', 'warning') }}</dd></div></dl></section><section class="panel"><div class="panel-heading"><h2 class="panel-title">Setup and recurring expenses</h2></div><dl class="key-values">{% for label, key in [('Setup', 'setup'), ('Recurring', 'recurring'), ('Unclassified', 'unclassified')] %}<div class="key-value"><dt>{{ label }}</dt><dd>{{ money(summary.get(key), currency) }}</dd></div>{% endfor %}</dl><p class="small muted">Attributable setup expenses remain part of all-in economic performance. Unknown classifications remain visible.</p>{% if data.get('budget') %}<details class="disclosure"><summary>Budget caps and priority reserve</summary>{{ data_tree(data.budget) }}</details>{% endif %}</section></div>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">Usage receipts and invoice adjustments</h2><a class="small" href="/api/v1/costs">JSON records</a></div>{% for receipt in receipts %}<article class="record"><div class="record-header"><h3>{{ receipt.get('role', 'Role unavailable') }} · {{ receipt.get('provider', 'Provider unavailable') }} / {{ receipt.get('model', 'Model unavailable') }}</h3>{{ badge('Synthetic', 'neutral') if receipt.get('synthetic') or receipt.get('namespace') == 'synthetic' else badge('Actual expense') }}{{ state(receipt.get('state', receipt.get('status', 'Recorded'))) }}</div><div class="record-body"><dl class="key-values"><div class="key-value"><dt>Receipt</dt><dd class="mono">{{ value(receipt.get('receipt_id', receipt.get('usage_id'))) }}</dd></div><div class="key-value"><dt>Native expense</dt><dd>{{ money(receipt.get('amount', receipt.get('cost', receipt.get('reporting_cost'))), receipt.get('currency', receipt.get('reporting_currency', currency))) }}</dd></div><div class="key-value"><dt>Task / root</dt><dd class="mono">{{ value(receipt.get('task_id')) }} / {{ value(receipt.get('root_task_id')) }}</dd></div><div class="key-value"><dt>Run / version</dt><dd class="mono">{{ value(receipt.get('run_id')) }} / {{ value(receipt.get('system_version_id', receipt.get('version_id'))) }}</dd></div><div class="key-value"><dt>Recorded at</dt><dd>{{ value(receipt.get('created_at', receipt.get('at'))) }}</dd></div></dl><details class="disclosure"><summary>Tokens, cache, tool units, attempts and settlement evidence</summary>{{ data_tree(receipt) }}</details></div></article>{% else %}{{ empty('No usage receipts are recorded. Missing usage remains unresolved rather than being booked as free work.') }}{% endfor %}{% if receipt_data is mapping %}{{ pagination(receipt_data, '/costs') }}{% endif %}</section>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">Reservations and uncertain work</h2></div>{% for reservation in reservations %}<article class="record"><div class="record-header"><h3>{{ reservation.get('role', 'Reservation') }}</h3>{{ state(reservation.get('state')) }}</div><div class="record-body">{{ data_tree(reservation) }}</div></article>{% else %}{{ empty('No outstanding reservation records are available in this projection.') }}{% endfor %}{% if reservation_data is mapping %}{{ pagination(reservation_data, '/costs') }}{% endif %}</section>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">Cost attribution</h2></div><div class="grid-two">{% for label, key in [('By role', 'by_role'), ('By task', 'by_task'), ('By root task', 'by_root'), ('By run', 'by_run'), ('By provider', 'by_provider'), ('By model', 'by_model'), ('By version', 'by_version'), ('Allocation records', 'allocations')] %}<details class="disclosure"><summary>{{ label }}</summary>{% if data.get(key) %}{{ data_tree(data.get(key)) }}{% else %}{{ empty('No attributed records.') }}{% endif %}</details>{% endfor %}</div><p class="small muted">Shared costs are allocated once with recorded weights. Leadership, repairs, retries, fallback and Engineer expenses remain included.</p></section>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">Other operating expenses and reconciliation</h2></div>{% for label, key in [('Independent ledger expense records', 'ledger_expenses'), ('Invoice adjustments and unexplained differences', 'invoice_adjustments'), ('Role allocations and priority budget', 'role_allocations'), ('Unresolved allocation issues', 'allocation_issues')] %}<details class="disclosure"><summary>{{ label }}</summary>{% if data.get(key) %}{{ data_tree(data.get(key)) }}{% else %}{{ empty('No records in this projection.') }}{% endif %}</details>{% endfor %}</section>
+{{ pagination(data.get('pagination', data), '/costs') }}{{ pagination(data.get('reservation_pagination', {}), '/costs') }}
+{% endblock %}
