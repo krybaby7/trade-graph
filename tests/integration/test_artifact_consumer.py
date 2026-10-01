@@ -3,10 +3,10 @@
 import json
 
 from tests.integration.test_version_lifecycle import POLICY, activate, candidate, lifecycle_stack
-from trade_graph.application.artifact_runtime import ArtifactRuntime
 
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
+from trade_graph.application.artifact_runtime import ArtifactRuntime
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.domain.clock import utc_iso
 

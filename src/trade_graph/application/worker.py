@@ -21,9 +21,9 @@ class RoleWorker:
 
     def run_available(self, handlers: dict[str, Callable[[dict], dict]]) -> int:
         completed = 0
-        if self.artifact_runtime:
-            self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
         while self.scheduler.acquire_process_lease("role-worker", self.owner):
+            if self.artifact_runtime:
+                self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
             lease = self.scheduler.claim(self.owner, roles=set(handlers))
             if lease is None:
                 break
@@ -49,8 +49,7 @@ class RoleWorker:
         recover = getattr(handler, "recover", None)
         output = recover(task) if recover else None
         if output is not None:
-            self._finish(lease, output)
-            self._observe(task, output)
+            self._finish_observed(lease, task, output)
             return
         if self.artifact_runtime:
             try:
@@ -74,12 +73,16 @@ class RoleWorker:
         if not getattr(handler, "manages_attempts", False):
             self.scheduler.note_attempt(lease)
         output = handler(task)
-        self._finish(lease, output)
-        self._observe(task, output)
+        self._finish_observed(lease, task, output)
 
-    def _observe(self, task: dict, output: dict) -> None:
+    def _finish_observed(self, lease: TaskLease, task: dict, output: dict) -> None:
+        # A crash cannot make a terminal task lose its health sample. External
+        # reconciliation/reload happens only after this writer transaction commits.
+        with self.scheduler.database.immediate():
+            self._finish(lease, output)
+            if self.artifact_runtime:
+                self.artifact_runtime.observe(task, output)
         if self.artifact_runtime:
-            self.artifact_runtime.observe(task, output)
             self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
 
     def _finish(self, lease: TaskLease, output: dict) -> None:
