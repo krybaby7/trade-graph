@@ -501,6 +501,175 @@ def _fill_events(runtime) -> list[dict]:
     return result
 
 
+def _drawdown(runtime, reporting: str, at: str, books, flows: list[dict]) -> dict:
+    """Absolute trading drawdown on retained, cash-flow-adjusted observations.
+
+    This is a discrete additive currency series, not a percentage return or a
+    continuous price history. Real operating expenses are added back to match
+    the trading-P&L boundary; historical cost-allocation revisions are not stored.
+    """
+    result = {
+        "value": None,
+        "metric": "maximum absolute drawdown across retained observations",
+        "current": None,
+        "currency": reporting,
+        "benchmark_value": None,
+        "benchmark_current": None,
+        "basis": "equity minus subsequent event-valued external flows plus embedded operating expenses",
+        "expense_basis": "trading after exchange fees; before real operating expenses",
+        "sampling": "opening capital and retained financial/mark/FX timestamps, plus current time",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "provisional": False,
+        "period_start": None,
+        "period_end": at,
+        "samples": [],
+    }
+    opening = next((flow for flow in flows if flow["opening"]), None)
+    if opening is None:
+        return {**result, "reason": "No opening capital evidence"}
+    start = opening["at"]
+    result["period_start"] = start
+    sources = defaultdict(set)
+    for row in _rows(
+        runtime,
+        """SELECT effective_at FROM ledger_events WHERE portfolio_id = ?
+        AND effective_at >= ? AND effective_at <= ? ORDER BY effective_at""",
+        (runtime.portfolio_id, start, at),
+    ):
+        sources[row["effective_at"]].add("ledger")
+    held_assets = {lot.asset for lot in books.lots}
+    for row in _rows(
+        runtime,
+        """SELECT asset, observed_at FROM valuation_marks WHERE portfolio_id = ?
+        AND observed_at >= ? AND observed_at <= ?""",
+        (runtime.portfolio_id, start, at),
+    ):
+        if row["asset"] in held_assets:
+            sources[row["observed_at"]].add("mark")
+    currencies = set(books.cash) | {flow["asset"] for flow in flows} | {lot.cost_currency for lot in books.lots}
+    currencies.update(
+        row["quote_currency"]
+        for row in _rows(
+            runtime,
+            "SELECT DISTINCT asset, quote_currency FROM valuation_marks WHERE portfolio_id = ? AND observed_at <= ?",
+            (runtime.portfolio_id, at),
+        )
+        if row["asset"] in held_assets
+    )
+    for row in _rows(
+        runtime,
+        """SELECT base, quote, observed_at, valid_as_of, retrieved_at FROM fx_rates
+        WHERE observed_at <= ? AND valid_as_of <= ? AND retrieved_at <= ?""",
+        (at, at, at),
+    ):
+        if row["base"] in currencies and row["base"] != reporting and row["quote"] == reporting:
+            available_at = max(row["observed_at"], row["valid_as_of"], row["retrieved_at"])
+            if available_at >= start:
+                sources[available_at].add("fx")
+    sources[at].add("current")
+    addbacks = []
+    for expense in books.expenses:
+        if expense.embedded and not expense.settles:
+            value, bad, _ = _convert(
+                runtime, expense.reporting_amount, expense.reporting_currency, reporting, expense.at
+            )
+            addbacks.append({"at": expense.at, "value": value, "provisional": bad})
+    opening_value = None if opening["reporting_amount"] is None else Decimal(opening["reporting_amount"])
+    samples = [
+        {
+            "at": start,
+            "sources": ["opening capital"],
+            "adjusted_equity": _amount(opening_value),
+            "benchmark_adjusted_equity": _amount(opening_value),
+            "provisional": opening["provisional"],
+            "reason": "Opening capital FX unavailable or stale" if opening["provisional"] else None,
+        }
+    ]
+    adjusted_values = []
+    benchmark_values = []
+    if opening_value is not None and not opening["provisional"]:
+        adjusted_values.append(opening_value)
+        benchmark_values.append(opening_value)
+    for observed_at in sorted(sources):
+        sample_books = runtime.ledger.books(runtime.portfolio_id, observed_at)
+        sample_equity = _equity(sample_books, reporting, observed_at, _valuation(runtime, observed_at))
+        included_flows = [flow for flow in flows if not flow["opening"] and flow["at"] <= observed_at]
+        external = _sum(
+            [
+                None
+                if flow["reporting_amount"] is None
+                else Decimal(flow["reporting_amount"]) * (1 if flow["kind"] == "deposit" else -1)
+                for flow in included_flows
+            ]
+        )
+        included_addbacks = [expense for expense in addbacks if expense["at"] <= observed_at]
+        embedded = _sum([expense["value"] for expense in included_addbacks])
+        bad = (
+            sample_equity.provisional
+            or opening["provisional"]
+            or any(flow["provisional"] for flow in included_flows)
+            or any(expense["provisional"] for expense in included_addbacks)
+        )
+        adjusted = (
+            None
+            if sample_equity.equity is None or external is None or embedded is None
+            else sample_equity.equity - external + embedded
+        )
+        benchmark = None if sample_equity.baseline is None or external is None else sample_equity.baseline - external
+        samples.append(
+            {
+                "at": observed_at,
+                "sources": sorted(sources[observed_at]),
+                "equity": _amount(sample_equity.equity),
+                "external_flow_since_opening": _amount(external),
+                "embedded_operating": _amount(embedded),
+                "adjusted_equity": _amount(adjusted),
+                "benchmark_adjusted_equity": _amount(benchmark),
+                "provisional": bad,
+                "reason": "Valuation, flow or operating FX unavailable or stale" if bad else None,
+            }
+        )
+        if not bad and adjusted is not None and benchmark is not None:
+            adjusted_values.append(adjusted)
+            benchmark_values.append(benchmark)
+    result.update({"samples": samples, "sample_count": len(samples), "valid_sample_count": len(adjusted_values)})
+    if len(adjusted_values) != len(samples):
+        return {**result, "provisional": True, "reason": "Retained series contains missing or stale valuations"}
+    if len(samples) < 2 or (
+        len(sources) == 1
+        and not any(
+            row["kind"] == "fill"
+            for row in _rows(
+                runtime,
+                """SELECT kind FROM ledger_events
+        WHERE portfolio_id = ? AND effective_at <= ?""",
+                (runtime.portfolio_id, at),
+            )
+        )
+    ):
+        return {**result, "reason": "At least two retained valuation observations are required"}
+
+    def losses(values: list[Decimal]) -> tuple[Decimal, Decimal]:
+        peak, maximum, current = values[0], ZERO, ZERO
+        for value in values[1:]:
+            peak = max(peak, value)
+            current = peak - value
+            maximum = max(maximum, current)
+        return maximum, current
+
+    maximum, current = losses(adjusted_values)
+    benchmark_maximum, benchmark_current = losses(benchmark_values)
+    return {
+        **result,
+        "value": _amount(maximum),
+        "current": _amount(current),
+        "benchmark_value": _amount(benchmark_maximum),
+        "benchmark_current": _amount(benchmark_current),
+        "reason": None,
+    }
+
+
 def overview(runtime) -> dict:
     with runtime.database.snapshot():
         at, portfolio, reporting = _context(runtime)
@@ -540,17 +709,24 @@ def overview(runtime) -> dict:
             baseline_native[flow.asset] += sign * flow.amount
         all_flows = _sum(flow_amounts)
         embedded = []
+        embedded_provisional = False
         for expense in books.expenses:
             if expense.embedded and not expense.settles:
-                value, _, _ = _convert(
+                value, bad, _ = _convert(
                     runtime, expense.reporting_amount, expense.reporting_currency, reporting, expense.at
                 )
                 embedded.append(value)
+                embedded_provisional = embedded_provisional or bad
         embedded_total = _sum(embedded)
-        provisional = equity.provisional or cost["provisional"] or any(flow["provisional"] for flow in flows)
+        provisional = (
+            equity.provisional
+            or cost["provisional"]
+            or embedded_provisional
+            or any(flow["provisional"] for flow in flows)
+        )
         trading = None
         economic = None
-        valuation_provisional = equity.provisional or any(flow["provisional"] for flow in flows)
+        valuation_provisional = equity.provisional or embedded_provisional or any(flow["provisional"] for flow in flows)
         if (
             not valuation_provisional
             and equity.equity is not None
@@ -661,11 +837,7 @@ def overview(runtime) -> dict:
                         else trading - (benchmark - all_flows)
                     ),
                 },
-                "drawdown": {
-                    "value": None,
-                    "reason": "No retained cash-flow-adjusted performance series",
-                    "sample_count": 0,
-                },
+                "drawdown": _drawdown(runtime, reporting, at, books, flows),
                 "valuation": valuation,
                 "cost_views": {
                     "all_in": _amount(cost["allocated"]),

@@ -876,3 +876,211 @@ def test_historical_flows_and_receipt_fx_do_not_age_with_the_current_valuation(t
     assert _decimal(costs["allocated_actual_spend"]) == Decimal("0.9")
     assert costs["receipts"][0]["original_fx_basis"]["rate"] == "0.9"
     assert costs["receipts"][0]["valuation"]["provisional"] is False
+
+
+def test_drawdown_distinguishes_historical_peak_loss_from_current_recovery(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(1)
+    _fill(runtime, "drawdown-buy", fee="0")
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="opening mark")
+    for price in ("60", "30", "50"):
+        runtime.clock.advance(1)
+        runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal(price), "EUR", source="retained mark")
+
+    drawdown = financial.overview(runtime)["drawdown"]
+    assert _decimal(drawdown["value"]) == Decimal("30")
+    assert _decimal(drawdown["current"]) == Decimal("10")
+    assert _decimal(drawdown["benchmark_value"]) == 0
+    assert _decimal(drawdown["benchmark_current"]) == 0
+    assert drawdown["currency"] == "EUR"
+    assert drawdown["provisional"] is False
+    assert drawdown["reason"] is None
+    assert drawdown["valid_sample_count"] == drawdown["sample_count"]
+    assert drawdown["period_start"] == "2026-01-01T00:00:00.000000Z"
+    assert drawdown["period_end"] == utc_iso(runtime.clock.now())
+    assert [_decimal(sample["adjusted_equity"]) for sample in drawdown["samples"]][-3:] == [
+        Decimal("120"), Decimal("90"), Decimal("110")
+    ]
+
+
+def test_drawdown_neutralizes_deposits_withdrawals_and_internal_transfers(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(1)
+    runtime.ledger.deposit(runtime.portfolio_id, "EUR", Decimal("50"), "drawdown-add-capital")
+    runtime.clock.advance(1)
+    runtime.ledger.withdraw(runtime.portfolio_id, "EUR", Decimal("20"), "drawdown-remove-capital")
+    runtime.clock.advance(1)
+    runtime.ledger.internal_transfer(runtime.portfolio_id, "EUR", Decimal("10"), "drawdown-classification")
+
+    projected = financial.overview(runtime)
+    assert _decimal(projected["equity"]) == Decimal("130")
+    assert _decimal(projected["external_flows"]["net_reporting"]) == Decimal("30")
+    drawdown = projected["drawdown"]
+    assert _decimal(drawdown["value"]) == 0
+    assert _decimal(drawdown["current"]) == 0
+    assert _decimal(drawdown["benchmark_value"]) == 0
+    assert all(_decimal(sample["adjusted_equity"]) == Decimal("100") for sample in drawdown["samples"])
+
+
+def test_drawdown_retains_opening_capital_before_same_timestamp_exchange_fee(tmp_path):
+    runtime = _runtime(tmp_path)
+    _fill(runtime, "same-timestamp-drawdown-buy")
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="same-time mark")
+
+    projected = financial.overview(runtime)
+    assert _decimal(projected["performance"]["trading_pnl"]) == Decimal("-0.4")
+    drawdown = projected["drawdown"]
+    assert _decimal(drawdown["value"]) == Decimal("0.4")
+    assert _decimal(drawdown["current"]) == Decimal("0.4")
+    assert _decimal(drawdown["benchmark_value"]) == 0
+    assert drawdown["sample_count"] == 2
+    assert _decimal(drawdown["samples"][0]["adjusted_equity"]) == Decimal("100")
+    assert _decimal(drawdown["samples"][1]["adjusted_equity"]) == Decimal("99.6")
+    assert drawdown["samples"][0]["at"] == drawdown["samples"][1]["at"]
+
+
+def test_drawdown_adds_back_embedded_operating_accrual_once_and_keeps_exchange_fees(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(1)
+    runtime.ledger.add_expense(
+        runtime.portfolio_id, expense_id="drawdown-hosting-accrual",
+        native_amount=Decimal("10"), native_currency="EUR",
+        reporting_amount=Decimal("10"), reporting_currency="EUR",
+        embedded=True, source="recurring:hosting fixture",
+    )
+    assert _decimal(financial.overview(runtime)["drawdown"]["value"]) == 0
+    runtime.clock.advance(1)
+    _fill(runtime, "drawdown-fee-buy")
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="fee-time mark")
+    runtime.clock.advance(1)
+    runtime.ledger.add_expense(
+        runtime.portfolio_id, expense_id="drawdown-hosting-settlement",
+        native_amount=Decimal("10"), native_currency="EUR",
+        reporting_amount=Decimal("10"), reporting_currency="EUR",
+        embedded=True, source="hosting invoice fixture", settles="drawdown-hosting-accrual",
+    )
+
+    projected = financial.overview(runtime)
+    assert _decimal(projected["equity"]) == Decimal("89.6")
+    assert _decimal(projected["performance"]["trading_pnl"]) == Decimal("-0.4")
+    assert _decimal(projected["performance"]["net_economic_pnl"]) == Decimal("-10.4")
+    assert _decimal(projected["drawdown"]["value"]) == Decimal("0.4")
+    assert _decimal(projected["drawdown"]["current"]) == Decimal("0.4")
+    assert _decimal(projected["drawdown"]["samples"][-1]["embedded_operating"]) == Decimal("10")
+    assert "before real operating expenses" in projected["drawdown"]["expense_basis"]
+
+
+@pytest.mark.parametrize("historical_mark", ["missing", "recorded_stale", "expired"])
+def test_drawdown_cannot_skip_an_unavailable_historical_point_after_current_recovery(tmp_path, historical_mark):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(1)
+    _fill(runtime, "historical-valuation-buy", fee="0")
+    if historical_mark != "missing":
+        runtime.ledger.observe_mark(
+            runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="historical mark fixture",
+            stale=historical_mark == "recorded_stale",
+        )
+    if historical_mark == "expired":
+        runtime.clock.advance(31)
+        runtime.ledger.internal_transfer(runtime.portfolio_id, "EUR", Decimal("1"), "stale-point-fixture")
+    runtime.clock.advance(1)
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="recovered mark")
+
+    projected = financial.overview(runtime)
+    assert projected["provisional"] is False
+    assert _decimal(projected["performance"]["trading_pnl"]) == 0
+    drawdown = projected["drawdown"]
+    assert drawdown["value"] is None
+    assert drawdown["current"] is None
+    assert drawdown["provisional"] is True
+    assert drawdown["valid_sample_count"] < drawdown["sample_count"]
+    assert any(sample["provisional"] and sample["reason"] for sample in drawdown["samples"])
+    assert drawdown["samples"][-1]["provisional"] is False
+
+
+def test_drawdown_of_native_usd_cash_retains_matching_fx_benchmark_losses(tmp_path):
+    runtime = _runtime(tmp_path, capital="10000", currency="USD")
+    for rate in ("0.92", "0.88", "0.91"):
+        runtime.clock.advance(1)
+        runtime.ledger.observe_fx(
+            base="USD", quote="EUR", rate=Decimal(rate), source="drawdown reference fixture",
+            kind="reference", stale=False,
+        )
+
+    projected = financial.overview(runtime)
+    assert _decimal(projected["performance"]["trading_pnl"]) == Decimal("100")
+    assert _decimal(projected["benchmark"]["strategy_alpha"]) == 0
+    drawdown = projected["drawdown"]
+    assert _decimal(drawdown["value"]) == Decimal("400")
+    assert _decimal(drawdown["current"]) == Decimal("100")
+    assert drawdown["benchmark_value"] == drawdown["value"]
+    assert drawdown["benchmark_current"] == drawdown["current"]
+
+
+def test_drawdown_rejects_missing_opening_fx_instead_of_assuming_reporting_identity(tmp_path):
+    runtime = _runtime(tmp_path, capital="10000", currency="USD")
+    runtime.database.execute("DELETE FROM fx_rates")
+    runtime.clock.advance(1)
+
+    drawdown = financial.overview(runtime)["drawdown"]
+    assert drawdown["value"] is None
+    assert drawdown["current"] is None
+    assert drawdown["benchmark_value"] is None
+    assert drawdown["provisional"] is True
+    assert drawdown["currency"] == "EUR"
+    assert drawdown["samples"][0]["adjusted_equity"] is None
+
+
+def test_drawdown_uses_fx_only_when_observation_validity_and_retrieval_are_available(tmp_path):
+    runtime = _runtime(tmp_path, capital="1000", currency="USD")
+    runtime.clock.advance(1)
+    observed_at = utc_iso(runtime.clock.now())
+    delayed = runtime.ledger.observe_fx(
+        base="USD", quote="EUR", rate=Decimal("0.8"), source="delayed drawdown fx fixture",
+        kind="reference", stale=False,
+    )
+    runtime.clock.advance(1)
+    valid_at = utc_iso(runtime.clock.now())
+    runtime.clock.advance(1)
+    retrieved_at = utc_iso(runtime.clock.now())
+    runtime.database.execute(
+        "UPDATE fx_rates SET valid_as_of = ?, retrieved_at = ? WHERE rate_id = ?",
+        (valid_at, retrieved_at, delayed),
+    )
+    runtime.clock.advance(-1)
+    before_retrieval = financial.overview(runtime)
+    assert _decimal(before_retrieval["equity"]) == Decimal("900")
+    assert _decimal(before_retrieval["drawdown"]["value"]) == 0
+
+    runtime.clock.advance(1)
+    after_retrieval = financial.overview(runtime)
+    assert _decimal(after_retrieval["equity"]) == Decimal("800")
+    assert _decimal(after_retrieval["drawdown"]["value"]) == Decimal("100")
+    assert _decimal(after_retrieval["drawdown"]["benchmark_value"]) == Decimal("100")
+    fx_samples = [sample for sample in after_retrieval["drawdown"]["samples"] if "fx" in sample["sources"]]
+    assert any(sample["at"] == retrieved_at for sample in fx_samples)
+    assert all(sample["at"] not in {observed_at, valid_at} for sample in fx_samples)
+
+
+def test_drawdown_samples_exclude_foreign_portfolios_and_unrelated_fx(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(1)
+    _fill(runtime, "isolated-drawdown-buy", fee="0")
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="first local mark")
+    runtime.clock.advance(60)
+    foreign_at = utc_iso(runtime.clock.now())
+    foreign = runtime.ledger.create_portfolio(reporting_currency="EUR")
+    runtime.ledger.deposit(foreign, "EUR", Decimal("100"), "foreign-drawdown-opening")
+    runtime.ledger.observe_mark(foreign, "FOREIGN", Decimal("1000"), "EUR", source="foreign mark")
+    runtime.ledger.observe_fx(
+        base="GBP", quote="EUR", rate=Decimal("1.1"), source="unrelated fx fixture",
+        kind="reference", stale=False,
+    )
+    runtime.clock.advance(1)
+    runtime.ledger.observe_mark(runtime.portfolio_id, "TEST", Decimal("40"), "EUR", source="latest local mark")
+
+    drawdown = financial.overview(runtime)["drawdown"]
+    assert _decimal(drawdown["value"]) == 0
+    assert drawdown["provisional"] is False
+    assert all(sample["at"] != foreign_at for sample in drawdown["samples"])
+    assert drawdown["valid_sample_count"] == drawdown["sample_count"]
