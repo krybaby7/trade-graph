@@ -1,0 +1,596 @@
+{
+  "schema_version": 1,
+  "base_commit": "af8e64e1a85400b19d75f5dbb0133c7d9b4151b0",
+  "task": "T16",
+  "scope": "Existing local offline pytest semantics only. A passing test_outcome does not imply full criterion coverage or authorize paid/live operation.",
+  "run_command": "uv sync --frozen && uv run --frozen python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-acceptance.json",
+  "selector_semantics": "Concrete function pytest node IDs select every parameter variant; collection and JUnit report all expanded actual node IDs. Each selected test executes once even when multiple cases reuse it.",
+  "coverage_semantics": {
+    "full": "Reviewed assertions cover the criterion's local offline requirements.",
+    "partial": "Reviewed assertions cover the listed subrequirements; remaining gaps stay explicit even when all mapped tests pass.",
+    "pending": "No runnable evidence is claimed; awaiting another agent or a separate gate."
+  },
+  "coordination": [],
+  "pending_boundaries": [
+    {
+      "id": "paid_provider_verification",
+      "status": "pending",
+      "requires": "Separately authorized credentials and budget, actual provider calls, priced usage and invoice reconciliation. Scripted HTTP and synthetic receipts are not paid verification."
+    },
+    {
+      "id": "T17",
+      "status": "pending",
+      "requires": "Owner-funded live-data paper soak and service/deployment/backup operations on the real host. Local SQLite fixtures do not establish host reliability."
+    },
+    {
+      "id": "live",
+      "status": "pending",
+      "requires": "Separate owner enablement, capital allocation, venue eligibility/permissions/conformance and T18-T20 economic/pilot gates. No real venue calls or orders run here."
+    },
+    {
+      "id": "T21",
+      "status": "pending",
+      "cases": [
+        "A39",
+        "A40",
+        "A41",
+        "A42"
+      ],
+      "requires": "P6 protected kernel/controller and malicious mutable-code/egress/resource/host-mount/staged rollout tests on the actual deployment platform. R1 checker tests do not satisfy P6."
+    },
+    {
+      "id": "T18",
+      "status": "pending",
+      "requires": "Predeclared forward economic entry-selection/evaluation and held-out market evidence. Offline point-in-time replay does not prove profitability."
+    }
+  ],
+  "cases": [
+    {
+      "id": "A01",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_eur100_fixture_and_external_expense"
+      ],
+      "covered_subrequirements": ["Exact EUR100 fixture asserts EUR3.16 trading and EUR2.26 economic P&L."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A02",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_deposit_does_not_count_as_profit_and_internal_transfer_is_not_flow",
+        "tests/property/test_accounting_invariants.py::test_arbitrary_external_cash_flows_never_become_profit"
+      ],
+      "covered_subrequirements": ["Deposits and withdrawals neutralize profit; internal transfers create no external flow."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A03",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_partial_lots_base_fee_and_rebate",
+        "tests/unit/test_books.py::test_third_asset_fee_is_not_charged_twice",
+        "tests/integration/test_review_regressions.py::test_fifo_disposals_conserve_total_proceeds",
+        "tests/integration/test_review_regressions.py::test_third_asset_sell_fee_is_charged_once",
+        "tests/integration/test_dashboard_financial.py::test_positions_show_fifo_open_lots_and_locked_funds_without_double_counting",
+        "tests/integration/test_dashboard_financial.py::test_orders_expose_requested_and_submitted_rounding_with_durable_fills",
+        "tests/property/test_accounting_invariants.py::test_fifo_split_roundtrip_conserves_cash_inventory_and_native_postings"
+      ],
+      "covered_subrequirements": ["Partial FIFO lots, quote/base/third-asset fees, rebates, proceeds conservation, open-lot unrealized value and rounded order quantities. Generated split roundtrips independently assert cash, realized P&L, zero inventory and balanced native postings; configured 100 derandomized examples."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Generated conservation varies quote fees/rebates; deterministic base/third-asset fee, lot-projection and rounding fixtures supply the other listed behaviors. This is combined fixture coverage, not an exhaustive fee cross-product."
+    },
+    {
+      "id": "A04",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_embedded_expense_matches_external_economic_result",
+        "tests/unit/test_books.py::test_slippage_is_not_a_second_pnl_deduction",
+        "tests/integration/test_dashboard_financial.py::test_exact_trading_fixture_adds_back_embedded_cost_and_deducts_receipt_once",
+        "tests/integration/test_dashboard_financial.py::test_other_operating_accruals_are_global_once_and_settlement_preserves_all_in_costs",
+        "tests/property/test_accounting_invariants.py::test_fifo_split_roundtrip_conserves_cash_inventory_and_native_postings"
+      ],
+      "covered_subrequirements": ["Embedded/external expense equivalence, fill fees and execution-versus-mid friction do not subtract economic cost twice; invoice settlement preserves accrued total. Generated fee/rebate roundtrips independently conserve cash and realized P&L."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A05",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_stale_fx_is_provisional_and_historical_expense_is_kept",
+        "tests/integration/test_dashboard_financial.py::test_missing_fx_never_treats_native_usd_as_reported_eur",
+        "tests/integration/test_dashboard_financial.py::test_historical_flow_fx_is_preserved_and_stale_current_fx_degrades_results",
+        "tests/integration/test_dashboard_financial.py::test_invoice_discrepancy_is_visible_and_provisional_until_correcting_accrual",
+        "tests/integration/test_dashboard_financial.py::test_receipt_accrual_keeps_original_reporting_valuation_when_current_fx_changes",
+        "tests/integration/test_dashboard_financial.py::test_current_inventory_marks_expire_at_the_active_owner_policy_age",
+        "tests/integration/test_cost_acceptance.py::test_a05_supplied_invoice_correction_preserves_historical_reporting_and_legacy_fx"
+      ],
+      "covered_subrequirements": ["Missing/stale FX and marks remain provisional; historical receipt/flow amounts survive new rates and reopen; supplied debit/credit corrections preserve invoice/receipt links without rewriting original receipts or unexplained reconciliation evidence."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Legacy receipt FX observation IDs are unavailable and explicitly provenance_complete=false; stored native/reporting basis and supplied invoice/receipt correction lineage are preserved. No missing FX metadata is invented and unexplained billing remains provisional."
+    },
+    {
+      "id": "A06",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_concurrent_reservations_cannot_oversubscribe",
+        "tests/integration/test_dashboard_controls.py::test_role_caps_share_the_same_global_allowance",
+        "tests/integration/test_dashboard_controls.py::test_same_role_children_share_root_commitment_without_double_counting",
+        "tests/integration/test_artifact_consumers.py::test_input_reservation_covers_activated_long_prompt_snapshot_and_schema",
+        "tests/integration/test_cost_acceptance.py::test_a06_concurrent_requests_independently_enforce_each_cap",
+        "tests/integration/test_cost_acceptance.py::test_a06_reserves_worst_input_output_and_paid_tools_before_fake_dispatch",
+        "tests/integration/test_cost_acceptance.py::test_a06_tool_call_bound_blocks_excess_batch_and_cumulative_continuation"
+      ],
+      "covered_subrequirements": ["Independent concurrent total/period/root caps prevent oversubscription; worst input category/output/paid tools reserve before fake dispatch in USD/EUR; tool batches and cumulative continuations cannot exceed the approved call bound."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A07",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_paid_calls_disabled_and_unknown_cost_stays_reserved",
+        "tests/integration/test_expense_controls.py::test_schema_repair_and_transport_retry_share_the_attempt_budget",
+        "tests/integration/test_expense_controls.py::test_root_limit_stops_a_retry_and_fallback_is_priced",
+        "tests/integration/test_expense_controls.py::test_role_views_invoice_difference_and_paper_equity_do_not_refill",
+        "tests/integration/test_engineering_workflow.py::test_failed_check_findings_drive_delayed_patch_repair_and_keep_both_costs",
+        "tests/integration/test_engineering_workflow.py::test_rate_limit_defers_then_retries_with_separate_receipts",
+        "tests/integration/test_durable_model_invocations.py::test_failed_model_usage_is_retained_and_recovered",
+        "tests/integration/test_httpx_provider_failures.py::test_http_denial_with_reported_usage_has_exactly_one_receipt_and_allocation",
+        "tests/e2e/test_offline.py::test_offline_loop"
+      ],
+      "covered_subrequirements": ["Synthetic failures/repair/retry/fallback and Leader/Engineer usage retain attributed receipts; missing usage remains an UNCERTAIN hold."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A08",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_usage_does_not_double_count_reasoning_or_cache",
+        "tests/integration/test_review_regressions.py::test_zero_read_rate_and_distinct_write_rate",
+        "tests/integration/test_review_regressions.py::test_missing_cache_write_price_stays_unresolved",
+        "tests/integration/test_review_regressions.py::test_openai_null_error_and_cache_write_usage",
+        "tests/integration/test_review_regressions.py::test_anthropic_input_is_already_uncached",
+        "tests/integration/test_expense_controls.py::test_role_views_invoice_difference_and_paper_equity_do_not_refill"
+      ],
+      "covered_subrequirements": ["Native cache reads/writes and inclusive reasoning billing normalize without double-counting; invoice unexplained difference is explicit."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A09",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_scheduler_lease_and_graph_idempotency",
+        "tests/integration/test_ledger_store.py::test_durable_fixture_restart_duplicate_and_backup",
+        "tests/integration/test_review_regressions.py::test_fill_projection_failure_rolls_back_the_entire_ledger",
+        "tests/integration/test_review_regressions.py::test_receipt_commit_is_idempotent_and_terminal",
+        "tests/integration/test_artifact_consumers.py::test_trader_effect_committed_before_worker_finish_recovers_once_after_reopen"
+      ],
+      "covered_subrequirements": ["Graph replay, duplicate fill, durable receipt and committed Trader effects recover without a second local posting/order."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A10",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_execution.py::test_unknown_ack_is_recovered_without_resubmit",
+        "tests/integration/test_review_regressions.py::test_reconciliation_reads_all_fill_pages_before_releasing",
+        "tests/integration/test_execution_acceptance.py::test_a10_filled_before_lost_ack_recovers_without_resubmission",
+        "tests/integration/test_execution_acceptance.py::test_a10_preauthorized_pending_increase_is_held_until_unknown_reconciles"
+      ],
+      "covered_subrequirements": ["Accepted and fully filled before lost acknowledgement enters UNKNOWN, retains reserves until fill visibility, then recovers exact ledger/inventory without a second submission. Preauthorized pending increases remain unsent until uncertainty reconciles."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A11",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_review_regressions.py::test_cancel_ack_without_all_fills_does_not_release_reservation",
+        "tests/integration/test_review_regressions.py::test_uncertain_cancellation_cannot_submit_replacement",
+        "tests/integration/test_review_regressions.py::test_protective_orders_cannot_double_reserve_inventory",
+        "tests/integration/test_execution_acceptance.py::test_a11_partial_fill_cancel_replace_uses_reconciled_remainder",
+        "tests/integration/test_execution_acceptance.py::test_a11_cancel_race_refuses_stale_or_uncertain_replacement"
+      ],
+      "covered_subrequirements": ["Partial exit and raced extra fill reconcile before correctly sized remainder replacement; original-full/stale/final-fill/uncertain replacements refuse rather than oversell or reuse full original quantity."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A12",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_execution.py::test_partial_fill_minimum_and_pause",
+        "tests/integration/test_review_regressions.py::test_mismatched_or_ambiguous_order_contract_is_rejected",
+        "tests/integration/test_review_regressions.py::test_sell_limit_rounding_preserves_minimum_price",
+        "tests/integration/test_dashboard_financial.py::test_orders_expose_requested_and_submitted_rounding_with_durable_fills",
+        "tests/integration/test_authority_binding.py::test_dispatch_refuses_withdrawal_capability_and_binding_mismatch",
+        "tests/integration/test_execution_acceptance.py::test_a12_unsupported_features_are_typed_refusals_before_submission",
+        "tests/integration/test_execution_acceptance.py::test_a12_unsupported_refusal_is_atomic_on_journal_failure",
+        "tests/integration/test_execution_acceptance.py::test_a12_missing_client_id_lookup_refuses_dispatch_without_effects",
+        "tests/integration/test_execution_acceptance.py::test_a12_paper_broker_returns_typed_unsupported_refusal",
+        "tests/integration/test_execution_acceptance.py::test_a12_minimum_refusal_never_resizes_or_creates_outbox",
+        "tests/integration/test_execution_acceptance.py::test_a12_fee_reserve_refuses_notional_only_funds_and_posts_exact_fee",
+        "tests/integration/test_execution_acceptance.py::test_a12_fee_reserve_configuration_must_cover_broker_fees",
+        "tests/integration/test_execution_acceptance.py::test_a12_fee_increase_before_dispatch_refuses_unfunded_intent",
+        "tests/integration/test_execution_acceptance.py::test_a12_rounding_stays_within_quantity_and_limit_authorization"
+      ],
+      "covered_subrequirements": ["Typed capability/client-lookup/order-feature/minimum/fee-reserve refusals precede external effects, unsupported refusal state is atomic, insufficient fees cannot dispatch, and buy/sell rounding stays within authorized quantity/limit without upward resizing."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A13",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_execution.py::test_stale_quote_blocks_increase_and_stop_gaps",
+        "tests/integration/test_public_market.py::test_reconnect_backfills_and_out_of_order_quotes_do_not_refresh",
+        "tests/integration/test_review_regressions.py::test_delayed_old_quote_does_not_become_fresh_on_arrival",
+        "tests/integration/test_pause_profiles.py::test_no_new_exposure_cancels_buys_and_keeps_protection",
+        "tests/integration/test_trader_snapshot.py::test_trader_request_excludes_future_and_other_venue_quotes",
+        "tests/integration/test_trader_snapshot.py::test_next_inference_discloses_held_order_reservations_and_stale_quote",
+        "tests/integration/test_execution_acceptance.py::test_a13_fresh_quote_with_known_feed_gap_blocks_increase_but_allows_protection"
+      ],
+      "covered_subrequirements": ["Stale/future/foreign-venue/out-of-order data cannot refresh decision context or authorize increases; a known feed gap blocks fresh-looking queued/new increases while deterministic protective fills and reconciliation continue, and valid recovery resumes dispatch."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Local PublicMarket/Execution callback behavior is tested; assembled continuous public-feed service belongs to T17."
+    },
+    {
+      "id": "A14",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_storage_faults.py::test_process_death_recovers_durable_attempts_and_venue_history",
+        "tests/integration/test_storage_faults.py::test_dispatch_failure_cannot_submit_before_the_attempt_commits",
+        "tests/integration/test_storage_faults.py::test_response_storage_failure_recovers_the_accepted_order_without_resubmission",
+        "tests/integration/test_storage_faults.py::test_fill_transaction_failure_never_exposes_completion_or_unjournaled_inventory",
+        "tests/integration/test_storage_faults.py::test_partial_fill_reservation_survives_failed_remaining_fill_and_reopen"
+      ],
+      "covered_subrequirements": ["Abrupt child exit before acceptance, after acceptance and after a venue fill recovers committed intent/attempt/outbox and held reservations from separate local/venue databases without resubmission; response/fill storage failures recover atomically."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A15",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_pause_profiles.py::test_each_pause_profile_records_its_verified_state",
+        "tests/integration/test_pause_profiles.py::test_no_new_exposure_cancels_buys_and_keeps_protection",
+        "tests/integration/test_pause_profiles.py::test_cancel_all_clears_orders_without_declaring_flat",
+        "tests/integration/test_pause_profiles.py::test_flatten_is_not_complete_until_the_exit_fills",
+        "tests/integration/test_pause_profiles.py::test_stopped_stays_blocked_while_inventory_remains",
+        "tests/integration/test_pause_profiles.py::test_unknown_cancel_is_not_treated_as_cleared"
+      ],
+      "covered_subrequirements": ["Pause entry/achieved states, retained protection, owner halt authority, verified flatten and uncertain cancellation."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A16",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_storage_faults.py::test_intent_transaction_failure_leaves_no_order_or_reservation",
+        "tests/integration/test_storage_faults.py::test_intent_commit_or_readonly_failure_prevents_external_submission",
+        "tests/integration/test_storage_faults.py::test_real_sqlite_full_rolls_back_the_authorization_and_preserves_error",
+        "tests/integration/test_storage_faults.py::test_financial_write_failure_cannot_create_unjournaled_capital",
+        "tests/integration/test_storage_faults.py::test_dispatch_failure_cannot_submit_before_the_attempt_commits",
+        "tests/integration/test_storage_faults.py::test_fill_transaction_failure_never_exposes_completion_or_unjournaled_inventory",
+        "tests/integration/test_storage_faults.py::test_broker_outage_commits_unknown_and_empty_history_cannot_release_or_retry",
+        "tests/integration/test_storage_faults.py::test_terminal_broker_status_without_visible_fills_cannot_complete_or_release_unknown",
+        "tests/integration/test_storage_faults.py::test_startup_outage_keeps_unknown_and_pending_exposure_unsent_until_reconciliation"
+      ],
+      "covered_subrequirements": ["Native SQLite transaction/commit/read-only/full faults cannot leave fictitious financial/order completion; exchange history outages retain UNKNOWN and reserves; startup reconciles before pending exposure dispatch."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A17",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_provider_fixtures_cover_failures",
+        "tests/integration/test_provider_transport.py::test_tool_fixtures_parse_for_both_providers",
+        "tests/integration/test_provider_transport.py::test_scripted_transport_continues_one_tool_without_a_credential",
+        "tests/integration/test_provider_transport.py::test_unsupported_settings_do_not_call_transport",
+        "tests/integration/test_review_regressions.py::test_nonobject_model_output_is_a_validation_failure",
+        "tests/integration/test_httpx_provider_failures.py::test_http_denials_classify_failure_but_never_invent_zero_usage",
+        "tests/integration/test_httpx_provider_failures.py::test_httpx_request_errors_are_durable_uncertainty_not_worker_exceptions",
+        "tests/integration/test_cost_acceptance.py::test_a17_bad_structured_output_is_rejected_with_synthetic_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_bad_tool_schema_never_runs_handler_and_retains_synthetic_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_unsupported_settings_fail_before_reservation_or_dispatch",
+        "tests/integration/test_cost_acceptance.py::test_a17_valid_tool_schema_continues_to_valid_structured_output",
+        "tests/integration/test_cost_acceptance.py::test_a17_malformed_local_schema_retains_supplied_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_complete_json_schema_constraints_retain_both_provider_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_pydantic_discriminated_output_oneOf_and_local_refs",
+        "tests/integration/test_cost_acceptance.py::test_a17_local_refs_work_and_external_retrieval_is_denied_with_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_schema_and_provider_data_bounds_fail_safely_with_usage"
+      ],
+      "covered_subrequirements": ["Both providers exercise structured/tool/usage fixtures, valid continuation, refusal/truncation, bad schemas/settings, timeouts/rate limits; maintained Draft202012 checks constraints, discriminated unions/local refs, rejects external retrieval and bounds raw JSON/schema/data while preserving supplied usage/model attribution."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Local synthetic adapter/schema/transport fixtures; real provider behavior and actual bills remain a separate paid boundary."
+    },
+    {
+      "id": "A18",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_expense_controls.py::test_schema_repair_and_transport_retry_share_the_attempt_budget",
+        "tests/integration/test_expense_controls.py::test_root_limit_stops_a_retry_and_fallback_is_priced"
+      ],
+      "covered_subrequirements": ["Schema repair and transport retry share attempt limits; root budget stops another attempt and separately priced fallback records model/card attribution."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A19",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_models_and_budget.py::test_scheduler_lease_and_graph_idempotency",
+        "tests/integration/test_scheduler_recovery.py::test_expired_work_is_reclaimed_after_database_reopen",
+        "tests/integration/test_scheduler_recovery.py::test_stale_fencing_token_cannot_mutate_reclaimed_work",
+        "tests/integration/test_scheduler_recovery.py::test_concurrent_workers_cannot_claim_the_same_task",
+        "tests/integration/test_scheduler_recovery.py::test_missed_occurrences_coalesce_into_one_current_task",
+        "tests/integration/test_scheduler_recovery.py::test_schedule_and_task_commit_or_rollback_together",
+        "tests/integration/test_scheduler_recovery.py::test_global_and_portfolio_tasks_deduplicate_under_race",
+        "tests/integration/test_role_worker.py::test_reclaimed_work_reconciles_before_another_effect",
+        "tests/integration/test_dashboard_session.py::test_dashboard_cli_starts_only_local_web_service_without_printing_token",
+        "tests/integration/test_evidence_acceptance.py::test_secretary_cursor_digest_and_routing_commit_together_across_restart",
+        "tests/integration/test_evidence_acceptance.py::test_two_dashboard_lifespans_start_no_scheduler_and_shared_workers_dispatch_once"
+      ],
+      "covered_subrequirements": ["Cursor/digest/routing transactions roll back together and resume idempotently after reopen; task ownership/deduplication/coalescing persist; two dashboard lifespans start no scheduler and actual shared RoleWorkers dispatch one effect."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Standalone dashboard deliberately starts no scheduler. Assembled continuous service and funded host operation belong to T17."
+    },
+    {
+      "id": "A20",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_scheduler_recovery.py::test_children_inherit_budget_root_and_cannot_switch_scope",
+        "tests/integration/test_scheduler_recovery.py::test_descendant_cap_counts_children_not_root_and_is_atomic",
+        "tests/integration/test_scheduler_recovery.py::test_depth_limit_still_applies",
+        "tests/integration/test_expense_controls.py::test_root_limit_stops_a_retry_and_fallback_is_priced",
+        "tests/integration/test_evidence_acceptance.py::test_root_step_exhaustion_survives_restart_and_stops_another_descendant",
+        "tests/integration/test_evidence_acceptance.py::test_attempted_cyclic_graph_artifact_is_rejected_with_receipt_and_unchanged_version"
+      ],
+      "covered_subrequirements": ["Persisted root attempt/step exhaustion stops another descendant across restart; scope/depth/descendant/cost limits bound recursion; attempted cyclic graph artifacts fail with retained receipt and unchanged active version."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A21",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_research_trader.py::test_trader_orders_holds_and_failures_without_leader_approval",
+        "tests/integration/test_trader_snapshot.py::test_inference_snapshot_keeps_cash_coherent_during_concurrent_deposit",
+        "tests/integration/test_trader_snapshot.py::test_next_inference_discloses_held_order_reservations_and_stale_quote"
+      ],
+      "covered_subrequirements": ["Low-confidence discretionary entry authorizes immediately; explicit experiment/hold needs no Leader approval or consensus."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A22",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_research_trader.py::test_trader_orders_holds_and_failures_without_leader_approval",
+        "tests/integration/test_learning.py::test_no_trade_evaluation_ignores_later_prices",
+        "tests/integration/test_evidence_acceptance.py::test_unavailable_data_or_budget_cannot_create_a_hold_decision"
+      ],
+      "covered_subrequirements": ["Deliberate hold retains no-trade/counterfactual evidence; model failure, missing data and budget denial cannot create a hold/decision/order or external submission; scoped no-trade valuation excludes later prices."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A23",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_research_trader.py::test_research_keeps_time_strips_injection_and_hides_stale_pages"
+      ],
+      "covered_subrequirements": ["Publication/retrieval/availability times persist; original finding is immutable, only relevant fresh deltas enter context, and expired/untrusted findings are excluded."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A24",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_learning.py::test_revisions_keep_counterevidence_and_survive_restart",
+        "tests/integration/test_evidence_acceptance.py::test_retired_lesson_preserves_case_versions_and_is_not_resurrected_in_context"
+      ],
+      "covered_subrequirements": ["Lesson revisions preserve evidence/counterexamples and support contradiction/retirement; history survives restart, links actual baseline decisions to their version, retains later revision version, and retired lessons cannot resurrect old context."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A25",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_learning.py::test_revisions_keep_counterevidence_and_survive_restart"
+      ],
+      "covered_subrequirements": ["Invalid-process win remains invalid; valid-thesis loss remains valid independently of outcome sign."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A26",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_learning.py::test_no_trade_evaluation_ignores_later_prices",
+        "tests/integration/test_execution.py::test_same_bar_limit_does_not_fill",
+        "tests/integration/test_public_market.py::test_replay_hides_future_observations",
+        "tests/integration/test_trader_snapshot.py::test_trader_request_excludes_future_and_other_venue_quotes",
+        "tests/integration/test_artifact_consumers.py::test_activation_changes_actual_trader_request_and_keeps_linked_provenance",
+        "tests/integration/test_evidence_acceptance.py::test_predeclared_entry_template_and_no_trade_mark_ignore_future_evidence"
+      ],
+      "covered_subrequirements": ["No-trade/replay excludes future event/availability and foreign-venue quotes, same-bar limits cannot fill, and strategy context is pinned to tested activated templates. Future journal timestamps are rejected and previously future-dated replay lessons remain invisible."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "R1 has no hindsight optimizer. Predeclared forward economic entry selection belongs to T18, separately pending."
+    },
+    {
+      "id": "A27",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_engineering_workflow.py::test_generated_artifact_has_independent_attestation_and_retained_cost",
+        "tests/integration/test_engineer.py::test_advice_protected_paths_and_failed_checks_leave_the_active_hash"
+      ],
+      "covered_subrequirements": ["Commissioned Engineer writes an artifact, runs independent checks with retained cost, and advice-only output cannot finish."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A28",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_engineer.py::test_advice_protected_paths_and_failed_checks_leave_the_active_hash",
+        "tests/integration/test_engineer_isolation.py::test_path_and_executable_class_allowlist_is_explicit",
+        "tests/integration/test_engineer_isolation.py::test_proxy_never_follows_artifact_files_into_production_state",
+        "tests/integration/test_engineer_isolation.py::test_resource_bounds_reject_large_file_and_protected_workspace_content",
+        "tests/integration/test_dashboard_controls.py::test_config_rejects_privilege_expansion_and_bad_types_without_mutations"
+      ],
+      "covered_subrequirements": ["R1 allowlist rejects kernel/test/protected paths and symlink/hardlink escapes; owner configuration rejects permission expansion."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A29",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_research_trader.py::test_research_keeps_time_strips_injection_and_hides_stale_pages",
+        "tests/integration/test_api_security_live.py::test_fetch_blocks_private_and_metadata",
+        "tests/integration/test_engineer.py::test_scrubbed_child_does_not_see_provider_keys",
+        "tests/integration/test_engineer_isolation.py::test_kernel_blocks_host_files_network_processes_and_inherited_descriptors"
+      ],
+      "covered_subrequirements": ["Malicious page text cannot authorize orders; private metadata targets are denied; child keys are scrubbed and local R1 checker seccomp blocks host/network/process escape."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A30",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_engineer.py::test_advice_protected_paths_and_failed_checks_leave_the_active_hash",
+        "tests/integration/test_engineer.py::test_file_limit_is_visible_and_a_wrong_checks_hash_cannot_activate",
+        "tests/integration/test_engineering_workflow.py::test_failed_trusted_checks_retain_failed_candidate_and_bill",
+        "tests/integration/test_engineering_workflow.py::test_current_authority_or_budget_denies_generation_before_model_call",
+        "tests/integration/test_engineering_workflow.py::test_zero_spend_commission_is_blocked_before_provider_dispatch"
+      ],
+      "covered_subrequirements": ["Rejected/failed/over-limit candidates preserve active version and evidence; billed failures remain visible and exhausted authority prevents dispatch."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A31",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_activation.py::test_busy_trader_blocks_activation_and_stale_baseline_requires_revalidation",
+        "tests/integration/test_version_lifecycle.py::test_activation_consumes_persisted_tested_bytes_after_worktrees_disappear",
+        "tests/integration/test_version_lifecycle.py::test_generation_rejects_old_bundle_after_rollback_to_identical_baseline",
+        "tests/integration/test_version_lifecycle.py::test_activation_rejects_candidate_evidence_tampering_and_retains_receipt",
+        "tests/integration/test_authorization_review.py::test_restart_and_concurrent_activation_have_one_commit"
+      ],
+      "covered_subrequirements": ["Activation binds persisted tested bytes and evidence hashes to baseline/generation CAS; concurrent/restarted activation commits once."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A32",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_activation.py::test_rollback_restores_the_pointer_and_keeps_fills_costs_and_decision_versions",
+        "tests/integration/test_version_lifecycle.py::test_failed_health_rolls_back_after_restart_and_preserves_unknown_partial_order",
+        "tests/integration/test_dashboard_financial.py::test_opening_and_closing_provenance_survives_private_dashboard_redaction"
+      ],
+      "covered_subrequirements": ["Rollback restores artifact pointer without deleting fills, receipts, partial/unknown orders or inventory; opening/closing provenance remains distinct."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A33",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_engineer.py::test_worktree_excludes_secrets_and_shadowed_checks_do_not_pass",
+        "tests/integration/test_engineer.py::test_file_limit_is_visible_and_a_wrong_checks_hash_cannot_activate",
+        "tests/integration/test_engineer_isolation.py::test_independent_checker_cannot_be_shadowed_and_checks_bound_artifact_bytes"
+      ],
+      "covered_subrequirements": ["Candidate shadow modules and forged attestations cannot replace trusted checks or controller proof."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A34",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/e2e/test_dashboard_loop.py::test_dashboard_reconciles_full_loop_and_navigates_retained_evidence",
+        "tests/integration/test_dashboard_financial.py::test_positions_show_fifo_open_lots_and_locked_funds_without_double_counting",
+        "tests/integration/test_dashboard_financial.py::test_orders_expose_requested_and_submitted_rounding_with_durable_fills",
+        "tests/integration/test_dashboard_financial.py::test_costs_survive_restart_and_reset_without_counting_synthetic_or_allocations_twice",
+        "tests/integration/test_dashboard_evidence.py::test_organization_projects_actual_assignments_leases_pause_and_triggers",
+        "tests/integration/test_dashboard_evidence.py::test_events_are_scoped_stable_paginated_and_recursively_redacted",
+        "tests/integration/test_dashboard_boundary.py::test_health_does_not_certify_live_from_paper_or_caller_claims"
+      ],
+      "covered_subrequirements": ["Authoritative portfolio/order/fee/cost/activity API reconciliation and visible paused/degraded/uncertain states; health does not certify live readiness."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A35",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_api_security_live.py::test_dashboard_reconciles_and_rejects_bad_auth",
+        "tests/integration/test_cookie_writes.py::test_cookie_write_requires_csrf_with_arbitrary_headers",
+        "tests/integration/test_cookie_writes.py::test_legitimate_write_succeeds",
+        "tests/integration/test_cookie_writes.py::test_valid_leader_csrf_reaches_controller_and_bad_bearer_never_falls_back",
+        "tests/integration/test_dashboard_boundary.py::test_recursive_projection_redaction_keeps_financial_values",
+        "tests/integration/test_dashboard_controls.py::test_auth_and_cookie_csrf_precede_config_and_task_writes"
+      ],
+      "covered_subrequirements": ["Unauthenticated/role-forbidden owner writes and cookie CSRF fail; successful owner writes preserve financial fields and redact private data."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A36",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_ledger_store.py::test_durable_fixture_restart_duplicate_and_backup",
+        "tests/integration/test_storage_faults.py::test_restore_rejects_corrupt_backup_with_valid_checksum_and_preserves_destination",
+        "tests/integration/test_storage_faults.py::test_restore_sqlite_copy_failure_preserves_destination",
+        "tests/integration/test_storage_faults.py::test_restore_atomic_replace_failure_preserves_destination_and_uses_private_valid_copy",
+        "tests/integration/test_storage_faults.py::test_restore_refuses_destination_sidecars_without_deleting_prior_data",
+        "tests/integration/test_storage_faults.py::test_restore_rechecks_sidecars_before_replacing_the_offline_destination",
+        "tests/integration/test_storage_faults.py::test_restore_online_snapshot_is_private_and_survives_reopen_with_reservations"
+      ],
+      "covered_subrequirements": ["Consistent online snapshot restores exact state including held reservation/outbox references. Checksum-valid corrupt/truncated SQLite is rejected; failed private atomic replacement preserves prior destination and refuses existing/racing sidecars."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Restore requires an offline destination; host reliability and service shutdown coordination are T17 boundaries."
+    },
+    {
+      "id": "A37",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_repository_hygiene.py::test_publication_rejects_private_files_even_when_force_staged",
+        "tests/unit/test_repository_hygiene.py::test_staged_scanner_rejects_index_secret_after_working_copy_was_scrubbed",
+        "tests/unit/test_repository_hygiene.py::test_public_example_and_synthetic_placeholder_are_allowed",
+        "tests/unit/test_repository_hygiene.py::test_artifact_scan_rejects_credential_bytes_without_printing_matches",
+        "tests/unit/test_repository_hygiene.py::test_artifact_scan_rejects_private_runtime_files_even_with_changed_extensions",
+        "tests/unit/test_repository_hygiene.py::test_artifact_scan_requires_exact_existing_file_and_rejects_symlink"
+      ],
+      "covered_subrequirements": ["Staged/source scanner rejects credential/private-runtime bytes without revealing matches. Exact artifact scanner rejects private SQLite bytes despite renamed extension, credential XML, missing files and symlinks; synthetic report JSON is accepted."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "Scan the exact generated JSON/JUnit again before each upload; checks apply to this local synthetic checkout, not arbitrary future artifacts."
+    },
+    {
+      "id": "A38",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/e2e/test_offline.py::test_offline_loop"
+      ],
+      "covered_subrequirements": ["Synthetic gateway-backed Trader/worker enter/exit/lost-ack decisions bind requests, snapshots, receipts and versions; typed linked lessons survive restart; all six roles have receipts/report paths; real Engineer checks, activation, next-version decision, rejected candidate/bill and restart recovery are asserted."],
+      "uncovered_subrequirements": [],
+      "scope_notes": "This proves local application paths. Continuous service assembly and funded live-data operation belong to T17."
+    },
+    {
+      "id": "A43",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/unit/test_books.py::test_usd_cash_fx_is_not_strategy_alpha",
+        "tests/integration/test_dashboard_financial.py::test_usd_capital_fx_gain_is_compared_with_the_usd_cash_benchmark"
+      ],
+      "covered_subrequirements": ["USD10,000 values at EUR9,000 then EUR9,100; EUR100 FX gain compares with USD-cash baseline and zero strategy alpha."],
+      "uncovered_subrequirements": []
+    },
+    {
+      "id": "A44",
+      "coverage": "full",
+      "test_node_ids": [
+        "tests/integration/test_dashboard_financial.py::test_costs_survive_restart_and_reset_without_counting_synthetic_or_allocations_twice",
+        "tests/integration/test_dashboard_financial.py::test_shared_actual_cost_is_allocated_once_and_synthetic_cost_never_reduces_economics",
+        "tests/integration/test_review_regressions.py::test_shared_cost_cannot_be_allocated_twice",
+        "tests/integration/test_api_security_live.py::test_live_gate_and_adapter_have_no_withdrawal",
+        "tests/integration/test_dashboard_boundary.py::test_health_does_not_certify_live_from_paper_or_caller_claims",
+        "tests/integration/test_evidence_acceptance.py::test_paper_reset_does_not_rewrite_persisted_live_prerequisites"
+      ],
+      "covered_subrequirements": ["Portfolio reset/reopen preserves real receipts/deployment remaining budget, excludes synthetic spend, sums shared allocations once and leaves persisted live prerequisites byte-for-byte unchanged."],
+      "uncovered_subrequirements": []
+    }
+  ],
+  "integrated_commits": ["71450bd9c213ae7340568590bbc076ed39c51213", "23ea124026e8001d5edb51a96472c77435b8c668 (cherry-picked)", "cb03e4c (cherry-picked)", "98cfae3e164d0b0a340f2f6529735d087ae74ff0 (cherry-picked)", "414a348 (cherry-picked; frozen jsonschema/referencing dependency update)", "cf2d600 (cherry-picked)", "4396817 (cherry-picked; preauthorized storage fixture ordering)", "e9b0a37 (cherry-picked; maintained bounded local JSON Schema validation)"],
+  "gate_semantics": "tests_passed reports selected JUnit outcomes; gate_complete additionally requires every applicable case fully covered. Unresolved partial/pending cases exit nonzero. Separate paid/live/T17/P6/T18 boundaries do not fail the local T16 gate.",
+  "criterion_sources": {
+    "A01-A38": "docs/08-DELIVERY-AND-VALIDATION.md",
+    "A43-A44": "docs/10-PAPER-CAPITAL.md"
+  }
+}
