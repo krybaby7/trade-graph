@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-01",
-  "status_note": "T00-T16 complete at recorded application scopes; T16 verified clean implementation 1cddb349 (808 full tests, 465 mapped tests, all 40 local criteria accepted). T17 is next: continuous paper service, real diagnostics/model routing/recovery/deployment and separately owner-funded verification. Paid calls and live trading remain disabled.",
+  "status_note": "T00-T16 complete at recorded application scopes; T16 verified clean implementation 1cddb349 (808 full tests, 465 mapped tests, all 40 local criteria accepted). T17 is next: continuous paper service, real diagnostics/model routing/recovery/deployment and separately owner-funded verification. Paid calls and live trading remain disabled. T16 completion is committed locally; remote publication is blocked by missing/invalid GitHub authentication.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -193,7 +193,7 @@
     "T16": {
       "status": "done",
       "owner": "codex-orchestrator",
-      "branch": "cursor/trade-graph-r1-548a",
+      "branch": "codex/t16-offline-fault-suite",
       "evidence": [
         "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
         "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
@@ -210,7 +210,12 @@
         "Fresh git-archive checkout of 1cddb349 installed its frozen Python 3.12.14 environment from the package cache and completed standalone offline CLI demo: all 14 checks passed, four fills retained, zero restart submissions. Generated JUnit, acceptance JSON and demo JSON passed exact-byte credential/private-runtime scan. CI now gates mapped acceptance and scans generated evidence before upload; no new CI conclusion is claimed.",
         "Final integration corrected harness test loading under uv run pytest and a fixture assumption about random outbox ID order. The earlier rejected report is retained privately; final completion uses only the corrected passing run."
       ],
-      "acceptance_scope": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated."
+      "acceptance_scope": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "blocked",
+        "reason": "Git HTTPS username unavailable; configured GH_TOKEN invalid. Remote remains at recovered T15 af8e64e. Local completion retained in /workspace/trade-graph-t16."
+      }
     },
     "T17": {
       "status": "todo",

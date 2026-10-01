@@ -2,7 +2,7 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: T00–T16 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+**Status: T00–T16 complete at their recorded scopes; T16 is committed locally on `codex/t16-offline-fault-suite`, awaiting usable GitHub credentials to publish. Autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
 
 Implementation is complete through T16 at the recorded scopes; T17 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the offline acceptance gate, dashboard, authenticated owner controls, verified artifact consumption and rollback, test evidence and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
 

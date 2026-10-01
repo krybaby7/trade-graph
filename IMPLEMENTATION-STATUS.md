@@ -1,7 +1,9 @@
 # Implementation status — T16 complete
 
 Updated: 2026-10-01. **T00–T16 complete at their recorded scopes; autonomous R1 operation is not complete.**
-Branch: `cursor/trade-graph-r1-548a`; verified source: `1cddb349492a8b83f83ba1424f1709533e95d687`.
+Local branch: `codex/t16-offline-fault-suite` in `/workspace/trade-graph-t16`;
+publication target: `cursor/trade-graph-r1-548a` (not pushed: credentials unavailable).
+Verified source: `1cddb349492a8b83f83ba1424f1709533e95d687`.
 Source tree: `f8c609b673d61e88b7fe722340ceb36781d4aedf`. This handoff adds documentation after that tested checkpoint.
 Default USD10,000 virtual capital with EUR reporting. Paid calls and live trading remain disabled.
 
@@ -83,6 +85,8 @@ The dashboard starts one web worker and no scheduler or paid provider.
 
 These are local credential-free results. No new CI conclusion is claimed; the GitHub GraphQL read returned
 `Forbidden`. No paid-provider probe, authenticated exchange test, real order or profitability claim is made.
+The normal branch push failed because Git could not read an HTTPS username; `gh auth status` reports an invalid
+configured token. The completion commits remain on the local branch; the remote remains at recovered T15.
 
 ## Next task and remaining boundaries
 
