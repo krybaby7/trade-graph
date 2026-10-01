@@ -557,6 +557,10 @@ def test_invoice_discrepancy_is_visible_and_provisional_until_correcting_accrual
     assert _decimal(discrepancy["unexplained"]) == unexplained
     assert _decimal(discrepancy["recorded_total"]) == Decimal("0.9")
     assert _decimal(discrepancy["invoice_total"]) == Decimal("0.9") + unexplained
+    overview = financial.overview(runtime)
+    assert overview["provisional"] is True
+    assert overview["performance"]["provisional"] is True
+    assert overview["performance"]["net_economic_pnl"] is None
 
 
 def test_receipt_accrual_keeps_original_reporting_valuation_when_current_fx_changes(tmp_path):
@@ -698,3 +702,177 @@ def test_financial_pagination_rejects_invalid_bounds(tmp_path, projection, limit
     runtime = _runtime(tmp_path)
     with pytest.raises(ValueError, match="pagination"):
         projection(runtime, limit=limit, offset=offset)
+
+
+def test_order_fills_are_scoped_to_the_portfolio_and_publish_only_declared_fields(tmp_path):
+    runtime = _runtime(tmp_path, capital="10000", currency="USD")
+    execution = _execution(runtime)
+    execution.save_observation(_quote(runtime, "opening-quote"))
+    intent = execution.authorize(runtime.portfolio_id, _decision(runtime))
+    asyncio.run(execution.dispatch())
+    runtime.clock.advance(1)
+    execution.on_observation(_quote(runtime, "own-fill"))
+    own = runtime.database.execute(
+        "SELECT * FROM fills WHERE intent_id = ? AND portfolio_id = ?", (intent, runtime.portfolio_id)
+    ).fetchone()
+    document = json.loads(own["document_json"])
+    document["private_note"] = "private-owner-journal-fixture"
+    document["unexpected_provider_metadata"] = {"detail": "private-provider-detail-fixture"}
+    document["reference_mid"] = "99.5"
+    runtime.database.execute(
+        "UPDATE fills SET document_json = ? WHERE fill_id = ?", (json.dumps(document), own["fill_id"])
+    )
+
+    foreign_portfolio = runtime.ledger.create_portfolio(reporting_currency="EUR")
+    foreign = {
+        **document, "trade_id": "foreign-trade-fixture", "quantity": "99",
+        "account_id": "private-foreign-account-fixture", "private_note": "private-foreign-note-fixture",
+    }
+    runtime.database.execute(
+        """INSERT INTO fills
+        (fill_id, venue, account_id, trade_id, portfolio_id, intent_id, document_json, created_at)
+        VALUES ('foreign-fill-fixture', 'paper', ?, 'foreign-trade-fixture', ?, ?, ?, ?)""",
+        (foreign["account_id"], foreign_portfolio, intent, json.dumps(foreign), utc_iso(runtime.clock.now())),
+    )
+    projected = financial.orders(runtime)
+    order = projected["orders"][0]
+    assert len(order["fills"]) == 1
+    assert order["fills"][0]["fill_id"] == own["fill_id"]
+    assert _decimal(order["filled_quantity"]) == Decimal("0.01")
+    assert _decimal(order["remaining_quantity"]) == Decimal("0.005")
+    assert _decimal(order["fills"][0]["execution_deviation"]) == Decimal("0.5")
+    assert "private_note" not in order["fills"][0]
+    assert "unexpected_provider_metadata" not in order["fills"][0]
+    assert "account_id" not in order["fills"][0]
+    for private in (
+        "private-owner-journal-fixture", "private-provider-detail-fixture",
+        "private-foreign-account-fixture", "private-foreign-note-fixture", "foreign-trade-fixture",
+    ):
+        assert private not in json.dumps(projected)
+
+
+def test_future_fill_and_its_fee_source_are_excluded_from_an_earlier_projection(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(60)
+    _fill(runtime, "future-trade-fixture")
+    runtime.ledger.observe_mark(
+        runtime.portfolio_id, "TEST", Decimal("44"), "EUR", source="future-mark-fixture"
+    )
+    assert _decimal(financial.overview(runtime)["performance"]["trading_fees"]["reporting_amount"]) == Decimal("0.4")
+    runtime.clock.advance(-60)
+    projected = financial.overview(runtime)
+    assert _decimal(projected["equity"]) == Decimal("100")
+    assert _decimal(projected["performance"]["trading_fees"]["reporting_amount"]) == 0
+    assert projected["performance"]["trading_fees"]["native"] == []
+    assert projected["performance"]["trading_fees"]["items"] == []
+    assert "future-trade-fixture" not in json.dumps(projected)
+    assert "future-mark-fixture" not in json.dumps(projected)
+    assert financial.positions(runtime)["positions"] == []
+
+
+def test_future_position_reservation_does_not_lock_current_cash(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.clock.advance(60)
+    runtime.database.execute(
+        """INSERT INTO position_reservations
+        (reservation_id, portfolio_id, intent_id, asset, amount, state, created_at)
+        VALUES ('future-hold', ?, 'future-intent', 'EUR', '10', 'held', ?)""",
+        (runtime.portfolio_id, utc_iso(runtime.clock.now())),
+    )
+    runtime.clock.advance(-60)
+    projected = financial.positions(runtime)
+    assert projected["reservations"] == []
+    assert projected["balances"][0]["owned"] == "100"
+    assert projected["balances"][0]["reserved"] == "0"
+    assert projected["balances"][0]["available"] == "100"
+
+
+@pytest.mark.parametrize("policy_age", [None, 5])
+def test_current_inventory_marks_expire_at_the_active_owner_policy_age(tmp_path, policy_age):
+    runtime = _runtime(tmp_path)
+    maximum_age = 30 if policy_age is None else policy_age
+    if policy_age is not None:
+        authority = seed_paper_authority(runtime.database, runtime.clock, runtime.portfolio_id)
+        authority.install_policy(
+            authority.active_policy().model_copy(
+                update={"revision_id": "dashboard-age-policy", "maximum_quote_age_seconds": policy_age}
+            ),
+            role="owner",
+        )
+    _fill(runtime, "inventory-age-fixture")
+    runtime.ledger.observe_mark(
+        runtime.portfolio_id, "TEST", Decimal("44"), "EUR", source="age-limited-mark-fixture"
+    )
+    runtime.clock.advance(maximum_age)
+    boundary = financial.overview(runtime)
+    assert boundary["provisional"] is False
+    assert _decimal(boundary["performance"]["trading_pnl"]) == Decimal("3.6")
+    runtime.clock.advance(1)
+    expired = financial.overview(runtime)
+    assert _decimal(expired["equity"]) == Decimal("103.6")
+    assert expired["provisional"] is True
+    assert expired["performance"]["trading_pnl"] is None
+    assert expired["performance"]["net_economic_pnl"] is None
+    mark = expired["valuation"]["marks"][0]
+    assert mark["age_seconds"] == maximum_age + 1
+    assert mark["stale"] is True
+    position = financial.positions(runtime)["positions"][0]
+    assert position["provisional"] is True
+    assert position["mark"]["stale"] is True
+
+
+@pytest.mark.parametrize(
+    "kind,override,maximum_age",
+    [("reference", None, 7 * 86400), ("spot", None, 86400), ("reference", 5, 5), ("spot", 5, 5)],
+)
+def test_current_fx_expires_by_rate_kind_or_runtime_reporting_override(tmp_path, kind, override, maximum_age):
+    runtime = _runtime(tmp_path, capital="10000", currency="USD")
+    if override is not None:
+        runtime.reporting_fx_max_age_seconds = override
+    runtime.clock.advance(1)
+    runtime.ledger.observe_fx(
+        base="USD", quote="EUR", rate=Decimal("0.91"),
+        source="age-limited-fx-fixture", kind=kind, stale=False,
+    )
+    runtime.clock.advance(maximum_age)
+    boundary = financial.overview(runtime)
+    assert boundary["provisional"] is False
+    assert _decimal(boundary["equity"]) == Decimal("9100")
+    assert _decimal(boundary["allocated_capital"]["reporting_amount"]) == Decimal("9000")
+    runtime.clock.advance(1)
+    expired = financial.overview(runtime)
+    assert _decimal(expired["equity"]) == Decimal("9100")
+    assert expired["provisional"] is True
+    assert expired["performance"]["trading_pnl"] is None
+    assert expired["performance"]["net_economic_pnl"] is None
+    basis = next(rate for rate in expired["valuation"]["fx"] if rate["base"] == "USD" and rate["quote"] == "EUR")
+    assert basis["kind"] == kind
+    assert basis["age_seconds"] == maximum_age + 1
+    assert basis["stale"] is True
+
+
+def test_historical_flows_and_receipt_fx_do_not_age_with_the_current_valuation(tmp_path):
+    runtime = _runtime(tmp_path, capital="10000", currency="USD")
+    runtime.clock.advance(1)
+    runtime.ledger.observe_fx(
+        base="USD", quote="EUR", rate=Decimal("0.91"),
+        source="historical-flow-fx-fixture", kind="reference", stale=False,
+    )
+    runtime.ledger.deposit(runtime.portfolio_id, "USD", Decimal("100"), "historical-owner-deposit")
+    receipt = _receipt(runtime)
+    runtime.budget.allocate(receipt, {runtime.portfolio_id: Decimal("1")})
+    runtime.clock.advance(8 * 86400)
+    projected = financial.overview(runtime)
+    assert projected["provisional"] is True
+    assert projected["performance"]["net_economic_pnl"] is None
+    assert _decimal(projected["allocated_capital"]["reporting_amount"]) == Decimal("9000")
+    assert _decimal(projected["external_flows"]["net_reporting"]) == Decimal("91")
+    for flow in projected["external_flows"]["items"]:
+        assert flow["provisional"] is False
+        assert flow["fx"]["stale"] is False
+    costs = financial.costs(runtime)
+    assert costs["provisional"] is False
+    assert _decimal(costs["actual_spend"]) == Decimal("0.9")
+    assert _decimal(costs["allocated_actual_spend"]) == Decimal("0.9")
+    assert costs["receipts"][0]["original_fx_basis"]["rate"] == "0.9"
+    assert costs["receipts"][0]["valuation"]["provisional"] is False

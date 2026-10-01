@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trade_graph.api.security import redact
@@ -65,8 +65,49 @@ def _fx(runtime, currency: str, reporting: str, at: str) -> dict | None:
     )
     if not rows:
         return None
-    rows[0]["stale"] = bool(rows[0]["stale"])
+    _rate_freshness(runtime, rows[0], at)
     return rows[0]
+
+
+def _age(at: str, observed_at: str) -> int:
+    current = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    return max(0, int((current - observed).total_seconds()))
+
+
+def _expired(at: str, observed_at: str, maximum_age: int) -> bool:
+    current = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    return current > observed + timedelta(seconds=maximum_age)
+
+
+def _rate_freshness(runtime, row: dict, at: str) -> None:
+    reference = "reference" in row["kind"].lower() or "daily" in row["kind"].lower()
+    maximum_age = int(getattr(runtime, "reporting_fx_max_age_seconds", 7 * 86400 if reference else 86400))
+    row["age_seconds"] = _age(at, row["observed_at"])
+    row["freshness_age_seconds"] = _age(at, row["valid_as_of"])
+    row["maximum_age_seconds"] = maximum_age
+    row["recorded_stale"] = bool(row["stale"])
+    row["stale"] = row["recorded_stale"] or _expired(at, row["valid_as_of"], maximum_age)
+
+
+def _mark_maximum_age(runtime, at: str) -> int:
+    rows = _rows(
+        runtime,
+        """SELECT document_json FROM owner_policy_revisions WHERE created_at <= ?
+        ORDER BY created_at DESC, rowid DESC LIMIT 1""",
+        (at,),
+    )
+    maximum_age = 30 if not rows else int(_json(rows[0]["document_json"])["maximum_quote_age_seconds"])
+    mandates = _rows(
+        runtime,
+        """SELECT document_json FROM mandates WHERE portfolio_id = ?
+        AND active = 1 AND created_at <= ?""",
+        (runtime.portfolio_id, at),
+    )
+    if mandates:
+        maximum_age = min(maximum_age, int(_json(mandates[0]["document_json"])["max_quote_age_seconds"]))
+    return maximum_age
 
 
 def _convert(
@@ -122,10 +163,14 @@ def _valuation(runtime, at: str) -> dict:
         (runtime.portfolio_id, at),
     )
     latest_marks = {row["asset"]: row for row in marks}
-    for row in [*latest_fx.values(), *latest_marks.values()]:
-        row["stale"] = bool(row["stale"])
-        observed = datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00"))
-        row["age_seconds"] = max(0, int((runtime.clock.now() - observed).total_seconds()))
+    for row in latest_fx.values():
+        _rate_freshness(runtime, row, at)
+    mark_maximum_age = _mark_maximum_age(runtime, at)
+    for row in latest_marks.values():
+        row["age_seconds"] = _age(at, row["observed_at"])
+        row["maximum_age_seconds"] = mark_maximum_age
+        row["recorded_stale"] = bool(row["stale"])
+        row["stale"] = row["recorded_stale"] or _expired(at, row["observed_at"], mark_maximum_age)
     return {"as_of": at, "fx": list(latest_fx.values()), "marks": list(latest_marks.values())}
 
 
@@ -664,8 +709,8 @@ def positions(runtime, limit: int = 50, offset: int = 0) -> dict:
         reservations = _rows(
             runtime,
             """SELECT * FROM position_reservations
-            WHERE portfolio_id = ? AND state = 'held' ORDER BY reservation_id""",
-            (runtime.portfolio_id,),
+            WHERE portfolio_id = ? AND state = 'held' AND created_at <= ? ORDER BY reservation_id""",
+            (runtime.portfolio_id, at),
         )
         reserved = defaultdict(lambda: ZERO)
         for reservation in reservations:
@@ -893,10 +938,12 @@ def orders(runtime, limit: int = 50, offset: int = 0) -> dict:
                         None if requested is None or submitted is None else submitted - requested
                     ),
                     "quantity_asset": row["symbol"].split("/")[0],
+                    "base_asset": row["symbol"].split("/")[0],
                     "requested_price": requested_price,
                     "submitted_price": payload.get("limit_price"),
                     "price_rounding_delta": _amount(price_rounding),
                     "price_currency": row["symbol"].split("/")[-1],
+                    "quote_asset": row["symbol"].split("/")[-1],
                     "filled_quantity": _amount(filled),
                     "remaining_quantity": _amount(None if submitted is None else max(ZERO, submitted - filled)),
                     "reserve_asset": payload.get("reserve_asset"),
