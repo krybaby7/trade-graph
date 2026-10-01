@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from decimal import ROUND_CEILING, Decimal
 
 from trade_graph.adapters.persistence.db import Database, atomic
@@ -11,6 +12,7 @@ from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import (
     AuthorizedOrderIntent,
+    BrokerCapabilities,
     CancelRequest,
     Decision,
     FillRecord,
@@ -29,7 +31,7 @@ from trade_graph.domain.errors import (
     UncertainExternal,
     ValidationFailure,
 )
-from trade_graph.domain.money import canonical_decimal
+from trade_graph.domain.money import canonical_decimal, parse_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
 from trade_graph.domain.protocols import Broker
 from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
@@ -48,6 +50,8 @@ class Execution:
         venue: str = "paper",
         account_id: str = "paper",
         mode: Mode = "paper",
+        blocks_increase: Callable[[str], bool] | None = None,
+        fee_reserve_rate: Decimal = TAKER,
     ) -> None:
         self.database = database
         self.ledger = ledger
@@ -56,6 +60,11 @@ class Execution:
         self.venue = venue
         self.account_id = account_id
         self.mode = mode
+        self.blocks_increase = blocks_increase
+        self.fee_reserve_rate = parse_decimal(fee_reserve_rate)
+        if self.fee_reserve_rate < 0:
+            raise ValidationFailure("fee reserve rate must be nonnegative")
+        self._validate_fee_reserve_rate()
         self.authority = AuthorityRecord(database, clock)
 
     def now(self) -> str:
@@ -186,6 +195,12 @@ class Execution:
         if not increase and not pause_allows_reduction(profile):  # type: ignore[arg-type]
             raise AuthorityDenied(f"pause {profile} blocks reduction")
         venue = self.venue
+        if increase and self.blocks_increase is not None and self.blocks_increase(decision.symbol):
+            raise StaleState("market feed blocks new exposure")
+        if increase and self._uncertain_exposure(decision.symbol):
+            raise StaleState("unresolved execution blocks new exposure")
+        if increase:
+            self._validate_fee_reserve_rate()
         if increase and not self.quote_fresh(decision.symbol, max_quote_age_seconds, venue):
             raise StaleState("stale or missing quote")
         rules = self.instrument(venue, decision.symbol)
@@ -223,7 +238,7 @@ class Execution:
                 gross_cap,
                 asset_cap,
             )
-        fee_reserve = notional * TAKER
+        fee_reserve = notional * self.fee_reserve_rate
         if side == "buy":
             need_asset, need_amount = quote, notional + fee_reserve
             available = books.cash_amount(quote) - self._reserved(portfolio_id, quote)
@@ -249,6 +264,7 @@ class Execution:
             quantity=quantity,
             limit_price=price if order_type == "limit" else None,
             stop_price=decision.stop_price.amount if decision.stop_price else None,
+            time_in_force=decision.time_in_force,
             decision_id=decision.record_id,
             snapshot_id=decision.snapshot_id,
             eligible_after_utc=self.clock.now(),
@@ -304,7 +320,7 @@ class Execution:
         return intent_id
 
     async def dispatch(self) -> int:
-        await self._require_broker_binding()
+        capabilities = await self._require_broker_binding()
         rows = self.database.execute(
             """SELECT payload_ref FROM outbox WHERE kind = 'submit' AND status = 'pending'"""
         ).fetchall()
@@ -314,7 +330,16 @@ class Execution:
             if self.intent_state(intent_id) != "SUBMISSION_PENDING":
                 continue
             intent = self._intent_model(intent_id)
+            unsupported = self._unsupported_feature(intent, capabilities)
+            if unsupported is not None:
+                self._abandon_unsent(intent_id, "rejected", message=unsupported)
+                continue
             if intent.side == "buy":
+                try:
+                    self._validate_fee_reserve_rate()
+                except ValidationFailure as exc:
+                    self._abandon_unsent(intent_id, "rejected", message=str(exc))
+                    continue
                 block = self._unsent_increase_block(intent)
                 if block == "reject":
                     self._abandon_unsent(intent_id, "authority")
@@ -334,7 +359,7 @@ class Execution:
             elif result.status == "uncertain":
                 self._set_state(intent_id, "UNKNOWN", {"error": result.error})
             else:
-                self._set_state(intent_id, "REJECTED", {"error": result.error})
+                self._set_state(intent_id, "REJECTED", {"error": result.error, "message": result.message})
                 self._release(intent_id)
             sent += 1
         return sent
@@ -736,7 +761,7 @@ class Execution:
         ).fetchone()
         return row["state"]
 
-    async def _require_broker_binding(self) -> None:
+    async def _require_broker_binding(self) -> BrokerCapabilities:
         caps = await self.broker.capabilities()
         if caps.withdrawals:
             raise AuthorityDenied("withdrawals are not a broker capability")
@@ -744,8 +769,23 @@ class Execution:
             raise AuthorityDenied("broker binding does not match execution venue and mode")
         if not caps.client_id_lookup:
             raise AuthorityDenied("broker cannot look up orders by client id")
+        return caps
+
+    @staticmethod
+    def _unsupported_feature(intent: AuthorizedOrderIntent, caps: BrokerCapabilities) -> str | None:
+        if intent.time_in_force not in caps.time_in_force:
+            return "unsupported time in force"
+        if intent.order_type == "stop" and not (caps.native_stop and caps.native_stop_tested):
+            return "unsupported or untested native stop"
+        if intent.stop_price is not None and intent.order_type != "stop":
+            return "unsupported combined stop order"
+        return None
 
     def _unsent_increase_block(self, intent: AuthorizedOrderIntent) -> str:
+        if self.blocks_increase is not None and self.blocks_increase(intent.symbol):
+            return "hold"
+        if self._uncertain_exposure(intent.symbol):
+            return "hold"
         try:
             policy = self.authority.active_policy()
             mandate = self.authority.active_mandate(intent.portfolio_id)
@@ -786,17 +826,38 @@ class Execution:
             return "hold"
         return "submit"
 
-    def _abandon_unsent(self, intent_id: str, reason: str) -> None:
+    def _uncertain_exposure(self, symbol: str) -> bool:
+        rows = self.database.execute(
+            """SELECT payload_json FROM order_intents WHERE symbol = ?
+            AND state IN ('UNKNOWN', 'SUBMITTING', 'CANCEL_PENDING')""", (symbol,),
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if (payload["venue"], payload["account_id"]) == (self.venue, self.account_id):
+                return True
+        return False
+
+    def _validate_fee_reserve_rate(self) -> None:
+        """Operator's worst anticipated rate must cover any fee bound the broker exposes."""
+        required = getattr(self.broker, "fee_reserve_rate", None)
+        if required is not None and self.fee_reserve_rate < parse_decimal(required):
+            raise ValidationFailure("fee reserve rate is below the broker's configured fees")
+
+    def _abandon_unsent(self, intent_id: str, reason: str, *, message: str | None = None) -> None:
         payload = self._payload(intent_id)
         payload["error"] = reason
+        if message is not None:
+            payload["message"] = message
         now = self.now()
         with self.database.immediate() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """UPDATE order_intents
                 SET state = 'REJECTED', payload_json = ?, updated_at = ?
                 WHERE intent_id = ? AND state = 'SUBMISSION_PENDING'""",
                 (json.dumps(payload), now, intent_id),
             )
+            if cursor.rowcount != 1:
+                return
             conn.execute(
                 "UPDATE position_reservations SET state = 'released' WHERE intent_id = ? AND state = 'held'",
                 (intent_id,),

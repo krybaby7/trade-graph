@@ -47,6 +47,11 @@ class PaperBroker:
         self.latency_seconds = latency_seconds
         self.submit_count = 0
 
+    @property
+    def fee_reserve_rate(self) -> Decimal:
+        """Worst configured fill fee; rebates cannot reduce the funds reserved for an order."""
+        return max(Decimal("0"), self.maker_rate, self.taker_rate)
+
     async def capabilities(self) -> BrokerCapabilities:
         return BrokerCapabilities(
             venue="paper",
@@ -55,7 +60,7 @@ class PaperBroker:
             native_amend=False,
             native_stop=True,
             native_stop_tested=True,
-            time_in_force=["gtc", "ioc"],
+            time_in_force=["gtc"],
             reduce_only_flag=False,
             fills_pagination=True,
             cancel_behaviour="local-after-reconcile",
@@ -107,6 +112,17 @@ class PaperBroker:
 
     async def submit(self, intent: AuthorizedOrderIntent) -> SubmitResult:
         self.submit_count += 1
+        capabilities = await self.capabilities()
+        if intent.venue != capabilities.venue or intent.mode != capabilities.mode:
+            return SubmitResult(status="rejected", error="rejected", message="paper broker binding mismatch")
+        if intent.time_in_force not in capabilities.time_in_force:
+            return SubmitResult(status="rejected", error="rejected", message="unsupported time in force")
+        if intent.order_type == "stop" and not (capabilities.native_stop and capabilities.native_stop_tested):
+            return SubmitResult(status="rejected", error="rejected", message="unsupported or untested native stop")
+        if intent.stop_price is not None and intent.order_type != "stop":
+            return SubmitResult(status="rejected", error="rejected", message="unsupported combined stop order")
+        if intent.order_type == "stop" and intent.side != "sell":
+            return SubmitResult(status="rejected", error="rejected", message="unsupported buy stop")
         venue_order_id = f"paper-{intent.client_order_id[:8]}"
         document = {
             "symbol": intent.symbol,
@@ -225,6 +241,10 @@ class DropAckBroker:
 
     def __init__(self, inner: PaperBroker) -> None:
         self.inner = inner
+
+    @property
+    def fee_reserve_rate(self) -> Decimal:
+        return self.inner.fee_reserve_rate
 
     async def capabilities(self):
         return await self.inner.capabilities()
