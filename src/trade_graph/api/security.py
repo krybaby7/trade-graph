@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 _PRIVATE_KEYS = {
     "api_key", "apikey", "secret", "secret_key", "password", "authorization",
-    "access_token", "refresh_token", "token_hash", "csrf_secret", "account_id",
+    "access_token", "refresh_token", "session_token", "token", "token_hash", "csrf_secret", "account_id",
     "private_key", "credentials", "environment", "env", "request_json",
     "response_json", "provider_response", "raw_response", "conversation", "messages",
     "model_request", "raw_request", "provider_conversation",

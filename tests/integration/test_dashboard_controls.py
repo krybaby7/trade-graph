@@ -105,6 +105,22 @@ def config_body(**updates):
     return {"request_id": "config-1", "expected_revision": 0, "maximum_gross_exposure_fraction": "0.60", **updates}
 
 
+def test_role_caps_share_the_same_global_allowance(stack):
+    fixture = stack
+    response = fixture.client.post("/api/v1/owner/budgets", headers=fixture.owner_headers, json={
+        "request_id": "overlapping-role-caps", "expected_revision": 0,
+        "total": "5", "period": "5", "priority_reserve": "1", "daily": "5", "root": "2",
+        "roles": {"leader": "3", "research": "3"},
+    })
+    assert response.status_code == 200
+    assert response.json()["remaining"] == "5"
+    assert response.json()["total"] == "5"
+    # Individual role ceilings share one deployment pool; they are not extra funding.
+    assert fixture.client.get("/api/v1/owner/config", headers=fixture.owner_headers).json()["budget"]["roles"] == {
+        "leader": "3", "research": "3",
+    }
+
+
 def task_body(**updates):
     return {
         "request_id": "task-1",

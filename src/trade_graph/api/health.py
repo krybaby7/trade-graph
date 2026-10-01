@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
+from trade_graph.api import financial
 from trade_graph.api.security import redact
 from trade_graph.domain.clock import utc_iso
 from trade_graph.live_gate import evaluate_live_enablement
@@ -44,7 +46,8 @@ def health(runtime, *, authenticated: bool = False) -> dict:
         }.items()
     }
     uncertain_orders = database.execute(
-        "SELECT COUNT(*) FROM order_intents WHERE portfolio_id = ? AND state IN ('UNKNOWN', 'SUBMITTING')", (pid,)
+        "SELECT COUNT(*) FROM order_intents WHERE portfolio_id = ? "
+        "AND state IN ('UNKNOWN', 'SUBMITTING', 'CANCEL_PENDING')", (pid,)
     ).fetchone()[0]
     uncertain_usage = database.execute(
         "SELECT COUNT(*) FROM budget_reservations WHERE deployment_id = ? AND state = 'UNCERTAIN' AND synthetic = 0",
@@ -61,23 +64,33 @@ def health(runtime, *, authenticated: bool = False) -> dict:
         (pid,),
     ).fetchall()
     leases = database.execute("SELECT lease_name, owner, expires_at FROM process_leases").fetchall()
-    provisional = runtime.ledger.equity(pid).provisional if hasattr(runtime, "ledger") else True
+    overview = financial.overview(runtime) if hasattr(runtime, "ledger") else None
+    provisional = overview["provisional"] if overview is not None else True
+    invoices = database.execute(
+        "SELECT unexplained FROM invoice_reconciliations WHERE deployment_id = ? AND created_at <= ?",
+        (getattr(runtime, "deployment_id", "deployment"), now),
+    ).fetchall()
+    invoice_uncertainty = any(Decimal(row["unexplained"]) != 0 for row in invoices)
     reasons = []
     if uncertain_orders:
         reasons.append("unknown orders")
     if uncertain_usage:
         reasons.append("uncertain billing")
     if provisional:
-        reasons.append("provisional valuation")
+        reasons.append("provisional financial result")
+    if invoice_uncertainty:
+        reasons.append("unexplained invoice differences")
     if rollout and rollout["state"] in {"BLOCKED", "ROLLBACK_PENDING", "RESTART_PENDING", "RESTORE_PENDING"}:
         reasons.append("artifact reload or recovery pending")
     result.update({
         "as_of": now, "portfolio_id": pid, "live_prerequisites": gate,
-        "paid_calls_enabled": bool(policy.get("paid_calls_enabled", False)),
+        "paid_calls_enabled": bool(getattr(runtime, "paid_calls_enabled", False)),
+        "paid_calls_authorized": bool(policy.get("paid_calls_enabled", False)),
         "pause": dict(pause_row) if pause_row else {"profile": "RUNNING", "originator": None},
         "degraded": bool(reasons), "degraded_reasons": reasons,
         "provisional": provisional, "uncertain_orders": uncertain_orders,
         "uncertain_usage": uncertain_usage,
+        "invoice_uncertainty": invoice_uncertainty,
         "active_version": dict(active) if active else None,
         "rollout": dict(rollout) if rollout else None,
         "consumers": [dict(row) for row in loads],

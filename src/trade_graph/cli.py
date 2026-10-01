@@ -37,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="store_true")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("doctor")
+    dashboard = sub.add_parser("dashboard")
+    dashboard.add_argument("--database", default="runtime/trade_graph.sqlite")
+    dashboard.add_argument("--portfolio-id")
+    dashboard.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1"])
+    dashboard.add_argument("--port", type=int, default=8000)
+    dashboard.add_argument("--session-file", default="runtime/owner-session.json")
     demo = sub.add_parser("demo")
     demo.add_argument("--offline", action="store_true")
     demo.add_argument("--work", default="runtime/demo")
@@ -109,6 +115,29 @@ def main(argv: list[str] | None = None) -> int:
         print("schema=available credentials=not-required")
         print("credentialed_providers=pending live=disabled")
         return 0
+    if args.command == "dashboard":
+        if not 1 <= args.port <= 65535:
+            parser.error("port must be between 1 and 65535")
+        import uvicorn
+
+        from trade_graph.api.app import create_app
+        from trade_graph.dashboard import dashboard_runtime, owner_session_file
+
+        try:
+            runtime = dashboard_runtime(Path(args.database), args.portfolio_id)
+        except ValueError as exc:
+            parser.error(str(exc))
+        try:
+            session_path = owner_session_file(runtime, Path(args.session_file))
+            address = f"[{args.host}]" if args.host == "::1" else args.host
+            print(f"Dashboard: http://{address}:{args.port}/login")
+            print(f"Owner session file: {session_path} (private; paste session_token on the login page)")
+            uvicorn.run(create_app(runtime), host=args.host, port=args.port, workers=1, access_log=False)
+        except ValueError as exc:
+            parser.error(str(exc))
+        finally:
+            runtime.database.close()
+        return 0
     if args.command == "demo":
         if not args.offline:
             parser.error("demo requires --offline unless a later credentialed command is configured")
@@ -123,13 +152,26 @@ def main(argv: list[str] | None = None) -> int:
         from datetime import datetime
 
         from trade_graph.adapters.persistence.db import Database
+        from trade_graph.application.authority import AuthorityRecord, paper_owner_policy
         from trade_graph.application.ledger import Ledger
         from trade_graph.domain.clock import SystemClock
+        from trade_graph.domain.errors import AuthorityDenied
+        from trade_graph.domain.money import Money
 
         path = Path(args.database)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         ledger = Ledger(Database(path), SystemClock())
         portfolio = ledger.create_portfolio(reporting_currency=args.reporting_currency, mode="paper")
         ledger.deposit(portfolio, args.capital_currency, Decimal(args.capital), "opening")
+        authority = AuthorityRecord(ledger.database, ledger.clock)
+        try:
+            authority.active_policy()
+        except AuthorityDenied:
+            policy = paper_owner_policy(revision_id="initial-paper-policy")
+            authority.install_policy(policy.model_copy(update={
+                "reporting_currency": args.reporting_currency,
+                "virtual_capital": Money(amount=args.capital, currency=args.capital_currency),
+            }), role="owner")
         print(
             json.dumps(
                 {

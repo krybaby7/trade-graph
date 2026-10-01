@@ -65,8 +65,6 @@ class BudgetCommand(Command):
             amount > self.total for amount in (self.period, self.daily, self.root, *self.roles.values())
         ):
             raise ValueError("budget components exceed total allowance")
-        if sum(self.roles.values(), Decimal("0")) > self.total:
-            raise ValueError("role allocations exceed total allowance")
         return self
 
 

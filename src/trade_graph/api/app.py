@@ -1,57 +1,61 @@
-"""Server-rendered projections. Browser values are not a second ledger."""
+"""Authenticated dashboard over authoritative read snapshots."""
 
 from __future__ import annotations
 
+import hashlib
 import secrets
-from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from trade_graph.api import evidence, financial
 from trade_graph.api.auth import csrf_for_token, role_for_token
-from trade_graph.application.activation import VersionController
-from trade_graph.application.budget import BudgetGateway
-from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
-from trade_graph.live_gate import evaluate_live_enablement
+from trade_graph.api.controls import configuration, register_controls
+from trade_graph.api.health import health as project_health
+from trade_graph.api.security import redact
+from trade_graph.domain.clock import SystemClock
+from trade_graph.domain.errors import NotFound
 
-TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "web" / "templates"))
-_SECRET_MARKERS = ("OPENAI", "ANTHROPIC", "BEGIN PRIVATE", "sk-", "api_key")
-
-
-def _redact(value: str) -> str:
-    if any(marker.lower() in value.lower() for marker in _SECRET_MARKERS):
-        return "[redacted]"
-    return value
-
-
-def _money(value: object, name: str) -> Decimal:
-    if isinstance(value, float):
-        raise HTTPException(status_code=422, detail="binary float is not a monetary amount")
-    try:
-        parsed = Decimal(str(value))
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=name) from exc
-    if not parsed.is_finite():
-        raise HTTPException(status_code=422, detail=name)
-    return parsed
+WEB = Path(__file__).resolve().parents[1] / "web"
+TEMPLATES = Jinja2Templates(directory=str(WEB / "templates"))
+Limit = Annotated[int, Query(ge=1, le=100)]
+Offset = Annotated[int, Query(ge=0, le=1000000)]
 
 
 def create_app(runtime) -> FastAPI:
-    app = FastAPI(title="Trade Graph")
+    app = FastAPI(title="Trade Graph", docs_url=None, redoc_url=None)
     app.state.runtime = runtime
+    # Construction starts no scheduler, provider, broker or background worker.
+    if (WEB / "static").exists():
+        app.mount("/static", StaticFiles(directory=str(WEB / "static")), name="static")
+
+    @app.middleware("http")
+    async def private_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        )
+        return response
 
     def identity(request: Request) -> str:
-        header = request.headers.get("authorization", "")
-        parts = header.split()
+        parts = request.headers.get("authorization", "").split()
         bearer = len(parts) == 2 and parts[0].lower() == "bearer"
         token = parts[1] if bearer else request.cookies.get("tg_session")
         role = role_for_token(runtime.database, token)
         if role is None:
             raise HTTPException(status_code=401, detail="authentication required")
-        request.state.token = token
-        request.state.role = role
+        request.state.token, request.state.role = token, role
         request.state.auth_mechanism = "bearer" if bearer else "cookie"
         if request.method not in {"GET", "HEAD", "OPTIONS"} and not bearer:
             expected = csrf_for_token(runtime.database, token)
@@ -66,246 +70,207 @@ def create_app(runtime) -> FastAPI:
             raise HTTPException(status_code=403, detail="owner authority required")
         return role
 
-    def budget() -> BudgetGateway:
-        return BudgetGateway(runtime.database, runtime.clock)
+    @app.exception_handler(NotFound)
+    async def inaccessible_record(request: Request, exc: NotFound):
+        return JSONResponse(status_code=404, content={"detail": "record not found"})
 
-    def versions() -> VersionController:
-        return VersionController(runtime.database, runtime.clock)
+    @app.exception_handler(RequestValidationError)
+    async def invalid_parameters(request: Request, exc: RequestValidationError):
+        return JSONResponse(status_code=422, content={"detail": "invalid request parameters"})
+
+    def render(request: Request, name: str, data: dict):
+        csrf = csrf_for_token(runtime.database, request.state.token) if request.state.auth_mechanism == "cookie" else ""
+        return TEMPLATES.TemplateResponse(request, f"{name}.html", {
+            "data": redact(data), "role": request.state.role, "csrf": csrf, "page": name,
+            "auth_mechanism": request.state.auth_mechanism,
+        })
+
+    def overview_data():
+        data = financial.overview(runtime)
+        data["health"] = project_health(runtime, authenticated=True)
+        data["degraded"] = data["health"]["degraded"]
+        data["degraded_reasons"] = data["health"]["degraded_reasons"]
+        return data
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request):
+        return TEMPLATES.TemplateResponse(request, "login.html", {
+            "data": {}, "role": "reader", "page": "login", "csrf": "", "auth_mechanism": "none",
+        })
+
+    @app.post("/api/v1/session")
+    async def login(request: Request):
+        origin = request.headers.get("origin")
+        if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            raise HTTPException(status_code=403, detail="same-origin login required")
+        try:
+            body = await request.json()
+            token = body.get("session_token") if isinstance(body, dict) else None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid session") from exc
+        if not isinstance(token, str) or len(token) > 256 or role_for_token(runtime.database, token) is None:
+            raise HTTPException(status_code=401, detail="invalid session")
+        response = JSONResponse({"authenticated": True})
+        response.set_cookie("tg_session", token, httponly=True, secure=request.url.scheme == "https",
+                            samesite="strict", path="/")
+        return response
+
+    @app.post("/api/v1/logout")
+    def logout(request: Request):
+        identity(request)
+        runtime.database.execute("DELETE FROM sessions WHERE token_hash = ?",
+                                 (hashlib.sha256(request.state.token.encode()).hexdigest(),))
+        response = JSONResponse({"authenticated": False})
+        response.delete_cookie("tg_session", path="/")
+        return response
 
     @app.get("/api/v1/health")
-    def health() -> dict:
-        gate = evaluate_live_enablement(
-            {"withdrawals_allowed": False, "paper_capital": "10000", "live_allocation": "0"}
-        )
-        return {
-            "mode": "paper",
-            "paid_calls_enabled": False,
-            "live_enabled": False,
-            "live_prerequisites": gate,
-        }
+    def health(request: Request):
+        authenticated = bool(request.headers.get("authorization") or request.cookies.get("tg_session"))
+        if authenticated:
+            identity(request)
+        with runtime.database.snapshot():
+            return project_health(runtime, authenticated=authenticated)
 
     @app.get("/api/v1/overview")
-    def overview(request: Request) -> dict:
+    def overview(request: Request):
         identity(request)
-        equity = runtime.ledger.equity(runtime.portfolio_id)
-        return {
-            "portfolio_id": runtime.portfolio_id,
-            "reporting_currency": equity.reporting_currency,
-            "equity": None if equity.equity is None else str(equity.equity),
-            "provisional": equity.provisional,
-            "simulated": True,
-            "actual_spend": str(runtime.actual_spend),
-        }
+        with runtime.database.snapshot():
+            return redact(overview_data())
 
-    @app.get("/", response_class=HTMLResponse)
-    def page(request: Request) -> HTMLResponse:
+    @app.get("/api/v1/positions")
+    def positions(request: Request, limit: Limit = 50, offset: Offset = 0):
         identity(request)
-        equity = runtime.ledger.equity(runtime.portfolio_id)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "overview.html",
-            {
-                "equity": "provisional" if equity.equity is None else str(equity.equity),
-                "currency": equity.reporting_currency,
-                "provisional": equity.provisional,
-                "spend": str(runtime.actual_spend),
-            },
-        )
-
-    @app.get("/organization", response_class=HTMLResponse)
-    def organization_page(request: Request) -> HTMLResponse:
-        identity(request)
-        return TEMPLATES.TemplateResponse(request, "organization.html", _organization(runtime))
-
-    @app.get("/costs", response_class=HTMLResponse)
-    def costs_page(request: Request) -> HTMLResponse:
-        identity(request)
-        return TEMPLATES.TemplateResponse(request, "costs.html", _costs(runtime))
-
-    @app.get("/changes", response_class=HTMLResponse)
-    def changes_page(request: Request) -> HTMLResponse:
-        identity(request)
-        return TEMPLATES.TemplateResponse(request, "changes.html", _changes(runtime))
-
-    @app.get("/api/v1/tasks")
-    def tasks(request: Request) -> dict:
-        identity(request)
-        return _organization(runtime)
+        with runtime.database.snapshot():
+            return redact(financial.positions(runtime, limit=limit, offset=offset))
 
     @app.get("/api/v1/orders")
-    def orders(request: Request) -> dict:
+    def orders(request: Request, limit: Limit = 50, offset: Offset = 0):
         identity(request)
-        rows = runtime.database.execute(
-            "SELECT client_order_id, state FROM order_intents WHERE portfolio_id = ?",
-            (runtime.portfolio_id,),
-        ).fetchall()
-        return {
-            "orders": [
-                {
-                    "client_order_id": row["client_order_id"],
-                    "state": row["state"],
-                    "degraded": row["state"] in {"UNKNOWN", "SUBMITTING"},
-                }
-                for row in rows
-            ],
-            "simulated": True,
-        }
+        with runtime.database.snapshot():
+            return redact(financial.orders(runtime, limit=limit, offset=offset))
 
     @app.get("/api/v1/costs")
-    def costs(request: Request) -> dict:
+    def costs(request: Request, limit: Limit = 50, offset: Offset = 0):
         identity(request)
-        return _costs(runtime)
+        with runtime.database.snapshot():
+            return redact(financial.costs(runtime, limit=limit, offset=offset))
+
+    @app.get("/api/v1/tasks")
+    def tasks(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.organization(runtime, limit=limit, offset=offset))
+
+    @app.get("/api/v1/decisions")
+    def decisions(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.decisions(runtime, limit=limit, offset=offset))
+
+    @app.get("/api/v1/decisions/{decision_id}")
+    def decision(request: Request, decision_id: str):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.decision(runtime, decision_id))
+
+    @app.get("/api/v1/research")
+    def research(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.research(runtime, limit=limit, offset=offset))
+
+    @app.get("/api/v1/lessons")
+    def lessons(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.lessons(runtime, limit=limit, offset=offset))
 
     @app.get("/api/v1/changes")
-    def changes(request: Request) -> dict:
+    def changes(request: Request, limit: Limit = 50, offset: Offset = 0):
         identity(request)
-        return _changes(runtime)
+        with runtime.database.snapshot():
+            return redact(evidence.changes(runtime, limit=limit, offset=offset))
 
-    @app.post("/api/v1/owner/budgets")
-    async def budgets(request: Request) -> dict:
+    @app.get("/api/v1/changes/{candidate_id}")
+    def change(request: Request, candidate_id: str):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.change(runtime, candidate_id))
+
+    @app.get("/api/v1/events")
+    def events(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(evidence.events(runtime, limit=limit, offset=offset))
+
+    @app.get("/", response_class=HTMLResponse)
+    def page(request: Request):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "overview", overview_data())
+
+    @app.get("/trading", response_class=HTMLResponse)
+    def trading_page(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            positions = financial.positions(runtime, limit=limit, offset=offset)
+            orders = financial.orders(runtime, limit=limit, offset=offset)
+            data = {**positions, **orders, "positions_pagination": positions["pagination"],
+                    "orders_pagination": orders["pagination"]}
+            data["health"] = project_health(runtime, authenticated=True)
+            return render(request, "trading", data)
+
+    @app.get("/organization", response_class=HTMLResponse)
+    def organization_page(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            data = evidence.organization(runtime, limit=limit, offset=offset)
+            data["research"] = evidence.research(runtime, limit=limit, offset=offset)
+            data["lessons"] = evidence.lessons(runtime, limit=limit, offset=offset)
+            data["events"] = evidence.events(runtime, limit=limit, offset=offset).get("events", [])
+            return render(request, "organization", data)
+
+    @app.get("/costs", response_class=HTMLResponse)
+    def costs_page(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "costs", financial.costs(runtime, limit=limit, offset=offset))
+
+    @app.get("/changes", response_class=HTMLResponse)
+    def changes_page(request: Request, limit: Limit = 50, offset: Offset = 0):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "changes", evidence.changes(runtime, limit=limit, offset=offset))
+
+    @app.get("/decisions/{decision_id}", response_class=HTMLResponse)
+    def decision_page(request: Request, decision_id: str):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "evidence", {"kind": "decision", **evidence.decision(runtime, decision_id)})
+
+    @app.get("/changes/{candidate_id}", response_class=HTMLResponse)
+    def change_page(request: Request, candidate_id: str):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "evidence", {"kind": "change", **evidence.change(runtime, candidate_id)})
+
+    @app.get("/owner", response_class=HTMLResponse)
+    def owner_page(request: Request):
         owner_write(request)
-        body = await request.json()
-        try:
-            roles = {str(role): _money(amount, role) for role, amount in body["roles"].items()}
-            budget().configure(
-                deployment_id=str(body.get("deployment_id", "deployment")),
-                currency="EUR",
-                total=_money(body["total"], "total"),
-                period=_money(body["period"], "period"),
-                priority_reserve=_money(body["priority_reserve"], "priority_reserve"),
-                daily=_money(body["daily"], "daily"),
-                root=_money(body["root"], "root"),
-                roles=roles,
-            )
-        except (KeyError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail="invalid budget") from exc
-        deployment_id = str(body.get("deployment_id", "deployment"))
-        return {
-            "deployment_id": deployment_id,
-            "currency": "EUR",
-            "total": str(budget().allowance(deployment_id)),
-            "remaining": str(budget().remaining(deployment_id)),
-            "simulated_equity_separate": True,
-        }
+        with runtime.database.snapshot():
+            data = configuration(runtime)
+            data["health"] = project_health(runtime, authenticated=True)
+            data["live_prerequisites"] = data["health"]["live_prerequisites"]
+            return render(request, "owner", data)
 
-    @app.post("/api/v1/owner/pause")
-    async def pause(request: Request) -> dict:
-        owner_write(request)
-        body = await request.json()
-        try:
-            runtime.execution.set_pause(
-                runtime.portfolio_id, body["profile"], "owner", body.get("reason", "owner")
-            )
-        except (KeyError, ValidationFailure) as exc:
-            raise HTTPException(status_code=422, detail="invalid pause profile") from exc
-        return {"profile": body["profile"], "originator": "owner"}
-
-    @app.post("/api/v1/owner/enable-live")
-    async def enable_live(request: Request) -> dict:
-        owner_write(request)
-        return {"enabled": False, "reason": "live activation is not implemented; this API is paper-only"}
-
-    @app.post("/api/v1/owner/resume")
-    async def resume(request: Request) -> dict:
-        owner_write(request)
-        await runtime.execution.reconcile()
-        runtime.execution.set_pause(runtime.portfolio_id, "RUNNING", "owner", "resume after reconcile")
-        return {"profile": runtime.execution.profile(runtime.portfolio_id), "reconciled": True}
-
-    @app.post("/api/v1/leader/activate")
-    async def leader_activate(request: Request) -> dict:
-        role = identity(request)
-        if role != "leader":
-            raise HTTPException(status_code=403, detail="leader role required")
-        body = await request.json()
-        try:
-            versions().activate(
-                runtime.portfolio_id,
-                {
-                    "candidate_id": body["candidate_id"],
-                    "baseline_hash": body["baseline_hash"],
-                    "content_hash": body["content_hash"],
-                },
-            )
-        except KeyError as exc:
-            raise HTTPException(status_code=422, detail="candidate fields required") from exc
-        except ValidationFailure as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except AuthorityDenied as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        except StaleState as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"artifact_hash": versions().current_hash(runtime.portfolio_id)}
-
+    register_controls(app, runtime, identity, owner_write)
     return app
 
 
-def _organization(runtime) -> dict:
-    tasks = runtime.database.execute(
-        """SELECT role, status, objective FROM tasks
-        WHERE portfolio_id = ? OR portfolio_id IS NULL ORDER BY created_at""",
-        (runtime.portfolio_id,),
-    ).fetchall()
-    active = runtime.database.execute(
-        "SELECT artifact_hash FROM active_versions WHERE portfolio_id = ?",
-        (runtime.portfolio_id,),
-    ).fetchone()
-    return {
-        "artifact_hash": None if active is None else active["artifact_hash"],
-        "tasks": [
-            {"role": row["role"], "status": row["status"], "objective": _redact(row["objective"])}
-            for row in tasks
-        ],
-        "source": "task journal",
-    }
-
-
-def _costs(runtime) -> dict:
-    uncertain = runtime.database.execute(
-        "SELECT COUNT(*) AS n FROM budget_reservations WHERE state = 'UNCERTAIN'"
-    ).fetchone()["n"]
-    deployment = "deployment"
-    configured = runtime.database.execute(
-        "SELECT total_allowance FROM deployment_budget WHERE deployment_id = ?",
-        (deployment,),
-    ).fetchone()
-    remaining = None
-    if configured is not None:
-        remaining = str(BudgetGateway(runtime.database, runtime.clock).remaining(deployment))
-    return {
-        "actual_spend": str(runtime.actual_spend),
-        "currency": "EUR",
-        "simulated": True,
-        "simulated_trading_separate": True,
-        "remaining_allowance": remaining,
-        "uncertain_reservations": uncertain,
-        "paper_equity_does_not_refill_allowance": True,
-    }
-
-
 def _changes(runtime) -> dict:
-    candidates = runtime.database.execute(
-        """SELECT c.candidate_id, c.state, c.content_hash FROM candidates c
-        JOIN change_tasks t ON t.change_id = c.change_id
-        WHERE t.portfolio_id = ? ORDER BY c.created_at""",
-        (runtime.portfolio_id,),
-    ).fetchall()
-    events = runtime.database.execute(
-        """SELECT kind, from_hash, to_hash FROM version_events
-        WHERE portfolio_id = ? ORDER BY created_at""",
-        (runtime.portfolio_id,),
-    ).fetchall()
-    return {
-        "candidates": [
-            {
-                "candidate_id": row["candidate_id"],
-                "state": row["state"],
-                "content_hash": row["content_hash"],
-            }
-            for row in candidates
-        ],
-        "events": [
-            {"kind": row["kind"], "from_hash": row["from_hash"], "to_hash": row["to_hash"]}
-            for row in events
-        ],
-    }
+    """Compatibility for existing scoped change-projection consumers."""
+    with runtime.database.snapshot():
+        projection_runtime = SimpleNamespace(database=runtime.database, portfolio_id=runtime.portfolio_id,
+                                             clock=getattr(runtime, "clock", SystemClock()))
+        return evidence.changes(projection_runtime)

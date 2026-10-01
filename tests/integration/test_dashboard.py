@@ -27,6 +27,9 @@ def _client(tmp_path):
     runtime.ledger = ledger
     runtime.portfolio_id = portfolio
     runtime.actual_spend = Decimal("1.25")
+    ledger.add_expense(portfolio, expense_id="durable-operating-fixture", native_amount=Decimal("1.25"),
+                       native_currency="EUR", reporting_amount=Decimal("1.25"), reporting_currency="EUR",
+                       embedded=False, source="synthetic hosting fixture")
     runtime.execution = execution
     token, csrf = issue_session(database, clock, "owner")
     leader, _ = issue_session(database, clock, "leader")
@@ -81,7 +84,10 @@ def test_views_label_paper_results_and_redact_secrets(tmp_path) -> None:
     )
     assert denied.status_code == 422
     client.cookies.set("tg_session", token)
+    paused = client.post("/api/v1/owner/pause", headers={"X-CSRF-Token": csrf},
+                         json={"profile": "MANAGE_ONLY"})
+    assert paused.status_code == 200
     resumed = client.post("/api/v1/owner/resume", headers={"X-CSRF-Token": csrf})
-    assert resumed.status_code == 200
-    assert resumed.json()["reconciled"] is True
-    assert resumed.json()["profile"] == "RUNNING"
+    assert resumed.status_code == 409
+    assert "unresolved orders" in resumed.json()["detail"]["barriers"]
+    assert client.get("/api/v1/health", headers=headers).json()["pause"]["profile"] == "MANAGE_ONLY"
