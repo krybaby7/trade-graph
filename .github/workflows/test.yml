@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Reject private runtime data and credentials before artifact publication
+        run: python3 scripts/check_repository_hygiene.py
       - name: Archive tracked source for reproducible review
         run: git archive --format=tar HEAD -o /tmp/trade-graph-source.tar
       - uses: actions/upload-artifact@v4

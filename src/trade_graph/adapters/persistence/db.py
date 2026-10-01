@@ -87,6 +87,23 @@ class Database:
                 self._local.connection = None
 
     @contextmanager
+    def snapshot(self) -> Iterator[sqlite3.Connection]:
+        """One read snapshot for all values rendered by a dashboard request."""
+        active = getattr(self._local, "connection", None)
+        if active is not None:
+            yield active
+            return
+        with self.connect() as connection:
+            connection.execute("BEGIN")
+            self._local.connection = connection
+            try:
+                yield connection
+            finally:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                self._local.connection = None
+
+    @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self.immediate() as connection:
             yield connection

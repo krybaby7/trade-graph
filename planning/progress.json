@@ -170,14 +170,15 @@
       "acceptance_scope": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
     },
     "T15": {
-      "status": "todo",
-      "owner": null,
+      "status": "claimed",
+      "owner": "codex-orchestrator",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
         "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
         "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
-        "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass."
+        "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass.",
+        "2026-10-01: claimed after recovering verified T14 remote head 85bfb1c; implementing dashboard projections, evidence navigation, owner controls and A34/A35/A37 validation."
       ],
       "remaining": "Complete docs/09 financial/organisation/cost/change views and evidence navigation; missing positions, decision detail, research, lessons and events APIs; full authenticated owner configuration/task controls and authoritative reconciliation/provisional-state coverage. A few security/projection tests do not certify the dashboard."
     },
