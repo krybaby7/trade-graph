@@ -324,6 +324,8 @@ def test_resume_reconciles_outside_transaction_and_cannot_clear_unknown_order(st
     response = stack.client.post("/api/v1/owner/resume", headers=stack.owner_headers, json=body)
     assert response.status_code == 409
     assert "unresolved orders" in response.json()["detail"]["barriers"]
+    assert response.json()["detail"]["command_id"] == "resume-1"
+    assert response.json()["detail"]["command_state"] == "FAILED"
     assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
     assert calls == ["reconcile"]
     replay = stack.client.post("/api/v1/owner/resume", headers=stack.owner_headers, json=body)

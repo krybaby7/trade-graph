@@ -306,6 +306,10 @@ class _Commands:
             return command_id, revision, replay
 
     def finish(self, command_id: str, revision: int, result: dict, *, error: int | None = None) -> dict:
+        if error is not None:
+            detail = result["detail"]
+            detail = dict(detail) if isinstance(detail, dict) else {"reason": detail}
+            result = {**result, "detail": {**detail, "command_id": command_id, "command_state": "FAILED"}}
         result = redact({**result, "revision": revision})
         with self.database.immediate():
             self.database.execute(
