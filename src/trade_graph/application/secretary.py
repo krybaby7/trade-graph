@@ -14,9 +14,10 @@ def stable_id(*parts: str) -> str:
 
 
 class Secretary:
-    def __init__(self, execution, scheduler) -> None:
+    def __init__(self, execution, scheduler, *, artifact_runtime=None) -> None:
         self.execution, self.scheduler = execution, scheduler
         self.database = scheduler.database
+        self.artifact_runtime = artifact_runtime
 
     @atomic
     def report(
@@ -199,12 +200,17 @@ class Secretary:
     @atomic
     def scheduled(self, portfolio_id: str, interval_seconds: int = 3600) -> str | None:
         self.process(portfolio_id, route=False)
+        artifact_schedule = False
+        if self.artifact_runtime:
+            bundle = self.artifact_runtime.versions.load_active(portfolio_id)
+            artifact_schedule = "leader" in self.artifact_runtime.schedule_settings(bundle)
         existing = self.database.execute(
             "SELECT 1 FROM schedules WHERE portfolio_id = ? AND name = 'leader-review'", (portfolio_id,)
         ).fetchone()
-        if existing is None:
+        if existing is None and not artifact_schedule:
             self.scheduler.ensure_schedule(portfolio_id, "leader-review", interval_seconds, "coalesce")
-        task_id = self.scheduler.coalesce_due(portfolio_id, "leader-review", "leader")
+        task_id = (self.artifact_runtime.coalesce_due(portfolio_id, "leader") if artifact_schedule
+                   else self.scheduler.coalesce_due(portfolio_id, "leader-review", "leader"))
         if task_id:
             self.scheduler.allocate(task_id, self.execution.authority.active_policy().root_paid_limit.amount)
             # A newer digest must not overwrite an older, as-yet-undelivered batch.
@@ -272,7 +278,7 @@ class Secretary:
         ).fetchone()
         doc = json.loads(row["document_json"]) if row else {"reports": [], "evidence_refs": [], "groups": {}}
         pause = self.execution.pause(portfolio_id)
-        return {
+        digest = {
             **doc,
             "portfolio_id": portfolio_id,
             "pause": pause["profile"] if pause else "RUNNING",
@@ -281,3 +287,20 @@ class Secretary:
             ).fetchone()["n"],
             "orders_created": 0,
         }
+        if self.artifact_runtime:
+            equity = self.execution.ledger.equity(portfolio_id)
+            costs = self.database.execute(
+                """SELECT r.receipt_id, r.status, r.reporting_cost, r.reporting_currency, r.synthetic
+                FROM usage_receipts r JOIN cost_allocations a USING (receipt_id)
+                WHERE a.portfolio_id = ? ORDER BY r.created_at DESC LIMIT 20""",
+                (portfolio_id,),
+            ).fetchall()
+            digest["report_sections"] = self.artifact_runtime.render_report(portfolio_id, {
+                "summary": {"reports": digest["reports"], "tasks": digest["tasks"]},
+                "financial": {"equity": str(equity.equity) if equity.equity is not None else None,
+                              "currency": equity.reporting_currency, "provisional": equity.provisional},
+                "costs": {"receipts": [dict(row) for row in costs]},
+                "engineering": {"candidates": self.review_candidates(portfolio_id)},
+                "risks": {"pause": digest["pause"]},
+            })
+        return digest

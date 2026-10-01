@@ -31,11 +31,13 @@ class EngineerHandler:
         self, engineer, scheduler, gateway, *, deployment_id: str, price_card_id: str,
         workspace_root: Path, provider: str = "scripted", model: str = "scripted", secretary=None,
         fx_rate: Decimal = Decimal("1"), fx_buffer: Decimal = Decimal("1.02"),
+        artifact_runtime=None,
     ) -> None:
         self.engineer, self.scheduler, self.gateway = engineer, scheduler, gateway
         self.database, self.clock = scheduler.database, scheduler.clock
         self.deployment_id, self.price_card_id = deployment_id, price_card_id
         self.workspace_root, self.provider, self.model = Path(workspace_root), provider, model
+        self.artifact_runtime = artifact_runtime
         if not fx_rate.is_finite() or fx_rate <= 0 or not fx_buffer.is_finite() or fx_buffer < 1:
             raise ValidationFailure("positive FX rate and conservative FX buffer required")
         self.fx_rate, self.fx_buffer = fx_rate, fx_buffer
@@ -72,7 +74,7 @@ class EngineerHandler:
             raise AuthorityDenied("commission exceeds persisted monetary/attempt envelope")
         if self.provider != "scripted" and not policy.paid_calls_enabled:
             raise AuthorityDenied("owner has not enabled paid calls")
-        if content_hash(self.engineer.runner.source_files()) != change.baseline_hash:
+        if content_hash(self.engineer.source_files(task["portfolio_id"])) != change.baseline_hash:
             raise StaleState("source baseline moved before generation; revalidate")
         job = self._job(task)
         if job and job["commission_hash"] != commission["task_hash"]:
@@ -81,6 +83,8 @@ class EngineerHandler:
             raise StaleState("Engineer provider/model/billing changed during an unfinished job")
         if job and content_hash(job["snapshot"].get("source_files", {})) != change.baseline_hash:
             raise StaleState("persisted Engineer source snapshot does not match commissioned baseline")
+        if self.artifact_runtime and task.get("snapshot"):
+            self.artifact_runtime.assert_task(task)
         return change, commission
 
     def _billing(self):
@@ -92,7 +96,7 @@ class EngineerHandler:
         # Untrusted task payload cannot inject provider fixtures, tools or credentials.
         try:
             change, _ = self._eligible(task)
-            files = self.engineer.runner.source_files()
+            files = self.engineer.source_files(task["portfolio_id"])
             if content_hash(files) != change.baseline_hash:
                 raise StaleState("source changed during snapshot")
             return {
@@ -126,6 +130,8 @@ class EngineerHandler:
         job = self._job(task)
         if job is None:
             return None
+        task["snapshot"] = job["snapshot"]
+        task["snapshot_id"] = job["run_id"]
         if job["phase"] == "TERMINAL":
             return job["output"]
         return self(task)
@@ -164,8 +170,7 @@ class EngineerHandler:
                 request = ModelRequest(
                     role="engineer", task_id=task["task_id"], root_task_id=task["root_task_id"], run_id=job["run_id"],
                     system_version_id=change.baseline_hash, provider=self.provider, model=self.model,
-                    instructions="Implement the commissioned data artifact. Return only bounded files and a summary. "
-                                 "Use permitted paths/classes. Never supply commands, authority or test attestations.",
+                    instructions=self.instructions(task),
                     context=context, output_schema=EngineerPatch.model_json_schema(), schema_name="EngineerPatch",
                     max_output_tokens=4000, max_tool_calls=0, timeout_seconds=20, synthetic=self.provider == "scripted",
                 )
@@ -175,6 +180,14 @@ class EngineerHandler:
             # An expired/replaced token can never be renewed or publish an effect.
             self.scheduler.renew(task["_lease"], ttl_seconds=120)
             return job
+
+    def instructions(self, task: dict) -> str:
+        protected = ("Implement the commissioned data artifact. Return only bounded files and a summary. "
+                     "Use permitted paths/classes. Never supply commands, authority or test attestations.")
+        if self.artifact_runtime:
+            prompt = self.artifact_runtime.prompt(self.artifact_runtime.bundle_for(task), "engineer")
+            return protected + "\nValidated Engineer guidance within these fixed permissions:\n" + prompt
+        return protected
 
     def __call__(self, task: dict) -> dict:
         try:

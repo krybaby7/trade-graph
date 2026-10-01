@@ -34,6 +34,10 @@ class Trader:
         *,
         snapshot_id: str,
         task_id: str = "trader",
+        system_version_id: str = "trader",
+        root_task_id: str | None = None,
+        run_id: str | None = None,
+        template_documents: dict | None = None,
     ) -> TraderTurn:
         if not result.ok or result.payload is None:
             self.execution.ledger._activity(
@@ -50,17 +54,24 @@ class Trader:
         policy = self.execution.authority.active_policy()
         if choice["experiment"] and not mandate.discretionary_experiment:
             raise ValidationFailure("mandate does not allow a discretionary experiment")
-        if template(choice["strategy_id"]) is None and not choice["experiment"]:
+        known_template = (choice["strategy_id"] in template_documents if template_documents is not None
+                          else template(choice["strategy_id"]) is not None)
+        if not known_template and not choice["experiment"]:
             raise ValidationFailure("strategy template is unknown")
+        alternative = counterfactual(choice["strategy_id"])
+        if template_documents is not None:
+            document = template_documents.get(choice["strategy_id"], {})
+            alternative = f"unproven {choice['strategy_id']}: entry would require " + str(
+                document.get("entry", document.get("entry_rule", "no template suggestion")))
         decision = Decision(
             record_id=str(uuid.uuid4()),
             created_at_utc=as_of,
-            run_id=task_id,
+            run_id=run_id or task_id,
             task_id=task_id,
-            root_task_id=task_id,
+            root_task_id=root_task_id or task_id,
             portfolio_id=portfolio_id,
             mode=self.execution.mode,
-            system_version_id="trader",
+            system_version_id=system_version_id,
             evidence_refs=list(choice["evidence_ids"]),
             trace_id=str(uuid.uuid4()),
             action=choice["action"],
@@ -75,7 +86,7 @@ class Trader:
             mandate_revision=str(mandate.revision),
             policy_revision=policy.revision_id,
             no_action_reason=choice["no_action_reason"],
-            uncertainty_note=counterfactual(choice["strategy_id"])
+            uncertainty_note=alternative
             if choice["action"] in {"hold", "no_action"}
             else None,
         )

@@ -7,17 +7,22 @@ import uuid
 from collections.abc import Callable
 
 from trade_graph.application.scheduler import Scheduler, TaskLease
+from trade_graph.domain.errors import TradeGraphError
 
 
 class RoleWorker:
     def __init__(
-        self, scheduler: Scheduler, *, owner: str, system_version_id: str, reconcile: Callable[[], None]
+        self, scheduler: Scheduler, *, owner: str, system_version_id: str, reconcile: Callable[[], None],
+        artifact_runtime=None,
     ) -> None:
         self.scheduler, self.owner = scheduler, owner
         self.system_version_id, self.reconcile = system_version_id, reconcile
+        self.artifact_runtime = artifact_runtime
 
     def run_available(self, handlers: dict[str, Callable[[dict], dict]]) -> int:
         completed = 0
+        if self.artifact_runtime:
+            self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
         while self.scheduler.acquire_process_lease("role-worker", self.owner):
             lease = self.scheduler.claim(self.owner, roles=set(handlers))
             if lease is None:
@@ -45,16 +50,37 @@ class RoleWorker:
         output = recover(task) if recover else None
         if output is not None:
             self._finish(lease, output)
+            self._observe(task, output)
             return
-        if row["expected_version"] and row["expected_version"] != self.system_version_id:
+        if self.artifact_runtime:
+            try:
+                bundle = self.artifact_runtime.prepare(task, consumer_id=self.owner, reconcile=self.reconcile)
+                task["_artifact_bundle"] = bundle
+                task["artifact"] = self.artifact_runtime.identity(bundle)
+                task["system_version_id"] = bundle["artifact_hash"]
+            except (TradeGraphError, OSError, ValueError) as exc:
+                self._finish(lease, {"_status": "FAILED", "reason": str(exc)[:500]})
+                self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
+                return
+        if row["expected_version"] and row["expected_version"] != task["system_version_id"]:
             self.scheduler.skip(lease, {"skipped": "version", "expected": row["expected_version"]})
             return
         context = getattr(handler, "context", None)
         task["snapshot"] = context(task) if context else {"input": task["input"]}
-        task["snapshot_id"] = self._snapshot(row, task["snapshot"])
+        if self.artifact_runtime:
+            task["snapshot"]["artifact"] = task["artifact"]
+            self.artifact_runtime.assert_task(task)
+        task["snapshot_id"] = self._snapshot(row, task["snapshot"], version=task["system_version_id"])
         if not getattr(handler, "manages_attempts", False):
             self.scheduler.note_attempt(lease)
-        self._finish(lease, handler(task))
+        output = handler(task)
+        self._finish(lease, output)
+        self._observe(task, output)
+
+    def _observe(self, task: dict, output: dict) -> None:
+        if self.artifact_runtime:
+            self.artifact_runtime.observe(task, output)
+            self.artifact_runtime.maintain(reconcile=self.reconcile, consumer_id=self.owner)
 
     def _finish(self, lease: TaskLease, output: dict) -> None:
         if "_retry_after_seconds" in output:
@@ -62,14 +88,14 @@ class RoleWorker:
             return
         self.scheduler.finish(lease, output, output.get("_status", "SUCCEEDED"))
 
-    def _snapshot(self, row, context: dict) -> str:
+    def _snapshot(self, row, context: dict, *, version: str | None = None) -> str:
         snapshot_id = str(uuid.uuid4())
         now = self.scheduler.now()
         payload = {
             "task_id": row["task_id"],
             "root_task_id": row["root_task_id"],
             "role": row["role"],
-            "system_version_id": self.system_version_id,
+            "system_version_id": version or self.system_version_id,
             **context,
         }
         self.scheduler.database.execute(
