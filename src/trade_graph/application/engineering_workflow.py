@@ -166,11 +166,15 @@ class EngineerHandler:
                 self.scheduler.note_attempt(task["_lease"])
                 job["attempt"] += 1
                 context = {**job["snapshot"], "previous_findings": job["findings"][-10:]}
-                context["max_input_tokens"] = len(json.dumps(context).encode()) + 5000
+                instructions = self.instructions(task)
+                context["max_input_tokens"] = (
+                    len(json.dumps(context).encode()) + len(instructions.encode())
+                    + len(json.dumps(EngineerPatch.model_json_schema()).encode()) + 5000
+                )
                 request = ModelRequest(
                     role="engineer", task_id=task["task_id"], root_task_id=task["root_task_id"], run_id=job["run_id"],
                     system_version_id=change.baseline_hash, provider=self.provider, model=self.model,
-                    instructions=self.instructions(task),
+                    instructions=instructions,
                     context=context, output_schema=EngineerPatch.model_json_schema(), schema_name="EngineerPatch",
                     max_output_tokens=4000, max_tool_calls=0, timeout_seconds=20, synthetic=self.provider == "scripted",
                 )

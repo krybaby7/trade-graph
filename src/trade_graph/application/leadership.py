@@ -181,10 +181,12 @@ class GatewayRole:
         try:
             with self.database.immediate():
                 self._eligible(task)
+            instructions = self.instructions(task)
             context = {
                 **task["snapshot"],
                 "max_input_tokens": len(json.dumps(task["snapshot"]).encode())
                 + len(json.dumps(self.reply_type.model_json_schema()))
+                + len(instructions.encode())
                 + 1000,
             }
             result = self.invoke(
@@ -197,7 +199,7 @@ class GatewayRole:
                     system_version_id=task["system_version_id"],
                     provider=self.provider,
                     model=self.model,
-                    instructions=self.instructions(task),
+                    instructions=instructions,
                     context=context,
                     output_schema=self.reply_type.model_json_schema(),
                     schema_name=self.reply_type.__name__,
