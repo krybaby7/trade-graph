@@ -132,6 +132,12 @@ class ActivateCommand(Command):
     candidate_id: Identifier
     baseline_hash: Identifier
     content_hash: Identifier
+    # Old clients sent a label; trusted controller provenance remains authoritative.
+    attestation: dict[Identifier, Annotated[str, Field(max_length=256)]] | None = Field(
+        default=None,
+        max_length=16,
+        exclude=True,
+    )
 
 
 async def _body(request: Request, model: type[Command], *, empty: bool = False) -> Command:
@@ -213,7 +219,14 @@ class _Commands:
         self.runtime = runtime
         self.database = runtime.database
 
-    def _check(self, scope: str, body: Command, action: str) -> tuple[str, str, int, dict | None]:
+    def _check(
+        self,
+        scope: str,
+        body: Command,
+        action: str,
+        *,
+        allow_processing: bool = False,
+    ) -> tuple[str, str, int, dict | None]:
         document = json.dumps(
             {
                 "action": action,
@@ -237,9 +250,12 @@ class _Commands:
             if stored["status"].startswith("FAILED:"):
                 raise HTTPException(status_code=int(stored["status"].split(":")[1]), detail=result["detail"])
             return command_id, digest, result["revision"], result
-        if self.database.execute(
-            "SELECT 1 FROM dashboard_commands WHERE scope = ? AND status = 'PROCESSING'", (scope,)
-        ).fetchone():
+        if (
+            not allow_processing
+            and self.database.execute(
+                "SELECT 1 FROM dashboard_commands WHERE scope = ? AND status = 'PROCESSING'", (scope,)
+            ).fetchone()
+        ):
             raise HTTPException(status_code=409, detail="another command in this scope is in progress")
         revision = _revision(self.runtime, scope)
         if body.expected_revision is not None and body.expected_revision != revision:
@@ -264,9 +280,17 @@ class _Commands:
             ),
         )
 
-    def mutate(self, scope: str, body: Command, action: str, effect: Callable[[], dict]) -> dict:
+    def mutate(
+        self,
+        scope: str,
+        body: Command,
+        action: str,
+        effect: Callable[[], dict],
+        *,
+        allow_processing: bool = False,
+    ) -> dict:
         with self.database.immediate():
-            command_id, digest, revision, replay = self._check(scope, body, action)
+            command_id, digest, revision, replay = self._check(scope, body, action, allow_processing=allow_processing)
             if replay is not None:
                 return replay
             result = redact({**effect(), "revision": revision})
@@ -599,6 +623,32 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
                 raise HTTPException(status_code=409, detail="system pause requires controller recovery")
             runtime.execution.set_pause(runtime.portfolio_id, _pause_profile(runtime, body), "owner", body.reason)
 
+        if body.profile == "MANAGE_ONLY":
+            # This emergency latch is entirely local and remains available when
+            # a prior external command was interrupted. Its revision fences any
+            # delayed resume; the unknown prior command remains visible.
+            def emergency():
+                persist()
+                runtime.execution._set_achieved(runtime.portfolio_id, "reconciliation-required")
+                return {
+                    "requested_profile": "MANAGE_ONLY",
+                    "profile": "MANAGE_ONLY",
+                    "originator": "owner",
+                    "achieved": "reconciliation-required",
+                    "management_continues": True,
+                    "reconciliation_required": True,
+                    "offline_protection": "only previously verified venue-native protection survives process shutdown",
+                }
+
+            return _domain(
+                lambda: commands.mutate(
+                    owner_scope,
+                    body,
+                    "pause",
+                    emergency,
+                    allow_processing=True,
+                )
+            )
         command_id, revision, replay = _domain(lambda: commands.begin(owner_scope, body, "pause", persist))
         if replay is not None:
             return replay
@@ -630,7 +680,15 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
     async def resume(request: Request) -> dict:
         owner_write(request)
         body = await _body(request, Command, empty=True)
-        command_id, revision, replay = commands.begin(owner_scope, body, "resume", lambda: None)
+
+        def preflight():
+            if runtime.execution.profile(runtime.portfolio_id) == "RUNNING":
+                runtime.execution.set_pause(
+                    runtime.portfolio_id, "MANAGE_ONLY", "owner", "resume preflight reconciliation"
+                )
+                runtime.execution._set_achieved(runtime.portfolio_id, "reconciliation-required")
+
+        command_id, revision, replay = commands.begin(owner_scope, body, "resume", preflight)
         if replay is not None:
             return replay
         try:
@@ -641,6 +699,8 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
             )
         with runtime.database.immediate():
             barriers = _resume_barriers(runtime)
+            if _revision(runtime, owner_scope) != revision:
+                barriers.append("owner state changed during reconciliation; newer pause retained")
             if not barriers:
                 runtime.execution.set_pause(runtime.portfolio_id, "RUNNING", "owner", "resume after reconcile")
             result = (

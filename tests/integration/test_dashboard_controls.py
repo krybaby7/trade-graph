@@ -553,3 +553,131 @@ def test_budget_cannot_configure_a_different_deployment(stack):
     assert response.status_code == 403
     assert counts(stack) == (0, 0)
     assert stack.runtime.database.execute("SELECT COUNT(*) FROM deployment_budget").fetchone()[0] == 1
+
+
+def test_interrupted_resume_latches_manage_only_and_safe_emergency_remains_available(stack):
+    import asyncio
+
+    from starlette.requests import Request
+
+    runtime = stack.runtime
+
+    async def cancelled():
+        assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
+        assert getattr(runtime.database._local, "connection", None) is None
+        raise asyncio.CancelledError
+
+    runtime.execution.reconcile = cancelled
+    # Call the route coroutine directly to simulate process cancellation without
+    # an HTTP test client's transport converting it into a connection failure.
+    route = next(route for route in stack.client.app.routes if route.path == "/api/v1/owner/resume")
+    body = json_bytes({"request_id": "interrupted", "expected_revision": 0})
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/owner/resume",
+            "headers": [(b"authorization", f"Bearer {stack.owner}".encode())],
+        },
+        receive,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(route.endpoint(request))
+    assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
+    pending = stack.client.get("/api/v1/owner/config", headers=stack.owner_headers).json()
+    assert pending["revision"] == 1 and pending["pending_commands"][0]["command_id"] == "interrupted"
+    emergency = stack.client.post(
+        "/api/v1/owner/pause",
+        headers=stack.owner_headers,
+        json={"request_id": "emergency", "expected_revision": 1, "profile": "MANAGE_ONLY"},
+    )
+    assert emergency.status_code == 200
+    assert emergency.json()["revision"] == 2 and emergency.json()["reconciliation_required"] is True
+    assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
+    assert stack.client.get("/api/v1/owner/config", headers=stack.owner_headers).json()["pending_commands"]
+    blocked = stack.client.post(
+        "/api/v1/owner/config",
+        headers=stack.owner_headers,
+        json=config_body(request_id="config-after-crash", expected_revision=2),
+    )
+    assert blocked.status_code == 409
+    replay = stack.client.post(
+        "/api/v1/owner/pause",
+        headers=stack.owner_headers,
+        json={"request_id": "emergency", "expected_revision": 1, "profile": "MANAGE_ONLY"},
+    )
+    assert replay.json() == emergency.json()
+
+
+def json_bytes(body):
+    import json
+
+    return json.dumps(body).encode()
+
+
+def test_delayed_resume_cannot_lift_newer_emergency_owner_latch(stack):
+    runtime = stack.runtime
+    calls = []
+
+    async def delayed():
+        assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
+        calls.append("reconcile")
+        emergency = stack.client.post(
+            "/api/v1/owner/pause",
+            headers=stack.owner_headers,
+            json={
+                "request_id": "emergency",
+                "expected_revision": 1,
+                "profile": "MANAGE_ONLY",
+                "reason": "newer owner halt",
+            },
+        )
+        assert emergency.status_code == 200 and emergency.json()["revision"] == 2
+
+    runtime.execution.reconcile = delayed
+    response = stack.client.post(
+        "/api/v1/owner/resume", headers=stack.owner_headers, json={"request_id": "slow-resume", "expected_revision": 0}
+    )
+    assert response.status_code == 409
+    assert "owner state changed" in " ".join(response.json()["detail"]["barriers"])
+    pause = runtime.execution.pause(runtime.portfolio_id)
+    assert pause["profile"] == "MANAGE_ONLY" and pause["reason"] == "newer owner halt"
+    assert calls == ["reconcile"]
+    assert stack.client.get("/api/v1/owner/config", headers=stack.owner_headers).json()["pending_commands"] == []
+    replay = stack.client.post(
+        "/api/v1/owner/resume", headers=stack.owner_headers, json={"request_id": "slow-resume", "expected_revision": 0}
+    )
+    assert replay.status_code == 409 and calls == ["reconcile"]
+
+
+def test_legacy_attestation_label_is_ignored_and_trusted_controller_proof_remains_required(tmp_path):
+    from tests.integration.test_activation import _candidate, _ready
+
+    database, portfolio, versions, baseline, result = _ready(tmp_path)
+    runtime = SimpleNamespace(database=database, clock=versions.clock, portfolio_id=portfolio)
+    app = FastAPI()
+    register_controls(app, runtime, lambda request: "leader", lambda request: "owner")
+    client = TestClient(app)
+    body = {**_candidate(result, baseline), "request_id": "activate", "expected_revision": 0}
+    body["attestation"] = {"runner": "ignored-untrusted-label"}
+    response = client.post("/api/v1/leader/activate", json=body)
+    assert response.status_code == 200 and response.json()["artifact_hash"] == result.content_hash
+    # Replays are bound to protected candidate identity, independent of the legacy label.
+    body["attestation"] = {"runner": "changed-label"}
+    assert client.post("/api/v1/leader/activate", json=body).json() == response.json()
+    untrusted = client.post(
+        "/api/v1/leader/activate",
+        json={
+            "candidate_id": "unknown",
+            "baseline_hash": result.content_hash,
+            "content_hash": "fake",
+            "request_id": "untrusted",
+            "expected_revision": 1,
+            "attestation": {"runner": "trusted-controller"},
+        },
+    )
+    assert untrusted.status_code == 422
