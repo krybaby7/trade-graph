@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-01",
-  "status_note": "2026-10-01: T00-T15 complete at recorded scopes. T15 delivers authoritative financial/organisation/cost/change projections, responsive redacted evidence navigation and authenticated protected owner controls. Full locked suite: 534 passed, zero failures/errors/skips. T16 is next; continuous R1 service, paid provider verification and live trading remain pending/disabled.",
+  "status_note": "T00-T15 remain complete at recorded scopes. T16 in progress on codex/t16-offline-fault-suite from af8e64e; paid calls/live trading remain disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -191,13 +191,14 @@
       "acceptance_scope": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
     },
     "T16": {
-      "status": "todo",
-      "owner": null,
-      "branch": "cursor/trade-graph-r1-548a",
+      "status": "in_progress",
+      "owner": "codex-orchestrator",
+      "branch": "codex/t16-offline-fault-suite",
       "evidence": [
         "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
         "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
-        "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths."
+        "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths.",
+        "2026-10-01: recovered remote T15 checkpoint af8e64e and claimed dependency-ready T16 in an isolated worktree; completing real offline role paths, A14/A16 storage faults and machine-readable acceptance evidence."
       ],
       "remaining": "The offline demo uses real commissioned Engineer attempts, Secretary-routed gateway Leader activation, loaded artifact consumption, observation/rollback and restart. Complete the acceptance fault catalogue (including disk failure and production-equivalent role paths beyond the scripted demo), machine-readable evidence and applicable A01-A38/A43-A44 coverage. T15 dashboard and hygiene cases are available as evidence; T16 is not yet claimed or complete."
     },

@@ -1,10 +1,46 @@
+import json
 from decimal import Decimal
 
+import pytest
+
+from trade_graph.adapters.brokers.kraken_live import KrakenLiveBroker
+from trade_graph.adapters.models.transport import HttpxProviderHttp
+from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.learning import LearningJournal
 from trade_graph.demo import run_offline
+from trade_graph.domain.clock import SystemClock
 
 
-def test_offline_loop(tmp_path) -> None:
-    report = run_offline(tmp_path / "work")
+def test_offline_loop(tmp_path, monkeypatch) -> None:
+    def forbidden(*args, **kwargs):
+        raise AssertionError("offline verification must never invoke a paid provider or live broker")
+
+    monkeypatch.setattr(HttpxProviderHttp, "post_json", forbidden)
+    monkeypatch.setattr(KrakenLiveBroker, "submit", forbidden)
+    work = tmp_path / "work"
+    report = run_offline(work)
+    assert report["passed"] is True and all(report["checks"].values())
+    assert json.loads((work / "evidence.json").read_text()) == report
+    assert report["paid_calls_enabled"] is report["live_enabled"] is False
+    assert report["external_provider_calls"] == 0
+    assert set(report["synthetic_receipts_by_role"]) == {
+        "research", "trader", "learning", "optimisation", "leader", "engineer",
+    }
+    assert len(report["decision_trace"]) == 7
+    assert all(row["verified"] and row["receipt_id"] for row in report["decision_trace"])
+    assert [row["action"] for row in report["decision_trace"][:3]] == ["enter", "exit", "enter"]
+    database = Database(work / "demo.sqlite")
+    try:
+        lessons = LearningJournal(database, SystemClock()).history(report["lesson_id"])
+        assert len(lessons) == 1 and lessons[0].counterexamples
+        assert lessons[0].system_version_id == report["baseline_hash"]
+        assert lessons[0].linked_decisions == [row["decision_id"] for row in report["decision_trace"][:2]]
+    finally:
+        database.close()
+    preserved = (work / "demo.sqlite").read_bytes()
+    with pytest.raises(ValueError, match="fresh work directory"):
+        run_offline(work)
+    assert (work / "demo.sqlite").read_bytes() == preserved
     assert report["finding_did_not_create_order"] is True
     assert report["failure_is_not_hold"] is True
     assert report["valid_loss_not_bad_grade"] is True
