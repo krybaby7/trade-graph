@@ -466,10 +466,12 @@ def test_terminal_broker_status_without_visible_fills_cannot_complete_or_release
 @pytest.mark.parametrize("query_fault", ["status", "fills"])
 def test_startup_outage_keeps_unknown_and_pending_exposure_unsent_until_reconciliation(stack, query_fault):
     unknown = stack.execution.authorize(stack.portfolio, _decision(stack, "unknown"))
+    # Both intents were authorized while execution was known. A newly uncertain
+    # first submit must hold the already durable second intent until reconciliation.
+    pending = stack.execution.authorize(stack.portfolio, _decision(stack, "pending"))
     stack.broker.submit_fault = "lost-ack"
     asyncio.run(stack.execution.dispatch())
     _venue_fill(stack)
-    pending = stack.execution.authorize(stack.portfolio, _decision(stack, "pending"))
     stack.reopen()
     stack.broker.query_fault = query_fault
     with pytest.raises(UncertainExternal, match="unavailable"):
