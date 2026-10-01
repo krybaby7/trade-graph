@@ -471,6 +471,10 @@ def test_startup_outage_keeps_unknown_and_pending_exposure_unsent_until_reconcil
     pending = stack.execution.authorize(stack.portfolio, _decision(stack, "pending"))
     stack.broker.submit_fault = "lost-ack"
     asyncio.run(stack.execution.dispatch())
+    submitted = [intent for intent in (unknown, pending) if stack.execution.intent_state(intent) == "UNKNOWN"]
+    held = [intent for intent in (unknown, pending) if stack.execution.intent_state(intent) == "SUBMISSION_PENDING"]
+    assert len(submitted) == len(held) == 1
+    unknown, pending = submitted[0], held[0]
     _venue_fill(stack)
     stack.reopen()
     stack.broker.query_fault = query_fault

@@ -1,11 +1,17 @@
 """Acceptance evidence must come from executed outcomes, including adverse cases."""
 
+import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-from scripts import verify_offline_acceptance as harness
+
+_SCRIPT = Path(__file__).resolve().parents[2] / "scripts/verify_offline_acceptance.py"
+_SPEC = importlib.util.spec_from_file_location("verify_offline_acceptance", _SCRIPT)
+harness = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(harness)
 
 
 def catalogue(*cases):
