@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-01",
-  "status_note": "2026-10-01: recovered latest implementation branch 9376d2d; verified 280-test baseline and completed T13 commissioned Engineer workflow. Implementation a503cac validated with 349 tests, no failures/errors/skips. T14 is next; T15-T17 retain concrete gaps. R1 is not a continuous autonomous service. No paid calls or live trading.",
+  "status_note": "2026-10-01: T00-T13 complete at recorded scopes. T14 claimed by codex-orchestrator: artifact consumption, controlled restart, observation and automatic rollback in progress. Paid calls and live trading remain disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -153,8 +153,8 @@
       "acceptance_scope": "T13 registered allowlisted data artifacts and explicit permitted prompts, bounded gateway/check/recovery workflow. Independent grammar/path/obligation/confinement checks do not establish trading quality, token savings, T14 artifact loading/observation, T17 continuous service or T21 broader code isolation. Paid calls remain disabled."
     },
     "T14": {
-      "status": "todo",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "codex-orchestrator",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from trade_graph.adapters.persistence.activation_schema import STATEMENTS as ACTIVATION_STATEMENTS
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
 
@@ -417,6 +418,7 @@ STATEMENTS: list[tuple[str, list[str]]] = [
 
 STATEMENTS.append(("0005", REVIEW_STATEMENTS))
 STATEMENTS.append(("0006", ENGINEERING_STATEMENTS))
+STATEMENTS.append(("0007", ACTIVATION_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

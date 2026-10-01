@@ -9,10 +9,12 @@ from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
+from trade_graph.adapters.engineering.artifact_files import read_tree
 from trade_graph.adapters.engineering.artifact_policy import artifact_class
 from trade_graph.adapters.engineering.provenance import checks_module_hash
 from trade_graph.adapters.engineering.runner import ALLOWLIST_PREFIXES, EngineerRunner
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.artifact_store import ArtifactStore
 from trade_graph.application.change_authority import authorized_change
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import ChangeResult, ChangeTask
@@ -31,7 +33,11 @@ class ArtifactEngineer:
         self.runner = EngineerRunner(source_root)
 
     def baseline(self, destination: Path) -> str:
-        return self.runner.stage(destination)
+        staged_hash = self.runner.stage(destination)
+        stored_hash = ArtifactStore(self.database, self.clock).put(read_tree(destination), require_valid=False)
+        if staged_hash != stored_hash:
+            raise StaleState("baseline changed while registering artifact bytes")
+        return stored_hash
 
     def commission(self, portfolio_id: str, task: ChangeTask) -> str:
         raise AuthorityDenied("use propose, then the persisted Leader handler to commission work")
