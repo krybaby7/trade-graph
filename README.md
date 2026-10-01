@@ -2,9 +2,9 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: partial offline prototype on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+**Status: T00–T14 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
 
-Implementation is complete through T13 at the recorded application scopes; T14 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the recovered work, 349-test local checkpoint, actual command limits and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
+Implementation is complete through T14 at the recorded scopes; T15 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for verified artifact consumption and automatic rollback, the 391-test local checkpoint, actual command limits and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
