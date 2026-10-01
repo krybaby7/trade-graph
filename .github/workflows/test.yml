@@ -52,17 +52,34 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Lint
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py
       - name: Unit and integration tests
         run: uv run pytest --junitxml=runtime-test-results.xml
         env:
           TRADE_GRAPH_PAID_CALLS_ENABLED: "false"
           TRADE_GRAPH_LIVE_ENABLED: "false"
-      - name: Retain test results
+      - name: Verify mapped offline acceptance gates
+        run: uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-offline-evidence.json
+      - name: Reject credentials and private runtime bytes in generated evidence
+        id: artifact-hygiene
         if: always()
+        run: |
+          python3 scripts/check_repository_hygiene.py \
+            --artifact runtime-test-results.xml \
+            --artifact /tmp/trade-graph-offline-evidence.json
+      - name: Retain test results
+        if: always() && steps.artifact-hygiene.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: tests-${{ github.sha }}
           path: runtime-test-results.xml
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Retain synthetic offline acceptance report
+        if: always() && steps.artifact-hygiene.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-acceptance-${{ github.sha }}
+          path: /tmp/trade-graph-offline-evidence.json
           if-no-files-found: ignore
           retention-days: 7
