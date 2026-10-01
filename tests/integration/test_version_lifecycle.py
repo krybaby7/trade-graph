@@ -191,6 +191,19 @@ def test_activation_crash_before_event_commit_is_atomic_and_retryable(tmp_path, 
     assert stack.database.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'activate'").fetchone()[0] == 1
 
 
+def test_activation_refuses_a_registered_but_invalid_previous_artifact(tmp_path):
+    stack = lifecycle_stack(
+        tmp_path,
+        additional_files={"artifacts/context_policy.json": json.dumps({**POLICY, "max_general_lessons": 0})},
+    )
+    result = candidate(stack, tmp_path)
+    with pytest.raises(ValidationFailure, match="grammar"):
+        stack.versions.activate(stack.portfolio, {"candidate_id": result.candidate_id})
+    assert stack.versions.current_hash(stack.portfolio) == stack.baseline
+    assert stack.database.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'activate'").fetchone()[0] == 0
+    assert stack.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 1
+
+
 def test_reconciliation_failure_does_not_acknowledge_reload_and_automatically_rolls_back(tmp_path):
     stack = lifecycle_stack(tmp_path)
     stack.versions.begin(stack.portfolio, "healthy-baseline", reconcile=lambda: None)
@@ -257,6 +270,43 @@ def test_unacknowledged_generation_rolls_back_at_reload_deadline(tmp_path):
     stack.clock.advance(1)
     assert stack.versions.maintain(stack.portfolio) == "ROLLED_BACK"
     assert stack.versions.current_hash(stack.portfolio) == stack.baseline
+
+
+def test_unacknowledged_restored_generation_blocks_at_deadline_without_returning_to_failed_candidate(tmp_path):
+    stack = lifecycle_stack(tmp_path, observation_policy=ObservationPolicy(reload_timeout_seconds=10))
+    result = candidate(stack, tmp_path)
+    activate(stack, result)
+    stack.versions.rollback(stack.portfolio, stack.baseline, "v1")
+    assert stack.versions.maintain(stack.portfolio) == "RESTORE_PENDING"
+    stack.clock.advance(10)
+    assert stack.versions.maintain(stack.portfolio) == "BLOCKED"
+    assert stack.versions.current_hash(stack.portfolio) == stack.baseline
+    with pytest.raises(ValidationFailure, match="pending"):
+        stack.versions.begin(stack.portfolio, "late-restart", reconcile=lambda: None)
+    assert stack.database.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'activate'").fetchone()[0] == 1
+    assert stack.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 1
+
+
+def test_failed_restored_reconciliation_stays_pending_until_verified_retry(tmp_path):
+    stack = lifecycle_stack(tmp_path)
+    result = candidate(stack, tmp_path)
+    activate(stack, result)
+    stack.versions.rollback(stack.portfolio, stack.baseline, "v1")
+
+    def unavailable():
+        raise OSError("restored reconciliation unavailable")
+
+    with pytest.raises(OSError, match="restored reconciliation"):
+        stack.versions.begin(stack.portfolio, "restored-worker", reconcile=unavailable)
+    assert stack.versions.maintain(stack.portfolio) == "RESTORE_PENDING"
+    assert stack.versions.current_hash(stack.portfolio) == stack.baseline
+    assert stack.database.execute(
+        "SELECT COUNT(*) FROM consumer_loads WHERE consumer_id = 'restored-worker'",
+    ).fetchone()[0] == 0
+    stack.versions.begin(stack.portfolio, "restored-worker", reconcile=lambda: None)
+    assert stack.versions.maintain(stack.portfolio) == "RESTORED"
+    assert stack.database.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'rollback'").fetchone()[0] == 1
+    assert stack.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 1
 
 
 def test_expired_worker_lease_does_not_falsely_mark_healthy_artifact_as_failed(tmp_path):
