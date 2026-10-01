@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from inspect import Parameter, signature
+from math import isfinite
 from typing import Any, Literal
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
@@ -82,6 +83,7 @@ class ModelGateway:
             return ModelResult(ok=False, failure="unsupported", message="provider transport is not configured")
         transcript = [dict(item) for item in request.context.get("tool_results") or []]
         result = ModelResult(ok=False, failure="validation", message="provider attempt did not run")
+        tools_used = 0
         for step in range(request.max_tool_calls + 1):
             current = request
             if step:
@@ -104,17 +106,13 @@ class ModelGateway:
             )
             if not result.ok or not result.tool_requests:
                 return result
-            if step == request.max_tool_calls:
-                return ModelResult(
-                    ok=False,
-                    failure="validation",
-                    message="tool continuation exceeded the reserved steps",
-                    usage=result.usage,
-                )
+            if step == request.max_tool_calls or tools_used + len(result.tool_requests) > request.max_tool_calls:
+                return _invalid_result(result, "tool continuation exceeded the reserved steps")
+            tools_used += len(result.tool_requests)
             for call in result.tool_requests:
                 handler = self.tools.get(call.name)
                 if handler is None:
-                    return ModelResult(ok=False, failure="validation", message=f"tool {call.name} is not registered")
+                    return _invalid_result(result, f"tool {call.name} is not registered")
                 transcript.append(
                     {"call_id": call.call_id, "name": call.name, "output": handler(dict(call.arguments))}
                 )
@@ -246,6 +244,10 @@ class ModelGateway:
             result = ModelResult(ok=False, failure=exc.failure, message=str(exc), usage=usage)
         except (KeyError, TypeError, ValueError, RuntimeError):
             result = ModelResult(ok=False, failure="validation", message="unresolved provider output or pricing")
+        try:
+            result = _validate_result(request, result)
+        except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
+            result = _invalid_result(result, "invalid output or tool schema")
         # Recording cost facts must survive revoked authority or a stale worker. Only
         # the application effect/publication is fenced, never the real bill.
         with self.budget.database.immediate():
@@ -309,3 +311,90 @@ class ModelGateway:
 
 def _budget_stop(result: ModelResult) -> bool:
     return result.failure == "validation" and result.message.startswith("room ")
+
+
+def _invalid_result(result: ModelResult, message: str) -> ModelResult:
+    """Validation must retain the paid attempt's supplied usage and attribution."""
+    return result.model_copy(update={"ok": False, "failure": "validation", "message": message,
+                                     "payload": None, "tool_requests": []})
+
+
+def _validate_result(request: ModelRequest, result: ModelResult) -> ModelResult:
+    if not result.ok:
+        return result
+    if not result.tool_requests:
+        if not _schema_shape(result.payload, request.output_schema):
+            return _invalid_result(result, "output does not match the declared schema")
+        return result
+    definitions = request.context.get("tools") or []
+    allowed = {}
+    for definition in definitions:
+        if isinstance(definition, dict):
+            definition = definition.get("function", definition)
+            if isinstance(definition, dict):
+                allowed[definition.get("name")] = definition
+    call_ids = set()
+    for call in result.tool_requests:
+        if not call.call_id.strip() or call.call_id in call_ids or not call.name.strip() or call.name not in allowed:
+            return _invalid_result(result, "tool identity is missing, repeated or undeclared")
+        call_ids.add(call.call_id)
+        definition = allowed[call.name]
+        schema = definition.get("parameters", definition.get("input_schema", {}))
+        if not _schema_shape(call.arguments, schema):
+            return _invalid_result(result, "tool arguments do not match the declared schema")
+    return result
+
+
+def _schema_shape(value: Any, schema: Any, root: dict | None = None, depth: int = 0) -> bool:
+    """Check JSON structure locally; application contracts still enforce business rules.
+
+    Covers object/array/scalar types, required fields, extra fields, enum/const and
+    local references/unions in provider output schemas without another dependency.
+    """
+    if depth > 64:
+        return False
+    if isinstance(schema, bool):
+        return schema
+    if not isinstance(schema, dict):
+        return False
+    root = schema if root is None else root
+
+    def matches(item, subschema):
+        return _schema_shape(item, subschema, root, depth + 1)
+
+    if "$ref" in schema:
+        reference = schema["$ref"]
+        if not isinstance(reference, str) or not reference.startswith("#/"):
+            return False
+        target = root
+        for key in reference[2:].split("/"):
+            if not isinstance(target, dict):
+                return False
+            target = target.get(key.replace("~1", "/").replace("~0", "~"))
+        if not matches(value, target):
+            return False
+    if "anyOf" in schema and not any(matches(value, item) for item in schema["anyOf"]):
+        return False
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    if "const" in schema and value != schema["const"]:
+        return False
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    types = {"object": isinstance(value, dict), "array": isinstance(value, list),
+             "string": isinstance(value, str), "boolean": isinstance(value, bool), "null": value is None,
+             "number": numeric and isfinite(value),
+             "integer": numeric and isfinite(value) and value == int(value)}
+    kind = schema.get("type")
+    if kind is not None and not any(types.get(item, False) for item in (kind if isinstance(kind, list) else [kind])):
+        return False
+    if isinstance(value, dict):
+        if any(key not in value for key in schema.get("required", [])):
+            return False
+        properties = schema.get("properties", {})
+        for key, item in value.items():
+            subschema = properties.get(key, schema.get("additionalProperties", True))
+            if not matches(item, subschema):
+                return False
+    if isinstance(value, list) and "items" in schema and not all(matches(item, schema["items"]) for item in value):
+        return False
+    return True

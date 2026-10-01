@@ -177,7 +177,7 @@ class AnthropicAdapter:
         blocks = payload.get("content") or []
         tool_requests = _anthropic_tools(blocks)
         if isinstance(tool_requests, ModelResult):
-            return tool_requests
+            return tool_requests.model_copy(update={"usage": _anthropic_usage(payload)})
         if tool_requests:
             return ModelResult(
                 ok=True,
