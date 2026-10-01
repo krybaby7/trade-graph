@@ -76,11 +76,16 @@ class TraderHandler(GatewayRole):
                 "Validated Trader guidance within these fixed permissions:\n" + prompt)
 
     def invoke(self, task: dict, request: ModelRequest):
-        return self.gateway.invoke(
+        result = self.gateway.invoke(
             request, deployment_id=self.deployment_id, price_card_id=self.price_card_id,
             fx_rate=Decimal("1"), fx_buffer=Decimal("1.02"), invocation_id=f"trader:{task['task_id']}",
             portfolio_id=task["portfolio_id"], authorize=lambda: self._eligible(task),
         )
+        invocation = self.database.execute("SELECT state FROM model_invocations WHERE invocation_id = ?",
+                                           (f"trader:{task['task_id']}",)).fetchone()
+        if invocation and invocation["state"] == "UNCERTAIN":
+            raise ValidationFailure("Model outcome/billing requires reconciliation")
+        return result
 
     def recover(self, task: dict) -> dict | None:
         completed = super().recover(task)

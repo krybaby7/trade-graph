@@ -6,9 +6,11 @@ import json
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import timedelta
+from decimal import Decimal
 
+from trade_graph.application.authority import AuthorityRecord
 from trade_graph.domain.clock import utc_iso
-from trade_graph.domain.errors import StaleState, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.roles.judgement import select_context
 from trade_graph.roles.strategies import TEMPLATES
 
@@ -138,7 +140,8 @@ class ArtifactRuntime:
                          row["schedule_id"]),
                     )
 
-    def coalesce_due(self, portfolio_id: str, role: str) -> str | None:
+    def coalesce_due(self, portfolio_id: str, role: str, *, allocated_spend: Decimal | None = None,
+                     max_attempts: int = 1) -> str | None:
         bundle = self.versions.load_active(portfolio_id)
         self.versions.assert_current(portfolio_id, bundle)
         self.apply_schedules(portfolio_id, bundle)
@@ -146,10 +149,21 @@ class ArtifactRuntime:
             return None
         with self.database.immediate():
             self.versions.assert_current(portfolio_id, bundle)
+            self.scheduler._positive(max_attempts, "max_attempts")
+            policy = AuthorityRecord(self.database, self.scheduler.clock).active_policy()
+            if max_attempts > policy.ordinary_max_paid_attempts:
+                raise AuthorityDenied("schedule attempts exceed owner bounds")
+            if allocated_spend is not None and (
+                not isinstance(allocated_spend, Decimal) or not allocated_spend.is_finite()
+                or allocated_spend < 0 or allocated_spend > policy.root_paid_limit.amount
+            ):
+                raise AuthorityDenied("schedule allocation exceeds owner bounds")
             task_id = self.scheduler.coalesce_due(portfolio_id, f"artifact-{role}-review", role)
             if task_id:
-                self.database.execute("UPDATE tasks SET expected_version = ? WHERE task_id = ?",
-                                      (bundle["artifact_hash"], task_id))
+                self.database.execute("UPDATE tasks SET expected_version = ?, max_attempts = ? WHERE task_id = ?",
+                                      (bundle["artifact_hash"], max_attempts, task_id))
+                if allocated_spend is not None:
+                    self.scheduler.allocate(task_id, allocated_spend)
             return task_id
 
     def render_report(self, portfolio_id: str, sections: dict) -> dict:
@@ -171,6 +185,23 @@ class ArtifactRuntime:
             snap = self.database.execute(
                 "SELECT payload_json FROM snapshots WHERE snapshot_id = ?", (row[0],),
             ).fetchone()
+            snapshot = json.loads(snap[0]) if snap else None
+        if snapshot is None:
+            # Terminal handler results recover before RoleWorker makes another
+            # snapshot. Recover the original scoped request/snapshot for a failed
+            # inference too, so a crash cannot drop the health fault permanently.
+            snap = self.database.execute(
+                """SELECT s.payload_json FROM snapshots s JOIN model_invocations i ON i.run_id = s.snapshot_id
+                WHERE i.task_id = ? AND i.portfolio_id = ? AND s.portfolio_id = ?
+                ORDER BY i.created_at DESC, s.rowid DESC LIMIT 1""",
+                (task["task_id"], task["portfolio_id"], task["portfolio_id"]),
+            ).fetchone()
+            if snap is None:
+                snap = self.database.execute(
+                    """SELECT payload_json FROM snapshots WHERE portfolio_id = ?
+                    AND json_extract(payload_json, '$.task_id') = ? ORDER BY rowid DESC LIMIT 1""",
+                    (task["portfolio_id"], task["task_id"]),
+                ).fetchone()
             snapshot = json.loads(snap[0]) if snap else None
         if not snapshot or not snapshot.get("artifact"):
             return

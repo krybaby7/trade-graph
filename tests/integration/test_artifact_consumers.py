@@ -26,8 +26,8 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.application.trader_workflow import TraderHandler
 from trade_graph.application.worker import RoleWorker
-from trade_graph.contracts.models import InstrumentRules, Observation
-from trade_graph.domain.errors import StaleState, ValidationFailure
+from trade_graph.contracts.models import InstrumentRules, ModelResult, Observation
+from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 
 STRATEGY_PATH = "strategies/templates/range_reversion.json"
 BASE_PROMPT = "Use the pinned snapshot. Baseline Trader instructions."
@@ -142,13 +142,15 @@ class ConsumerFlow:
         self.bind_consumer()
 
 
-def _consumer_flow(tmp_path, *, activate=True, observation_policy=None):
+def _consumer_flow(tmp_path, *, activate=True, observation_policy=None, schedule=False, new_prompt=NEW_PROMPT):
     clock, db, pid, source, engineer, versions = _stack(tmp_path)
     files = {
         "artifacts/context_policy.json": json.dumps(POLICY),
         "prompts/trader.md": BASE_PROMPT,
         STRATEGY_PATH: json.dumps(BASE_STRATEGY),
     }
+    if schedule:
+        files["artifacts/schedules.json"] = json.dumps({"schema_version": 1, "interval_seconds": {"trader": 60}})
     for name, content in files.items():
         destination = source / name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +160,8 @@ def _consumer_flow(tmp_path, *, activate=True, observation_policy=None):
     versions.register_baseline(pid, "v1", engineer.runner.source_files())
     authority = seed_paper_authority(db, clock, pid)
     classes = ["artifact_config", "context_policy", "prompt"]
+    if schedule:
+        classes.append("schedule")
     authority.install_policy(
         paper_owner_policy(revision_id="2").model_copy(update={"allowed_change_classes": classes}),
         role="owner",
@@ -166,9 +170,11 @@ def _consumer_flow(tmp_path, *, activate=True, observation_policy=None):
     office, secretary, gateway, _leader, _root = commission(engineer, pid, proposal)
     changed = {
         "artifacts/context_policy.json": json.dumps({**POLICY, "max_general_lessons": 3}),
-        "prompts/trader.md": NEW_PROMPT,
+        "prompts/trader.md": new_prompt,
         STRATEGY_PATH: json.dumps(NEW_STRATEGY),
     }
+    if schedule:
+        changed["artifacts/schedules.json"] = json.dumps({"schema_version": 1, "interval_seconds": {"trader": 10}})
     gateway.scripted.outputs["engineer"] = {
         "files": [{"path": name, "content": content} for name, content in changed.items()],
         "summary": "Use bounded context and updated unproven Trader guidance.",
@@ -339,6 +345,67 @@ def test_activation_changes_actual_trader_request_and_keeps_linked_provenance(tm
     assert flow.db.execute("SELECT COUNT(*) FROM version_observations").fetchone()[0] == 3
 
 
+def test_activated_trader_schedule_dispatches_only_with_protected_budget_allocation(tmp_path):
+    flow = _consumer_flow(tmp_path, schedule=True)
+    task_count = flow.db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    with pytest.raises(AuthorityDenied):
+        flow.runtime.coalesce_due(flow.pid, "trader", allocated_spend=Decimal("99"))
+    assert flow.db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == task_count
+    assert not flow.gateway.attempts
+    task_id = flow.runtime.coalesce_due(flow.pid, "trader", allocated_spend=Decimal("0.5"))
+    assert task_id is not None
+    task = flow.row(task_id)
+    assert Decimal(task["allocated_spend"]) == Decimal("0.5")
+    assert task["max_attempts"] == 1
+    assert task["expected_version"] == flow.versions.current_hash(flow.pid)
+    schedule = flow.db.execute(
+        "SELECT * FROM schedules WHERE portfolio_id = ? AND name = 'artifact-trader-review'", (flow.pid,)
+    ).fetchone()
+    assert schedule["interval_seconds"] == 10
+    assert flow.run() == 1
+    assert flow.row(task_id)["status"] == "SUCCEEDED"
+    assert flow.row(task_id)["attempts_used"] == 1
+    assert len(flow.receipts(task_id)) == 1
+    assert flow.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 1
+    assert flow.db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
+    assert flow.runtime.coalesce_due(flow.pid, "trader", allocated_spend=Decimal("0.5")) is None
+
+
+def test_input_reservation_covers_activated_long_prompt_snapshot_and_schema(tmp_path, monkeypatch):
+    long_prompt = NEW_PROMPT + "\n" + "Use only point-in-time observations within the mandate. " * 240
+    assert len(long_prompt.encode()) <= 16384
+    flow = _consumer_flow(tmp_path, activate=False, new_prompt=long_prompt)
+    complete = flow.gateway.scripted.complete
+    requests, reserved_amounts = [], []
+
+    def inspect_reservation(request):
+        assert (BASE_PROMPT if not requests else long_prompt) in request.instructions
+        row = flow.db.execute("SELECT payload_json FROM snapshots WHERE snapshot_id = ?", (request.run_id,)).fetchone()
+        snapshot_bytes = len(json.dumps(json.loads(row["payload_json"])).encode())
+        schema_bytes = len(json.dumps(request.output_schema).encode())
+        instructions_bytes = len(request.instructions.encode())
+        assert request.context["max_input_tokens"] >= snapshot_bytes + schema_bytes + instructions_bytes
+        reservation = flow.db.execute(
+            "SELECT * FROM budget_reservations WHERE task_id = ?", (request.task_id,)
+        ).fetchone()
+        assert reservation["state"] == "RESERVED"
+        requests.append(request)
+        reserved_amounts.append(Decimal(reservation["amount"]))
+        return complete(request)
+
+    monkeypatch.setattr(flow.gateway.scripted, "complete", inspect_reservation)
+    baseline_task = flow.add_turn()
+    assert flow.run() == 1
+    assert flow.row(baseline_task)["status"] == "SUCCEEDED"
+    flow.activate()
+    task_id = flow.add_turn()
+    assert flow.run() == 1
+    assert flow.row(task_id)["status"] == "SUCCEEDED"
+    assert len(flow.receipts(baseline_task)) == len(flow.receipts(task_id)) == 1
+    assert requests[1].context["max_input_tokens"] > requests[0].context["max_input_tokens"]
+    assert reserved_amounts[1] > reserved_amounts[0]
+
+
 @pytest.mark.parametrize("action", ["hold", "enter"])
 def test_generation_changed_during_inference_blocks_decision_and_order_but_keeps_receipt(
     tmp_path, monkeypatch, action
@@ -444,6 +511,124 @@ def test_lost_trader_response_keeps_uncertain_hold_across_database_reopen_withou
     assert flow.db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
     flow.clock.advance(3600)
     assert flow.run() == 0
+
+
+@pytest.mark.parametrize("action", ["hold", "enter"])
+def test_successful_payload_without_usage_waits_without_a_decision_or_order(tmp_path, monkeypatch, action):
+    flow = _consumer_flow(tmp_path)
+    task_id = flow.add_turn()
+    monkeypatch.setattr(
+        flow.gateway.scripted, "complete",
+        lambda _: ModelResult(ok=True, payload=_choice(action), usage=None, provider_model="scripted"),
+    )
+    assert flow.run() == 1
+    assert flow.row(task_id)["status"] == "WAITING_EXTERNAL"
+    assert flow.row(task_id)["attempts_used"] == 1
+    invocation = flow.db.execute("SELECT * FROM model_invocations WHERE task_id = ?", (task_id,)).fetchone()
+    assert invocation["state"] == "UNCERTAIN"
+    assert ModelResult.model_validate_json(invocation["result_json"]).ok is True
+    reservation = flow.db.execute("SELECT * FROM budget_reservations WHERE task_id = ?", (task_id,)).fetchone()
+    assert reservation["state"] == "UNCERTAIN" and Decimal(reservation["amount"]) > 0
+    assert not flow.receipts(task_id)
+    assert flow.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM secretary_reports WHERE role = 'trader'").fetchone()[0] == 0
+    flow.reopen()
+    monkeypatch.setattr(flow.gateway.scripted, "complete", lambda _: pytest.fail("replayed unknown-usage response"))
+    assert flow.run() == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM budget_reservations WHERE task_id = ?", (task_id,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("failure", ["invalid_choice", "owner_pause"])
+def test_failed_result_recovers_its_health_observation_from_saved_snapshot(tmp_path, monkeypatch, failure):
+    flow = _consumer_flow(tmp_path)
+    task_id = flow.add_turn()
+    if failure == "invalid_choice":
+        flow.gateway.scripted.outputs["trader"] = {"action": "hold"}
+    else:
+        flow.office.execution.set_pause(flow.pid, "MANAGE_ONLY", "owner", "Synthetic owner pause.")
+
+    def crash_before_finish(*args, **kwargs):
+        raise KeyboardInterrupt("Synthetic crash after failed role result before task finish.")
+
+    monkeypatch.setattr(flow.office.scheduler, "finish", crash_before_finish)
+    with pytest.raises(KeyboardInterrupt):
+        flow.run()
+    result = flow.db.execute("SELECT * FROM role_results WHERE task_id = ?", (task_id,)).fetchone()
+    assert result["status"] == "FAILED"
+    original = json.loads(result["document_json"])
+    assert flow.row(task_id)["status"] in {"LEASED", "RUNNING"}
+    assert flow.db.execute("SELECT COUNT(*) FROM version_observations").fetchone()[0] == 0
+    expected_receipts = int(failure == "invalid_choice")
+    assert len(flow.receipts(task_id)) == expected_receipts
+    snapshots = flow.db.execute("SELECT COUNT(*) FROM snapshots WHERE portfolio_id = ?", (flow.pid,)).fetchone()[0]
+    flow.expire(task_id)
+    flow.reopen()
+    monkeypatch.setattr(
+        flow.gateway.scripted, "complete", lambda _: pytest.fail("replayed terminal failed Trader call")
+    )
+    assert flow.run() == 1
+    assert flow.row(task_id)["status"] == "FAILED"
+    assert json.loads(flow.row(task_id)["output_json"]) == original
+    assert len(flow.receipts(task_id)) == expected_receipts
+    assert flow.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
+    count = flow.db.execute("SELECT COUNT(*) FROM snapshots WHERE portfolio_id = ?", (flow.pid,)).fetchone()[0]
+    assert count == snapshots
+    observation = flow.db.execute("SELECT * FROM version_observations").fetchall()
+    assert len(observation) == 1 and observation[0]["observation_id"] == task_id
+    assert json.loads(observation[0]["document_json"])["ok"] is False
+    assert flow.versions.current_hash(flow.pid) == flow.baseline
+    candidate = flow.db.execute(
+        "SELECT state FROM candidates WHERE candidate_id = ?", (flow.candidate_id,)
+    ).fetchone()
+    assert candidate["state"] == "ROLLED_BACK"
+    assert flow.run() == 0
+
+
+def test_crash_after_health_sample_rolls_back_task_finish_and_recovers_one_sample(tmp_path, monkeypatch):
+    flow = _consumer_flow(tmp_path, observation_policy=ObservationPolicy(min_decisions=1))
+    task_id = flow.add_turn()
+    observe = flow.runtime.observe
+
+    def observe_then_crash(task, output):
+        observe(task, output)
+        assert flow.row(task_id)["status"] == "SUCCEEDED"
+        assert flow.db.execute("SELECT COUNT(*) FROM version_observations").fetchone()[0] == 1
+        raise KeyboardInterrupt("Synthetic crash after health sample before transaction commit.")
+
+    monkeypatch.setattr(flow.runtime, "observe", observe_then_crash)
+    with pytest.raises(KeyboardInterrupt):
+        flow.run()
+    decision = flow.db.execute("SELECT * FROM decisions").fetchone()
+    assert decision is not None
+    assert len(flow.receipts(task_id)) == 1
+    assert flow.row(task_id)["status"] in {"LEASED", "RUNNING"}
+    assert flow.row(task_id)["output_json"] is None
+    assert flow.db.execute("SELECT COUNT(*) FROM version_observations").fetchone()[0] == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'observation_passed'").fetchone()[0] == 0
+    snapshots = flow.db.execute("SELECT COUNT(*) FROM snapshots WHERE portfolio_id = ?", (flow.pid,)).fetchone()[0]
+    flow.expire(task_id)
+    flow.reopen()
+    monkeypatch.setattr(flow.gateway.scripted, "complete", lambda _: pytest.fail("replayed health-sampled Trader call"))
+    assert flow.run() == 1
+    assert flow.row(task_id)["status"] == "SUCCEEDED"
+    assert json.loads(flow.row(task_id)["output_json"])["decision_id"] == decision["decision_id"]
+    assert flow.row(task_id)["attempts_used"] == 1
+    assert len(flow.receipts(task_id)) == 1
+    assert flow.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 1
+    count = flow.db.execute("SELECT COUNT(*) FROM snapshots WHERE portfolio_id = ?", (flow.pid,)).fetchone()[0]
+    assert count == snapshots
+    observation = flow.db.execute("SELECT * FROM version_observations").fetchall()
+    assert len(observation) == 1 and observation[0]["observation_id"] == decision["decision_id"]
+    assert json.loads(observation[0]["document_json"])["ok"] is True
+    assert flow.db.execute("SELECT COUNT(*) FROM version_events WHERE kind = 'observation_passed'").fetchone()[0] == 1
+    candidate = flow.db.execute(
+        "SELECT state FROM candidates WHERE candidate_id = ?", (flow.candidate_id,)
+    ).fetchone()
+    assert candidate["state"] == "ACTIVE"
+    assert flow.run() == 0
+    assert flow.db.execute("SELECT COUNT(*) FROM version_observations").fetchone()[0] == 1
 
 
 @pytest.mark.parametrize("action", ["hold", "enter"])
