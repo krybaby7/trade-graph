@@ -25,11 +25,13 @@ class TaskLease:
 
 
 class Scheduler:
-    def __init__(self, database: Database, clock: Clock) -> None:
+    def __init__(self, database: Database, clock: Clock, *, max_root_steps: int = 40) -> None:
         self.database = database
         self.clock = clock
         self.max_depth = 3
         self.max_descendants = 12
+        self._positive(max_root_steps, "max_root_steps")
+        self.max_root_steps = max_root_steps
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
@@ -225,7 +227,10 @@ class Scheduler:
         exhausted = False
         with self.database.immediate():
             row = self._leased(lease)
-            if row["attempts_used"] >= row["max_attempts"]:
+            root_steps = self.database.execute(
+                "SELECT SUM(attempts_used) FROM tasks WHERE root_task_id = ?", (row["root_task_id"],),
+            ).fetchone()[0] or 0
+            if row["attempts_used"] >= row["max_attempts"] or root_steps >= self.max_root_steps:
                 self.database.execute(
                     """UPDATE tasks SET status = 'DEAD_LETTER', lease_owner = NULL,
                     lease_token = NULL, lease_expires_at = NULL WHERE task_id = ?""", (lease.task_id,)
@@ -237,7 +242,7 @@ class Scheduler:
                     (lease.task_id,),
                 )
         if exhausted:
-            raise ValidationFailure("attempt limit")
+            raise ValidationFailure("attempt limit or root step limit")
 
     @atomic
     def ensure_schedule(self, portfolio_id: str, name: str, interval_seconds: int, policy: str) -> None:

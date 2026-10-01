@@ -16,6 +16,14 @@ _CREDENTIALS = [
 ]
 
 
+def inspect_bytes(path: str, payload: bytes) -> list[tuple[str, int, str]]:
+    violations = []
+    for category, pattern in _CREDENTIALS:
+        for match in pattern.finditer(payload):
+            violations.append((path, payload[:match.start()].count(b"\n") + 1, category))
+    return violations
+
+
 def _git(root: Path, *args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(root), *args])
 
@@ -45,9 +53,26 @@ def scan(root: Path, *, staged: bool = False) -> list[tuple[str, int, str]]:
         except (OSError, subprocess.CalledProcessError):
             violations.append((path, 0, "unreadable tracked file"))
             continue
-        for category, pattern in _CREDENTIALS:
-            for match in pattern.finditer(payload):
-                violations.append((path, payload[:match.start()].count(b"\n") + 1, category))
+        violations.extend(inspect_bytes(path, payload))
+    return violations
+
+
+def scan_artifacts(paths: list[Path]) -> list[tuple[str, int, str]]:
+    """Scan the exact test/evidence files selected for upload, never whole runtime directories."""
+    violations = []
+    for path in paths:
+        label = path.name
+        if path.is_symlink() or _private_file(label):
+            violations.append((label, 0, "private runtime or credential artifact"))
+            continue
+        try:
+            payload = path.read_bytes()
+        except OSError:
+            violations.append((label, 0, "unreadable artifact"))
+            continue
+        if payload.startswith(b"SQLite format 3\x00"):
+            violations.append((label, 0, "private SQLite runtime artifact"))
+        violations.extend(inspect_bytes(label, payload))
     return violations
 
 
@@ -55,8 +80,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--staged", action="store_true", help="Scan index bytes instead of working files")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--artifact", type=Path, action="append", default=[],
+                        help="Also scan an exact generated test/evidence file before upload (repeatable)")
     args = parser.parse_args()
-    violations = scan(args.root, staged=args.staged)
+    violations = scan(args.root, staged=args.staged) + scan_artifacts(args.artifact)
     for path, line, category in violations:
         print(f"{path}:{line}: {category}")
     if violations:

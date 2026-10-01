@@ -45,3 +45,30 @@ def test_public_example_and_synthetic_placeholder_are_allowed(tmp_path):
     (tmp_path / "fixture.txt").write_text("sk-test-fixture-only")
     _git(tmp_path, "add", ".env.example", "fixture.txt")
     assert _MODULE.scan(tmp_path, staged=True) == []
+
+
+def test_artifact_scan_rejects_credential_bytes_without_printing_matches(tmp_path):
+    fixture = "sk-" + "Synthet1c" * 8
+    result = tmp_path / "results.xml"
+    result.write_text("<testsuite>\n" + fixture + "</testsuite>")
+    violations = _MODULE.scan_artifacts([result])
+    assert violations == [("results.xml", 2, "provider credential")]
+    assert fixture not in repr(violations)
+
+
+@pytest.mark.parametrize("name", ["owner-session.json", "journal.sqlite", "masked-report.json"])
+def test_artifact_scan_rejects_private_runtime_files_even_with_changed_extensions(tmp_path, name):
+    result = tmp_path / name
+    result.write_bytes(b"SQLite format 3\x00" + b"synthetic runtime")
+    assert _MODULE.scan_artifacts([result])
+
+
+def test_artifact_scan_requires_exact_existing_file_and_rejects_symlink(tmp_path):
+    missing = tmp_path / "absent.xml"
+    assert _MODULE.scan_artifacts([missing]) == [("absent.xml", 0, "unreadable artifact")]
+    result = tmp_path / "evidence.json"
+    result.write_text('{"scope": "synthetic", "passed": true}')
+    link = tmp_path / "linked.json"
+    link.symlink_to(result)
+    assert _MODULE.scan_artifacts([link]) == [("linked.json", 0, "private runtime or credential artifact")]
+    assert _MODULE.scan_artifacts([result]) == []

@@ -22,6 +22,8 @@ class LearningJournal:
     def append(self, portfolio_id: str, lesson: LessonRevision) -> None:
         if lesson.portfolio_id != portfolio_id:
             raise ValidationFailure("lesson portfolio mismatch")
+        if lesson.created_at_utc > self.clock.now():
+            raise ValidationFailure("lesson revision cannot be created in the future")
         prior = self._latest(lesson.lesson_id)
         if prior is None and lesson.revision != 1:
             raise ValidationFailure("lesson revisions start at 1")

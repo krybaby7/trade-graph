@@ -46,7 +46,7 @@ class TraderHandler(GatewayRole):
         bundle = self.artifact_runtime.bundle_for(task)
         guard = self.guard(task["portfolio_id"])
         rows = self.database.execute(
-            """SELECT l.* FROM lessons l WHERE portfolio_id = ? AND created_at <= ?
+            """SELECT l.* FROM lessons l WHERE portfolio_id = ? AND created_at <= ? AND l.status != 'retired'
             AND revision = (SELECT MAX(revision) FROM lessons newer
                 WHERE newer.portfolio_id = l.portfolio_id AND newer.lesson_id = l.lesson_id
                 AND newer.created_at <= ?) ORDER BY lesson_id LIMIT 128""",
