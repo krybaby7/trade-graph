@@ -18,18 +18,21 @@ Start with a responsive server-rendered interface backed by FastAPI. Server proj
 
 ## Target API
 
-These are implementation targets, not currently running endpoints:
+These endpoints are implemented by the T15 dashboard application. The standalone paper dashboard serves them
+locally; continuous operating-service assembly remains T17:
 
 ```text
 GET  /api/v1/overview
 GET  /api/v1/positions
 GET  /api/v1/orders
 GET  /api/v1/tasks
+GET  /api/v1/decisions
 GET  /api/v1/decisions/{id}
 GET  /api/v1/research
 GET  /api/v1/lessons
 GET  /api/v1/costs
 GET  /api/v1/changes
+GET  /api/v1/changes/{id}
 GET  /api/v1/events
 GET  /api/v1/health
 POST /api/v1/owner/budgets
@@ -42,6 +45,12 @@ POST /api/v1/leader/activate
 ```
 
 Use authenticated role/owner identities, pagination, redaction, request/idempotency IDs and optimistic revision checks. Events may use authenticated SSE. Owner resume cannot bypass reconciliation; Leader cannot lift an owner halt. Graph editing cannot invent new capabilities. Bind loopback by default; remote access requires authenticated TLS/private access and CSRF protection for cookie-based write sessions.
+
+The local browser login uses a persisted private owner session; cookie writes require CSRF. Owner policy and
+budget writes share one deployment revision and durable command identity. Model-routing writes and live
+enablement are explicitly unavailable until their operating consumers and authorization gates exist.
+An interrupted command remains visibly pending; ordinary writes wait for controller recovery, while emergency
+manage-only remains available. Browser retries keep the original command ID and exact values.
 
 ## Configuration and secrets
 
@@ -69,6 +78,18 @@ trade-graph report --format json
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
 `trade-graph` implements those operator commands. `run` performs one paper recovery pass and does not enable paid calls, live trading, or new model decisions. Planning utilities `scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
+
+The T15 local dashboard command is verified:
+
+```bash
+uv run trade-graph init --database runtime/trade_graph.sqlite
+uv run trade-graph dashboard --database runtime/trade_graph.sqlite
+```
+
+Open `http://127.0.0.1:8000/login` and use `session_token` from `runtime/owner-session.json`.
+Keep the database and session file private and outside Git. Initialization creates new directories with mode
+0700; the session file uses 0600. An existing database directory must be private. Serving starts one loopback
+web worker and no scheduler or provider. See IMPLEMENTATION-STATUS.md for evidence and remaining operating work.
 
 ## Runbooks
 

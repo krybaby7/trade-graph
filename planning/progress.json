@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-01",
-  "status_note": "2026-10-01: T00-T14 complete at recorded scopes. T14 verifies actual registered artifact consumption, fenced reload/restart, persisted functional observation and automatic financial-history-preserving rollback. Full locked suite: 391 passed, zero failures/errors/skips. T15 is next; continuous R1 service, paid provider verification and live trading remain pending/disabled.",
+  "status_note": "2026-10-01: T00-T15 complete at recorded scopes. T15 delivers authoritative financial/organisation/cost/change projections, responsive redacted evidence navigation and authenticated protected owner controls. Full locked suite: 534 passed, zero failures/errors/skips. T16 is next; continuous R1 service, paid provider verification and live trading remain pending/disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -170,7 +170,7 @@
       "acceptance_scope": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
     },
     "T15": {
-      "status": "claimed",
+      "status": "done",
       "owner": "codex-orchestrator",
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
@@ -178,9 +178,17 @@
         "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
         "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
         "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass.",
-        "2026-10-01: claimed after recovering verified T14 remote head 85bfb1c; implementing dashboard projections, evidence navigation, owner controls and A34/A35/A37 validation."
+        "2026-10-01: claimed after recovering verified T14 remote head 85bfb1c; implementing dashboard projections, evidence navigation, owner controls and A34/A35/A37 validation.",
+        "8760fb2667d4e677cac67646a01e86bdb4d563eb: T15 integrated paper dashboard, protected owner controls, snapshot-based financial/evidence APIs, redaction, private loopback startup and packaged web assets. See docs/reviews/2026-10-01-dashboard.md and D36-D40.",
+        "tests/integration/test_dashboard_financial.py verifies authoritative ledger/receipt/allocation money, native cash benchmark, event-time reporting FX, shared expenses once, portfolio/as-of isolation, freshness and sampled trading drawdown; missing provenance and stale observations remain disclosed.",
+        "tests/integration/test_dashboard_evidence.py and dashboard render/boundary/session tests verify scoped decisions/research/lessons/versions, independently attested persisted artifact diffs, pagination, one read snapshot, redaction, role sessions, CSRF, private session/database startup and evidence pages.",
+        "tests/integration/test_dashboard_controls.py verifies durable request identity, shared deployment revisions, role/root limits, atomic writes, trusted activation, unknown-order/billing resume barriers, cancellation/crash manage-only latch, newer-owner fencing, terminal failure replay and emergency manage-only.",
+        "tests/e2e/test_dashboard_loop.py reopens the actual credential-free demo, reconciles dashboard equity and spend to persisted records, navigates activation/rollback evidence, and retains four fills without new effects.",
+        "tests/unit/test_repository_hygiene.py verifies forbidden runtime paths, recognized credentials and index-byte scanning; CI runs scripts/check_repository_hygiene.py before source/test artifact upload.",
+        "Chromium: login plus eight actual routes passed desktop/mobile/dark-theme checks with no overflow/page/CSP errors. Scripted control responses verified stale CAS reload, exact-ID retries, terminal failures, emergency manage-only and malformed HTTP 200 acknowledgements without false success.",
+        "Final Python 3.12.14 locked local suite: 534 passed, zero failures/errors/skips, independently verified JUnit. Ruff, ten planning tests, dependency/reference validation, cost illustration, staged hygiene and packaged wheel assets passed. No new CI or credentialed-provider success is claimed."
       ],
-      "remaining": "Complete docs/09 financial/organisation/cost/change views and evidence navigation; missing positions, decision detail, research, lessons and events APIs; full authenticated owner configuration/task controls and authoritative reconciliation/provisional-state coverage. A few security/projection tests do not certify the dashboard."
+      "acceptance_scope": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
     },
     "T16": {
       "status": "todo",
@@ -188,9 +196,10 @@
       "branch": "cursor/trade-graph-r1-548a",
       "evidence": [
         "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
-        "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload."
+        "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
+        "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths."
       ],
-      "remaining": "The offline demo now uses two real commissioned Engineer worker attempts and Secretary-routed gateway Leader activation. Artifact consumption remains T14. The complete acceptance fault catalogue (including disk failure and repository secret-scan tests) and production-equivalent role paths beyond the scripted demo remain open."
+      "remaining": "The offline demo uses real commissioned Engineer attempts, Secretary-routed gateway Leader activation, loaded artifact consumption, observation/rollback and restart. Complete the acceptance fault catalogue (including disk failure and production-equivalent role paths beyond the scripted demo), machine-readable evidence and applicable A01-A38/A43-A44 coverage. T15 dashboard and hygiene cases are available as evidence; T16 is not yet claimed or complete."
     },
     "T17": {
       "status": "todo",
@@ -249,20 +258,18 @@
     }
   },
   "review_checkpoint": {
-    "implementation_commit": "8447f4c068a62433a2975bccb2292696640baca4",
-    "preserved_previous_head": "51e48b60bfe179b71b53060bc00322c3353d58ec",
+    "implementation_commit": "8760fb2667d4e677cac67646a01e86bdb4d563eb",
+    "implementation_tree": "a75fe189ae9dfb5b639fe1aae4cacef961602f9e",
+    "preserved_previous_head": "85bfb1c424cbcde9947ab4d31dc10c5a5125343f",
     "python": "3.12.14",
-    "tests": 391,
+    "tests": 534,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "baseline_tests": 349,
-    "new_version_lifecycle_cases": 24,
-    "new_artifact_consumer_cases": 15,
-    "new_schedule_report_cases": 3,
-    "next_dependency_ready_task": "T15",
-    "validation_scope": "Local full locked suite, JUnit, Ruff, ten planning tests, standalone offline demo and staged hygiene scan. No new CI result is claimed.",
-    "acceptance_note": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    "baseline_tests": 391,
+    "next_dependency_ready_task": "T16",
+    "validation_scope": "Local locked full suite, independently parsed JUnit, Ruff, ten planning tests, dependency/reference validation, cost illustration, actual offline-loop dashboard evidence, Chromium desktop/mobile/control-response checks, wheel packaging and staged repository hygiene. No new CI result is claimed.",
+    "acceptance_note": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
   },
   "historical_submission": {
     "commit": "a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
@@ -315,6 +322,22 @@
       "next_dependency_ready_task": "T14",
       "validation_scope": "Local locked full suite, Ruff, planning, standalone CLI demo and staged hygiene scan. New CI outcome not retrieved (GitHub GraphQL Forbidden).",
       "acceptance_note": "T13 data-artifact application workflow closure; T14 consumer/observation, full autonomous R1, paid provider verification and profitability are not complete."
+    },
+    {
+      "implementation_commit": "8447f4c068a62433a2975bccb2292696640baca4",
+      "preserved_previous_head": "51e48b60bfe179b71b53060bc00322c3353d58ec",
+      "python": "3.12.14",
+      "tests": 391,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 349,
+      "new_version_lifecycle_cases": 24,
+      "new_artifact_consumer_cases": 15,
+      "new_schedule_report_cases": 3,
+      "next_dependency_ready_task": "T15",
+      "validation_scope": "Local full locked suite, JUnit, Ruff, ten planning tests, standalone offline demo and staged hygiene scan. No new CI result is claimed.",
+      "acceptance_note": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
     }
   ]
 }

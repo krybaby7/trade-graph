@@ -2,9 +2,9 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: T00–T14 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+**Status: T00–T15 complete at their recorded scopes on `cursor/trade-graph-r1-548a`; autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
 
-Implementation is complete through T14 at the recorded scopes; T15 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for verified artifact consumption and automatic rollback, the 391-test local checkpoint, actual command limits and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
+Implementation is complete through T15 at the recorded scopes; T16 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the dashboard, authenticated owner controls, verified artifact consumption and rollback, test evidence and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
@@ -54,3 +54,15 @@ uv run pytest
 uv run trade-graph doctor
 uv run trade-graph demo --offline
 ```
+
+Run the authenticated dashboard against a private paper database:
+
+```bash
+uv run trade-graph init --database runtime/trade_graph.sqlite
+uv run trade-graph dashboard --database runtime/trade_graph.sqlite
+```
+
+Open `http://127.0.0.1:8000/login` and paste `session_token` from the private
+`runtime/owner-session.json` file. Keep that file outside Git. New runtime directories
+use mode 0700 and session files use 0600; existing database directories must be private.
+The dashboard starts one local web server. Continuous scheduling and provider operation remain T17.
