@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from trade_graph.adapters.engineering.artifact_files import content_hash, manifest
 from trade_graph.adapters.engineering.provenance import checks_module_hash
+from trade_graph.adapters.engineering.sandbox import CPU_SECONDS, INPUT_BYTES, MEMORY_BYTES, OUTPUT_BYTES, WALL_SECONDS
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.artifact_store import ArtifactStore
 from trade_graph.application.change_authority import authorized_change
@@ -121,7 +122,7 @@ class VersionController:
             raise ValidationFailure("missing candidate-bound trusted attestation")
         # Full bytes and the unambiguous manifest are retained independently of
         # the mutable worktree. An old pointer alone is not a rollback baseline.
-        self.store.get(current, require_valid=False)
+        self.store.get(current)
         try:
             report = json.loads(proof["report_json"])
             files = report["artifact_files"]
@@ -136,7 +137,12 @@ class VersionController:
                     or checked["input_sha256"] != hashlib.sha256(raw).hexdigest()
                     or not isolation["verified"] or isolation["uid"] == 0
                     or isolation["mechanism"] != "linux-x86_64-seccomp-data-pipe-v1"
-                    or isolation["filesystem"] != "denied" or isolation["network"] != "denied"):
+                    or isolation["filesystem"] != "denied" or isolation["network"] != "denied"
+                    or isolation["process_creation"] != "denied" or not isolation["no_new_privs"]
+                    or isolation["memory_bytes"] != MEMORY_BYTES or isolation["cpu_seconds"] != CPU_SECONDS
+                    or isolation["wall_seconds"] != WALL_SECONDS or isolation["input_bytes"] != INPUT_BYTES
+                    or isolation["output_bytes"] != OUTPUT_BYTES
+                    or checked["isolation"] != {k: v for k, v in isolation.items() if k != "verified"}):
                 raise ValidationFailure("tested artifact manifest/confinement identity mismatch")
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
             raise ValidationFailure("invalid tested artifact bytes/manifest") from exc
@@ -172,8 +178,11 @@ class VersionController:
         self.database.execute("UPDATE change_tasks SET state = 'OBSERVING' WHERE change_id = ?", (task.record_id,))
         self.database.execute(
             """UPDATE version_rollouts SET state = 'SUPERSEDED' WHERE portfolio_id = ?
-            AND state IN ('RESTART_PENDING', 'OBSERVING', 'ACTIVE')""", (portfolio_id,),
+            AND state IN ('RESTART_PENDING', 'OBSERVING', 'ACTIVE', 'RESTORED')""", (portfolio_id,),
         )
+        self.database.execute("UPDATE candidates SET state = 'SUPERSEDED' WHERE candidate_id = ?", (previous,))
+        self.database.execute("UPDATE change_tasks SET state = 'SUPERSEDED' WHERE change_id = "
+                              "(SELECT change_id FROM candidates WHERE candidate_id = ?)", (previous,))
         self.database.execute(
             "INSERT INTO version_rollouts VALUES (?, ?, ?, ?, ?, ?, ?, 'RESTART_PENDING', ?, ?)",
             (str(uuid.uuid4()), portfolio_id, stored["candidate_id"], generation,
@@ -256,10 +265,11 @@ class VersionController:
                      bundle["generation"], bundle["manifest"]["sha256"], utc_iso(self.clock.now())),
                 )
                 rollout = self._rollout(portfolio_id)
-                if rollout and rollout["state"] == "RESTART_PENDING":
+                if rollout and rollout["state"] in {"RESTART_PENDING", "RESTORE_PENDING"}:
                     self.database.execute(
-                        "UPDATE version_rollouts SET state = 'OBSERVING' WHERE rollout_id = ?",
-                        (rollout["rollout_id"],),
+                        "UPDATE version_rollouts SET state = ? WHERE rollout_id = ?",
+                        ("OBSERVING" if rollout["state"] == "RESTART_PENDING" else "RESTORED",
+                         rollout["rollout_id"]),
                     )
                     self._event(portfolio_id, "reload", bundle["artifact_hash"], bundle["artifact_hash"],
                                 {"consumer_id": consumer_id, "generation": bundle["generation"],
@@ -271,6 +281,10 @@ class VersionController:
         except Exception:
             # Never roll back a newer activation because an obsolete loader failed.
             with self.database.immediate():
+                if lease is not None:
+                    from trade_graph.application.scheduler import Scheduler
+
+                    Scheduler(self.database, self.clock).leased_row(lease)
                 current = self._active(portfolio_id)
                 if current["generation"] == active["generation"]:
                     self._request_rollback(portfolio_id, "artifact reload/reconciliation failed")
@@ -295,15 +309,29 @@ class VersionController:
         rollout = self._rollout(portfolio_id)
         if rollout is None:
             return "BASELINE"
+        if rollout["state"] == "RESTORED":
+            return "RESTORED"
         prior = self.database.execute(
             "SELECT document_json FROM version_observations WHERE rollout_id = ? AND observation_id = ?",
             (rollout["rollout_id"], observation_id),
         ).fetchone()
         if prior:
             return rollout["state"]
+        if rollout["state"] in {"ROLLBACK_PENDING", "BLOCKED", "ROLLED_BACK", "SUPERSEDED"}:
+            raise ValidationFailure("terminal rollout cannot accept new observation effects")
         policy = ObservationPolicy.model_validate_json(rollout["policy_json"])
         if any(type(x) is not int or x < 0 for x in (context_bytes, input_tokens, output_tokens)):
             raise ValidationFailure("observation metrics require nonnegative integer units")
+        invocation = None
+        if ok:
+            invocation = self.database.execute(
+                """SELECT i.* FROM model_invocations i JOIN decisions d ON d.snapshot_id = i.run_id
+                WHERE d.decision_id = ? AND d.portfolio_id = ? AND i.portfolio_id = ?
+                AND i.system_version_id = ?""",
+                (observation_id, portfolio_id, portfolio_id, bundle["artifact_hash"]),
+            ).fetchone()
+            if invocation is None:
+                raise ValidationFailure("observation requires an actual persisted model invocation")
         if ok:
             self.assert_current(portfolio_id, bundle)
             row = self.database.execute(
@@ -319,6 +347,11 @@ class VersionController:
                         "generation": bundle["generation"], "manifest_sha256": bundle["manifest"]["sha256"]}
             if snapshot.get("artifact") != expected:
                 raise ValidationFailure("decision snapshot does not prove the loaded artifact generation")
+            request = json.loads(invocation["request_json"])
+            if (request.get("role") != "trader" or request.get("context", {}).get("artifact") != expected
+                    or request["context"].get("selected_context") != snapshot.get("selected_context")
+                    or not invocation["result_json"] or not json.loads(invocation["result_json"])["ok"]):
+                raise ValidationFailure("observation model request/result does not match loaded decision context")
             selected = snapshot.get("selected_context", {})
             guard = snapshot.get("guard", {})
             required_retained = bool(required_retained and
@@ -334,11 +367,51 @@ class VersionController:
                 (portfolio_id, bundle["generation"], bundle["artifact_hash"]),
             ).fetchone():
                 raise ValidationFailure("decision has no reconciled consumer reload")
+        else:
+            failure = self.database.execute(
+                """SELECT r.status FROM role_results r JOIN tasks t ON t.task_id = r.task_id
+                WHERE r.task_id = ? AND r.portfolio_id = ? AND t.portfolio_id = ?
+                AND r.role = 'trader' AND t.role = 'trader'""",
+                (observation_id, portfolio_id, portfolio_id),
+            ).fetchone()
+            snapshot = self.database.execute(
+                """SELECT payload_json FROM snapshots WHERE portfolio_id = ?
+                AND json_extract(payload_json, '$.task_id') = ? ORDER BY created_at DESC LIMIT 1""",
+                (portfolio_id, observation_id),
+            ).fetchone()
+            expected = {"version_id": bundle["version_id"], "artifact_hash": bundle["artifact_hash"],
+                        "generation": bundle["generation"], "manifest_sha256": bundle["manifest"]["sha256"]}
+            if (failure is None or failure["status"] not in {"FAILED", "BLOCKED_BUDGET", "WAITING_EXTERNAL"}
+                    or snapshot is None or json.loads(snapshot["payload_json"]).get("artifact") != expected):
+                raise ValidationFailure("failure observation requires a scoped persisted Trader failure")
+            snapshot = json.loads(snapshot["payload_json"])
+            invocation = self.database.execute(
+                """SELECT * FROM model_invocations WHERE task_id = ? AND portfolio_id = ?
+                AND system_version_id = ? ORDER BY created_at DESC LIMIT 1""",
+                (observation_id, portfolio_id, bundle["artifact_hash"]),
+            ).fetchone()
+        # Authoritative units come from durable provider requests and usage facts,
+        # never a caller's metrics or a byte-to-token conversion.
+        usage, receipts = None, []
+        context_bytes = len(json.dumps(snapshot, sort_keys=True).encode())
+        if invocation:
+            request = json.loads(invocation["request_json"])
+            context_bytes = len(json.dumps(request["context"], sort_keys=True).encode())
+            result = json.loads(invocation["result_json"]) if invocation["result_json"] else {}
+            usage = result.get("usage")
+            receipts = [dict(r) for r in self.database.execute(
+                "SELECT receipt_id, synthetic, status FROM usage_receipts WHERE reservation_id = ?",
+                (invocation["reservation_id"],),
+            ).fetchall()]
+        input_tokens = (sum(usage[k] for k in ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens"))
+                        if usage else None)
+        output_tokens = usage["billed_output_tokens"] if usage else None
         healthy = ok and required_retained and context_bytes <= policy.max_context_bytes
         document = {"ok": bool(healthy), "model_ok": ok, "required_retained": required_retained,
                     "context_bytes": context_bytes, "input_tokens": input_tokens, "output_tokens": output_tokens,
                     "reason": reason[:500], "artifact_hash": bundle["artifact_hash"],
-                    "generation": bundle["generation"], "synthetic_or_actual": "see linked usage receipts"}
+                    "generation": bundle["generation"], "usage_known": usage is not None,
+                    "usage_receipts": receipts}
         self.database.execute("INSERT INTO version_observations VALUES (?, ?, ?, ?)",
                               (rollout["rollout_id"], observation_id, json.dumps(document, sort_keys=True),
                                utc_iso(self.clock.now())))
@@ -349,7 +422,7 @@ class VersionController:
         failures = sum(not x["ok"] for x in facts)
         if failures > policy.max_failures:
             self._request_rollback(portfolio_id, "observation health/required-context gate failed")
-        elif rollout["state"] != "ACTIVE" and sum(x["ok"] for x in facts) >= policy.min_decisions:
+        elif rollout["state"] == "OBSERVING" and sum(x["ok"] for x in facts) >= policy.min_decisions:
             self.database.execute("UPDATE version_rollouts SET state = 'ACTIVE' WHERE rollout_id = ?",
                                   (rollout["rollout_id"],))
             self.database.execute("UPDATE candidates SET state = 'ACTIVE' WHERE candidate_id = ?",
@@ -369,6 +442,14 @@ class VersionController:
             return "BASELINE"
         policy = ObservationPolicy.model_validate_json(rollout["policy_json"])
         age = self.clock.now() - datetime.fromisoformat(rollout["activated_at"].replace("Z", "+00:00"))
+        if rollout["state"] == "RESTORE_PENDING":
+            if age >= timedelta(seconds=policy.reload_timeout_seconds):
+                self.database.execute("UPDATE version_rollouts SET state = 'BLOCKED' WHERE rollout_id = ?",
+                                      (rollout["rollout_id"],))
+                return "BLOCKED"
+            return "RESTORE_PENDING"
+        if rollout["state"] == "BLOCKED" and rollout["candidate_id"] == rollout["previous_version_id"]:
+            return "BLOCKED"
         if ((rollout["state"] == "RESTART_PENDING" and age >= timedelta(seconds=policy.reload_timeout_seconds))
                 or (rollout["state"] == "OBSERVING" and age >= timedelta(seconds=policy.horizon_seconds))):
             self._request_rollback(portfolio_id, "reload/observation deadline expired")
@@ -396,7 +477,7 @@ class VersionController:
         ).fetchone()
         if known is None:
             raise ValidationFailure("unknown artifact identity for this portfolio")
-        self.store.get(previous_hash, require_valid=False)
+        self.store.get(previous_hash)
         self._quiescent(portfolio_id)
         active = self.database.execute(
             "SELECT * FROM active_versions WHERE portfolio_id = ?", (portfolio_id,)
@@ -428,6 +509,15 @@ class VersionController:
             "UPDATE version_rollouts SET state = 'ROLLED_BACK' WHERE portfolio_id = ? AND generation = ?",
             (portfolio_id, active["generation"]),
         )
+        self.database.execute(
+            "INSERT INTO version_rollouts VALUES (?, ?, ?, ?, ?, ?, ?, 'RESTORE_PENDING', ?, ?)",
+            (str(uuid.uuid4()), portfolio_id, version_id, active["generation"] + 1,
+             previous_hash, previous_hash, version_id, self.observation_policy.model_dump_json(),
+             utc_iso(self.clock.now())),
+        )
+        self.database.execute("UPDATE candidates SET state = 'ACTIVE' WHERE candidate_id = ?", (version_id,))
+        self.database.execute("UPDATE change_tasks SET state = 'ACTIVE' WHERE change_id = "
+                              "(SELECT change_id FROM candidates WHERE candidate_id = ?)", (version_id,))
         self._cancel_stale(portfolio_id, previous_hash)
         self._event(portfolio_id, "rollback", active["artifact_hash"], previous_hash,
                     {"version_id": version_id, "generation": active["generation"] + 1})

@@ -31,7 +31,7 @@ class EngineerRunner:
     def __init__(self, source_root: Path) -> None:
         self.source_root = source_root
 
-    def stage(self, destination: Path) -> str:
+    def stage(self, destination: Path, *, snapshot: dict[str, str] | None = None) -> str:
         source_root = self.source_root.resolve()
         if (destination.is_symlink() or source_root == destination.resolve()
                 or source_root.is_relative_to(destination.resolve())):
@@ -39,7 +39,7 @@ class EngineerRunner:
         ensure_directory(destination)
         if any(destination.iterdir()):
             raise PermissionError("stage already contains retained evidence")
-        files = read_tree(self.source_root, source=True)
+        files = read_tree(self.source_root, source=True) if snapshot is None else snapshot
         for name, text in files.items():
             write_file(destination, name, text)
         # No product .git, hooks, credentials, global config, templates or dependencies.

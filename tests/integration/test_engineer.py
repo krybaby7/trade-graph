@@ -34,6 +34,9 @@ def _stack(tmp_path: Path):
     portfolio = ledger.create_portfolio(reporting_currency="EUR")
     source = tmp_path / "source"
     (source / "artifacts").mkdir(parents=True)
+    (source / "artifacts" / "context_policy.json").write_text(
+        json.dumps({**POLICY, "max_general_lessons": 8}), encoding="utf-8",
+    )
     (source / ".env").write_text("OPENAI_API_KEY=sk-should-not-copy\n", encoding="utf-8")
     kernel = source / "src" / "trade_graph" / "kernel"
     kernel.mkdir(parents=True)

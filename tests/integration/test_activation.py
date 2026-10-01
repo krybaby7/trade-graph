@@ -29,6 +29,9 @@ def _ready(tmp_path):
     portfolio = ledger.create_portfolio(reporting_currency="EUR")
     source = tmp_path / "source"
     (source / "artifacts").mkdir(parents=True)
+    (source / "artifacts" / "context_policy.json").write_text(
+        json.dumps({**POLICY, "max_general_lessons": 8}), encoding="utf-8",
+    )
     engineer = ArtifactEngineer(database, clock, source, ledger)
     versions = VersionController(database, clock)
     baseline = engineer.baseline(tmp_path / "base")

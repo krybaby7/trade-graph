@@ -39,6 +39,15 @@ class ArtifactEngineer:
             raise StaleState("baseline changed while registering artifact bytes")
         return stored_hash
 
+    def source_files(self, portfolio_id: str) -> dict[str, str]:
+        active = self.database.execute(
+            """SELECT a.artifact_hash FROM active_versions a JOIN candidates c
+            ON c.candidate_id = a.version_id WHERE a.portfolio_id = ?""", (portfolio_id,),
+        ).fetchone()
+        if active:
+            return ArtifactStore(self.database, self.clock).get(active["artifact_hash"])["files"]
+        return self.runner.source_files()
+
     def commission(self, portfolio_id: str, task: ChangeTask) -> str:
         raise AuthorityDenied("use propose, then the persisted Leader handler to commission work")
 
@@ -130,7 +139,12 @@ class ArtifactEngineer:
         reason = "independent checks recorded with a confined, data-only checker; no executable-code authority"
         try:
             self._bounds(task, files)
-            baseline = self.runner.stage(destination)
+            active = self.database.execute(
+                """SELECT 1 FROM active_versions a JOIN candidates c ON c.candidate_id = a.version_id
+                WHERE a.portfolio_id = ? AND a.artifact_hash = ?""", (portfolio_id, task.baseline_hash),
+            ).fetchone()
+            baseline = self.runner.stage(destination, snapshot=self.source_files(portfolio_id)) if active else \
+                self.runner.stage(destination)
             if baseline != task.baseline_hash:
                 raise StaleState("source baseline moved; revalidate")
             changed = self.runner.apply_files(destination, files)
