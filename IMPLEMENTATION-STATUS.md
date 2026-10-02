@@ -1,107 +1,114 @@
-# Implementation status — T16 complete
+# Implementation status — orchestration continuation
 
-Updated: 2026-10-02. **T00–T16 complete at their recorded scopes; autonomous R1 operation is not complete.**
-Local branch: `codex/t16-offline-fault-suite` in `/workspace/trade-graph-t16`;
-Published branch: `cursor/trade-graph-r1-548a` (T16 pushed successfully on 2026-10-02).
-Verified source: `1cddb349492a8b83f83ba1424f1709533e95d687`.
-Source tree: `f8c609b673d61e88b7fe722340ceb36781d4aedf`. This handoff adds documentation after that tested checkpoint.
-Default USD10,000 virtual capital with EUR reporting. Paid calls and live trading remain disabled.
+Updated: 2026-10-02. **T00–T16 remain complete at their recorded scopes. T17's operating software is implemented; its actual public-data/funded verification remains pending.**
+Local integration branch: `codex/orchestrator-continuation`.
+Publication target: `cursor/trade-graph-r1-548a`; Git publication is recorded separately below.
+Verified source: `ca4d463b9e83218d1e80f863da8b598190575280`.
+Source tree: `78187546d5044f716a7d3b70081c3a4b6c17bf21`.
+This handoff updates documentation after that clean tested checkpoint. Defaults remain USD10,000 virtual
+capital, EUR reporting, paid calls disabled and live trading disabled.
 
-## Completed T16
+## Working paper operation
 
-The offline demo now sends entry, exit and lost-acknowledgement decisions through the actual Trader handler,
-model gateway and durable role worker. Research precedes entry; typed Learning and Optimisation records
-retain decision links, revisions and counterevidence. All six roles produce synthetic gateway receipts.
-The commissioned Engineer rejects and repairs a candidate, the Secretary routes actual Leader activation,
-and consumers load tested bytes before further operation, restart, observation and rollback. The private
-`evidence.json` records 14 checked outcomes plus request, snapshot, receipt and version provenance.
-The supplied shared bill is a synthetic fixture, not a provider charge.
+The installed CLI now creates a bounded paper mandate and approved baseline, runs a continuous service,
+reads genuine diagnostics/financial reports, makes private consistent backups and restores explicitly offline.
+Installed artifact data travels in the wheel; normal operation and the isolated artifact Engineer need no
+operator source checkout. See [the operations runbook](docs/operations.md).
 
-Trader requests use one authoritative SQLite read snapshot with native balances, inventory, held reservations,
-open orders and explicitly stale/provisional reporting. Market inputs are filtered by venue, event time and
-availability time. Future or retired lessons cannot silently become current evidence. Durable root attempts
-have a protected 40-step default cap across restart. Provider output/tool validation uses complete bounded
-Draft 2020-12 JSON Schema with external retrieval denied and supplied usage retained on failure.
+The service holds one lifetime database flock and durable controller/worker leases. It coalesces schedules,
+maintains every persisted paper account, scopes graph work, renews active work and reconciles/protects during
+slow provider/feed work and graceful shutdown. Threads use separate database handles. Maintenance failures
+cannot release ownership around an active call; late heartbeat work also drains. Signal handlers restore on
+failed shutdown. Final feed poll failures retain a consistent degraded result. Mixed-mode databases are
+refused by the paper service.
 
-The fault suite exercises actual SQLite rollback, full-disk, commit and journal failures, abrupt process death,
-UNKNOWN execution through an outage, reconciliation, cancel/replace races, broker capability/fee refusals,
-public-feed degradation, atomic Secretary routing, budget limits and evidence provenance. Backup restoration
-validates the exact staged database and atomically replaces an offline target; failed restoration preserves
-prior data. Generated accounting tests check conservation against independent calculations.
+All six model roles have installed consumers and durable invocation recovery. Model routing uses immutable
+approved current price cards and verified artifact bytes. Routing is a separate owner-granted change class;
+it cannot approve providers/prices, expose credentials or increase spending authority. Provider wire-schema
+conversion preserves the original protected validation and refuses unsupported schemas before billing.
+See [the wire-schema review](docs/PROVIDER-WIRE-SCHEMAS.md).
 
-All **40 applicable offline criteria (A01–A38, A43–A44)** have concrete executable mappings in
-`planning/offline-acceptance.json`. The acceptance runner binds actual collected JUnit outcomes to source,
-lockfile and Python identity. Missing, skipped, interrupted or partial evidence cannot complete the gate.
-Its child pytest process receives an allowlisted environment and denies Python socket connections; this is
-application-local verification, not OS-wide isolation. CI runs that gate and scans generated reports before upload.
-Read [the T16 review](docs/reviews/2026-10-01-offline.md) and D41–D44 for details. Earlier evidence remains in
-[the T15 review](docs/reviews/2026-10-01-dashboard.md) and [the T14 review](docs/reviews/2026-10-01-activation.md).
+Owner commands persist controller-written identity and effect evidence. Startup recovers proven local
+outcomes without replaying ambiguous effects; unclear commands require owner review. Terminal replies and
+pause achievement are fenced against newer controls. The dashboard exposes paid permission, which requires
+an independently bounded real allowance; private runtime opt-in and approved credentialed routes are also
+required. Initialization and paper gains create no expense funding.
 
-## Verified commands and evidence
+An explicit `soak` command gates paid operation, reserves a fresh private report before effects, records
+elapsed/requested duration and reports known usage accruals, synthetic/estimated costs, configured-FX
+forecast bounds and unresolved held amounts separately. Failure/degradation and unavailable expense
+extraction remain visible. No funded soak was performed in this continuation.
+
+## Later-task preparation
+
+| Task | Implemented preparation | Remaining completion evidence/work |
+|---|---|---|
+| T18 | Immutable preregistration/trial registry, three baselines, sealed global cost allocations, failed/setup work, paired uncertainty and sensitivity, continuous sampled drawdown and dated expense bounds | Actual authorized forward collection, untouched horizon, complete receipts, verified provenance and dependence/regime assessment |
+| T19 | Normalized Kraken metadata/balances/native fees/order/fill history, protected bounded REST transport, chronological scoped core reconciliation, stable FIFO and durable incomplete-account gate | Owner-selected eligibility/permissions, authenticated read-only conformance, documented wire/native-fee limits and separate authority for any real order |
+| T20 | Existing live controls stay closed | T18/T19 prerequisites and explicit owner eligibility, allocation, operating budget, protection/recovery and pilot authority |
+| T21 | Owner-pinned fresh-exec seccomp scaffold with actual-host synthetic file/network/process/resource attacks and controller survival | Production financial kernel/gateway/controller extraction, authenticated durable RPC, immutable deployment images, actual deployment-host recovery/rollback tests |
+| T22 | Executable plugins and application-code promotion stay disabled | T18/T21 plus explicit broader class grant, immutable staging, shadow evaluation, compatible migrations and deterministic rollout/rollback |
+
+Read [forward evaluation](docs/FORWARD-EVALUATION.md), [Kraken foundations](docs/reviews/2026-10-02-kraken-foundation.md)
+and [the process boundary](docs/PROCESS-BOUNDARY.md). Preparation does not complete observation-dependent
+or production-isolation tasks. The deployed Engineer retains R1 artifact permissions.
+
+Late newly discovered fills that would reorder already-booked history fail closed, preserving reservations
+and an incomplete-account gate, pending an explicit ledger replay extension. Kraken native amounts that
+would round at the protected ledger precision are refused. Native live protection remains untested and
+unavailable for submission. Historical FX requires observation, validity and retrieval by each financial
+instant; current cash can be valued while opening valuation/performance remains provisional. Cross-currency
+receipt conversions retain stored rates but lack linked source-rate IDs; reports disclose incomplete provenance.
+
+## Verified results
+
+On Python 3.12.14 with unchanged frozen `uv.lock`:
+
+- Recovered published T16 `f6c36e7` and reproduced its **808-test** baseline without resetting newer work.
+- Final documented full suite: **1,232 passed; zero failures, errors or skips**, independently counted in JUnit.
+- Final mapped offline gate: **464 passed**, all **40 applicable A01–A38/A43–A44 accepted**,
+  `gate_complete=true`. Before/after source identities match the clean checkpoint above.
+- Fresh git-archive checkout installed frozen dependencies and completed all 14 offline checks; four fills
+  survived restart with zero new submissions. Fresh initialization/reporting and three maintenance ticks
+  produced no paid calls, live orders or model decisions.
+- Built the wheel/sdist. Installed the wheel outside the checkout with the locked environment's dependencies,
+  verified imports came from the installed wheel, completed the same 14 checks and one maintenance tick.
+- Ruff, JavaScript syntax, ten planning tests, DAG/reference validation, cost illustration and exact-byte
+  repository/generated-artifact hygiene passed. No private runtime data was committed.
+
+Lock SHA256: `1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39`.
+The full JUnit is `/tmp/orchestrator-final-results.xml`; the bound report is
+`/tmp/trade-graph-orchestrator-final-acceptance.json`. These are local evidence, not a new CI conclusion.
+
+The first final run found a final-drain feed classification race (1 failure/1,228 passes) and an acceptance
+selector renamed during schema preflight work. Both were corrected; rejected reports remain private.
+Only the corrected complete runs above support this checkpoint.
+
+The actual opt-in public REST paper smoke failed with `feed:ProxyError`: zero observations and decisions,
+degraded recovery, management continuing and exit status 1. Current external verification remains pending.
+Direct provider/Kraken documentation was proxy-blocked; pinned official SDK source was read instead.
+No authorized funded model configuration, paid provider request, private exchange request, real order,
+production deployment or profitability result is claimed.
+
+## Commands
 
 ```bash
 uv sync --frozen --group dev --python 3.12
 uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py
-uv run pytest --junitxml=/tmp/t16-final-results.xml
-uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-t16-final-acceptance.json
-python3 scripts/check_repository_hygiene.py --staged --artifact /tmp/t16-final-results.xml --artifact /tmp/trade-graph-t16-final-acceptance.json
+uv run pytest --junitxml=/tmp/orchestrator-final-results.xml
+uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-orchestrator-final-acceptance.json
 python3 scripts/check_plan.py
 python3 scripts/test_planning.py
 python3 scripts/next_task.py --prompt
 python3 scripts/cost_model.py
-```
-
-- Python 3.12.14: **808 tests passed, zero failures, errors or skips**, independently counted in JUnit.
-  The recovered T15 baseline was 534 tests. Two property tests cover 200 deterministic generated examples.
-- The mapped run passed **465 tests**; all 40 criteria were accepted and `gate_complete=true`.
-  The report binds a clean source checkout above and lock SHA256
-  `1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39`.
-- A fresh checkout installed its frozen environment from the package cache and ran the standalone offline CLI:
-  all 14 checks passed, four fills survived restart, and restart submitted zero orders.
-- Ruff, ten planning tests, DAG/reference checks, cost illustration and repository hygiene passed.
-  Exact JUnit, acceptance JSON and fresh demo JSON passed the generated-artifact scan.
-- The lockfile adds `jsonschema` 4.26.0, `referencing` 0.37.0 and their dependencies for complete validation.
-  Previously locked versions remain unchanged. Runtime databases and reports stay outside Git.
-
-Run a fresh local demonstration:
-
-```bash
 uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
 ```
 
-Use a new work directory; reuse is refused to preserve prior evidence. The report is written to its
-`evidence.json`. Failed verification raises rather than reporting successful completion.
+Use a new demo directory. For private initialization, continuous startup, owner controls, optional public data,
+funded observation, backup and recovery, follow [operations.md](docs/operations.md).
+The detailed continuation review is [here](docs/reviews/2026-10-02-orchestration.md).
 
-Run the authenticated dashboard:
+## Publication
 
-```bash
-uv run trade-graph init --database runtime/trade_graph.sqlite
-uv run trade-graph dashboard --database runtime/trade_graph.sqlite
-```
-
-Open `http://127.0.0.1:8000/login` and use `session_token` from private `runtime/owner-session.json`.
-New runtime directories use mode 0700 and session files use 0600; existing database directories must be private.
-The dashboard starts one web worker and no scheduler or paid provider.
-
-These are local credential-free results. No new CI conclusion is claimed; the GitHub GraphQL read returned
-`Forbidden`. No paid-provider probe, authenticated exchange test, real order or profitability claim is made.
-The initial push lacked a Git credential helper. On 2026-10-02, supplying `gh auth git-credential` successfully
-pushed T16 through `bd46493` to the existing branch without rewriting history. The repository now uses that
-helper for GitHub HTTPS. API authentication checks still return `Forbidden`; they did not prevent Git access.
-
-## Next task and remaining boundaries
-
-**T17 is next:** assemble continuous paper scheduling, persisted model-routing consumers, real diagnostics
-and reports, deployment/backup procedures and interrupted dashboard-command recovery. A hard-crashed owner
-command remains visibly `PROCESSING`; ordinary writes stay blocked while emergency manage-only remains
-available. `run --mode paper` still performs one recovery pass. `doctor` and `report` remain placeholders.
-Credentialed paper verification needs a separately configured owner budget and credentials.
-
-Legacy cross-currency receipts retain their stored conversion but lack linked FX source IDs; the dashboard
-discloses incomplete provenance. Drawdown is sampled trading drawdown; historical economic drawdown cannot
-be reconstructed without historical cost-allocation timestamps. Neither label claims continuous observation.
-T16 validates those disclosures without inventing missing historical data.
-
-**T18–T22:** forward economic evaluation, live adapter/pilot and protected-host isolation before broader code.
-T20 remains blocked. Functional health, a dashboard and paper capital do not authorize spending or live trading.
-Inspect Git state before continuing and preserve historical evidence in progress.json/reviews.
+The source and handoff are committed locally for a normal fast-forward publication to the existing
+implementation branch. Publication verification is recorded in `planning/progress.json`; main is unchanged.
