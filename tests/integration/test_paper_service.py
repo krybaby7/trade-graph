@@ -642,6 +642,25 @@ def test_selected_graph_portfolio_keeps_older_order_and_position_management(tmp_
     assert execution.owned_quantity(older, "BTC") == 0
 
 
+@pytest.mark.parametrize("other_mode", ["live", "replay"])
+def test_mixed_mode_database_is_refused_before_any_financial_management(tmp_path, other_mode):
+    clock, ledger, execution, broker, paper = _stack(tmp_path)
+    historical = ledger.create_portfolio(reporting_currency="USD", mode=other_mode)
+    ledger.deposit(historical, "USD", Decimal("1"), "synthetic-historical-account")
+    execution.save_observation(_quote(clock, "99", "100"))
+    intent = execution.authorize(paper, _decision(clock, paper))
+    execution.set_pause(paper, "NO_NEW_EXPOSURE", "owner", "do not touch even paper state before validation")
+    before_events = ledger.database.execute("SELECT count(*) FROM ledger_events").fetchone()[0]
+    service = PaperService(ledger.database, execution, portfolio_ids=[paper], schedule_intervals={})
+    with pytest.raises(ValidationFailure, match="only paper portfolios"):
+        asyncio.run(service.start())
+    assert broker.submit_count == 0
+    assert execution.intent_state(intent) == "SUBMISSION_PENDING"
+    assert execution.pause(paper)["achieved"] == "requested"
+    assert ledger.database.execute("SELECT count(*) FROM ledger_events").fetchone()[0] == before_events
+    assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+
 def test_service_loads_activated_bytes_and_keeps_receipt_provenance(tmp_path, monkeypatch):
     from tests.integration.test_artifact_consumers import NEW_PROMPT, _consumer_flow
 

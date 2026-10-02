@@ -177,6 +177,11 @@ class PaperService:
         if self.public_feed is not None:
             self.execution.blocks_increase = self._blocks_increase
         try:
+            if self.database.execute("SELECT 1 FROM portfolios WHERE mode != 'paper' LIMIT 1").fetchone():
+                # Execution and the simulated broker currently share database-wide
+                # outboxes/lookups. R1 cannot safely run them against live/replay
+                # history, even when that history appears financially complete.
+                raise ValidationFailure("paper service requires a database containing only paper portfolios")
             rows = self.database.execute(
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper' ORDER BY created_at, rowid",
             ).fetchall()
