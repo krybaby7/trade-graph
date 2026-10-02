@@ -45,5 +45,58 @@ unique one-use capability/request records in the trusted financial database.
 It passed 31 scheduler/recovery tests and targeted Ruff checks at commit
 `3e0b02f`. This is a schema checkpoint, not proof of the production boundary.
 
-Final integrated commits, results and remaining gates will be recorded here
-after the individual workstreams finish and root verification completes.
+## Completed orchestration checkpoint
+
+All six task agents finished their assigned slices and independent cross-reviews;
+they are idle. This is a verified checkpoint, not completion of every task's
+remaining acceptance work. No funded/forward observation or live process runs.
+
+| Task | Integrated checkpoints | Focused evidence |
+|---|---|---|
+| T17 | `321f6cc`, `01067ee` | 113 tests; actual local backup/restore/restart drill; public probes failed proxy CONNECT 403 |
+| T18 | `a653969` | 47 evaluation/snapshot tests; upstream basis remains `unverified_imports` |
+| T19 | `3c57eb0`, `b47be62` | 243 combined tests; cold terminal ownership and partial-cancel recovery without duplicate accounting |
+| T20 | `073c441`, `b7afa6f`, `5fe61ee` | 69 focused tests and 58 independent checks; both readiness and enablement closed |
+| T21 | `c4d5776` with migration `3e0b02f` | 116 combined tests and 67 independent combined checks; actual protected paper financial service |
+| T22 | `adf6ccf` | 25 new replay/staging tests; offline production authority remains false |
+| Root integration | `426cd9f`, `9664707` | Delayed-submit completion and durable identity-conflict fences; unverified dashboard claims cannot appear as passed checks |
+
+Independent review found and corrected stale financial scopes, overlapping
+submission/recovery/feed work, newer-version rollback races, cancellation draining,
+oversized funding exponent expansion, stale economic bindings, daily/period budget
+room and unresolved recovered owner effects. Cross-review findings were sent to
+the implementation owners; only the integration owner changed shared core/schema.
+
+Clean final source `9664707d5fb12b709424ef0ae8ce45bed2ce77c4`, tree
+`4868b219a49639b403c27748aaae18e074952e37`, passed **1,473 tests** with zero
+failures/errors/skips. Its unchanged lock SHA256 is
+`1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39`.
+The mapped offline gate passed 464 tests and all 40 applicable criteria, with clean
+matching before/after source identities. Ruff, ten planning tests and exact-byte
+source/generated-artifact hygiene passed. No new CI result is claimed.
+
+A fresh archive installed frozen dependencies, then the built wheel replaced the
+editable project. Outside the checkout, imports came from installed site-packages;
+the offline loop retained four fills with zero restart submissions, protected
+paper financial RPC committed/recovered one synthetic hold, and a sealed plugin
+completed two confined replay attempts. All paid/live/production plugin authority
+remained false. No intended-host image or real upstream data is certified.
+
+The source was published by verified normal fast-forward on
+`cursor/trade-graph-r1-548a`. Original task branches and all older worktrees remain
+available. Main was not merged or changed.
+
+## Remaining gates
+
+T17 needs working public connectivity, approved funded model setup, actual invoices
+and intended-host operations. T18 needs a real prospective protocol/horizon and
+complete authenticated costs/provenance. T19 needs owner-selected eligibility,
+least-privilege authenticated read-only conformance and unresolved native wire
+proof. T20 remains blocked with no pilot/live authority.
+
+T21 still needs complete protected model/budget/departmental graph extraction,
+immutable dependency/OS deployment images and actual intended-host isolation and
+recovery; this coding work can continue independently of T17. T22 still needs its
+T18/T21 prerequisites, explicit class grant, shadow evaluation, compatible
+migrations and automatic tested deployment/rollback. Finite plugin replay does not
+complete those gates. The deployed Engineer retains R1 artifact permissions.

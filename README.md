@@ -11,9 +11,11 @@ permissions, and a separate real operating allowance. Read [IMPLEMENTATION-STATU
 for recorded evidence and [the operations runbook](docs/operations.md) for setup, funded observation and recovery.
 
 T17's actual current-public-data verification and funded credentialed paper soak remain pending.
-T18 forward-economic reports, T19 live-adapter foundations and T21 protected-process work are partial
-preparation. Forward profitability, authenticated venue conformance and production kernel isolation
-require further evidence. Live trading and broader Engineer code authority remain closed.
+T18 immutable evaluation snapshots, T19 restart-safe venue identity, T20 closed readiness checks,
+T21 protected paper financial RPC and T22 sealed plugin staging have tested local slices.
+Full graph/model process extraction, forward economics, authenticated venue conformance and
+intended-host isolation/deployment require further work. Live trading and broader Engineer code
+authority remain closed. [Six-task workstreams and results](docs/reviews/2026-10-02-task-workstreams.md).
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
@@ -114,4 +116,5 @@ Use a new private report file. The report distinguishes actual accrued expenses,
 synthetic receipts and unresolved billing, and records whether the requested duration completed.
 Its economic result remains `insufficient_evidence`. A successful command does not establish
 profitability, complete provider-invoice reconciliation or authorize live trading.
-See [forward evaluation](docs/FORWARD-EVALUATION.md) and [process-boundary preparation](docs/PROCESS-BOUNDARY.md).
+See [forward evaluation](docs/FORWARD-EVALUATION.md), [protected paper process boundary](docs/PROCESS-BOUNDARY.md),
+[live readiness](docs/LIVE-PILOT-READINESS.md) and [offline plugin staging](docs/PLUGIN-STAGING.md).
