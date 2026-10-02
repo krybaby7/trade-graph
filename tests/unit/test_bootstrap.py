@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 from trade_graph import (
@@ -20,10 +21,12 @@ def test_package_defaults_to_paper_without_credentials() -> None:
     assert REPORTING_CURRENCY == "EUR"
 
 
-def test_cli_doctor_does_not_require_secrets(capsys) -> None:
-    assert main(["doctor"]) == 0
-    out = capsys.readouterr().out
-    assert "paid calls disabled" in out
-    assert "live trading disabled" in out
-    assert "credentials=not-required" in out
-    assert "credentialed_providers=pending" in out
+def test_cli_doctor_does_not_require_secrets(capsys, tmp_path) -> None:
+    path = tmp_path / "not-initialized.sqlite"
+    assert main(["doctor", "--database", str(path)]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "error"
+    assert out["paid_calls_enabled"] is False
+    assert out["live_enabled"] is False
+    assert out["credentialed_providers"]["status"] == "pending"
+    assert not path.exists()

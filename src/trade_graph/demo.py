@@ -44,14 +44,19 @@ from trade_graph.domain.money import Money
 from trade_graph.evaluation import evaluate_forward
 from trade_graph.roles.judgement import classify_decision
 
-ROOT = Path(__file__).resolve().parents[2]
-
 
 def run_offline(work: Path, source_root: Path | None = None) -> dict:
-    source_root = source_root or ROOT
     work.mkdir(parents=True, exist_ok=True, mode=0o700)
     if (work / "demo.sqlite").exists():
         raise ValueError("offline demo requires a fresh work directory; existing evidence is retained")
+    if source_root is None:
+        from trade_graph.adapters.engineering.artifact_files import write_file
+        from trade_graph.paper_runtime import installed_artifacts
+
+        source_root = work / "installed-defaults"
+        source_root.mkdir(mode=0o700)
+        for name, text in installed_artifacts().items():
+            write_file(source_root, name, text)
     clock = FrozenClock(datetime(2026, 1, 1, tzinfo=UTC))
     database = Database(work / "demo.sqlite")
     ledger = Ledger(database, clock)

@@ -1,0 +1,8 @@
+{
+  "models": null,
+  "price_cards": [],
+  "public_data_enabled": false,
+  "paper_symbols": ["BTC/USD", "ETH/USD"],
+  "tick_interval_seconds": 1,
+  "public_poll_interval_seconds": 10
+}

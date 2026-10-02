@@ -36,7 +36,9 @@ Amount = Annotated[Decimal, BeforeValidator(parse_decimal), Field(ge=0)]
 Fraction = Annotated[Decimal, BeforeValidator(parse_decimal), Field(ge=0, le=1)]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")]
 TaskRole = Literal["research", "learning", "optimisation", "trader", "secretary", "leader"]
-_CHANGE_CLASSES = frozenset({"artifact_config", "context_policy", "prompt", "schedule", "report_template"})
+_CHANGE_CLASSES = frozenset({
+    "artifact_config", "context_policy", "prompt", "schedule", "report_template", "approved_model_routing",
+})
 _ACTIVE_TASKS = frozenset({"QUEUED", "LEASED", "RUNNING", "WAITING_EXTERNAL", "BLOCKED_BUDGET", "PROPOSED"})
 
 
@@ -87,7 +89,7 @@ class ConfigCommand(Command):
     expected_revision: Annotated[StrictInt, Field(ge=0)]
     allowed_venues: list[str] | None = Field(default=None, min_length=1, max_length=16)
     allowed_symbols: list[str] | None = Field(default=None, min_length=1, max_length=64)
-    allowed_change_classes: list[str] | None = Field(default=None, min_length=1, max_length=5)
+    allowed_change_classes: list[str] | None = Field(default=None, min_length=1, max_length=6)
     maximum_gross_exposure_fraction: Fraction | None = None
     maximum_single_asset_exposure_fraction: Fraction | None = None
     maximum_quote_age_seconds: Annotated[StrictInt, Field(ge=1, le=3600)] | None = None

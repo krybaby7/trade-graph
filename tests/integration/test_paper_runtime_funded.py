@@ -16,7 +16,6 @@ from tests.integration.test_engineer import POLICY
 from tests.integration.test_execution import _quote, _rules
 from tests.integration.test_runtime_models import RecordingTransport, _card
 from tests.leadership_support import reply
-from trade_graph.paper_runtime import assemble_paper_runtime, load_runtime_config
 
 from trade_graph.api.app import create_app
 from trade_graph.api.auth import issue_session
@@ -24,6 +23,7 @@ from trade_graph.application.runtime_models import MODEL_ROLES
 from trade_graph.application.worker import RoleWorker
 from trade_graph.cli import main
 from trade_graph.domain.clock import FrozenClock
+from trade_graph.paper_runtime import assemble_paper_runtime, load_runtime_config
 
 REGISTERED_CLASSES = ["artifact_config", "context_policy", "prompt", "schedule", "report_template",
                       "approved_model_routing"]

@@ -34,13 +34,15 @@ def test_pause_backup_reconcile_and_paper_run(tmp_path: Path, capsys) -> None:
     reconciled = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert reconciled["reconciled"] is True
     assert reconciled["live_enabled"] is False
-    assert main(["run", "--mode", "paper", "--database", str(database)]) == 0
+    assert main(["run", "--mode", "paper", "--database", str(database), "--once"]) == 0
     started = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert started["new_decisions"] is False
     assert started["paid_calls_enabled"] is False
-    assert main(["report", "--format", "json"]) == 0
+    assert started["service"]["ticks"] == 1
+    assert started["service"]["stopped"] is True
+    assert main(["report", "--format", "json", "--database", str(database)]) == 0
     report = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert report["credentialed_soak"] == "pending"
+    assert report["verification"]["funded_paper_soak"] == "pending"
 
 
 def test_run_refuses_live_and_unknown_pause(capsys) -> None:
