@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-02",
-  "status_note": "T00-T16 complete at recorded application scopes; T16 verified clean implementation 1cddb349 (808 full tests, 465 mapped tests, all 40 local criteria accepted). T17 is next: continuous paper service, real diagnostics/model routing/recovery/deployment and separately owner-funded verification. Paid calls and live trading remain disabled. T16 was published to cursor/trade-graph-r1-548a on 2026-10-02 using the GitHub CLI credential helper; API checks remain forbidden and no new CI result is claimed.",
+  "status_note": "Orchestrator continuation recovered published T16 f6c36e7. T17 in progress: continuous paper runtime, persisted routing, diagnostics/reports and command recovery in isolated worktrees. Credentialed paper verification remains pending without separate funded owner configuration; live disabled.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -223,11 +223,12 @@
       "local_branch": "codex/t16-offline-fault-suite"
     },
     "T17": {
-      "status": "todo",
-      "owner": null,
-      "branch": "cursor/trade-graph-r1-548a",
+      "status": "in_progress",
+      "owner": "codex-orchestrator",
+      "branch": "codex/orchestrator-continuation",
       "evidence": [
-        "trade-graph init, doctor, demo --offline, run --mode paper, pause, backup, reconcile, and report pass in tests/unit/test_cli_ops.py; credentialed paper soak is pending, not passed"
+        "trade-graph init, doctor, demo --offline, run --mode paper, pause, backup, reconcile, and report pass in tests/unit/test_cli_ops.py; credentialed paper soak is pending, not passed",
+        "2026-10-02: recovered published T16 checkpoint f6c36e7 without resetting prior work; parallel service/routing/ops/recovery branches claimed under one integration owner."
       ],
       "remaining": "Replace one-pass run and placeholder doctor/report outputs with a packaged operating service and genuine diagnostics/reporting. Then run a separately owner-funded paper soak."
     },
