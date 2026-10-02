@@ -41,6 +41,32 @@ def race(fn):
         return list(pool.map(work, range(2)))
 
 
+@pytest.mark.parametrize("reclaimed", [False, True])
+def test_exact_portfolio_claim_leaves_other_high_priority_queued_or_expired_work_untouched(stack, reclaimed):
+    database, clock, scheduler = stack
+    other = task(scheduler, portfolio_id="other-paper")
+    database.execute("UPDATE tasks SET priority=100 WHERE task_id=?", (other,))
+    if reclaimed:
+        scheduler.claim("other-worker", ttl_seconds=1, portfolio_id="other-paper")
+        clock.advance(1)
+    previous = dict(database.execute("SELECT * FROM tasks WHERE task_id=?", (other,)).fetchone())
+    own = task(scheduler, portfolio_id="p")
+    lease = scheduler.claim("bounded-runtime", roles={"trader"}, portfolio_id="p")
+    assert lease.task_id == own
+    assert dict(database.execute("SELECT * FROM tasks WHERE task_id=?", (other,)).fetchone()) == previous
+    assert scheduler.claim("bounded-runtime", roles={"trader"}, portfolio_id="p") is None
+    unscoped = scheduler.claim("legacy-worker", roles={"trader"})
+    assert unscoped.task_id == other and unscoped.reclaimed is reclaimed
+
+
+def test_portfolio_claim_combines_exact_identity_with_role_filter(stack):
+    _, _, scheduler = stack
+    task(scheduler, role="research", portfolio_id="p")
+    task(scheduler, role="trader", portfolio_id="p-prefix")
+    selected = task(scheduler, role="trader", portfolio_id="p")
+    assert scheduler.claim("scoped", roles={"trader"}, portfolio_id="p").task_id == selected
+
+
 @pytest.mark.parametrize("started", [False, True])
 def test_expired_work_is_reclaimed_after_database_reopen(stack, started):
     database, clock, scheduler = stack

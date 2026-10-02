@@ -147,7 +147,8 @@ class Scheduler:
         )
 
     @atomic
-    def claim(self, owner: str, ttl_seconds: int = 30, roles: set[str] | None = None) -> TaskLease | None:
+    def claim(self, owner: str, ttl_seconds: int = 30, roles: set[str] | None = None,
+              *, portfolio_id: str | None = None) -> TaskLease | None:
         """Reclaim expired work; the worker must reconcile before retrying effects.
 
         WAITING_EXTERNAL and terminal tasks are not automatically retried. Taking
@@ -156,17 +157,21 @@ class Scheduler:
         self._positive(ttl_seconds, "ttl_seconds")
         if not owner.strip():
             raise ValidationFailure("lease owner is required")
+        if portfolio_id is not None and (type(portfolio_id) is not str or not 1 <= len(portfolio_id) <= 128):
+            raise ValidationFailure("finite exact portfolio scope is required")
         now = self.now()
         if roles is not None and not roles:
             return None
         role_filter = '' if roles is None else ' AND role IN (' + ','.join('?' for _ in roles) + ')'
+        portfolio_filter = '' if portfolio_id is None else ' AND portfolio_id = ?'
         row = self.database.execute(
             """SELECT task_id, status FROM tasks WHERE (
             (status = 'QUEUED' AND (due_at IS NULL OR due_at <= ?)) OR
             (status IN ('LEASED', 'RUNNING') AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))
-            """ + role_filter + """ ORDER BY priority DESC, COALESCE(due_at, created_at),
+            """ + role_filter + portfolio_filter + """ ORDER BY priority DESC, COALESCE(due_at, created_at),
             created_at, task_id LIMIT 1""",
-            (now, now, *(sorted(roles) if roles is not None else [])),
+            (now, now, *(sorted(roles) if roles is not None else []),
+             *([portfolio_id] if portfolio_id is not None else [])),
         ).fetchone()
         if row is None:
             return None
