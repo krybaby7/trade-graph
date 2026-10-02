@@ -60,7 +60,7 @@ def _fx(runtime, currency: str, reporting: str, at: str) -> dict | None:
         runtime,
         """SELECT * FROM fx_rates WHERE base = ? AND quote = ?
         AND observed_at <= ? AND valid_as_of <= ? AND retrieved_at <= ?
-        ORDER BY observed_at DESC, rowid DESC LIMIT 1""",
+        ORDER BY observed_at DESC, retrieved_at DESC, rowid DESC LIMIT 1""",
         (currency, reporting, at, at, at),
     )
     if not rows:
@@ -152,7 +152,7 @@ def _valuation(runtime, at: str) -> dict:
     rates = _rows(
         runtime,
         """SELECT * FROM fx_rates WHERE observed_at <= ?
-        AND valid_as_of <= ? AND retrieved_at <= ? ORDER BY observed_at, rowid""",
+        AND valid_as_of <= ? AND retrieved_at <= ? ORDER BY observed_at, retrieved_at, rowid""",
         (at, at, at),
     )
     latest_fx = {(row["base"], row["quote"]): row for row in rates}
@@ -181,10 +181,11 @@ def _equity(books, reporting: str, at: str, valuation: dict):
             row["base"],
             row["quote"],
             Decimal(row["rate"]),
-            row["observed_at"],
+            max(row["observed_at"], row["valid_as_of"]),
             row["stale"],
             row["source"],
             row["rate_id"],
+            row["retrieved_at"],
         )
         for row in valuation["fx"]
     ]

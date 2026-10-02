@@ -377,19 +377,21 @@ class Ledger:
 
     def _rates(self, at: str) -> list[FxRate]:
         rows = self.database.execute(
-            """SELECT rate_id, base, quote, rate, observed_at, stale, source FROM fx_rates
-            WHERE observed_at <= ?""",
-            (at,),
+            """SELECT rate_id, base, quote, rate, observed_at, valid_as_of, retrieved_at, stale, source
+            FROM fx_rates WHERE observed_at <= ? AND valid_as_of <= ? AND retrieved_at <= ?
+            ORDER BY observed_at, retrieved_at, rowid""",
+            (at, at, at),
         ).fetchall()
         return [
             FxRate(
                 row["base"],
                 row["quote"],
                 Decimal(row["rate"]),
-                row["observed_at"],
+                max(row["observed_at"], row["valid_as_of"]),
                 bool(row["stale"]),
                 row["source"],
                 row["rate_id"],
+                row["retrieved_at"],
             )
             for row in rows
         ]

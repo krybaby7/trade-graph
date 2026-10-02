@@ -94,6 +94,7 @@ class FxRate:
     stale: bool
     source: str
     rate_id: str
+    available_at: str | None = None
 
 
 @dataclass
@@ -340,10 +341,13 @@ def _convert(
         rate
         for rate in rates
         if rate.base == currency and rate.quote == reporting and rate.at <= at
+        and (rate.available_at is None or rate.available_at <= at)
     ]
     if not chosen:
         return None, True
-    rate = max(chosen, key=lambda item: item.at)
+    # A later retrieval/correction of the same reference date is usable only
+    # after it arrived. Readers order exact ties by persistent insertion order.
+    rate = max(reversed(chosen), key=lambda item: (item.at, item.available_at or item.at))
     return amount * rate.rate, rate.stale
 
 
