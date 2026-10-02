@@ -1,8 +1,10 @@
-"""Forward-paper verdicts. Insufficient evidence is a valid result."""
+"""Offline fixture summary; actual forward verdicts require TrialRegistry evidence."""
 
 from __future__ import annotations
 
 from decimal import Decimal
+
+from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 
 def evaluate_forward(
@@ -13,17 +15,20 @@ def evaluate_forward(
     predeclared_hurdle: Decimal,
     costs_included: bool,
 ) -> dict:
+    for value in (independent_decisions, minimum_decisions):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("decision counts must be integers")
+    if independent_decisions < 0 or minimum_decisions <= 0:
+        raise ValueError("counts require a nonnegative sample and positive minimum")
+    net_economic = parse_decimal(net_economic)
+    predeclared_hurdle = parse_decimal(predeclared_hurdle)
     if not costs_included:
         raise ValueError("failed and external costs must be included")
-    if independent_decisions < minimum_decisions:
-        return {
-            "verdict": "insufficient_evidence",
-            "net_economic": str(net_economic),
-            "decisions": independent_decisions,
-        }
-    verdict = "supported" if net_economic >= predeclared_hurdle else "not_supported"
     return {
-        "verdict": verdict,
-        "net_economic": str(net_economic),
+        "verdict": "insufficient_evidence",
+        "net_economic": canonical_decimal(net_economic),
         "decisions": independent_decisions,
+        "minimum_decisions": minimum_decisions,
+        "mechanical_hurdle_met": net_economic >= predeclared_hurdle,
+        "reason": "offline summary has no preregistration, actual forward provenance or uncertainty evidence",
     }
