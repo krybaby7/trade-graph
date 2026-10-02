@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -323,4 +325,126 @@ class CostInventory(EvaluationContract):
     def unique(self):
         if len(set(self.receipt_ids)) != len(self.receipt_ids):
             raise ValueError("ledger inventory contains duplicate receipts")
+        return self
+
+
+class EvidenceRecordBinding(EvaluationContract):
+    """One immutable source record, including its trusted collection timestamp."""
+
+    kind: Literal[
+        "protocol", "observation", "attempt", "attempt_result", "expense",
+        "expense_resolution", "allocation", "inventory",
+    ]
+    record_key: Annotated[str, Field(min_length=1, max_length=2048)]
+    trial_id: Reference | None
+    document_sha256: Fingerprint
+    retained_document_sha256: Fingerprint
+    collected_at: datetime
+
+    @field_validator("collected_at")
+    @classmethod
+    def aware(cls, value):
+        if value.tzinfo is None:
+            raise ValueError("evidence collection requires a timezone")
+        return value.astimezone(UTC)
+
+
+class EvaluationSnapshot(EvaluationContract):
+    """Frozen report handoff; digests bind imports but do not authenticate sources.
+
+    The registry retains the complete canonical report and source bindings.
+    Protected consumers must independently authenticate collection provenance
+    and bind any deployment/venue/live-account scope. An imported label or a
+    positive conditional verdict cannot establish those facts.
+    """
+
+    schema_version: Literal[1] = 1
+    trial_id: Reference
+    portfolio_id: Reference
+    market_stream_id: Reference
+    selected_version_sha256: Fingerprint
+    collected_as_of: datetime
+    protocol_sha256: Fingerprint
+    report_sha256: Fingerprint
+    inventory_sha256: Fingerprint | None
+    ledger_export_sha256: Fingerprint | None
+    source_cutoff: datetime | None
+    source_manifest_sha256: Fingerprint
+    source_records: tuple[EvidenceRecordBinding, ...]
+    report_json: str
+    verification_basis: Literal["unverified_imports"] = "unverified_imports"
+
+    @field_validator("collected_as_of", "source_cutoff")
+    @classmethod
+    def aware(cls, value):
+        if value is None:
+            return value
+        if value.tzinfo is None:
+            raise ValueError("snapshot timestamps require a timezone")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def bound_documents(self):
+        report = json.loads(self.report_json)
+        canonical = json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if canonical != self.report_json or hashlib.sha256(canonical.encode()).hexdigest() != self.report_sha256:
+            raise ValueError("snapshot requires the canonical report and matching digest")
+        if not isinstance(report, dict) or not isinstance(report.get("pre_registration"), dict):
+            raise ValueError("snapshot requires a registered evaluation report")
+        registration = report["pre_registration"]
+        protocol = ForwardProtocol.model_validate(registration.get("protocol"))
+        protocol_json = json.dumps(protocol.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        if (registration.get("document_sha256") != self.protocol_sha256
+                or hashlib.sha256(protocol_json.encode()).hexdigest() != self.protocol_sha256):
+            raise ValueError("snapshot protocol digest does not match its report")
+        if (report.get("trial_id"), protocol.trial_id, protocol.portfolio_id, protocol.market_stream_id,
+            protocol.selected_version_sha256) != (
+                self.trial_id, self.trial_id, self.portfolio_id, self.market_stream_id, self.selected_version_sha256,
+        ):
+            raise ValueError("snapshot scope does not match its registered protocol")
+        if report.get("verification_basis") != self.verification_basis:
+            raise ValueError("snapshot cannot elevate report verification")
+        try:
+            report_as_of = datetime.fromisoformat(report["as_of_utc"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("snapshot requires its report as-of timestamp") from exc
+        if report_as_of != self.collected_as_of:
+            raise ValueError("snapshot as-of must match its report")
+        bindings = [item.model_dump(mode="json") for item in self.source_records]
+        manifest = json.dumps(bindings, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if hashlib.sha256(manifest.encode()).hexdigest() != self.source_manifest_sha256:
+            raise ValueError("snapshot source manifest digest mismatch")
+        keys = [(item.kind, item.record_key) for item in self.source_records]
+        if keys != sorted(set(keys)):
+            raise ValueError("snapshot source bindings must be unique and canonically ordered")
+        if any(item.collected_at > self.collected_as_of for item in self.source_records):
+            raise ValueError("snapshot cannot include evidence collected after its as-of time")
+        protocols = [item for item in self.source_records if item.kind == "protocol" and item.trial_id == self.trial_id]
+        if len(protocols) != 1 or protocols[0].document_sha256 != self.protocol_sha256:
+            raise ValueError("snapshot must bind its registered source protocol")
+        if (self.inventory_sha256 is None) != (self.ledger_export_sha256 is None):
+            raise ValueError("snapshot inventory and ledger-export digests must be bound together")
+        if (self.inventory_sha256 is None) != (self.source_cutoff is None):
+            raise ValueError("snapshot inventory requires its source cutoff")
+        if self.source_cutoff is not None and self.source_cutoff > self.collected_as_of:
+            raise ValueError("snapshot source cutoff cannot be in the future")
+        inventories = [item for item in self.source_records
+                       if item.kind == "inventory" and item.trial_id == self.trial_id]
+        cost_inventory = report.get("cost_inventory")
+        if not isinstance(cost_inventory, dict) or not isinstance(cost_inventory.get("imports"), list):
+            raise ValueError("snapshot requires a report cost inventory")
+        imported = cost_inventory["imports"]
+        if self.inventory_sha256 is None:
+            if imported or inventories:
+                raise ValueError("snapshot cannot omit its sealed inventory")
+        else:
+            if len(imported) != 1 or len(inventories) != 1:
+                raise ValueError("snapshot requires exactly one sealed inventory")
+            inventory = CostInventory.model_validate(imported[0])
+            raw = json.dumps(inventory.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+            if (inventories[0].document_sha256 != self.inventory_sha256
+                    or hashlib.sha256(raw.encode()).hexdigest() != self.inventory_sha256
+                    or inventory.ledger_export_sha256 != self.ledger_export_sha256
+                    or inventory.source_cutoff != self.source_cutoff):
+                raise ValueError("snapshot inventory does not match its bound report")
         return self

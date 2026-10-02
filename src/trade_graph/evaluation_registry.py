@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from decimal import localcontext
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from trade_graph.evaluation_contracts import (
     Attempt,
     AttemptResult,
     CostInventory,
+    EvaluationSnapshot,
+    EvidenceRecordBinding,
     ExpenseAllocation,
     ExpenseEvidence,
     ExpenseResolution,
@@ -233,25 +236,106 @@ class TrialRegistry:
                 raise ValueError("complete ledger inventory must match all allocated receipts")
             results = [AttemptResult.model_validate_json(row["document_json"])
                        for row in self._rows("attempt_result", trial_id)]
+            attempts = [Attempt.model_validate_json(row["document_json"])
+                        for row in self._rows("attempt", trial_id)]
+            if {item.attempt_id for item in attempts} != {item.attempt_id for item in results}:
+                raise ValueError("all variant attempts need retained outcomes before sealing")
             if any(not set(result.receipt_ids) <= allocated for result in results):
                 raise ValueError("failed/rejected attempt costs cannot be omitted")
+            if any(expense.receipt_id in allocated and expense.incurred_at > inventory.source_cutoff
+                   for expense in self.expenses()):
+                raise ValueError("ledger inventory cutoff must cover every allocated expense")
             self._append("inventory", trial_id, trial_id, inventory)
 
-    def report(self, trial_id: str) -> dict:
+    def _report(self, trial_id: str, as_of: datetime) -> dict:
         from trade_graph.forward_evaluation import build_forward_report
 
-        # A single read transaction prevents a concurrent collector producing a mixed report.
+        protocol = self.protocol(trial_id)
+        return build_forward_report(
+            protocol=protocol, as_of=as_of,
+            registration=self._rows("protocol", trial_id)[0],
+            observations=self.observations(trial_id),
+            expenses=self.expenses(), allocations=self.allocations(trial_id),
+            attempts=self._rows("attempt", trial_id),
+            attempt_results=self._rows("attempt_result", trial_id),
+            inventories=self._rows("inventory", trial_id),
+            trials=self._rows("protocol"),
+            expense_history=self._rows("expense"),
+            expense_resolutions=self._rows("expense_resolution"),
+        )
+
+    def report(self, trial_id: str) -> dict:
+        # A single transaction prevents a concurrent collector producing a mixed report.
         with self._atomic():
+            return self._report(trial_id, self.clock.now())
+
+    def _source_bindings(self) -> tuple[EvidenceRecordBinding, ...]:
+        # Bind the whole deployment registry: new family variants and shared-cost
+        # allocations can change interpretation even without changing this trial.
+        rows = self.connection.execute(
+            "SELECT * FROM evaluation_records WHERE kind != 'snapshot' ORDER BY kind, record_key",
+        ).fetchall()
+        bindings = []
+        for row in rows:
+            if document_hash(row["document_json"]) != row["document_sha256"]:
+                raise ValueError("evaluation evidence digest mismatch")
+            bindings.append(EvidenceRecordBinding.model_validate({
+                **{key: row[key] for key in ("kind", "record_key", "trial_id", "document_sha256", "collected_at")},
+                "retained_document_sha256": hashlib.sha256(row["document_json"].encode()).hexdigest(),
+            }))
+        return tuple(bindings)
+
+    def snapshot(self, trial_id: str) -> EvaluationSnapshot:
+        """Persist an immutable report with every source binding in one transaction.
+
+        This authenticates neither invoices nor the collector's actual-paper
+        provenance. Its verification basis cannot be promoted by an input flag.
+        """
+        with self._atomic():
+            as_of = self.clock.now()
             protocol = self.protocol(trial_id)
-            return build_forward_report(
-                protocol=protocol, as_of=self.clock.now(),
-                registration=self._rows("protocol", trial_id)[0],
-                observations=self.observations(trial_id),
-                expenses=self.expenses(), allocations=self.allocations(trial_id),
-                attempts=self._rows("attempt", trial_id),
-                attempt_results=self._rows("attempt_result", trial_id),
-                inventories=self._rows("inventory", trial_id),
-                trials=self._rows("protocol"),
-                expense_history=self._rows("expense"),
-                expense_resolutions=self._rows("expense_resolution"),
+            sources = self._source_bindings()
+            manifest = json.dumps([item.model_dump(mode="json") for item in sources],
+                                  sort_keys=True, separators=(",", ":"), allow_nan=False)
+            report = json.dumps(self._report(trial_id, as_of), sort_keys=True, separators=(",", ":"), allow_nan=False)
+            inventories = self._rows("inventory", trial_id)
+            inventory = CostInventory.model_validate_json(inventories[0]["document_json"]) if inventories else None
+            snapshot = EvaluationSnapshot(
+                trial_id=trial_id, portfolio_id=protocol.portfolio_id, market_stream_id=protocol.market_stream_id,
+                selected_version_sha256=protocol.selected_version_sha256, collected_as_of=as_of,
+                protocol_sha256=self._rows("protocol", trial_id)[0]["document_sha256"],
+                report_sha256=document_hash(report),
+                inventory_sha256=inventories[0]["document_sha256"] if inventories else None,
+                ledger_export_sha256=inventory.ledger_export_sha256 if inventory else None,
+                source_cutoff=inventory.source_cutoff if inventory else None,
+                source_manifest_sha256=document_hash(manifest), source_records=sources, report_json=report,
             )
+            key = document_hash(snapshot.model_dump_json())
+            # Emitting the same frozen-clock snapshot is idempotent. Existing
+            # snapshots do not recursively become report sources.
+            if not any(row["record_key"] == key for row in self._rows("snapshot", trial_id)):
+                self._append("snapshot", key, trial_id, snapshot)
+            return snapshot
+
+    def verify_snapshot(self, snapshot: EvaluationSnapshot) -> None:
+        """Reject altered, unretained or stale snapshots; never elevate upstream trust.
+
+        Verification is against this operator-owned registry under one transaction.
+        An invoice resolution, added receipt/variant or changed source metadata
+        invalidates prior handoffs. Consumers separately enforce evidence expiry
+        and authenticated deployment/venue/account provenance.
+        """
+        snapshot = EvaluationSnapshot.model_validate(snapshot.model_dump())
+        with self._atomic():
+            key = document_hash(snapshot.model_dump_json())
+            retained = {row["record_key"]: row for row in self._rows("snapshot", snapshot.trial_id)}
+            if key not in retained or retained[key]["document_sha256"] != key:
+                raise ValueError("evaluation snapshot is not retained in this registry")
+            if snapshot.collected_as_of > self.clock.now():
+                raise ValueError("evaluation snapshot is not available yet")
+            if snapshot.source_records != self._source_bindings():
+                raise ValueError("evaluation snapshot is stale; collect a new report")
+            report = self._report(snapshot.trial_id, snapshot.collected_as_of)
+            raw = json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if raw != snapshot.report_json:
+                raise ValueError("evaluation snapshot report does not match its retained source records")

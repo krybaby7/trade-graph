@@ -358,6 +358,7 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
         "schema_version": 1, "trial_id": protocol.trial_id, "verdict": verdict,
         "evidence_status": "imported_forward_paper" if observations and not any(
             block.evidence_kind == "synthetic" for block in observations) else "pending_or_synthetic",
+        "verification_basis": "unverified_imports",
         "reasons": sorted(set(reasons)), "as_of_utc": utc_iso(as_of),
         "live_authorization": False, "broader_engineer_authorization": False,
         "pre_registration": {"collected_at": registration["collected_at"],

@@ -68,10 +68,66 @@ The collector uses these methods in order:
    `resolve_expense(ExpenseResolution(...))` may later append an invoice
    reconciliation without replacing the original receipt or reopening the
    sample. Retain report snapshots when reconciled costs change a verdict.
+   The inventory cutoff must cover every allocated receipt's incurred timestamp,
+   including attributed post-horizon review work. Every started variant attempt
+   requires a retained outcome before sealing; a failed seal leaves the trial
+   open so the missing evidence can be recorded.
 7. `report(trial_id)` returns JSON-compatible Decimal strings, trial/variant
    history, receipt allocations, cost/provenance limitations, baseline
    comparisons, uncertainty and sensitivity. Reporting is a read of imported
    evidence and cannot enable live trading or broader Engineer authority.
+
+## Immutable report handoff
+
+`snapshot(trial_id)` appends an immutable `EvaluationSnapshot` in the same
+transaction that reads its sources and builds the report. It includes canonical
+`report_json`, its digest, the preregistration digest, the sealed inventory and
+ledger-export digests/cutoff when available, the paper portfolio, market stream
+and selected version. The report and snapshot always carry
+`verification_basis="unverified_imports"`. This includes a conditional
+`supported` result: importing actual labels and source references does not
+authenticate a paid soak, complete invoices or independent observations.
+
+The snapshot's `source_manifest_sha256` binds the complete deployment registry,
+including every protocol, observation, variant attempt/outcome, expense,
+reconciliation, allocation and inventory. Each frozen source binding includes
+both its canonical document digest and the digest of the exact retained document
+bytes, along with record identity, trial identity and collection timestamp.
+Report scope, as-of time, protocol and inventory must agree with these bindings.
+Snapshot records are excluded from source manifests to avoid recursive hashes.
+Repeated emission under the same fixed test clock is idempotent.
+
+`verify_snapshot(snapshot)` revalidates nested structures, requires the identical
+snapshot to be retained in that operator-owned registry, re-reads the complete
+current source inventory and rebuilds the report at its original as-of time in
+one transaction. A new invoice reconciliation, receipt, family trial or shared
+allocation makes an earlier snapshot stale. Emit a new snapshot and retain the
+old report so a changed economic verdict remains auditable. Even a semantically
+equivalent rewrite of retained source bytes invalidates the old handoff.
+
+This verification establishes a current, consistent registry handoff. It does
+not establish upstream source authenticity or discover omitted deployment
+expenses. A protected downstream verifier must independently check actual
+collection provenance, complete authoritative receipts and their FX valuation,
+then bind the snapshot digests to the intended deployment, venue, account and
+instruments. Those live-account identities are absent from the paper protocol
+and cannot be inferred from its portfolio name. Evidence expiry belongs to that
+protected consumer's policy; snapshot collection time does not choose a new
+owner-approved validity period. No snapshot method enables paid calls, live
+execution or broader Engineer permissions.
+
+For an already registered private trial, the handoff is:
+
+```python
+snapshot = registry.snapshot(existing_trial_id)
+registry.verify_snapshot(snapshot)
+# Retain snapshot.model_dump_json() privately. Independent protected source
+# verification is still required before any downstream authorization gate.
+```
+
+No real protocol dates, operating allowance or observation data are supplied by
+this example. The real collector still needs the T17 funded-paper evidence and
+an operator-selected future protocol registered before collecting its holdout.
 
 Trading-only P&L is closing equity minus opening equity and external flows, with
 embedded operating expenses added back. Fill fees and measured slippage already
