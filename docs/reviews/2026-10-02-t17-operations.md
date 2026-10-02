@@ -52,7 +52,9 @@ No proxy control was bypassed.
 A bounded local CLI drill performed initialization, three maintenance ticks, a private
 SQLite backup while the service lease was active, offline restore, doctor/report,
 manage-only pause and one restored reconciliation tick. All eight commands returned
-zero. The backup SHA256 matched its checksum; database, backup, checksum and restored
+zero. Doctor correctly reported degraded readiness: provisional financial valuation,
+pending model routing and no persisted market observations. The backup SHA256 matched
+its checksum; database, backup, checksum and restored
 database files had mode 0600. No service lease remained after drain. Restored fills,
 decisions, usage receipts and budget reservations were all zero, as expected for this
 maintenance-only exercise. Existing tests separately verify populated WAL balances,
