@@ -9,7 +9,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -24,6 +24,7 @@ from trade_graph.api.security import redact
 from trade_graph.application.activation import VersionController
 from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.budget import OPEN_STATES, BudgetGateway
+from trade_graph.application.owner_commands import command_history, record_command_evidence
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.contracts.models import OwnerPolicy
 from trade_graph.domain.clock import utc_iso
@@ -207,6 +208,9 @@ def configuration(runtime) -> dict:
                 "budget": budget,
                 "pause": runtime.execution.pause(runtime.portfolio_id),
                 "pending_commands": [dict(row) for row in pending],
+                "recovered_commands": [
+                    row for row in command_history(runtime, scope) if row["phase"] == "RECOVERED"
+                ],
                 "routing": {"supported": False, "reason": "persisted model routing is not configured in this runtime"},
             }
         )
@@ -260,7 +264,8 @@ class _Commands:
             raise HTTPException(status_code=409, detail={"reason": "stale revision", "revision": revision})
         return command_id, digest, revision + 1, None
 
-    def _save(self, command_id: str, scope: str, digest: str, revision: int, result: dict | None) -> None:
+    def _save(self, command_id: str, scope: str, digest: str, revision: int,
+              result: dict | None, action: str) -> None:
         self.database.execute(
             """INSERT INTO dashboard_control_state VALUES (?, ?)
             ON CONFLICT(scope) DO UPDATE SET revision = excluded.revision""",
@@ -277,6 +282,7 @@ class _Commands:
                 utc_iso(self.runtime.clock.now()),
             ),
         )
+        record_command_evidence(self.runtime, command_id, action, revision, result=result)
 
     def mutate(
         self,
@@ -292,7 +298,7 @@ class _Commands:
             if replay is not None:
                 return replay
             result = redact({**effect(), "revision": revision})
-            self._save(command_id, scope, digest, revision, result)
+            self._save(command_id, scope, digest, revision, result, action)
             return result
 
     def begin(self, scope: str, body: Command, action: str, effect: Callable[[], None]) -> tuple[str, int, dict | None]:
@@ -300,8 +306,18 @@ class _Commands:
             command_id, digest, revision, replay = self._check(scope, body, action)
             if replay is None:
                 effect()
-                self._save(command_id, scope, digest, revision, None)
+                self._save(command_id, scope, digest, revision, None, action)
             return command_id, revision, replay
+
+    def checkpoint(self, command_id: str, revision: int, result: dict) -> dict:
+        """Retain a completed management result before publishing its receipt."""
+        result = redact({**result, "revision": revision})
+        with self.database.immediate():
+            row = self.database.execute(
+                "SELECT action FROM dashboard_command_evidence WHERE command_id = ?", (command_id,)
+            ).fetchone()
+            record_command_evidence(self.runtime, command_id, row["action"], revision, result=result)
+        return result
 
     def finish(self, command_id: str, revision: int, result: dict, *, error: int | None = None) -> dict:
         if error is not None:
@@ -310,6 +326,22 @@ class _Commands:
             result = {**result, "detail": {**detail, "command_id": command_id, "command_state": "FAILED"}}
         result = redact({**result, "revision": revision})
         with self.database.immediate():
+            stored = self.database.execute(
+                "SELECT * FROM dashboard_commands WHERE command_id = ?", (command_id,)
+            ).fetchone()
+            if stored["status"] != "PROCESSING":
+                # A recovered receipt is terminal. A delayed coroutine cannot
+                # overwrite the controller's durable uncertainty decision.
+                saved = json.loads(stored["response_json"])
+                if stored["status"].startswith("FAILED:"):
+                    raise HTTPException(status_code=int(stored["status"].split(":")[1]), detail=saved["detail"])
+                return saved
+            evidence = self.database.execute(
+                "SELECT action FROM dashboard_command_evidence WHERE command_id = ?", (command_id,)
+            ).fetchone()
+            if evidence:
+                record_command_evidence(self.runtime, command_id, evidence["action"], revision,
+                                        result=result, error=error)
             self.database.execute(
                 "UPDATE dashboard_commands SET response_json = ?, status = ? "
                 "WHERE command_id = ? AND status = 'PROCESSING'",
@@ -588,6 +620,18 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
         owner_write(request)
         return configuration(runtime)
 
+    @app.get("/api/v1/owner/commands")
+    def owner_commands(request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 100,
+                       offset: Annotated[int, Query(ge=0, le=1000000)] = 0) -> dict:
+        owner_write(request)
+        return {"scope": owner_scope, "commands": command_history(runtime, owner_scope, limit=limit, offset=offset)}
+
+    @app.get("/api/v1/leader/commands")
+    def leader_commands(request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 100,
+                        offset: Annotated[int, Query(ge=0, le=1000000)] = 0) -> dict:
+        leader(request)
+        return {"scope": leader_scope, "commands": command_history(runtime, leader_scope, limit=limit, offset=offset)}
+
     @app.post("/api/v1/owner/config")
     async def update_config(request: Request) -> dict:
         owner_write(request)
@@ -656,18 +700,20 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
             return replay
         try:
             achieved = await runtime.execution.advance_pause(runtime.portfolio_id)
-            if achieved in {"flat-verified", "stopped"} and _nonflat(runtime):
-                achieved = "unresolved-native-holdings"
-                runtime.execution._set_achieved(runtime.portfolio_id, achieved)
         except Exception:
             return commands.finish(
                 command_id, revision, {"detail": "pause persisted; management requires reconciliation"}, error=409
             )
-        profile = runtime.execution.profile(runtime.portfolio_id)
-        return commands.finish(
-            command_id,
-            revision,
-            {
+        with runtime.database.immediate():
+            if _revision(runtime, owner_scope) != revision:
+                return commands.finish(command_id, revision, {
+                    "detail": "owner state changed during management; newer pause retained",
+                }, error=409)
+            if achieved in {"flat-verified", "stopped"} and _nonflat(runtime):
+                achieved = "unresolved-native-holdings"
+                runtime.execution._set_achieved(runtime.portfolio_id, achieved)
+            profile = runtime.execution.profile(runtime.portfolio_id)
+            result = commands.checkpoint(command_id, revision, {
                 "requested_profile": body.profile,
                 "profile": profile,
                 "originator": "owner",
@@ -675,8 +721,8 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
                 "management_continues": profile != "STOPPED",
                 "position_policy": body.position_policy,
                 "offline_protection": "only previously verified venue-native protection survives process shutdown",
-            },
-        )
+            })
+        return commands.finish(command_id, revision, result)
 
     @app.post("/api/v1/owner/resume")
     async def resume(request: Request) -> dict:

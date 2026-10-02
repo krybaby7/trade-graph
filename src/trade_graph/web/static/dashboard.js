@@ -162,6 +162,8 @@
       ownerStatus.textContent = blocked ? "A protected command outcome is pending. Reconcile it before further changes; emergency manage-only remains available." :
         csrf ? `Protected owner revision ${ownerRevision} loaded. Every change is checked against this revision.` :
           `Protected owner revision ${ownerRevision} loaded for reading. Browser writes require a cookie session.`;
+      const review = (body.recovered_commands || []).filter(command => command.recovery?.needs_review);
+      if (review.length) ownerStatus.textContent += ` ${review.length} interrupted command${review.length === 1 ? " requires" : "s require"} review. Check the recovery receipts below before issuing a replacement.`;
       ownerFields(Boolean(csrf) && !blocked && !ownerBusy);
       allowRecoveryControls();
       return true;

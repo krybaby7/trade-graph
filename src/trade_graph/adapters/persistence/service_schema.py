@@ -6,7 +6,7 @@ STATEMENTS = [
         action TEXT NOT NULL,
         portfolio_id TEXT NOT NULL,
         deployment_id TEXT NOT NULL,
-        revision INTEGER NOT NULL CHECK (revision >= 1),
+        revision INTEGER NOT NULL CHECK (revision >= 0),
         phase TEXT NOT NULL CHECK (phase IN ('LOCAL_COMMITTED', 'EFFECT_COMMITTED', 'RECOVERED')),
         effect_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
