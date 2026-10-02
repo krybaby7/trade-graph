@@ -85,6 +85,7 @@ class PaperService:
         self.handlers = dict(handlers or {})
         self.artifact_runtime, self.public_feed = artifact_runtime, public_feed
         self.portfolio_ids = tuple(dict.fromkeys(portfolio_ids or ()))
+        self.management_portfolio_ids: tuple[str, ...] = ()
         self.schedule_intervals = dict(DEFAULT_SCHEDULES if schedule_intervals is None else schedule_intervals)
         for role, interval in self.schedule_intervals.items():
             if role not in DEFAULT_SCHEDULES:
@@ -180,6 +181,9 @@ class PaperService:
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper' ORDER BY created_at, rowid",
             ).fetchall()
             available = {row["portfolio_id"] for row in rows}
+            # A database owns one execution outbox. Selecting a newer experiment
+            # narrows graph work, never reconciliation/protection for older accounts.
+            self.management_portfolio_ids = tuple(row["portfolio_id"] for row in rows)
             if not self.portfolio_ids:
                 self.portfolio_ids = tuple(row["portfolio_id"] for row in rows)
             if not self.portfolio_ids or any(pid not in available for pid in self.portfolio_ids):
@@ -248,7 +252,7 @@ class PaperService:
                 asyncio.run(self.execution.reconcile())
             except Exception as exc:
                 failures.append("reconciliation:" + type(exc).__name__)
-            for pid in self.portfolio_ids:
+            for pid in self.management_portfolio_ids:
                 try:
                     management[pid] = asyncio.run(self.execution.advance_pause(pid))
                 except Exception as exc:

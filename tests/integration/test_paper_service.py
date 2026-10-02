@@ -17,7 +17,7 @@ from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
 from trade_graph.application.artifact_runtime import ArtifactRuntime
-from trade_graph.application.authority import AuthorityRecord
+from trade_graph.application.authority import AuthorityRecord, seed_paper_authority
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
 from trade_graph.application.paper_service import PaperService
@@ -600,6 +600,46 @@ def test_artifact_leader_cadence_keeps_digest_and_current_owner_attempt_bound(tm
     research = ledger.database.execute("SELECT * FROM tasks WHERE role='research'").fetchone()
     assert research["expected_version"] == bundle["artifact_hash"]
     assert research["max_attempts"] == 1
+
+
+def test_selected_graph_portfolio_keeps_older_order_and_position_management(tmp_path):
+    clock, ledger, execution, _broker, older = _stack(tmp_path)
+    execution.save_observation(_quote(clock, "99", "100", observation_id="entry"))
+    execution.authorize(older, _decision(clock, older, record_id="old-entry"))
+    asyncio.run(execution.dispatch())
+    clock.advance(1)
+    execution.on_observation(_quote(clock, "99", "100", observation_id="entry-fill"))
+    ledger.observe_mark(older, "BTC", Decimal("100"), "USD", source="fixture")
+    protection = execution.place_protection(older, "BTC/USD", Decimal("0.01"), Decimal("50"), "snapshot")
+    increase = execution.authorize(older, _decision(clock, older, record_id="old-increase"))
+    asyncio.run(execution.dispatch())
+    execution.set_pause(older, "NO_NEW_EXPOSURE", "owner", "old experiment retains its positions")
+    newer = ledger.create_portfolio(reporting_currency="USD")
+    ledger.deposit(newer, "USD", Decimal("10000"), "new-experiment")
+    seed_paper_authority(ledger.database, clock, newer)
+    seen = []
+    service = PaperService(ledger.database, execution, portfolio_ids=[newer],
+                           handlers={"research": lambda task: seen.append(task) or {}},
+                           schedule_intervals={"research": 60})
+
+    async def scenario():
+        result = await service.tick(wait_roles=True)
+        assert set(service.management_portfolio_ids) == {older, newer}
+        assert result.management[older] == "increases-cleared"
+        assert execution.intent_state(increase) == "CANCELLED"
+        assert execution.intent_state(protection) == "OPEN"
+        execution.save_observation(_quote(clock, "100", "100.1", observation_id="flatten-quote"))
+        execution.set_pause(older, "FLATTEN", "owner", "close previous experiment")
+        assert (await service.tick(wait_roles=True)).management[older] == "flattening"
+        clock.advance(1)
+        execution.on_observation(_quote(clock, "100", "100.1", observation_id="flatten-fill"))
+        assert (await service.tick(wait_roles=True)).management[older] == "flat-verified"
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert len(seen) == 1 and seen[0]["portfolio_id"] == newer
+    assert ledger.database.execute("SELECT count(*) FROM tasks WHERE portfolio_id = ?", (older,)).fetchone()[0] == 0
+    assert execution.owned_quantity(older, "BTC") == 0
 
 
 def test_service_loads_activated_bytes_and_keeps_receipt_provenance(tmp_path, monkeypatch):
