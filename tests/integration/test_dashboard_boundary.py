@@ -65,12 +65,28 @@ def test_health_separates_unverified_declarations_from_passed_checks(tmp_path):
         (getattr(runtime, "deployment_id", "deployment"), json.dumps({
             "eligibility_confirmed": "true", "owner_confirmed": True,
             "read_only_reconciliation_passed": True, "operating_budget_set": True,
+            "economic_verdict": "supported",
         })),
     )
-    gate = health(runtime, authenticated=True)["live_prerequisites"]
+    report = health(runtime, authenticated=True)
+    assert report["economic_evidence"] == "insufficient_evidence"
+    assert report["declared_economic_verdict"] == "supported"
+    gate = report["live_prerequisites"]
     assert gate["enabled"] is False and gate["ready"] is False
     assert gate["recorded_eligibility_passed"] is False
     assert not any(gate["checks"].values())
     assert gate["unverified_recorded_checks"]["explicit_owner_confirmation"] is True
     assert gate["unverified_recorded_checks"]["eligibility"] is False
     assert gate["verification_basis"] == "unverified_dashboard_record"
+
+
+def test_health_refuses_malformed_economic_declaration(tmp_path):
+    runtime = _Runtime(tmp_path)
+    runtime.database.execute(
+        "INSERT INTO live_gate VALUES (?, 1, ?, '2026-01-01T00:00:00Z')",
+        (getattr(runtime, "deployment_id", "deployment"),
+         json.dumps({"economic_verdict": {"claim": "supported"}})),
+    )
+    report = health(runtime, authenticated=True)
+    assert report["economic_evidence"] == "insufficient_evidence"
+    assert report["declared_economic_verdict"] == "insufficient_evidence"

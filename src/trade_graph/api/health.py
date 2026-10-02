@@ -29,6 +29,11 @@ def health(runtime, *, authenticated: bool = False) -> dict:
         (getattr(runtime, "deployment_id", "deployment"),),
     ).fetchone()
     gate_record = json.loads(gate_row["document_json"]) if gate_row else {}
+    declared_verdict = gate_record.get("economic_verdict")
+    if not isinstance(declared_verdict, str) or declared_verdict not in {
+        "supported", "not_supported", "insufficient_evidence",
+    }:
+        declared_verdict = "insufficient_evidence"
     gate_record["paper_capital"] = policy.get("virtual_capital", {}).get("amount", "0")
     gate_record["withdrawals_allowed"] = False
     gate = evaluate_live_enablement(gate_record)
@@ -99,6 +104,7 @@ def health(runtime, *, authenticated: bool = False) -> dict:
         "process_leases": [{**dict(row), "expired": row["expires_at"] <= now} for row in leases],
         "protection": {"management": "paper execution reconciliation remains available",
                        "offline_guarantee": False},
-        "economic_evidence": gate_record.get("economic_verdict", "insufficient_evidence"),
+        "economic_evidence": "insufficient_evidence",
+        "declared_economic_verdict": declared_verdict,
     })
     return redact(result)
