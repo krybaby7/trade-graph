@@ -45,7 +45,7 @@ unique one-use capability/request records in the trusted financial database.
 It passed 31 scheduler/recovery tests and targeted Ruff checks at commit
 `3e0b02f`. This is a schema checkpoint, not proof of the production boundary.
 
-## Completed orchestration checkpoint
+## Completed round1 orchestration checkpoint
 
 All six task agents finished their assigned slices and independent cross-reviews;
 they are idle. This is a verified checkpoint, not completion of every task's
@@ -86,7 +86,7 @@ The source was published by verified normal fast-forward on
 `cursor/trade-graph-r1-548a`. Original task branches and all older worktrees remain
 available. Main was not merged or changed.
 
-## Remaining gates
+## Remaining gates at the round1 checkpoint
 
 T17 needs working public connectivity, approved funded model setup, actual invoices
 and intended-host operations. T18 needs a real prospective protocol/horizon and
@@ -119,3 +119,11 @@ host, venue and funded-soak details were requested while independent work procee
 Root checkpoint `a263ed6` adds migration 0011 and exact optional expense FX links
 frozen before dispatch. All 230 focused tests passed. Legacy/conservative records
 remain unlinked; source linkage alone does not establish external authenticity.
+
+## Verified round2 checkpoint
+
+All six agents finished and are idle. Implementation, independent review,
+integrated full tests, clean source-bound acceptance and installed-wheel proof
+are complete at the recorded scope. [Current results and remaining gates](2026-10-02-remaining-gates.md)
+supersede round1 remaining-work descriptions above. Task acceptance states remain
+unfinished or dependency-blocked; no funded/forward/private-venue/live process runs.
