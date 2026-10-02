@@ -82,7 +82,9 @@ Within one SQLite read snapshot the projection checks:
   never charge that allowance. Decimal comparisons use precision 100; state values
   are bounded before arithmetic.
 - No unresolved actual usage, invoice differences, unknown/submitting/cancel-pending
-  orders, owner commands still processing, or artifact recovery pending.
+  orders, owner commands still processing, recovered owner effects awaiting
+  explicit review, or artifact recovery pending. A terminal failed receipt does
+  not resolve an unknown effect; an ordinary known rejection is distinct.
 - An explicit current, complete reconciliation-health proof for that exact live
   venue/account scope. A missing proof means pending verification; it does not
   assert that the existing runtime failed. Current execution logs only health

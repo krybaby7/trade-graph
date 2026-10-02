@@ -292,6 +292,12 @@ def _state_amount(value) -> Decimal:
     return amount
 
 
+def _owner_recovery_reviewed(raw: str) -> bool:
+    document = json.loads(raw)
+    recovery = document.get("recovery") if isinstance(document, dict) else None
+    return isinstance(recovery, dict) and recovery.get("needs_review") is False
+
+
 def _evaluate_live_readiness(
     database: Database, clock: Clock, *, scope: LivePilotScope, source: PinnedReadinessSource,
 ) -> dict:
@@ -429,6 +435,16 @@ def _evaluate_live_readiness(
                 (f"owner:{scope.deployment_id}",),
             ).fetchone()[0]
             check("no_pending_owner_commands", pending == 0)
+            recovered = database.execute(
+                "SELECT e.deployment_id, e.effect_json FROM dashboard_commands c "
+                "JOIN dashboard_command_evidence e USING(command_id) "
+                "WHERE c.scope = ? AND e.phase = 'RECOVERED'",
+                (f"owner:{scope.deployment_id}",),
+            ).fetchall()
+            check("no_unreviewed_owner_recovery", all(
+                item["deployment_id"] == scope.deployment_id and _owner_recovery_reviewed(item["effect_json"])
+                for item in recovered
+            ))
             rollouts = database.execute(
                 "SELECT state FROM version_rollouts WHERE portfolio_id = ? ORDER BY generation DESC LIMIT 1",
                 (scope.portfolio_id,),

@@ -8,6 +8,7 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.authority import AuthorityRecord, paper_mandate, paper_owner_policy
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.ledger import Ledger
+from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.domain.clock import FrozenClock, utc_iso
 from trade_graph.domain.money import Money
 from trade_graph.live_gate import (
@@ -424,3 +426,32 @@ def test_unknown_order_in_same_live_account_blocks_other_portfolio_pilot(fixture
                        "'BTC/USD', ?, ?, ?)",
                        (sibling, json.dumps(payload), utc_iso(fixture.clock.now()), utc_iso(fixture.clock.now())))
     assert "no_unknown_orders" in fixture.projection()["reasons"]
+
+
+def test_unknown_recovered_owner_effect_still_needs_review_after_terminal_receipt(fixture):
+    fixture.db.execute("INSERT INTO dashboard_commands "
+                       "VALUES ('recovered', ?, 'hash', NULL, 'PROCESSING', ?)",
+                       (f"owner:{fixture.scope.deployment_id}", utc_iso(fixture.clock.now())))
+    fixture.db.execute("INSERT INTO dashboard_control_state VALUES (?, 1)",
+                       (f"owner:{fixture.scope.deployment_id}",))
+    fixture.db.execute("INSERT INTO dashboard_command_evidence "
+                       "VALUES ('recovered', 'pause', ?, ?, 1, 'LOCAL_COMMITTED', '{}', ?)",
+                       (fixture.pid, fixture.scope.deployment_id,
+                        utc_iso(fixture.clock.now())))
+    recovered = recover_owner_commands(SimpleNamespace(
+        database=fixture.db, clock=fixture.clock, portfolio_id=fixture.pid,
+        deployment_id=fixture.scope.deployment_id,
+    ))
+    assert recovered[0]["status"] == "FAILED:409" and recovered[0]["needs_review"] is True
+    assert fixture.db.execute("SELECT phase FROM dashboard_command_evidence").fetchone()[0] == "RECOVERED"
+    result = fixture.projection()
+    assert result["checks"]["no_pending_owner_commands"] is True
+    assert result["checks"]["no_unreviewed_owner_recovery"] is False
+    assert result["recorded_checks_passed"] is False
+
+
+def test_known_rejected_owner_command_is_not_an_unknown_recovery(fixture):
+    fixture.db.execute("INSERT INTO dashboard_commands "
+                       "VALUES ('known-rejection', ?, 'hash', '{}', 'FAILED:403', ?)",
+                       (f"owner:{fixture.scope.deployment_id}", utc_iso(fixture.clock.now())))
+    assert fixture.projection()["recorded_checks_passed"] is True
