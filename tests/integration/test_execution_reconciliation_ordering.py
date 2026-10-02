@@ -22,7 +22,7 @@ from trade_graph.contracts.models import (
     SubmitResult,
 )
 from trade_graph.domain.clock import FrozenClock, utc_iso
-from trade_graph.domain.errors import StaleState, UncertainExternal, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, UncertainExternal, ValidationFailure
 
 
 class HistoryBroker:
@@ -396,4 +396,46 @@ def test_live_dispatch_rechecks_missing_or_increased_fee_bound_before_any_order_
     assert execution.intent_state(intent.intent_id) == "REJECTED"
     assert database.execute("SELECT count(*) FROM order_attempts").fetchone()[0] == 0
     assert database.execute("SELECT count(*) FROM position_reservations WHERE state='held'").fetchone()[0] == 0
+    assert broker.calls == []
+
+
+@pytest.mark.parametrize("operation", ["cancel", "replace"])
+@pytest.mark.parametrize("changes", [{"account": "other"}, {"venue": "other"}, {"mode": "live"}])
+def test_explicit_order_commands_refuse_another_execution_binding_before_any_effect(tmp_path, operation, changes):
+    database, clock, ledger, portfolio, broker, execution = _stack(tmp_path)
+    foreign = _intent(database, clock, portfolio, "foreign", **changes)
+    before = database.execute("SELECT payload_json FROM order_intents WHERE intent_id='foreign'").fetchone()[0]
+    command = execution.cancel(foreign.intent_id) if operation == "cancel" else execution.replace(
+        foreign.intent_id, _decision(clock, portfolio),
+    )
+    with pytest.raises(AuthorityDenied, match="another execution scope"):
+        asyncio.run(command)
+    assert execution.intent_state(foreign.intent_id) == "OPEN"
+    assert database.execute("SELECT payload_json FROM order_intents WHERE intent_id='foreign'").fetchone()[0] == before
+    assert database.execute("SELECT count(*) FROM position_reservations WHERE state='held'").fetchone()[0] == 1
+    assert database.execute("SELECT count(*) FROM order_attempts").fetchone()[0] == 0
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("1000")
+    assert broker.calls == []
+
+
+@pytest.mark.parametrize("binding", [
+    {"mode": "live", "venue": "kraken"}, {"mode": "replay"}, {"venue": "other"}, {"account_id": "other"},
+])
+def test_paper_protection_refuses_nondefault_binding_before_any_financial_write(tmp_path, binding):
+    database, clock, ledger, portfolio, broker, _execution = _stack(tmp_path)
+    execution = Execution(database, ledger, clock, broker, **binding)
+    with pytest.raises(AuthorityDenied, match="paper execution binding"):
+        execution.place_protection(portfolio, "BTC/USD", Decimal("1"), Decimal("90"), "synthetic-snapshot")
+    for table in ("order_intents", "position_reservations", "outbox", "order_attempts"):
+        assert database.execute("SELECT count(*) FROM " + table).fetchone()[0] == 0
+    assert broker.calls == []
+
+
+def test_paper_protection_refuses_live_portfolio_even_with_paper_execution(tmp_path):
+    database, clock, ledger, portfolio, broker, _execution = _stack(tmp_path, mode="live")
+    execution = Execution(database, ledger, clock, broker)
+    with pytest.raises(AuthorityDenied, match="paper portfolio"):
+        execution.place_protection(portfolio, "BTC/USD", Decimal("1"), Decimal("90"), "synthetic-snapshot")
+    for table in ("order_intents", "position_reservations", "outbox", "order_attempts"):
+        assert database.execute("SELECT count(*) FROM " + table).fetchone()[0] == 0
     assert broker.calls == []

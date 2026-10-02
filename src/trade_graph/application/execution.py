@@ -619,7 +619,7 @@ class Execution:
         raise ValidationFailure("unsupported pause profile")
 
     async def cancel(self, intent_id: str) -> None:
-        payload = self._payload(intent_id)
+        payload = self._assert_current_scope(intent_id)
         self._set_state(intent_id, "CANCEL_PENDING", {})
         await self.broker.cancel(
             CancelRequest(
@@ -632,6 +632,7 @@ class Execution:
         await self.reconcile()
 
     async def replace(self, intent_id: str, decision: Decision) -> str:
+        self._assert_current_scope(intent_id)
         await self.cancel(intent_id)
         if self.intent_state(intent_id) not in {"CANCELLED", "FILLED"}:
             raise UncertainExternal("replacement requires reconciled cancellation of the original")
@@ -651,6 +652,13 @@ class Execution:
         stop_price: Decimal,
         snapshot_id: str,
     ) -> str:
+        if (self.venue, self.account_id, self.mode) != ("paper", "paper", "paper"):
+            raise AuthorityDenied("paper protection requires the default paper execution binding")
+        portfolio = self.database.execute(
+            "SELECT mode FROM portfolios WHERE portfolio_id = ?", (portfolio_id,),
+        ).fetchone()
+        if portfolio is None or portfolio["mode"] != "paper":
+            raise AuthorityDenied("paper protection requires a paper portfolio")
         if not self.quote_fresh(symbol, 10**9):
             raise StaleState("no quote to invent a protective price from")
         intent_id = str(uuid.uuid4())
@@ -1194,6 +1202,14 @@ class Execution:
 
     def _incident(self, kind: str, payload: dict) -> None:
         self.ledger._activity(None, kind, payload)
+
+    def _assert_current_scope(self, intent_id: str) -> dict:
+        payload = self._payload(intent_id)
+        if (payload.get("venue"), payload.get("account_id"), payload.get("mode")) != (
+            self.venue, self.account_id, self.mode,
+        ):
+            raise AuthorityDenied("intent belongs to another execution scope")
+        return payload
 
     def _reconciliation_health(self) -> dict | None:
         row = self.database.execute(
