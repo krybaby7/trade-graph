@@ -259,7 +259,11 @@ class ModelGateway:
         # the application effect/publication is fenced, never the real bill.
         with self.budget.database.immediate():
             state = "COMPLETED"
-            if result.failure == "timeout_uncertain" or result.usage is None:
+            if not self._usage_is_priced(request, result):
+                result = _invalid_result(result, "resolved provider model has no approved price binding")
+                self.budget.mark_uncertain(reservation)
+                state = "UNCERTAIN"
+            elif result.failure == "timeout_uncertain" or result.usage is None:
                 self.budget.mark_uncertain(reservation)
                 state = "UNCERTAIN"
             else:
@@ -280,6 +284,10 @@ class ModelGateway:
                 # Return exactly the bounded payload retained for recovery.
                 return journal.recover(invocation_id, binding)
         return result
+
+    def _usage_is_priced(self, request: ModelRequest, result: ModelResult) -> bool:
+        """Runtime installations may require exact protected resolved-model pricing."""
+        return True
 
     def _payload(self, request: ModelRequest, adapter: InferenceAdapter) -> dict[str, Any]:
         fixture = request.context.get("http_fixture")

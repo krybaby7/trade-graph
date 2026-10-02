@@ -19,18 +19,20 @@ from trade_graph.application.change_authority import authorized_change
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import ChangeResult, ChangeTask
 from trade_graph.domain.clock import Clock, utc_iso
-from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError, ValidationFailure
 from trade_graph.kernel.authority import path_is_protected
 
 MAX_FILES = 5
 MAX_CHANGED_LINES = 200
-ALLOWED_CLASSES = frozenset({"artifact_config", "prompt", "report_template", "context_policy", "schedule"})
+ALLOWED_CLASSES = frozenset({"artifact_config", "prompt", "report_template", "context_policy", "schedule",
+                             "approved_model_routing"})
 
 
 class ArtifactEngineer:
     def __init__(self, database: Database, clock: Clock, source_root: Path, ledger: Ledger) -> None:
         self.database, self.clock, self.ledger = database, clock, ledger
         self.runner = EngineerRunner(source_root)
+        self.validate_model_routes = None
 
     def baseline(self, destination: Path) -> str:
         staged_hash = self.runner.stage(destination)
@@ -149,6 +151,12 @@ class ArtifactEngineer:
                 raise StaleState("source baseline moved; revalidate")
             changed = self.runner.apply_files(destination, files)
             report = self.runner.attest(destination)
+            if report["exit_code"] == 0 and self.validate_model_routes is not None:
+                try:
+                    self.validate_model_routes({"files": report["artifact_files"]})
+                except (TradeGraphError, ValueError, TypeError) as exc:
+                    report["exit_code"] = 1
+                    report["failures"] = ["protected model registry: " + str(exc)[:200]]
             if report["exit_code"] != 0:
                 findings = report.get("failures") or [report.get("stderr") or "checker failed"]
                 reason = "independent checks failed: " + "; ".join(str(f)[:200] for f in findings[:5])
@@ -255,7 +263,8 @@ class ArtifactEngineer:
             # Historical commissions use artifact_config for validated JSON data.
             # Prompt authority is separate and never implied by that umbrella.
             if (kind not in task.allowed_classes
-                    and not (kind != "prompt" and "artifact_config" in task.allowed_classes)):
+                    and not (kind not in {"prompt", "approved_model_routing"}
+                             and "artifact_config" in task.allowed_classes)):
                 raise AuthorityDenied("artifact class outside commissioned scope")
 
     def _assert_path(self, relative: str, allowed_paths: list[str]) -> None:

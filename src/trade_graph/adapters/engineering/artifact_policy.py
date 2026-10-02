@@ -24,6 +24,8 @@ def artifact_class(path: str) -> str:
         return "report_template"
     if path == "artifacts/schedules.json":
         return "schedule"
+    if path == "artifacts/model_routing.json":
+        return "approved_model_routing"
     if path.startswith("prompts/") and p.parent.as_posix() == "prompts" and p.stem in PROMPTS and p.suffix == ".md":
         return "prompt"
     if p.parent.as_posix() == "strategies/templates" and p.stem in STRATEGIES and p.suffix == ".json":
@@ -88,6 +90,16 @@ def validate(files: dict[str, str]) -> list[str]:
                         or not set(intervals).issubset(ROLES)
                         or any(type(x) is not int or not 10 <= x <= 86400 for x in intervals.values())):
                     raise ValueError("schedule grammar; protection controls are not artifacts")
+            elif kind == "approved_model_routing":
+                routes = doc.get("routes")
+                model_roles = ROLES - {"secretary"}
+                if (set(doc) != {"schema_version", "routes"} or type(doc["schema_version"]) is not int
+                        or doc["schema_version"] != 1 or not isinstance(routes, dict) or not routes
+                        or not set(routes).issubset(model_roles)
+                        or any(type(x) is not str or not 1 <= len(x) <= 128
+                               or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
+                                      for c in x) for x in routes.values())):
+                    raise ValueError("model routing grammar; only protected price-card references are permitted")
             else:
                 keys = {"strategy_id", "status", "features", "entry", "exit", "sizing_envelope", "invalidation",
                         "execution", "costs", "validation"}

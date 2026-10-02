@@ -113,6 +113,12 @@ class ArtifactRuntime:
         text = bundle["files"].get("artifacts/schedules.json")
         return json.loads(text)["interval_seconds"] if text else {}
 
+    @staticmethod
+    def model_routes(bundle: dict) -> dict[str, str]:
+        """Tested data selects card IDs; protected runtime configuration grants approval."""
+        text = bundle["files"].get("artifacts/model_routing.json")
+        return json.loads(text)["routes"] if text else {}
+
     def apply_schedules(self, portfolio_id: str, bundle: dict) -> None:
         """Only this explicit namespace is artifact-managed; protection has no schedule here."""
         settings = self.schedule_settings(bundle)
