@@ -85,6 +85,21 @@ high-water marks and exposure measurements must come from the source collector.
 Drawdown is labeled sampled and must be collected across the complete trial,
 including internal block marks rather than only closing equity.
 
+The report also reconstructs a continuous sampled EUR boundary path. Trading
+boundary equity is closing equity minus cumulative net external flows plus
+cumulative embedded operating expenses. All-in boundary equity subtracts each
+allocated actual expense by its retained incurred timestamp; historical costs
+affect the opening sample, and later attributed costs use the last observed
+market mark with that limitation disclosed. High-water marks carry across every
+block, starting at the declared initial capital. The reported risk drawdown is
+the largest reconstructed trading/economic boundary drawdown or imported
+internal-block drawdown. Deposits, withdrawals and embedded expenses cannot
+erase losses or count costs twice. These are sampled monetary drawdowns, not
+continuous observation or a time-weighted return estimator. Nonzero block
+flows provide no timing or unitised NAV path in the current contract; such a
+trial remains `insufficient_evidence` for its risk gate until a trusted
+collection contract supplies that missing information.
+
 Uncertainty uses a two-sided Decimal Hoeffding bound on each block's paired
 net-economic excess against each baseline, with a Bonferroni correction for the
 three baselines and the predeclared maximum family trial count. All-in expenses

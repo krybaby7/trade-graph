@@ -52,6 +52,71 @@ def _stringify(value):
     return value
 
 
+def _boundary_drawdown(protocol, observations, arm, receipts, allocations):
+    """Observe monetary EUR high-water marks without counting owner flows as P&L."""
+    costs = [
+        (receipts[item.receipt_id].incurred_at, receipts[item.receipt_id].amount_eur * item.weight)
+        for item in allocations if item.arm == arm and receipts[item.receipt_id].evidence_kind == "actual"
+        and receipts[item.receipt_id].amount_eur is not None
+    ]
+    total_cost = _sum(amount for _, amount in costs)
+    trading_peak = economic_peak = protocol.capital_eur
+    trading_maximum = economic_maximum = ZERO
+    samples = []
+    flows = embedded = ZERO
+
+    def mark(at, trading_equity, actual_cost, kind, source_ref):
+        nonlocal trading_peak, economic_peak, trading_maximum, economic_maximum
+        economic_equity = trading_equity - actual_cost
+        trading_peak = max(trading_peak, trading_equity)
+        economic_peak = max(economic_peak, economic_equity)
+        trading_drawdown = max(trading_peak - trading_equity, ZERO) / trading_peak
+        economic_drawdown = max(economic_peak - economic_equity, ZERO) / economic_peak
+        trading_maximum = max(trading_maximum, trading_drawdown)
+        economic_maximum = max(economic_maximum, economic_drawdown)
+        samples.append({
+            "at_utc": utc_iso(at), "kind": kind, "source_ref": source_ref,
+            "trading_flow_adjusted_equity_eur": trading_equity, "allocated_actual_cost_to_date_eur": actual_cost,
+            "all_in_flow_adjusted_equity_eur": economic_equity,
+            "trading_high_water_eur": trading_peak, "all_in_high_water_eur": economic_peak,
+            "trading_drawdown_fraction": trading_drawdown, "all_in_drawdown_fraction": economic_drawdown,
+        })
+
+    if observations:
+        start = observations[0].window.start
+        historical = _sum(amount for incurred, amount in costs if incurred <= start)
+        mark(start, protocol.capital_eur, historical, "initial_capital_and_historical_costs", "preregistered-capital")
+    for block in observations:
+        performance = next(item for item in block.arms if item.arm == arm)
+        flows += performance.external_flows_eur
+        embedded += performance.embedded_operating_expenses_eur
+        trading = performance.closing_equity_eur - flows + embedded
+        cost_to_date = _sum(amount for incurred, amount in costs if incurred <= block.window.end)
+        mark(block.window.end, trading, cost_to_date, "observed_block_boundary", performance.source_ref)
+    if samples and samples[-1]["allocated_actual_cost_to_date_eur"] < total_cost:
+        # Late attributed invoices still affect all-in economics. Hold the last
+        # observed financial mark explicitly; this is not a later market sample.
+        mark(max(incurred for incurred, _ in costs), samples[-1]["trading_flow_adjusted_equity_eur"], total_cost,
+             "final_all_in_cost_attribution_at_last_market_mark", "allocated-expense-inventory")
+    return {
+        "trading_boundary_maximum_fraction": trading_maximum,
+        "all_in_boundary_maximum_fraction": economic_maximum,
+        "external_flow_timing_available": all(
+            item.external_flows_eur == 0 for block in observations for item in block.arms
+        ),
+        "samples": samples,
+        "basis": {
+            "trading_equity": "closing equity - cumulative net external flows + cumulative embedded operating costs",
+            "all_in_equity": "trading flow-adjusted equity - allocated actual costs incurred by the boundary",
+            "high_water": "maximum of preregistered initial EUR capital and preceding adjusted boundary equities",
+            "drawdown": "(high-water EUR equity - adjusted EUR equity) / high-water EUR equity",
+            "visibility": "sampled boundaries and imported internal drawdown; unsampled movements are not observed",
+            "flows": "monetary cumulative-flow adjustment; net block flows do not establish a time-weighted NAV path",
+            "late_costs": "late allocated costs use the last observed market mark, without post-horizon revaluation",
+        },
+    }
+
+
 def build_forward_report(
     *, protocol: ForwardProtocol, as_of: datetime, registration: dict,
     observations: list[ForwardObservation], expenses: list[ExpenseEvidence],
@@ -135,6 +200,7 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
 
     metrics = {}
     series = {}
+    drawdowns = {}
     for arm in ARMS:
         slices = [next(item for item in block.arms if item.arm == arm) for block in observations]
         pnl = [item.trading_pnl for item in slices]
@@ -146,6 +212,10 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
         if embedded > total:
             reasons.append(f"{arm}_embedded_expense_missing_from_cost_inventory")
         series[arm] = pnl
+        drawdowns[arm] = _boundary_drawdown(protocol, observations, arm, receipts, allocations)
+        internal_drawdown = max((item.maximum_drawdown_fraction for item in slices), default=ZERO)
+        if not drawdowns[arm]["external_flow_timing_available"]:
+            reasons.append("drawdown_external_flow_timing_unavailable")
         metrics[arm] = {
             "trading_after_friction_eur": _sum(pnl),
             "recurring_net_economic_eur": _sum(pnl) - actual_recurring,
@@ -159,8 +229,13 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
             "fees_already_in_equity_eur": _sum(item.trading_fees_eur for item in slices),
             "slippage_already_in_equity_eur": _sum(item.measured_slippage_eur for item in slices),
             "turnover_eur": _sum(item.turnover_eur for item in slices),
-            "sampled_maximum_drawdown_fraction": max((item.maximum_drawdown_fraction for item in slices),
-                                                     default=ZERO),
+            "imported_internal_maximum_drawdown_fraction": internal_drawdown,
+            "sampled_trading_boundary_drawdown_fraction": drawdowns[arm]["trading_boundary_maximum_fraction"],
+            "sampled_all_in_boundary_drawdown_fraction": drawdowns[arm]["all_in_boundary_maximum_fraction"],
+            "sampled_maximum_drawdown_fraction": max(
+                internal_drawdown, drawdowns[arm]["trading_boundary_maximum_fraction"],
+                drawdowns[arm]["all_in_boundary_maximum_fraction"],
+            ),
             "mean_exposure_fraction": _sum(item.mean_exposure_fraction for item in slices) / len(slices)
                 if slices else None,
             "operational_errors": sum(item.operational_errors for item in slices),
@@ -255,7 +330,7 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
             "versions_observed": sorted({decision.version_sha256 for block in observations
                                          for decision in block.decisions}),
         },
-        "financial_metrics": metrics, "baseline_comparisons": comparisons,
+        "financial_metrics": metrics, "sampled_drawdown": drawdowns, "baseline_comparisons": comparisons,
         "uncertainty": {
             "method": "two-sided Hoeffding with family/baseline Bonferroni correction",
             "alpha": protocol.uncertainty_alpha, "maximum_family_trials": protocol.maximum_family_trials,
