@@ -113,6 +113,13 @@ def _client_id(value: str | None) -> str | None:
     raise ValidationFailure("invalid Kraken client order identifier")
 
 
+def _identifier(value: object) -> str:
+    """One bounded native identity, never a comma-separated read/write batch."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+        raise ValidationFailure("invalid Kraken native transaction identifier")
+    return value
+
+
 class KrakenLiveBroker:
     def __init__(
         self,
@@ -128,6 +135,8 @@ class KrakenLiveBroker:
         maximum_history_pages: int = 20,
         maximum_metadata_age_seconds: int = 300,
     ) -> None:
+        if type(live_enabled) is not bool or type(key_present) is not bool:
+            raise ValueError("live readiness flags must be explicit booleans")
         if not 1 <= maximum_history_pages <= 100:
             raise ValueError("history page bound must be between 1 and 100")
         if not 1 <= maximum_metadata_age_seconds <= 3600:
@@ -334,6 +343,9 @@ class KrakenLiveBroker:
         return BalanceSnapshot(venue="kraken", account_id=self.account_id, as_of_utc=self.clock.now(), amounts=amounts)
 
     def _order(self, txid: str, value: dict) -> OrderSnapshot:
+        txid = _identifier(txid)
+        if value["descr"]["leverage"] != "none":
+            raise ValidationFailure("Kraken margin orders are outside the spot adapter")
         total, filled = _decimal(value["vol"], positive=True), _decimal(value["vol_exec"])
         if filled < 0 or filled > total:
             raise ValidationFailure("Kraken order fill quantity is inconsistent")
@@ -349,7 +361,6 @@ class KrakenLiveBroker:
         else:
             raise ValidationFailure("Kraken order has an unsupported status")
         client = _client_id(value.get("cl_ord_id"))
-        self._order_clients[txid] = client
         return OrderSnapshot(
             client_order_id=client or "external:" + txid,
             venue_order_id=txid,
@@ -359,6 +370,23 @@ class KrakenLiveBroker:
             remaining_quantity=total - filled,
         )
 
+    def _remember_orders(self, orders: list[OrderSnapshot]) -> None:
+        # Parsing or an ambiguous client lookup must never establish ownership.
+        # Check the entire projection before changing any cached association.
+        projected = {}
+        clients = {client: order_id for order_id, client in self._order_clients.items() if client is not None}
+        for order in orders:
+            client = None if order.client_order_id.startswith("external:") else order.client_order_id
+            known = self._order_clients.get(order.venue_order_id)
+            if order.venue_order_id in self._order_clients and known != client:
+                raise ValidationFailure("Kraken venue order changed its client identity")
+            if client is not None and client in clients and clients[client] != order.venue_order_id:
+                raise ValidationFailure("Kraken reused client identity is ambiguous")
+            if client is not None:
+                clients[client] = order.venue_order_id
+            projected[order.venue_order_id] = client
+        self._order_clients.update(projected)
+
     @_safe_read
     async def open_orders(self) -> list[OrderSnapshot]:
         await self._metadata()
@@ -366,7 +394,9 @@ class KrakenLiveBroker:
         opened = result.get("open")
         if not isinstance(opened, dict):
             raise ValidationFailure("Kraken open orders response is incomplete")
-        return [self._order(txid, order) for txid, order in opened.items()]
+        orders = [self._order(txid, order) for txid, order in opened.items()]
+        self._remember_orders(orders)
+        return orders
 
     @_safe_read
     async def order_status(self, key: OrderLookup) -> OrderLookupResult:
@@ -374,7 +404,9 @@ class KrakenLiveBroker:
         try:
             expected_client = _client_id(key.client_order_id)
             if key.venue_order_id:
-                orders = await self._request("QueryOrders", {"txid": key.venue_order_id, "trades": "false"})
+                orders = await self._request(
+                    "QueryOrders", {"txid": _identifier(key.venue_order_id), "trades": "false"}
+                )
             elif expected_client:
                 opened = await self._request("OpenOrders", {"cl_ord_id": expected_client, "trades": "false"})
                 closed = await self._request(
@@ -388,8 +420,12 @@ class KrakenLiveBroker:
                 )
                 if not isinstance(opened.get("open"), dict) or not isinstance(closed.get("closed"), dict):
                     raise KrakenApiError("malformed")
+                if set(opened["open"]) & set(closed["closed"]):
+                    # A transition between the two reads is not one consistent
+                    # order snapshot. Retry the lookup without releasing risk.
+                    return OrderLookupResult(status="unknown", error="timeout_uncertain")
                 orders = {**opened["open"], **closed["closed"]}
-                if _integer(closed["count"]) > len(closed["closed"]):
+                if _integer(closed["count"]) != len(closed["closed"]):
                     return OrderLookupResult(status="unknown", error="lookup_not_supported")
             else:
                 return OrderLookupResult(status="unknown", error="lookup_not_supported")
@@ -407,6 +443,7 @@ class KrakenLiveBroker:
             if len(matches) != 1:
                 return OrderLookupResult(status="unknown", error="timeout_uncertain")
             order, filled = matches[0]
+            self._remember_orders([order])
             return OrderLookupResult(status=order.status, filled_quantity=filled, venue_order_id=order.venue_order_id)
         except (KrakenApiError, ValidationFailure, KeyError, TypeError, ValueError):
             return OrderLookupResult(status="unknown", error="unavailable", filled_quantity="0")
@@ -438,7 +475,13 @@ class KrakenLiveBroker:
             rows = result.get("trades")
             if not isinstance(rows, dict) or len(rows) > PAGE_SIZE or set(rows) & set(trades):
                 raise ValidationFailure("Kraken history pagination is inconsistent")
+            if any(not isinstance(value, dict) for value in rows.values()):
+                raise ValidationFailure("Kraken history trade rows are malformed")
+            for txid in rows:
+                _identifier(txid)
             trades.update(rows)
+            if len(trades) > count:
+                raise ValidationFailure("Kraken history contains more trades than its declared count")
             if len(trades) == count:
                 break
             if len(rows) != PAGE_SIZE:
@@ -451,15 +494,22 @@ class KrakenLiveBroker:
             if (
                 not isinstance(ledger_ids, list)
                 or not ledger_ids
+                or len(ledger_ids) > 20
                 or any(not isinstance(x, str) for x in ledger_ids)
                 or len(set(ledger_ids)) != len(ledger_ids)
             ):
                 raise ValidationFailure("Kraken native fill fees require the requested ledger references")
+            for ledger_id in ledger_ids:
+                _identifier(ledger_id)
             ids.extend(ledger_ids)
         ledgers = {}
         unique = list(dict.fromkeys(ids))
         for offset in range(0, len(unique), 20):
-            ledgers.update(await self._request("QueryLedgers", {"id": ",".join(unique[offset : offset + 20])}))
+            batch = unique[offset : offset + 20]
+            result = await self._request("QueryLedgers", {"id": ",".join(batch)})
+            if set(result) != set(batch) or set(result) & set(ledgers):
+                raise ValidationFailure("Kraken native ledger response does not match its requested identities")
+            ledgers.update(result)
         # Offset pages have no promised ordering. Sort the whole bounded frozen
         # history before applying FIFO, never feed newest sells before older buys.
         # Sort exact wire timestamps before the DTO's microsecond conversion.
@@ -475,6 +525,8 @@ class KrakenLiveBroker:
         return count, fills
 
     def _fill(self, txid: str, value: dict, ledgers: dict, end: Decimal) -> FillRecord:
+        if any(_decimal(value[field]) != 0 for field in ("margin", "leverage")) or value.get("posstatus") is not None:
+            raise ValidationFailure("Kraken margin trades are outside the spot adapter")
         symbol = self._symbol(value["pair"])
         base, quote = symbol.split("/")
         quantity, price = _decimal(value["vol"], positive=True), _decimal(value["price"], positive=True)
@@ -491,7 +543,12 @@ class KrakenLiveBroker:
             if not isinstance(ledger, dict) or ledger.get("refid") != txid or ledger.get("type") != "trade":
                 raise ValidationFailure("Kraken native ledger attribution is incomplete")
             amount, asset = _decimal(ledger["fee"]), self._asset(ledger["asset"])
-            legs[asset] = legs.get(asset, Decimal("0")) + _decimal(ledger["amount"])
+            movement = _decimal(ledger["amount"])
+            if amount < 0:
+                raise ValidationFailure("Kraken fee rebates require separate ledger conformance")
+            if asset not in {base, quote} and movement:
+                raise ValidationFailure("additional Kraken native trade legs require an extended financial contract")
+            legs[asset] = legs.get(asset, Decimal("0")) + movement
             if amount:
                 fees[asset] = fees.get(asset, Decimal("0")) + amount
         sign = Decimal("1") if value["type"] == "buy" else Decimal("-1")
@@ -529,7 +586,7 @@ class KrakenLiveBroker:
                     notional + identified if value["type"] == "buy" else notional - identified
         except ArithmeticError:
             raise ValidationFailure("Kraken native fill precision exceeds the protected ledger context") from None
-        order_id = value["ordertxid"]
+        order_id = _identifier(value["ordertxid"])
         client = self._order_clients.get(order_id)
         intent_id = self.intent_resolver(client, order_id) if self.intent_resolver else None
         return FillRecord(
@@ -588,10 +645,13 @@ class KrakenLiveBroker:
         try:
             quantity = _decimal(intent.quantity, positive=True)
             limit_price = _decimal(intent.limit_price, positive=True) if intent.limit_price is not None else None
+            client_id = _client_id(intent.client_order_id)
             if intent.stop_price is not None:
                 _decimal(intent.stop_price, positive=True)
         except ValidationFailure:
-            return SubmitResult(status="rejected", error="rejected", message="Kraken order numeric bounds rejected")
+            return SubmitResult(
+                status="rejected", error="rejected", message="Kraken order numeric/identity bounds rejected"
+            )
         # Readiness must precede execution's reservation/dispatch fee check.
         # Loading or changing fee bounds inside a write would bypass that check.
         age = None if self._metadata_at is None else (self.clock.now() - self._metadata_at).total_seconds()
@@ -629,7 +689,7 @@ class KrakenLiveBroker:
             "type": intent.side,
             "ordertype": intent.order_type,
             "volume": canonical_decimal(quantity),
-            "cl_ord_id": _client_id(intent.client_order_id),
+            "cl_ord_id": client_id,
             "timeinforce": intent.time_in_force.upper(),
             "oflags": "fciq",
         }
@@ -642,7 +702,18 @@ class KrakenLiveBroker:
                 return SubmitResult(
                     status="uncertain", error="timeout_uncertain", message="Kraken order acknowledgement missing"
                 )
-            self._order_clients[ids[0]] = _client_id(intent.client_order_id)
+            try:
+                order_id = _identifier(ids[0])
+                if order_id in self._order_clients and self._order_clients[order_id] != client_id:
+                    raise ValidationFailure("Kraken acknowledgement changed an existing order identity")
+                if any(client == client_id and known_order != order_id
+                       for known_order, client in self._order_clients.items()):
+                    raise ValidationFailure("Kraken acknowledgement reused an existing client identity")
+            except ValidationFailure:
+                return SubmitResult(
+                    status="uncertain", error="timeout_uncertain", message="Kraken order identity unresolved"
+                )
+            self._order_clients[order_id] = client_id
             return SubmitResult(status="acknowledged", venue_order_id=ids[0])
         except KrakenApiError as exc:
             uncertain = exc.uncertain or exc.kind in {"temporary", "malformed"}
@@ -658,11 +729,16 @@ class KrakenLiveBroker:
 
     async def cancel(self, request: CancelRequest) -> CancelResult:
         self._writes()
-        body = (
-            {"txid": request.venue_order_id}
-            if request.venue_order_id
-            else {"cl_ord_id": _client_id(request.client_order_id)}
-        )
+        try:
+            body = (
+                {"txid": _identifier(request.venue_order_id)}
+                if request.venue_order_id
+                else {"cl_ord_id": _client_id(request.client_order_id)}
+            )
+        except ValidationFailure:
+            return CancelResult(
+                status="rejected", error="rejected", message="Kraken cancellation identity rejected"
+            )
         try:
             result = await self._request("CancelOrder", body)
             if _integer(result["count"]) != 1:

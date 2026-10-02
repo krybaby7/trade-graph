@@ -6,6 +6,10 @@ exchange credential, real order, cancellation, withdrawal, account eligibility
 check or live protection test was performed. T17 functional delivery and T18
 economic evidence do not provide live authorization.
 
+The [continuation review](2026-10-02-kraken-continuation.md) records subsequent
+offline identity, spot-provenance and cold-restart improvements, the protected
+`DurableBrokerIdentity` resolver contract and the remaining verification gates.
+
 ## Implemented behavior
 
 `KrakenLiveBroker` accepts an injected synchronous or asynchronous callable. The
@@ -62,10 +66,14 @@ be represented by the shared quantity-times-price contract remain unsupported.
 Those cases require a financial-contract extension or more conformance evidence;
 they are not replaced with estimated successful fills.
 
-For restart recovery, an installation supplies a protected
-`intent_resolver(client_order_id, venue_order_id)` backed by durable intent records.
-Status lookup establishes the client/venue association before fill mapping. Unknown
-external trades retain `intent_id=None`; they do not become authorized portfolio
+For restart recovery, an installation supplies the protected read-only
+`DurableBrokerIdentity(database, venue=..., account_id=..., mode=...)` as the
+`intent_resolver(client_order_id, venue_order_id)`. It verifies the persisted native
+intent and exact scope, resolves a stored venue ID with a cold client cache, and
+rejects conflicting IDs or ambiguous UUID aliases. A client-only database lookup
+is insufficient after terminal-order restart. Status lookup establishes the
+client/venue association before fill mapping when the venue ID is not yet durable.
+Unknown external trades retain `intent_id=None`; they do not become authorized portfolio
 records. No process-local submission map establishes ownership after restart.
 An optional owner-selected `history_start_utc` defines the audited account window;
 the default is the complete history subject to its explicit bound. Exceeding that

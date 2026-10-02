@@ -16,6 +16,7 @@ import pytest
 from trade_graph.adapters.brokers.kraken_live import KrakenLiveBroker
 from trade_graph.adapters.brokers.kraken_transport import KrakenApiError, KrakenRestTransport, MonotonicNonce
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.broker_identity import DurableBrokerIdentity
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import AuthorizedOrderIntent, CancelRequest, OrderLookup
@@ -55,7 +56,7 @@ def _order(**updates):
         "vol": "0.1",
         "vol_exec": "0",
         "cl_ord_id": "client-1",
-        "descr": {"pair": "XBTUSD", "type": "buy"},
+        "descr": {"pair": "XBTUSD", "type": "buy", "leverage": "none"},
     }
     row.update(updates)
     return row
@@ -92,6 +93,8 @@ def _trade(index, *, time="1767225600", side="buy", fee="0.08", maker=False):
         "cost": "10",
         "fee": fee,
         "maker": maker,
+        "margin": "0",
+        "leverage": "0",
         "ledgers": [f"base-{index}", f"quote-{index}"],
     }
 
@@ -542,6 +545,7 @@ def test_duplicate_ledger_references_cannot_double_native_fees_or_hide_a_missing
     with pytest.raises(ValidationFailure, match="ledger references"):
         asyncio.run(_broker(rest).fills_since(None))
     trade["ledgers"] = ["base-1"]
+    rest.results["QueryLedgers"] = {"base-1": native["base-1"]}
     with pytest.raises(ValidationFailure, match="native trade legs"):
         asyncio.run(_broker(rest).fills_since(None))
 
@@ -874,11 +878,8 @@ def test_kraken_fill_reconciliation_survives_restart_through_real_ledger_without
     recovered = Database(path)
     ledger = Ledger(recovered, clock)
 
-    def resolve(client, order):
-        row = recovered.execute("SELECT intent_id FROM order_intents WHERE client_order_id = ?", (client,)).fetchone()
-        return row["intent_id"] if row else None
-
-    broker = _broker(rest, intent_resolver=resolve)
+    identity = DurableBrokerIdentity(recovered, venue="kraken", account_id="synthetic-account", mode="live")
+    broker = _broker(rest, intent_resolver=identity)
     execution = Execution(recovered, ledger, clock, broker, venue="kraken", account_id="synthetic-account", mode="live")
     execution.register_instrument(asyncio.run(broker.instruments())[0])
     asyncio.run(execution.reconcile())
@@ -888,4 +889,19 @@ def test_kraken_fill_reconciliation_survives_restart_through_real_ledger_without
     asyncio.run(execution.reconcile())
     assert recovered.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 1
     assert not any(method in {"AddOrder", "CancelOrder"} for method, _ in rest.calls)
+    recovered.close()
+    # A terminal intent no longer receives active-order lookups on startup.
+    # Ownership must survive through its durable venue ID with a cold cache.
+    recovered = Database(path)
+    ledger = Ledger(recovered, clock)
+    identity = DurableBrokerIdentity(recovered, venue="kraken", account_id="synthetic-account", mode="live")
+    broker = _broker(rest, intent_resolver=identity)
+    execution = Execution(recovered, ledger, clock, broker, venue="kraken", account_id="synthetic-account", mode="live")
+    before_calls = len(rest.calls)
+    asyncio.run(execution.reconcile())
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("89.92")
+    assert execution.owned_quantity(portfolio, "BTC") == Decimal("0.1")
+    assert recovered.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 1
+    assert not any(method in {"AddOrder", "CancelOrder", "OpenOrders", "ClosedOrders", "QueryOrders"}
+                   for method, _ in rest.calls[before_calls:])
     recovered.close()

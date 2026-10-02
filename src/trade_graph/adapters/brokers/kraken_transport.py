@@ -34,6 +34,7 @@ PRIVATE_READ_METHODS = frozenset(
     }
 )
 ORDER_METHODS = frozenset({"AddOrder", "CancelOrder"})
+MAXIMUM_JSON_DEPTH = 64
 
 
 class KrakenApiError(TradeGraphError):
@@ -82,6 +83,41 @@ def check_response(payload: object) -> dict:
     return result
 
 
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON field")
+        result[key] = value
+    return result
+
+
+def _finite_constant(value: str) -> None:
+    raise ValueError("nonfinite JSON number")
+
+
+def _check_json_depth(content: bytearray) -> None:
+    # Bound nesting independently of the interpreter's mutable recursion limit.
+    # Quotes/escapes are handled before counting structural JSON delimiters.
+    depth, quoted, escaped = 0, False, False
+    for value in content:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif value == 92:
+                escaped = True
+            elif value == 34:
+                quoted = False
+        elif value == 34:
+            quoted = True
+        elif value in {91, 123}:
+            depth += 1
+            if depth > MAXIMUM_JSON_DEPTH:
+                raise ValueError("JSON nesting exceeds the protected bound")
+        elif value in {93, 125}:
+            depth -= 1
+
+
 class MonotonicNonce:
     """One process/key nonce source. Owners must not share keys across processes."""
 
@@ -118,6 +154,8 @@ class KrakenRestTransport:
         timeout_seconds: float = 10,
         maximum_response_bytes: int = 4 * 1024 * 1024,
     ) -> None:
+        if type(allow_order_writes) is not bool:
+            raise ValueError("order-write authority must be an explicit boolean")
         if not 1 <= maximum_response_bytes <= 8 * 1024 * 1024 or not 0 < timeout_seconds <= 60:
             raise ValueError("transport bounds must be positive")
         self._api_key, self._api_secret = api_key, api_secret
@@ -180,9 +218,12 @@ class KrakenRestTransport:
             except (httpx.HTTPError, TimeoutError):
                 raise KrakenApiError("temporary", uncertain=method in ORDER_METHODS) from None
             try:
-                payload = json.loads(content, parse_float=Decimal)
+                _check_json_depth(content)
+                payload = json.loads(
+                    content, parse_float=Decimal, object_pairs_hook=_unique_fields, parse_constant=_finite_constant
+                )
                 check_response(payload)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, RecursionError):
                 raise KrakenApiError("malformed", uncertain=method in ORDER_METHODS) from None
             except KrakenApiError as exc:
                 if exc.kind == "malformed" and method in ORDER_METHODS:
