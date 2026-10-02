@@ -138,6 +138,40 @@ def test_rest_metadata_ticker_and_attributed_fx() -> None:
     assert rate.provider == "ECB"
 
 
+@pytest.mark.parametrize("change", [
+    {"date": None}, {"date": ""}, {"date": "20260929"}, {"date": "2026-09-31"},
+    {"date": "2026-09-29T00:00:00Z"}, {"base": None}, {"quote": None},
+    {"base": "EUR", "quote": "USD"}, {"base": "GBP"}, {"date": "2026-09-30"},
+])
+def test_reference_fx_refuses_missing_or_mismatched_wire_provenance(change) -> None:
+    payload = {"date": "2026-09-29", "base": "USD", "quote": "EUR", "rate": "0.90"} | change
+    transport = ScriptedTransport({FX_URL: json.dumps(payload)})
+    with pytest.raises(ValidationFailure):
+        FrankfurterClient(transport).reference_rate("USD", "EUR", on="2026-09-29")
+    assert transport.calls == [FX_URL]
+
+
+def test_reference_fx_retains_carried_historical_date_and_decimal_rate() -> None:
+    transport = ScriptedTransport({FX_URL: '{"date":"2026-09-25","base":"usd","quote":"eur","rate":0.9}'})
+    rate = FrankfurterClient(transport).reference_rate("USD", "EUR", on="2026-09-29")
+    assert rate.rate == Decimal("0.9")
+    assert rate.base == "USD" and rate.quote == "EUR"
+    assert rate.rate_date == "2026-09-25"
+    assert rate.source == "frankfurter:ECB:2026-09-25"
+
+
+@pytest.mark.parametrize("arguments_override", [
+    {"base": "USD/other"}, {"quote": "EUR?date=2026-09-30"}, {"on": "20260929"},
+    {"on": "2026-09-31"}, {"base": None},
+])
+def test_reference_fx_refuses_invalid_request_before_transport(arguments_override) -> None:
+    transport = ScriptedTransport({})
+    arguments = {"base": "USD", "quote": "EUR", "on": "2026-09-29"} | arguments_override
+    with pytest.raises(ValidationFailure):
+        FrankfurterClient(transport).reference_rate(**arguments)
+    assert not transport.calls
+
+
 def test_reconnect_backfills_and_out_of_order_quotes_do_not_refresh(tmp_path) -> None:
     clock = FrozenClock(NOW)
     transport = ScriptedTransport(

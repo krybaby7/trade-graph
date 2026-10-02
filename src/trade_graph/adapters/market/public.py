@@ -7,10 +7,13 @@ use exchange credentials. A scripted response is not a live network result.
 from __future__ import annotations
 
 import json
+import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+from time import monotonic
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
@@ -40,17 +43,58 @@ def loads(text: str) -> Any:
 
 
 class HttpxTextTransport:
-    """Public GET only. Construct this only for an explicitly labeled network smoke."""
+    """Opt-in public GET with bounded decoded bytes, no redirects and proxy policy intact.
 
-    def __init__(self, timeout: float = 10) -> None:
+    HTTP timeouts apply to each network phase. The elapsed deadline also refuses
+    a continuously trickled response; a blocked read still has its phase timeout.
+    """
+
+    def __init__(self, timeout: float = 10, *, maximum_response_bytes: int = 1_048_576) -> None:
+        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("finite positive public HTTP timeout required")
+        if type(maximum_response_bytes) is not int or not 1 <= maximum_response_bytes <= 16_777_216:
+            raise ValueError("public response byte limit must be between 1 and 16777216")
         self.timeout = timeout
+        self.maximum_response_bytes = maximum_response_bytes
 
     def get_text(self, url: str) -> str:
         import httpx
 
-        response = httpx.get(url, timeout=self.timeout)
-        response.raise_for_status()
-        return response.text
+        started = monotonic()
+        with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
+            with client.stream("GET", url, headers={"Accept-Encoding": "identity"}) as response:
+                response.raise_for_status()
+                if monotonic() - started >= self.timeout:
+                    raise ValidationFailure("public response exceeded its elapsed deadline")
+                # The server must honor the identity request. Refuse compressed
+                # data before httpx decompresses a chunk into unbounded memory.
+                encoding = response.headers.get("content-encoding", "").strip().lower()
+                if encoding not in {"", "identity"}:
+                    raise ValidationFailure("public response used unsupported content encoding")
+                length = response.headers.get("content-length")
+                if length is not None:
+                    try:
+                        declared = int(length)
+                    except ValueError as exc:
+                        raise ValidationFailure("public response declared an invalid byte length") from exc
+                    if declared < 0 or declared > self.maximum_response_bytes:
+                        raise ValidationFailure("public response exceeded its byte limit")
+                payload = bytearray()
+                # Do not request coalesced chunks: a trickle must reach the
+                # deadline check instead of waiting for a large chunk to fill.
+                for chunk in response.iter_bytes():
+                    if monotonic() - started >= self.timeout:
+                        raise ValidationFailure("public response exceeded its elapsed deadline")
+                    if len(payload) + len(chunk) > self.maximum_response_bytes:
+                        raise ValidationFailure("public response exceeded its byte limit")
+                    payload.extend(chunk)
+                if monotonic() - started >= self.timeout:
+                    raise ValidationFailure("public response exceeded its elapsed deadline")
+                try:
+                    return payload.decode(response.encoding or "utf-8")
+                except (UnicodeError, LookupError) as exc:
+                    raise ValidationFailure("public response encoding was invalid") from exc
 
 
 class WebsocketTextSession:
@@ -153,10 +197,15 @@ class FrankfurterClient:
     """Daily reference FX. Not an executable venue quote."""
 
     def __init__(self, transport: TextTransport, *, provider: str = "ecb") -> None:
+        if not isinstance(provider, str) or re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,15}", provider) is None:
+            raise ValidationFailure("invalid Frankfurter provider key")
         self.transport = transport
         self.provider = provider
 
     def reference_rate(self, base: str, quote: str, *, on: str | None = None) -> ReferenceFxRate:
+        if any(not isinstance(code, str) or re.fullmatch(r"[A-Za-z]{3}", code) is None for code in (base, quote)):
+            raise ValidationFailure("three-letter FX currency codes required")
+        requested_date = None if on is None else _reference_date(on)
         path = f"{FRANKFURTER}/providers/{self.provider}/rate/{base.lower()}/{quote.lower()}"
         if on is not None:
             path = f"{path}?date={on}"
@@ -173,18 +222,36 @@ class FrankfurterClient:
         parsed = parse_decimal(rate)
         if parsed <= 0:
             raise ValidationFailure("FX rate must be positive")
-        rate_date = str(payload.get("date") or on or "")
-        if not rate_date:
-            raise ValidationFailure("Frankfurter rate has no date")
+        # Require the wire's pair/date: filling gaps with requested values would
+        # invent provenance or apply a rate in the wrong currency direction.
+        if (not isinstance(payload.get("base"), str) or not isinstance(payload.get("quote"), str)
+                or payload["base"].upper() != base.upper() or payload["quote"].upper() != quote.upper()):
+            raise ValidationFailure("Frankfurter reference rate has a missing or mismatched currency pair")
+        observed_date = _reference_date(payload.get("date"))
+        if requested_date is not None and observed_date > requested_date:
+            raise ValidationFailure("Frankfurter reference rate follows the requested date")
+        rate_date = observed_date.isoformat()
         provider = self.provider.upper()
         return ReferenceFxRate(
-            base=str(payload.get("base") or base).upper(),
-            quote=str(payload.get("quote") or quote).upper(),
+            base=payload["base"].upper(),
+            quote=payload["quote"].upper(),
             rate=parsed,
             rate_date=rate_date,
             source=f"frankfurter:{provider}:{rate_date}",
             provider=provider,
         )
+
+
+def _reference_date(value: object) -> date:
+    if not isinstance(value, str):
+        raise ValidationFailure("Frankfurter rate requires a sourced ISO calendar date")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValidationFailure("Frankfurter rate requires a sourced ISO calendar date") from exc
+    if parsed.isoformat() != value:
+        raise ValidationFailure("Frankfurter rate requires a sourced ISO calendar date")
+    return parsed
 
 
 class KrakenPublicFeed:

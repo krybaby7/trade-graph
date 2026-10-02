@@ -90,6 +90,22 @@ assumptions. Carried weekend/holiday FX references remain stale/provisional.
 The same opt-in can use `public_data_enabled: true` in the private configuration.
 Offline fixtures and local readiness do not verify the current external services.
 
+Public REST acquisition requests uncompressed data, refuses redirects and encoded
+responses, and caps each response at 1 MiB. Network phases have a timeout and
+streamed chunks receive an elapsed-deadline check; a blocked read can last until
+its phase timeout. The transport retains the process's configured HTTP(S) proxy
+policy. A `feed:ProxyError` means the public observation failed; old observations
+cannot become fresh evidence. The 2026-10-02 workspace probes received proxy CONNECT
+403 failures for both `api.kraken.com` and `api.frankfurter.dev`. Obtain approved
+HTTPS access to those hosts on the selected deployment host, then repeat the bounded
+public-data exercise and inspect the resulting observations and FX provenance.
+
+Frankfurter responses must supply the requested currency direction and a genuine
+ISO calendar date. Missing fields, a mismatched pair or a date after a requested
+historical date are refused. A carried prior business-day date is retained and
+remains provisional when used for today's valuation. Official source review
+confirms the provider-scoped endpoint; it does not establish current API availability.
+
 To configure a deployment, copy `config/paper-runtime.example.json` to a private
 mode-0600 file outside Git. Its default `models: null` selects maintenance only.
 `doctor --config <private-file>` uses the same protected configuration validator as
@@ -254,7 +270,9 @@ replace missing accounting with zero spend. Preserve that report and the databas
 for local recovery before another funded observation.
 
 T17's actual current-public-data verification and funded credentialed soak are
-still pending. T18's [forward-evaluation machinery](FORWARD-EVALUATION.md) is
+still pending. The [T17 continuation review](reviews/2026-10-02-t17-operations.md)
+records the bounded network failures, local recovery drill and remaining owner/host
+setup. T18's [forward-evaluation machinery](FORWARD-EVALUATION.md) is
 partial preparation: preregister untouched fixed forward blocks and baselines,
 retain all attempted/failed variants and complete actual costs, and verify
 independence/regime assumptions before assessing economics. Reports may return
