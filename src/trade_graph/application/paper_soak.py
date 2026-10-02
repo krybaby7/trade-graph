@@ -161,9 +161,11 @@ async def run_funded_soak(runtime, *, duration_seconds: int, report_path: Path) 
             provider_status = "unresolved_billing"
         elif real_transport and expenses["provider_receipts_with_known_usage"]:
             provider_status = "responses_observed"
+        service_failed = bool(summary and summary.get("failures"))
         result = {
             "schema_version": 1, "mode": "paper", "live_enabled": False,
-            "status": "interrupted" if failure else "recorded", "failure_type": failure,
+            "status": "interrupted" if failure else "degraded" if service_failed else "recorded",
+            "failure_type": failure or ("ServiceFailures" if service_failed else None),
             "started_at": started, "ended_at": utc_iso(runtime.clock.now()),
             "requested_duration_seconds": duration_seconds, "service": summary,
             "observed_duration_seconds": f"{elapsed:.3f}", "requested_duration_completed": window_completed,

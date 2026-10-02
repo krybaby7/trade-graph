@@ -194,3 +194,50 @@ def test_cli_existing_report_refusal_is_sanitized_and_precedes_model_work(tmp_pa
     assert flow.transport.calls == []
     with flow.db.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("dispatch_roles", [True, False])
+def test_cli_actual_feed_failure_degrades_completed_soak_even_without_role_calls(tmp_path, monkeypatch, capsys,
+                                                                              dispatch_roles):
+    flow = RuntimeFlow(tmp_path)
+    configured = runtime(flow)
+    destination = tmp_path / "degraded-feed.json"
+
+    class FailingFeed:
+        def __init__(self):
+            self.calls = 0
+
+        def poll(self):
+            self.calls += 1
+            raise TimeoutError("private public-feed failure detail must remain private")
+
+    configured.public_feed = FailingFeed()
+    if not dispatch_roles:
+        configured.handlers = {}
+    monkeypatch.setattr("trade_graph.paper_runtime.load_runtime_config", lambda path: configured.config)
+    monkeypatch.setattr("trade_graph.paper_runtime.assemble_paper_runtime", lambda *args, **kwargs: configured)
+    assert main(["soak", "--config", "fixture-config", "--duration-seconds", "1",
+                 "--report", str(destination)]) == 1
+    result = json.loads(destination.read_text())
+    assert configured.public_feed.calls >= 1
+    assert result["status"] == "degraded" and result["failure_type"] == "ServiceFailures"
+    assert result["requested_duration_completed"] is True
+    assert Decimal(result["observed_duration_seconds"]) >= 1
+    assert result["service"]["failures"] == ["feed:TimeoutError"]
+    assert result["credentialed_provider_verification"] == "pending"
+    assert result["economic_evidence"] == "insufficient_evidence"
+    assert result["expenses"]["unresolved_reservations"] == 0
+    assert result["expense_observation_status"] == "recorded"
+    output = capsys.readouterr()
+    assert json.loads(output.out) == result
+    assert "private public-feed failure detail" not in destination.read_text() + output.out + output.err
+    with flow.db.connect() as connection:
+        receipts = connection.execute("SELECT reporting_cost FROM usage_receipts").fetchall()
+    assert Decimal(result["expenses"]["known_actual_accrued"]) == sum(
+        (Decimal(receipt[0]) for receipt in receipts), Decimal("0"))
+    if dispatch_roles:
+        assert flow.transport.calls and receipts
+    else:
+        assert flow.transport.calls == [] and receipts == []
+        assert result["service"]["completed"] == 0
+        assert result["expenses"]["known_actual_accrued"] == "0"
