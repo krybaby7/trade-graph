@@ -410,7 +410,8 @@ def _evaluate_live_readiness(
             unknown = database.execute(
                 "SELECT COUNT(*) FROM order_intents WHERE state IN ('UNKNOWN', 'SUBMITTING', 'CANCEL_PENDING') "
                 "AND (portfolio_id = ? OR (json_extract(payload_json, '$.venue') = ? "
-                "AND json_extract(payload_json, '$.account_id') = ? AND json_extract(payload_json, '$.mode') = 'live'))",
+                "AND json_extract(payload_json, '$.account_id') = ? "
+                "AND json_extract(payload_json, '$.mode') = 'live'))",
                 (scope.portfolio_id, scope.venue, scope.account_id),
             ).fetchone()[0]
             check("no_unknown_orders", unknown == 0)
