@@ -111,6 +111,7 @@ class PaperService:
         self._active_lease: TaskLease | None = None
         self._completed_total = 0
         self._observations_total = 0
+        self._shutdown_failures: list[str] = []
         self._lease_lock = threading.Lock()
         self._execution_lock = threading.RLock()
         self._feed_failed = public_feed is not None
@@ -172,6 +173,7 @@ class PaperService:
     async def _start(self) -> None:
         self._stop_requested.clear()
         self._acquire()
+        self._shutdown_failures = []
         self._shutdown_task = None
         self._old_gate = self.execution.blocks_increase
         if self.public_feed is not None:
@@ -429,6 +431,23 @@ class PaperService:
         async with self._tick_lock:
             return await self._tick(wait_roles=wait_roles, wait_feed=wait_feed)
 
+    async def _consume_feed(self, task: asyncio.Task, *, maintenance_errors: list[Exception]) -> tuple[int, str | None]:
+        try:
+            emitted = await self._wait_for_work(task, maintenance_errors=maintenance_errors)
+        except Exception as exc:
+            self._feed_failed = True
+            return 0, "feed:" + type(exc).__name__
+        try:
+            observations = await self._offload(self._ingest, emitted)
+        except ValidationFailure as exc:
+            self._feed_failed = True
+            return 0, "feed:" + type(exc).__name__
+        except Exception:
+            self._feed_failed = True
+            raise
+        self._feed_failed = False
+        return observations, None
+
     async def _tick(self, *, wait_roles: bool, wait_feed: bool) -> TickResult:
         if self._heartbeat_task and self._heartbeat_task.done():
             self._heartbeat_task.result()
@@ -444,13 +463,18 @@ class PaperService:
             if wait_feed or self._feed_task.done():
                 maintenance_errors: list[Exception] = []
                 try:
-                    emitted = await self._wait_for_work(self._feed_task, maintenance_errors=maintenance_errors)
-                    observations = await self._offload(self._ingest, emitted)
-                    self._feed_failed = False
+                    observations, failure = await self._consume_feed(
+                        self._feed_task, maintenance_errors=maintenance_errors,
+                    )
+                    if failure:
+                        failures.append(failure)
                 except Exception as exc:
-                    self._feed_failed = True
-                    failures.append("feed:" + type(exc).__name__)
-                self._feed_task = None
+                    if maintenance_errors:
+                        maintenance_errors[0].add_note("Additional ingestion error: " + type(exc).__name__)
+                        raise maintenance_errors[0] from exc
+                    raise
+                finally:
+                    self._feed_task = None
                 if maintenance_errors:
                     raise maintenance_errors[0]
         management, management_failures = await self._offload(self._management)
@@ -506,6 +530,7 @@ class PaperService:
                     signal.signal(signum, previous[signum])
         summary["completed"] = self._completed_total - initially_completed
         summary["observations"] = self._observations_total - initially_observed
+        summary["failures"] = list(dict.fromkeys([*summary["failures"], *self._shutdown_failures]))[:20]
         summary["stopped"] = True
         return summary
 
@@ -552,11 +577,10 @@ class PaperService:
                 self._role_task = None
             if self._feed_task:
                 try:
-                    emitted = await self._wait_for_work(self._feed_task, maintenance_errors=errors)
-                    await self._offload(self._ingest, emitted)
-                    self._feed_failed = False
+                    _, failure = await self._consume_feed(self._feed_task, maintenance_errors=errors)
+                    if failure:
+                        self._shutdown_failures = list(dict.fromkeys([*self._shutdown_failures, failure]))[:20]
                 except Exception as exc:
-                    self._feed_failed = True
                     errors.append(exc)
                 self._feed_task = None
             close = getattr(self.public_feed, "close", None)

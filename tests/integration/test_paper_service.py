@@ -407,6 +407,121 @@ def test_bounded_run_ingests_its_final_public_quote(tmp_path):
     assert ledger.database.execute("SELECT count(*) FROM observations").fetchone()[0] == 1
 
 
+def test_run_reports_final_poll_failure_as_degradation_after_fenced_shutdown(tmp_path, monkeypatch):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish = threading.Event(), threading.Event()
+
+    class SlowFailingFeed(Feed):
+        def poll(self):
+            entered.set()
+            assert finish.wait(5)
+            raise TimeoutError("private upstream failure detail")
+
+    feed = SlowFailingFeed()
+    service = PaperService(ledger.database, execution, public_feed=feed, schedule_intervals={},
+                           tick_interval_seconds=0.02)
+
+    async def scenario():
+        draining = asyncio.Event()
+        wait_for_work = service._wait_for_work
+
+        async def observed_drain(task, **kwargs):
+            if task is service._feed_task:
+                draining.set()
+            return await wait_for_work(task, **kwargs)
+
+        monkeypatch.setattr(service, "_wait_for_work", observed_drain)
+        running = asyncio.create_task(service.run(install_signal_handlers=False))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            service.request_stop()
+            await asyncio.wait_for(draining.wait(), 1)
+            assert not running.done()
+            contender = PaperService(ledger.database, execution, schedule_intervals={})
+            with pytest.raises(StaleState, match="another paper service"):
+                await contender.start()
+        finally:
+            finish.set()
+        summary = await running
+        assert summary["stopped"] and summary["ticks"] >= 1
+        assert summary["observations"] == 0
+        assert summary["failures"] == ["feed:TimeoutError"]
+        assert "private upstream" not in json.dumps(summary)
+        assert service._feed_failed and feed.closed
+        assert service._lock_fd is None
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_ingestion_storage_failure_remains_fatal_after_successful_poll(tmp_path, monkeypatch):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish = threading.Event(), threading.Event()
+
+    class SlowFeed(Feed):
+        def poll(self):
+            entered.set()
+            assert finish.wait(5)
+            return [_quote(clock, "99", "100")]
+
+    feed = SlowFeed()
+    service = PaperService(ledger.database, execution, public_feed=feed, schedule_intervals={},
+                           tick_interval_seconds=0.02)
+
+    def failed_ingestion(observations):
+        raise OSError("synthetic ingestion storage failure")
+
+    async def scenario():
+        await service.tick()
+        assert await asyncio.to_thread(entered.wait, 5)
+        monkeypatch.setattr(service, "_ingest", failed_ingestion)
+        finish.set()
+        with pytest.raises(OSError, match="ingestion storage failure"):
+            await service.stop()
+        assert service._shutdown_failures == []
+        assert feed.closed and service._lock_fd is None
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+
+
+def test_final_poll_failure_keeps_concurrent_maintenance_error_fatal(tmp_path, monkeypatch):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish, maintenance_failed = threading.Event(), threading.Event(), threading.Event()
+
+    class SlowFailingFeed(Feed):
+        def poll(self):
+            entered.set()
+            assert finish.wait(5)
+            raise TimeoutError("synthetic upstream timeout")
+
+    feed = SlowFailingFeed()
+    service = PaperService(ledger.database, execution, public_feed=feed, schedule_intervals={},
+                           tick_interval_seconds=0.02)
+
+    def unavailable_management():
+        maintenance_failed.set()
+        raise OSError("synthetic management storage unavailable")
+
+    async def scenario():
+        await service.tick()
+        assert await asyncio.to_thread(entered.wait, 5)
+        monkeypatch.setattr(service, "_management", unavailable_management)
+        shutdown = asyncio.create_task(service.stop())
+        try:
+            assert await asyncio.to_thread(maintenance_failed.wait, 5)
+            assert not shutdown.done()
+        finally:
+            finish.set()
+        with pytest.raises(OSError, match="management storage"):
+            await shutdown
+        assert service._shutdown_failures == ["feed:TimeoutError"]
+        assert feed.closed and service._lock_fd is None
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+
+
 def test_cancelling_role_wait_and_shutdown_retains_fence_until_thread_drains(tmp_path):
     clock, ledger, execution, broker, portfolio = _stack(tmp_path)
     entered, finish = threading.Event(), threading.Event()
