@@ -290,13 +290,13 @@
         "tests/integration/test_cost_acceptance.py::test_a17_bad_tool_schema_never_runs_handler_and_retains_synthetic_usage",
         "tests/integration/test_cost_acceptance.py::test_a17_unsupported_settings_fail_before_reservation_or_dispatch",
         "tests/integration/test_cost_acceptance.py::test_a17_valid_tool_schema_continues_to_valid_structured_output",
-        "tests/integration/test_cost_acceptance.py::test_a17_malformed_local_schema_retains_supplied_usage",
+        "tests/integration/test_cost_acceptance.py::test_a17_malformed_local_schema_refuses_before_dispatch_or_billing",
         "tests/integration/test_cost_acceptance.py::test_a17_complete_json_schema_constraints_retain_both_provider_usage",
         "tests/integration/test_cost_acceptance.py::test_a17_pydantic_discriminated_output_oneOf_and_local_refs",
         "tests/integration/test_cost_acceptance.py::test_a17_local_refs_work_and_external_retrieval_is_denied_with_usage",
         "tests/integration/test_cost_acceptance.py::test_a17_schema_and_provider_data_bounds_fail_safely_with_usage"
       ],
-      "covered_subrequirements": ["Both providers exercise structured/tool/usage fixtures, valid continuation, refusal/truncation, bad schemas/settings, timeouts/rate limits; maintained Draft202012 checks constraints, discriminated unions/local refs, rejects external retrieval and bounds raw JSON/schema/data while preserving supplied usage/model attribution."],
+      "covered_subrequirements": ["Both providers exercise structured/tool/usage fixtures, valid continuation, refusal/truncation, bad schemas/settings, timeouts/rate limits; maintained Draft202012 checks constraints, discriminated unions/local refs, rejects external retrieval and bounds raw JSON/schema/data while preserving supplied usage/model attribution for dispatched replies. Malformed or unsupported input schemas refuse locally before reservation and HTTP dispatch."],
       "uncovered_subrequirements": [],
       "scope_notes": "Local synthetic adapter/schema/transport fixtures; real provider behavior and actual bills remain a separate paid boundary."
     },
