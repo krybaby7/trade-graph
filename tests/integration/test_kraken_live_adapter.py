@@ -753,6 +753,98 @@ def test_precision_boundaries_preserve_native_quantums_and_integer_limit():
     assert rule.quantity_increment == Decimal("1e-18")
 
 
+@pytest.mark.parametrize(
+    "quantity,price,cost,fee_asset,fee,side",
+    [
+        (
+            "12345678901234567890.123456789012345678",
+            "1",
+            "12345678901234567890.123456789012345678",
+            "ZUSD",
+            "0",
+            "buy",
+        ),
+        ("1234567890123.45", "1234567890123.45", "1524157875323866912056239.9025", "ZUSD", "0", "buy"),
+        ("1", "12345678901234567890.12345678", "12345678901234567890.12345678", "ZUSD", "0.000000001", "buy"),
+        ("12345678901234567890.12345678", "1", "12345678901234567890.12345678", "XXBT", "0.000000001", "buy"),
+        ("12345678901234567890.12345678", "1", "12345678901234567890.12345678", "XXBT", "0.000000001", "sell"),
+    ],
+    ids=["quantity", "quantity-price-product", "quote-fee-addition", "base-fee-subtraction", "base-fee-addition"],
+)
+def test_unrepresentable_native_fills_refuse_before_real_ledger_changes(
+    tmp_path, quantity, price, cost, fee_asset, fee, side
+):
+    clock = FrozenClock(NOW)
+    database = Database(tmp_path / "precision-fixture.sqlite")
+    ledger = Ledger(database, clock)
+    portfolio = ledger.create_portfolio(reporting_currency="USD", mode="live")
+    ledger.deposit(portfolio, "USD", Decimal("1e30"), "synthetic-opening")
+    intent = _intent(portfolio_id=portfolio, quantity=quantity, limit_price=price, side=side)
+    database.execute(
+        "INSERT INTO order_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            intent.intent_id,
+            portfolio,
+            intent.client_order_id,
+            "UNKNOWN",
+            intent.symbol,
+            intent.model_dump_json(),
+            utc_iso(clock.now()),
+            utc_iso(clock.now()),
+        ),
+    )
+    rest = ScriptedRest()
+    rest.results["ClosedOrders"] = {
+        "closed": {"order-1": _order(status="closed", vol=quantity, vol_exec=quantity)},
+        "count": 1,
+    }
+    trade = _trade(1, side=side, fee=fee if fee_asset == "ZUSD" else "0")
+    trade.update(vol=quantity, price=price, cost=cost)
+    rest.results["TradesHistory"] = {"trades": {"trade-1": trade}, "count": 1}
+    native = _ledgers(1)
+    native["base-1"].update(
+        amount=quantity if side == "buy" else "-" + quantity, fee=fee if fee_asset == "XXBT" else "0"
+    )
+    native["quote-1"].update(amount="-" + cost if side == "buy" else cost, fee=fee if fee_asset == "ZUSD" else "0")
+    rest.results["QueryLedgers"] = native
+    resolutions = []
+
+    def resolve(client, order):
+        resolutions.append((client, order))
+        return intent.intent_id
+
+    broker = _broker(rest, intent_resolver=resolve)
+    execution = Execution(database, ledger, clock, broker, venue="kraken", account_id="synthetic-account", mode="live")
+    execution.register_instrument(asyncio.run(broker.instruments())[0])
+    before = database.execute("SELECT COUNT(*) FROM ledger_events").fetchone()[0]
+    with pytest.raises(ValidationFailure, match="native fill precision"):
+        asyncio.run(execution.reconcile())
+    assert database.execute("SELECT COUNT(*) FROM ledger_events").fetchone()[0] == before
+    assert database.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 0
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("1e30")
+    assert ledger.books(portfolio).lots == []
+    assert resolutions == []
+    assert execution.intent_state(intent.intent_id) == "UNKNOWN"
+    assert not any(method in {"AddOrder", "CancelOrder"} for method, _ in rest.calls)
+    database.close()
+
+
+def test_native_fill_precision_guard_accepts_exact_values_with_trailing_zeros():
+    rest = ScriptedRest()
+    source = "12345678901234567890.123456780000000000"
+    trade = _trade(1, fee="0")
+    trade.update(vol="1", price=source, cost=source)
+    rest.results["TradesHistory"] = {"trades": {"trade-1": trade}, "count": 1}
+    native = _ledgers(1, fee="0")
+    native["base-1"]["amount"] = "1"
+    native["quote-1"]["amount"] = "-" + source
+    rest.results["QueryLedgers"] = native
+    fill = asyncio.run(_broker(rest).fills_since(None)).fills[0]
+    assert fill.price == Decimal(source)
+    assert fill.quantity == Decimal("1")
+    assert fill.fee_amount == 0
+
+
 def test_kraken_fill_reconciliation_survives_restart_through_real_ledger_without_resubmit(tmp_path):
     clock = FrozenClock(NOW)
     path = tmp_path / "live-fixture.sqlite"

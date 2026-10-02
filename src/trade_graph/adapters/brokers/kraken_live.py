@@ -14,7 +14,7 @@ import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, localcontext
+from decimal import Decimal, Inexact, localcontext
 from functools import wraps
 
 from trade_graph.adapters.brokers.kraken_transport import KrakenApiError, check_response
@@ -44,6 +44,7 @@ MAX_INTEGER_DIGITS = 30
 MAX_NATIVE_SCALE = 18
 MAX_UNSIGNED_INTEGER = 2**64 - 1
 ARITHMETIC_PRECISION = 128
+CORE_LEDGER_PRECISION = 28
 
 
 def _safe_read(method):
@@ -477,7 +478,8 @@ class KrakenLiveBroker:
         symbol = self._symbol(value["pair"])
         base, quote = symbol.split("/")
         quantity, price = _decimal(value["vol"], positive=True), _decimal(value["price"], positive=True)
-        if _decimal(value["cost"]) != quantity * price:
+        native_cost = _decimal(value["cost"])
+        if native_cost != quantity * price:
             raise ValidationFailure("Kraken rounded trade cost cannot be represented by the shared fill contract")
         at = _decimal(value["time"])
         if not self.history_start <= at <= end:
@@ -505,6 +507,28 @@ class KrakenLiveBroker:
             raise ValidationFailure("Kraken trade and native ledger fees disagree")
         if type(value.get("maker")) is not bool:
             raise ValidationFailure("Kraken fill liquidity attribution is missing")
+        # The protected ledger currently recomputes these expressions at 28
+        # significant digits. Native wire parsing can retain wider values, but
+        # returning such a fill would silently round its financial postings.
+        # Refuse before exposing a DTO or consulting a durable intent resolver.
+        identified_rate = None
+        try:
+            with localcontext() as context:
+                context.prec = CORE_LEDGER_PRECISION
+                context.traps[Inexact] = True
+                for number in (quantity, price, native_cost, nominal, fee):
+                    context.plus(number)
+                notional = price * quantity
+                if asset == quote:
+                    notional + fee if value["type"] == "buy" else notional - fee
+                elif asset == base:
+                    quantity - fee if value["type"] == "buy" else quantity + fee
+                elif fee:
+                    identified_rate = nominal / fee
+                    identified = fee * identified_rate
+                    notional + identified if value["type"] == "buy" else notional - identified
+        except ArithmeticError:
+            raise ValidationFailure("Kraken native fill precision exceeds the protected ledger context") from None
         order_id = value["ordertxid"]
         client = self._order_clients.get(order_id)
         intent_id = self.intent_resolver(client, order_id) if self.intent_resolver else None
@@ -522,7 +546,7 @@ class KrakenLiveBroker:
             liquidity="maker" if value["maker"] else "taker",
             filled_at_utc=EPOCH + timedelta(microseconds=int(at * 1_000_000)),
             heuristic=False,
-            fee_identified_rate=nominal / fee if fee and asset not in {base, quote} else None,
+            fee_identified_rate=identified_rate,
         )
 
     @_safe_read
