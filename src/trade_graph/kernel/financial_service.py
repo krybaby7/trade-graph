@@ -199,7 +199,7 @@ class ProtectedFinancialService:
             raise ValidationFailure("invalid protected RPC JSON") from exc
         if type(message) is not dict or set(message) != {"operation", "request_id", "capability", "decision"}:
             raise AuthorityDenied("protected RPC envelope has no allowed route")
-        if (message["operation"] not in self.manifest.operations or type(message["request_id"]) is not str
+        if (message["operation"] != "submit_decision" or type(message["request_id"]) is not str
                 or type(message["capability"]) is not str or len(message["capability"]) != 64):
             raise AuthorityDenied("invalid protected RPC capability")
         request_sha256 = document_sha256(message["decision"])
@@ -209,6 +209,8 @@ class ProtectedFinancialService:
             if row is None:
                 raise AuthorityDenied("unknown protected capability")
             scope = json.loads(row["scope_json"])
+            if scope.get("operation") != "submit_decision":
+                raise AuthorityDenied("departmental capability cannot route a financial decision")
             expected = hmac.new(self._capability_key, canonical_json(scope).encode(), hashlib.sha256).hexdigest()
             if (not hmac.compare_digest(expected, message["capability"])
                     or hashlib.sha256(message["capability"].encode()).hexdigest() != row["capability_sha256"]):

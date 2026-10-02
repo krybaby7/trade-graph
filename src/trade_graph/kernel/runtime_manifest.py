@@ -60,7 +60,9 @@ class ProtectedRuntimeManifest:
                 or type(self.maximum_source_bytes) is not int or not 1 <= self.maximum_source_bytes <= 65536
                 or type(self.maximum_output_bytes) is not int or not 1 <= self.maximum_output_bytes <= 16384
                 or type(self.wall_seconds) is not int or not 1 <= self.wall_seconds <= 10
-                or type(self.operations) is not tuple or self.operations != ("submit_decision",)):
+                or type(self.operations) is not tuple or any(type(value) is not str for value in self.operations)
+                or self.operations not in {
+                    ("submit_decision",), ("submit_decision", "invoke_model", "apply_role_result")}):
             raise ValueError("invalid protected owner manifest")
 
     @property

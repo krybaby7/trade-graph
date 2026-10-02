@@ -48,7 +48,10 @@ class ProtectedRuntimeController:
         source_sha256 = hashlib.sha256(source_text.encode()).hexdigest()
         if source_sha256 not in self.manifest.approved_source_sha256:
             raise AuthorityDenied("release source lacks exact owner-manifest approval")
-        build_digest = document_sha256({"source_sha256": source_sha256, "contract": "decision-proposal-v1"})
+        contract = {"source_sha256": source_sha256, "contract": "decision-proposal-v1"}
+        if self.manifest.operations != ("submit_decision",):
+            contract.update(contract="decision-and-departmental-graph-v1", operations=self.manifest.operations)
+        build_digest = document_sha256(contract)
         document = {"release_id": release_id, "manifest_sha256": self.manifest.sha256,
                     "source_sha256": source_sha256, "source_text": source_text, "build_digest": build_digest,
                     "admitted_by": "owner_pinned_manifest"}
@@ -65,9 +68,18 @@ class ProtectedRuntimeController:
         return {key: value for key, value in document.items() if key != "source_text"}
 
     def _has_success(self, release_id: str | None) -> bool:
-        return bool(release_id and self.database.execute("""SELECT 1 FROM protected_rpc_requests
+        return bool(release_id and self.database.execute("""SELECT 1 FROM protected_rpc_requests p
             WHERE instance_id=? AND state='APPLIED' AND json_extract(scope_json,'$.release_id')=?
-            AND json_extract(scope_json,'$.manifest_sha256')=? LIMIT 1""",
+            AND json_extract(scope_json,'$.manifest_sha256')=? AND (
+                json_extract(scope_json,'$.operation')='submit_decision' OR (
+                json_extract(scope_json,'$.operation')='apply_role_result'
+                AND json_extract(response_json,'$.protected_effect.status')='SUCCEEDED'
+                AND EXISTS (SELECT 1 FROM role_results r
+                    WHERE r.task_id=json_extract(p.scope_json,'$.task_id')
+                    AND r.portfolio_id=json_extract(p.scope_json,'$.portfolio_id')
+                    AND r.role=json_extract(p.scope_json,'$.role') AND r.status='SUCCEEDED'
+                    AND r.document_json=json_extract(p.response_json,'$.protected_effect.document_json'))))
+            LIMIT 1""",
             (self.instance_id, release_id, self.manifest.sha256)).fetchone())
 
     def activate_release(self, release_id: str) -> None:

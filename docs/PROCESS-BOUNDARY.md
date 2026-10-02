@@ -1,14 +1,15 @@
-# Protected process boundary and financial RPC
+# Protected process boundary and business RPC
 
 `trade_graph.kernel.process_boundary.ProtectedBoundaryHarness` now runs mutable
 Python in a fresh Linux x86-64 process confined before its first untrusted byte
 is parsed or compiled. Actual-host adversarial tests exercise this boundary with
 synthetic protected state. `application.protected_runtime.ProtectedPaperRuntime`
 now additionally composes the real durable paper ledger, authority, execution and
-budget services in a trusted parent with a separate confined decision process.
-This is a functioning opt-in T21 slice; the complete model gateway and departmental
-graph have not been extracted, the intended deployment image/host has not been
-verified, and the deployed Engineer retains its R1 artifact permissions.
+budget services in a trusted parent with separate confined decision and departmental
+processes. All six durable department handlers can use the protected model gateway
+and confined reasoning/result graph stages. This is a functioning opt-in T21 slice;
+the intended deployment image/host has not been verified, and the deployed Engineer
+retains its R1 artifact permissions.
 `isolation.run_plugin` and staged application-code promotion remain disabled.
 
 The trusted parent keeps its credential and owner-pinned policy in its own
@@ -47,7 +48,7 @@ changes, but it does not establish a complete immutable interpreter image,
 dependency supply chain, race-free release distribution or production host
 mount ownership. Those remain release-controller work.
 
-Only two scoped JSON RPC operations exist: `read_snapshot` for the current
+The numeric harness has two scoped JSON RPC operations: `read_snapshot` for the current
 public numeric snapshot and `propose_features` for the exact owner-allowlisted
 feature names. The snapshot content digest prevents proposals against different
 observations. Snapshot/feature values are bounded fixed-point Decimal strings;
@@ -60,10 +61,9 @@ Features are proposals, and no operation executes or authorizes an order.
 
 `deterministic_fallback` returns an explicit `mutable_unavailable` diagnostic
 with protected zero-valued features after candidate failure. It uses neither the
-candidate nor a model. This demonstrates surviving controller behavior without
-claiming that an actual application/version rollback or portfolio restoration
-has been implemented. The scaffold holds no production ledger and restores no
-financial database.
+candidate nor a model. This demonstrates surviving harness behavior. The harness
+holds no production ledger and restores no financial database; the separate real
+controller's durable release recovery is described below.
 
 The actual-host tests verify 30 blocked file/descriptor/network/process/syscall
 attempts, parent environment/memory and world-readable/writable sibling-account
@@ -80,7 +80,7 @@ the production deployment host/image has passed A39/A40.
 fixed-point quotes, cash and position quantity, an opaque snapshot digest, release
 identity, expiry and a one-use capability. It receives no private journal, account
 identifier, owner budget document, database handle, exchange/model transport or
-signing secret. The only business operation is `submit_decision`: a bounded
+signing secret. The financial service's only business operation is `submit_decision`: a bounded
 `enter`, `exit` or `hold` proposal. There is no route for owner writes, arbitrary
 tools, withdrawal, direct ledger edits, paid invocation or live switching.
 
@@ -108,6 +108,110 @@ refuses new mutable decisions while protected management remains available. A
 production long-history deployment needs a protected incremental checkpoint design;
 this bounded slice does not silently omit older financial events.
 
+## Protected model gateway and departmental graph
+
+`application.protected_departments.assemble_protected_handlers` composes the
+existing research, trader, learning, optimisation, leader and Engineer handlers
+with `ProtectedDepartmentGateway`. The immutable parent still selects task leases,
+point-in-time context, model routes, original role schemas, token/tool limits,
+price cards, FX provenance and priorities. It holds provider credentials, the real
+`RuntimeGateway`, `InvocationJournal`, budget services, effect validators and
+independent artifact checker. No model SDK or authenticated transport enters the
+mutable process. Paid operation remains subject to the existing owner authority;
+this composition grants none.
+
+The owner manifest defaults to the financial-only operation tuple
+`("submit_decision",)`. Departmental assembly requires the exact additional tuple
+`("submit_decision", "invoke_model", "apply_role_result")`; other operation lists
+are rejected. The admitted source must provide `graph(context)`. Each fresh
+confined invocation receives a role-scoped context and can return only one of:
+
+* `{"node": "invoke_model", "guidance": "bounded reasoning guidance"}`;
+* `{"node": "apply_role_result", "payload": {"...": "original typed role result"}}`.
+
+The owner-pinned operation tuple also selects the build-contract identity:
+financial-only releases retain `decision-proposal-v1`, while the opt-in composition
+uses `decision-and-departmental-graph-v1` and binds its exact operations. Source used
+for both paths must implement both `propose(context)` and `graph(context)`; invoking
+the financial path on graph-only source fails closed. The financial endpoint accepts
+only a `submit_decision` capability, even when the owner allows departmental stages.
+
+Guidance is limited to 2,000 UTF-8 bytes and conservatively increases the protected
+input-token reservation estimate. The child cannot choose or override a provider,
+card, schema, tool, token limit, task/invocation identifier, priority or budget.
+The parent validates the transformed result against the original protected role
+schema using a bounded local-only schema registry, then bounds native money and
+quantity precision before typed parsing. Deterministic parent validators decide
+whether a strategy, lesson, proposal, ChangeTask or artifact effect is admissible;
+candidate assertions such as `passed` or `approved` confer no authority.
+
+The child snapshot starts from an explicit public root-field allowlist, with
+owner/billing/provider metadata removed recursively. JSON depth, node count,
+collection lengths, total bytes and process output are bounded. Source and context
+are parsed only after the same irreversible seccomp confinement used by the
+financial worker. The child cannot open the database, use a network socket, inherit
+the parent's environment keys or invoke a recovery hook.
+
+Both graph stages use durable one-use capabilities in `protected_rpc_requests`.
+Each capability binds the role/task/root/portfolio, persisted lease owner/token,
+original request and snapshot, exact immutable model configuration and price card,
+policy, mandate, active artifacts, pause, budget allocations, release/generation,
+protected manifest, result digest where applicable and expiry. The private scope
+retains the exact original request/billing identity for recovery; the child receives
+neither that protected scope nor the signing secret. Exact replay returns the saved
+stage result, while identifier reuse with changed request/billing/result is refused.
+The child envelope must match the capability freshly issued to that stage.
+
+Before provider dispatch the parent rechecks current authority, task lease, release,
+budget guard and capability expiry. The real gateway journals the invocation and
+reservation before external effects. A previously dispatched or uncertain invocation
+is recovered through `InvocationJournal`, never sent to the provider again. Unknown
+usage or a cancelled/interrupted invocation keeps its unresolved billing hold.
+Known usage and cost receipts commit before checking whether a delayed result still
+has application authority, so lease loss, cancellation or release change cannot
+erase incurred cost. Known-result recovery permits a new valid task lease, checks
+the original remaining bindings and reruns only an interrupted local result stage.
+Engineer recovery binds the exact invocation in its current durable job, rather
+than choosing an arbitrary latest task invocation.
+
+A graph plan or schema-valid completion is insufficient to make a release a
+rollback baseline. The parent adds a private successful-effect acknowledgment to
+the completion receipt in the same transaction as the actual `SUCCEEDED` role
+result and its effects. This includes Engineer terminal success after independent
+artifact checks. The controller requires that acknowledgment to match the durable
+role result, or a real financial `submit_decision` receipt, before choosing a prior
+release for rollback. Child self-attestation cannot create the acknowledgment.
+
+An actual confined process, framing, protocol or original-schema failure invokes
+the independent release controller using the original release/generation. Recovery
+also rechecks the original lease and authority/budget scope: a newer activation,
+owner policy change or cancellation prevents a delayed failure from undoing it.
+The controller chooses a previously successful effect-backed release or enters
+`MANAGE_ONLY`, retaining task, receipt and financial history. The batch stops claiming
+new tasks in `MANAGE_ONLY` while protected management proceeds. Model uncertainty,
+semantic parent refusal and protected storage failure do not blame mutable source.
+
+`ProtectedPaperRuntime.run_departments(worker, assembly, portfolio_id,
+maximum_tasks=1)` runs a bounded batch of 1–32 durable role tasks through that
+assembly, claiming only tasks in the portfolio whose pause and management it handles.
+It holds controller ownership and uses a separate thread-local database
+connection for the worker. Trusted reconciliation, pause management and protected
+outbox dispatch repeat every 250 ms while a confined graph or model transport is
+pending. Cancellation prevents further stages and drains pending side effects
+before releasing ownership. Existing scheduler/context assembly, authority checks,
+receipt recovery, typed effect application and independent Engineer checking remain
+protected parent code; only mutable reasoning and result transformation run in the
+confined graph. The legacy paper runtime remains the default.
+
+Scripted integration tests run all six actual durable handlers through both confined
+stages, with real synthetic invocation/usage receipts and zero paid transport calls.
+They cover provider-control and result-self-attestation attempts, OS access denial,
+native Decimal expansion/precision attacks, expired dispatch capabilities, uncertain
+billing without redispatch, crash before effect application, new-lease restart,
+release revocation after a model reply and cancellation during slow transport while
+independent management continues. These are implementation and recovery tests, not
+funded model evidence or deployment-host certification.
+
 ## Pinned controller and independent management
 
 `ProtectedRuntimeManifest` comes from an owner-approved protected deployment.
@@ -116,7 +220,7 @@ the interpreter, operation/resource bounds, deployment identity and exact approv
 mutable source hashes. A source hash calculated in a candidate-controlled checkout
 does not constitute approval. Admission rejects any unpinned source and copies the
 approved source into the private protected database. Release IDs are immutable;
-the parent derives the decision-contract build digest itself. This digest identifies
+the parent derives the operation/contract build digest itself. This digest identifies
 source/contract content, not a complete dependency/OS build attestation. Class grants
 and T22 staged plugin receipts remain separate gates.
 
@@ -155,10 +259,10 @@ attacks, management during timeout, newer activation and cancellation. Credentia
 and capital in these tests are synthetic; they do not certify a production host,
 funded observation, private venue access or broader deployed Engineer authority.
 
-To finish T21, integrate the complete protected model/budget gateway and departmental
-mutable graph into this topology, pin immutable deployment/dependency images and
-owner mounts outside candidate mutation, and verify independent recovery/rollback
-on the intended deployment host.
+To finish the deployment gate for T21, pin immutable deployment/dependency images
+and owner mounts outside candidate mutation, and verify independent recovery/rollback
+on the intended deployment host. Installed-source/interpreter fingerprints and local
+synthetic integration tests do not satisfy those deployment requirements.
 Repeat capability, resource, egress and host-mount attacks on the intended
 deployment platform. T22 additionally requires T18 economic evidence, an explicit
 owner class grant, pure-plugin determinism/replay tests, immutable staging and
