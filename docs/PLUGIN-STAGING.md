@@ -1,7 +1,9 @@
 # Pure-feature plugin staging and finite replay
 
 This is offline T22 preparation. `PluginStageStore` and `PluginReplayValidator`
-are independent trusted-parent tools; no CLI, Engineer tool, application worker,
+are independent trusted-parent tools; the additional
+[executable bundle and shadow APIs](PLUGIN-RUNTIME-SHADOW.md) consume their exact
+sealed bytes and independent receipts. No CLI, Engineer tool, application worker,
 activation or live adapter calls them. `isolation.run_plugin` and
 `isolation.promote_staged` remain disabled. Passing replay checks does not grant
 broader Engineer authority, satisfy T18 economics, prove deployment-host

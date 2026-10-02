@@ -40,6 +40,39 @@ def require_digest(value: str) -> None:
         raise ValueError("a lowercase SHA-256 digest is required")
 
 
+def bounded_document(data: bytes, *, maximum_bytes: int = MAX_RECEIPT_BYTES) -> dict:
+    if type(data) is not bytes or len(data) > maximum_bytes:
+        raise ValueError("bounded JSON bytes required")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON fields")
+            result[key] = value
+        return result
+
+    try:
+        document = json.loads(data, object_pairs_hook=unique)
+    except (RecursionError, UnicodeError) as exc:
+        raise ValueError("invalid bounded JSON") from exc
+    if type(document) is not dict:
+        raise ValueError("JSON object required")
+    pending, nodes = [(document, 0)], 0
+    while pending:
+        value, depth = pending.pop()
+        nodes += 1
+        if depth > 12 or nodes > 8192:
+            raise ValueError("JSON structural bound exceeded")
+        if type(value) is dict:
+            pending.extend((item, depth + 1) for item in value.values())
+        elif type(value) is list:
+            pending.extend((item, depth + 1) for item in value)
+        elif type(value) is float:
+            raise ValueError("binary floating JSON numbers refused")
+    return document
+
+
 class PluginStageManifest(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
 
@@ -82,7 +115,7 @@ class PluginStageStore:
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root).absolute()
-        for directory in (self.root, self.root / "stages", self.root / "receipts"):
+        for directory in (self.root, *(self.root / name for name in ("stages", "receipts", "runtimes", "corpora"))):
             ensure_directory(directory)
             fd = open_directory(directory)
             try:
@@ -263,7 +296,7 @@ class PluginStageStore:
             data = self._read_file(fd, "receipt.json", MAX_RECEIPT_BYTES)
             if sha256(data) != digest:
                 raise ValueError("plugin receipt content identity mismatch")
-            document = json.loads(data)
+            document = bounded_document(data)
             if canonical_bytes(document) != data:
                 raise ValueError("plugin receipt must use canonical JSON")
             return document
