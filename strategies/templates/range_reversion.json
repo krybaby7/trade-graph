@@ -1,0 +1,12 @@
+{
+  "strategy_id": "range-reversion",
+  "status": "unproven",
+  "features": ["range_high", "range_low", "midpoint"],
+  "entry": "Fade a test of the range edge when the range is still intact.",
+  "exit": "Midpoint or a break of the range.",
+  "sizing_envelope": "Smaller than the trend template and inside the mandate.",
+  "invalidation": "A close outside the range.",
+  "execution": "Resting limit preferred. A touch is not a fill.",
+  "costs": "Maker fee only if the order rested. Otherwise taker.",
+  "validation": "Compare with buy-and-hold and with the trend template on the same data."
+}

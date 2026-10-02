@@ -1,0 +1,27 @@
+# Install only after creating the service user, immutable installation and private account.
+# This unit starts paper maintenance; it grants no paid-model or live authority.
+[Unit]
+Description=Trade Graph local paper service
+After=network-online.target
+
+[Service]
+Type=simple
+User=trade-graph
+Group=trade-graph
+WorkingDirectory=/opt/trade-graph
+UMask=0077
+StateDirectory=trade-graph
+StateDirectoryMode=0700
+ExecStart=/opt/trade-graph/.venv/bin/trade-graph run --mode paper --database /var/lib/trade-graph/trade_graph.sqlite
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+KillSignal=SIGTERM
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/trade-graph
+
+[Install]
+WantedBy=multi-user.target

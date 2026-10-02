@@ -1,1 +1,536 @@
-{"schema_version":1,"updated_at":"2026-09-29","status_note":"Plan only; runtime implementation has not started.","tasks":{"T00":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T01":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T02":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T03":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T04":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T05":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T06":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T07":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T08":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T09":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T10":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T11":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T12":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T13":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T14":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T15":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T16":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T17":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T18":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T19":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T20":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T21":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T22":{"status":"todo","owner":null,"branch":null,"evidence":[]}}}
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-02",
+  "status_note": "Round2 implementation and independent cross-review complete; all six task agents idle. Clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90 passed 1721 tests and all 40 applicable offline criteria. T17–T22 remaining acceptance gates stay unfinished/dependency-blocked; no funded/forward/private venue/live/deployment process runs.",
+  "tasks": {
+    "T00": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv.lock pins the Python 3.12 toolchain; default CI workflow has no credentials",
+        "2026-09-30 review: Python 3.12 locked CI run 36699717463 passed lint and 113 tests at 2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0; this is test evidence, not full-product acceptance."
+      ]
+    },
+    "T01": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/unit/test_contracts.py and tests/unit/test_import_boundary.py reject invalid contracts and SDK imports in domain",
+        "tests/unit/test_protocols.py checks Broker, InferenceAdapter and point-in-time MarketData",
+        "tests/integration/test_authority_binding.py binds caps to persisted revisions and rejects immutable-policy, expiry, withdrawal and binding mismatches",
+        "2026-09-30 local Python 3.12 uv run pytest: 124 passed after T01; ruff check src tests passed. Not a paid-provider or exchange result."
+      ]
+    },
+    "T02": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_ledger_store.py covers restart, duplicate financial ids, and backup checksum failure",
+        "Revalidated after T01 on 2026-09-30: full local pytest 124 passed, including ledger restart/duplicate/backup coverage. Dependency T01 is now done."
+      ]
+    },
+    "T03": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/unit/test_books.py covers A01-A05 and A43 with Decimal native units, including the USD10,000 EUR FX case",
+        "tests/e2e/test_offline.py asserts A44 synthetic receipts do not change real budget across a paper reset; tests/integration/test_review_regressions.py covers shared-cost allocation once",
+        "Revalidated after T01/T02 on 2026-09-30: those tests passed in the 124-test local suite."
+      ]
+    },
+    "T04": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_public_market.py covers REST metadata/ticker, attributed ECB FX, websocket reconnect/backfill, out-of-order quotes, and point-in-time replay",
+        "A13 stale increase remains covered in tests/integration/test_execution.py and by the stale public-book authorization case",
+        "2026-09-30 public smoke, labeled separately from unit tests: Kraken AssetPairs XBTUSD, REST ticker, one WebSocket v2 snapshot, Frankfurter ECB USD/EUR 0.88067 for 2026-09-29. No credentials, no orders, live reconnect not exercised."
+      ]
+    },
+    "T05": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "paper partial fills, minimums, stop gap, and same-bar exclusion pass in tests/integration/test_execution.py; fee tier is the explicit fixed conservative schedule",
+        "tests/integration/test_public_market.py::test_normalized_public_book_drives_paper_partial_fill uses a normalized Kraken ticker shape on the paper ledger path",
+        "2026-09-30 local Python 3.12 uv run pytest: 129 passed, 0 failed, 0 skipped; ruff check src tests passed."
+      ]
+    },
+    "T06": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_models_and_budget.py covers structured output, usage, refusal, truncation, rate limit and timeout fixtures for both adapters",
+        "tests/integration/test_provider_transport.py covers scripted HTTP, one registered tool continuation, one-provider rejection, unregistered tools, unsupported temperature, unknown models and bad JSON. Calls without an API key write synthetic receipts and leave the real allowance unchanged",
+        "Credentialed OpenAI/Anthropic probes were not run. HttpxProviderHttp was not invoked. A scripted transport is not a billed provider success."
+      ]
+    },
+    "T07": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_models_and_budget.py still covers concurrent reservations, uncertain usage, paid-call refusal and cache/reasoning usage",
+        "tests/integration/test_expense_controls.py covers schema-repair and timeout-retry receipts, a root limit that stops the next retry, a fallback on a separate price card, leader and engineer receipts, role/task/version views, a persisted unexplained invoice difference, and an unchanged allowance after a EUR10000 paper deposit",
+        "Migration 0003 is additive. No provider invoice was downloaded and no credentialed model call was made."
+      ]
+    },
+    "T08": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_execution.py and tests/integration/test_review_regressions.py cover lost acknowledgement, duplicate-fill rejection, cancel/fill reservation hold, stale quotes, owner halt, and restart without a second submit",
+        "tests/integration/test_pause_profiles.py covers PAUSE_DECISIONS, MANAGE_ONLY, NO_NEW_EXPOSURE, CANCEL_ALL, FLATTEN and STOPPED achieved states. Protective sells survive no-new-exposure and are cancelled by cancel-all. Flatten stays flattening until the exit fill, then STOPPED is reached only when flat",
+        "An unknown cancel stays cancelling-orders. A lost acknowledgement is cancelled from broker state without a second submit. Paper fill pagination now ends on an empty page. No live venue outage was run."
+      ]
+    },
+    "T09": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_scheduler_recovery.py covers lease fencing, coalesced missed runs, deduplication and delegation depth",
+        "tests/integration/test_models_and_budget.py reruns one LangGraph checkpoint without a second visit",
+        "tests/integration/test_role_worker.py covers a single process lease, reconciliation before a reclaimed effect, a version mismatch with zero attempts, and a snapshot written only when a handler runs. The worker does not call a provider. Role behavior itself remains T10."
+      ]
+    },
+    "T10": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_research_trader.py covers stripped injection, private-URL rejection, immutable refresh, fresh-versus-stale context, an enter without a Leader row, an experimental hold with a counterfactual, and a timeout that does not add a hold",
+        "slow-trend-pullback and range-reversion are unproven templates. No credentialed search or live order was made."
+      ]
+    },
+    "T11": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_learning.py keeps prior counterexamples across a revision, reloads the contradicted revision after restart, grades an invalid winning process and a valid losing thesis by process, and values a no-trade at the quote available then rather than a later high",
+        "An optimisation proposal that disables reconciliation is rejected. Cost per decision uses Decimal. No model call was made."
+      ]
+    },
+    "T12": {
+      "status": "done",
+      "owner": "implementation-review",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_leader.py rejects an allowance increase, an attempt to clear an owner halt, and per-trade approval. The Leader assigns a research task, sets a coalesced schedule, and installs a tighter mandate. A wider mandate is rejected",
+        "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "66d6f9a and 0025141 persisted Secretary reports, bounded/deduplicated digests, scheduled gateway-backed Leader decisions, atomic allowed effects, receipt attribution and completed departmental consultations under the same bounded root. Full original 229-test suite reproduced locally.",
+        "tests/integration/test_leadership_workflow.py and test_leadership_followup.py exercise positive assignments, consultation return and evidence incorporation, schedules across restart, mandate/resource changes, own-pause resume, invalid/stale decisions, atomic failure and crash recovery before another model call.",
+        "5d5ce35: tests/integration/test_candidate_review_flow.py adds ten initially failing regressions. Real commissioned READY/FAILED artifacts now produce scoped Secretary completion reports and bounded candidate cards in persisted Leader snapshots. Gateway decisions activate/reject only reviewed, cited and unchanged candidates; cross-portfolio/guessed/stale results are blocked and committed effects recover without another model call.",
+        "Full Python 3.12.14 locked-dependency suite: 239 passed, zero failures/errors/skips; Ruff passed. Credential-free runtime CI 36744681382 and planning CI 36744681372. See docs/reviews/2026-09-30-continuation.md for exact scope and verification."
+      ],
+      "acceptance_scope": "T12 application workflows only. Scripted inference exercises the real gateway, persisted worker, authority and effects. This does not complete the Engineer model/worker lifecycle (T13), artifact consumption/observation (T14), or continuous operator service (T17)."
+    },
+    "T13": {
+      "status": "done",
+      "owner": "codex-continuation",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_engineer.py covers a scrubbed check environment, a worktree that omits .env and kernel files, a shadowed checks module that cannot make a failing policy pass, advice-only and protected-path failures, a file-limit failure that leaves the active hash unchanged, and rejection of a forged runner label and a mismatched checks hash",
+        "Migration 0004 stores controller_attestations. The local check is not a paid model call. No production secret or database was mounted.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Authorization now binds commissions to real persisted Leader decisions, owner/mandate revisions, task hash, portfolio and worker. Nonrunnable changes cannot stage; revocation during checks retains failed evidence. Existing authorization/Engineer suites passed in the full 239-test run.",
+        "2026-10-01 continuation: recovered latest remote 9376d2d, installed unchanged uv.lock on Python 3.12.14, baseline 280 tests passed with zero failures/errors/skips; commissioned Engineer lifecycle implementation and regression validation in progress.",
+        "f3231b7 persists scoped gateway invocations and billing outcomes; 9376d2d confines the data-only checker with Linux seccomp/path/resource limits. Recovered baseline: 280 tests passed locally with the unchanged lockfile.",
+        "a503cac: EngineerHandler integrates real Leader commissions, durable requests, budget-gateway generation, bounded schema/patch repairs, delayed retries, independent checks, scoped Secretary reports and scheduler-fenced candidate publication. Crash recovery reuses durable responses/candidates and preserves unknown billing even after authority revocation. Local validation recovery is capped at three per invocation.",
+        "2026-10-01 Python 3.12.14 locked full suite: 349 passed, zero failures/errors/skips; 40 new Engineer workflow tests plus 29 HTTPX failure tests. Ruff, all 10 planning tests and standalone CLI demo passed. Actual staged artifacts and seccomp evidence were exercised; no paid-provider/exchange result is claimed.",
+        "The offline CLI now generates a rejected protected patch and successful repair through the commissioned worker with two actual synthetic receipts, then routes candidate evidence to a persisted gateway-backed Leader activation. Four fills survive restart with zero new submissions. See docs/reviews/2026-10-01-engineer.md."
+      ],
+      "acceptance_scope": "T13 registered allowlisted data artifacts and explicit permitted prompts, bounded gateway/check/recovery workflow. Independent grammar/path/obligation/confinement checks do not establish trading quality, token savings, T14 artifact loading/observation, T17 continuous service or T21 broader code isolation. Paid calls remain disabled."
+    },
+    "T14": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",
+        "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Revalidated persisted candidate/commission/attestation binding, no-side-effect unauthorized rejection, baseline CAS, trader quiescence, concurrent activation and pointer rollback. New candidate-review tests exercise actual Leader gateway activation without manually injecting a candidate ID.",
+        "8447f4c068a62433a2975bccb2292696640baca4: immutable bounded artifact bundles and manifests, grammar-valid predecessors, candidate/commission/checker identity checks and monotonic generations. Additive protected application migration 0007; actual consumers read stored tested bytes rather than worktrees.",
+        "ArtifactRuntime and gateway-backed TraderHandler load context policy, permitted prompts and registered strategy guidance; software consumes report layouts and scoped schedules with trusted bounded allocation. Request, snapshot, receipt and Decision share loaded provenance. Old/ABA generations are fenced before inference and effects.",
+        "Protected predeclared functional observation uses actual scoped invocation/Decision/failed-task evidence, real usage categories and receipt labels; task finish and grading commit atomically. Unknown billing waits without decision/order effects. Automatic failure/deadline rollback reconciles and reloads a verified predecessor or blocks fresh mutable work; owner pauses and all financial history remain.",
+        "2026-10-01 Python 3.12.14 unchanged locked dependencies: 391 passed, zero failures/errors/skips; Ruff and all 10 planning tests passed. New lifecycle 24, consumer 15 and schedule/report 3 regressions exercise tamper, stale generations, crashes, reopens, observation and real paper unknown/partial opening+closing order preservation.",
+        "Offline CLI/e2e demonstrates commissioned Engineer and Leader activation, actual Trader context 8 -> 5, five-lesson consumption after database reopen, three healthy decisions then charged invalid output, automatic reload 5 -> 8 and the next restored-baseline decision. Four fills survive restart with zero resubmissions; costs/receipts retained."
+      ],
+      "acceptance_scope": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    },
+    "T15": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
+        "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass.",
+        "2026-10-01: claimed after recovering verified T14 remote head 85bfb1c; implementing dashboard projections, evidence navigation, owner controls and A34/A35/A37 validation.",
+        "8760fb2667d4e677cac67646a01e86bdb4d563eb: T15 integrated paper dashboard, protected owner controls, snapshot-based financial/evidence APIs, redaction, private loopback startup and packaged web assets. See docs/reviews/2026-10-01-dashboard.md and D36-D40.",
+        "tests/integration/test_dashboard_financial.py verifies authoritative ledger/receipt/allocation money, native cash benchmark, event-time reporting FX, shared expenses once, portfolio/as-of isolation, freshness and sampled trading drawdown; missing provenance and stale observations remain disclosed.",
+        "tests/integration/test_dashboard_evidence.py and dashboard render/boundary/session tests verify scoped decisions/research/lessons/versions, independently attested persisted artifact diffs, pagination, one read snapshot, redaction, role sessions, CSRF, private session/database startup and evidence pages.",
+        "tests/integration/test_dashboard_controls.py verifies durable request identity, shared deployment revisions, role/root limits, atomic writes, trusted activation, unknown-order/billing resume barriers, cancellation/crash manage-only latch, newer-owner fencing, terminal failure replay and emergency manage-only.",
+        "tests/e2e/test_dashboard_loop.py reopens the actual credential-free demo, reconciles dashboard equity and spend to persisted records, navigates activation/rollback evidence, and retains four fills without new effects.",
+        "tests/unit/test_repository_hygiene.py verifies forbidden runtime paths, recognized credentials and index-byte scanning; CI runs scripts/check_repository_hygiene.py before source/test artifact upload.",
+        "Chromium: login plus eight actual routes passed desktop/mobile/dark-theme checks with no overflow/page/CSP errors. Scripted control responses verified stale CAS reload, exact-ID retries, terminal failures, emergency manage-only and malformed HTTP 200 acknowledgements without false success.",
+        "Final Python 3.12.14 locked local suite: 534 passed, zero failures/errors/skips, independently verified JUnit. Ruff, ten planning tests, dependency/reference validation, cost illustration, staged hygiene and packaged wheel assets passed. No new CI or credentialed-provider success is claimed."
+      ],
+      "acceptance_scope": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
+    },
+    "T16": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
+        "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
+        "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths.",
+        "2026-10-01: recovered remote T15 checkpoint af8e64e and claimed dependency-ready T16 in an isolated worktree; completing real offline role paths, A14/A16 storage faults and machine-readable acceptance evidence.",
+        "1cddb349492a8b83f83ba1424f1709533e95d687 (tree f8c609b673d61e88b7fe722340ceb36781d4aedf): verified T16 application-local offline closure from recovered T15 af8e64e; no newer work reset.",
+        "Offline demo now routes all three executable entry/exit/lost-ack decisions through TraderHandler, ModelGateway and RoleWorker. Typed LearningJournal and OptimisationReview preserve actual decision links and counterevidence; all six roles produce synthetic gateway receipts. Actual commissioned Engineer repairs/checks and Secretary-routed Leader activation remain, followed by loaded-byte consumption, restart, observation and rollback. Saved evidence.json contains 14 checked outcomes and request/snapshot/receipt/version traces; failed checks cannot return successful verification.",
+        "tests/property/test_accounting_invariants.py runs 200 deterministic generated conservation/cash-flow examples. test_trader_snapshot.py proves coherent authoritative cash/inventory/reservations/orders and venue/event/availability-filtered market snapshots, including concurrent deposit and stale inputs. test_evidence_acceptance.py proves cursor/routing atomicity, root step exhaustion, rejected graph cycles, unavailable data/budget versus hold, retirement and future evidence exclusion, and unchanged persisted live prerequisites across reset.",
+        "tests/integration/test_storage_faults.py adds 47 real SQLite/full-disk/commit/journal/response/fill fault and abrupt-process-death cases. UNKNOWN/pending orders retain reservations through outage; reconciliation precedes another increase. Restore validates a self-consistent-checksum corrupt database, preserves prior data on failure, and uses a private validated atomic replacement only for an offline destination without sidecars.",
+        "tests/integration/test_execution_acceptance.py adds 28 cases: a fill completed before a lost acknowledgement, partial cancel/replace and final-fill races, unsupported feature/minimum/rounding refusals, conservative broker-fee coverage, and the actual public-feed health gate while deterministic protection remains available.",
+        "tests/integration/test_cost_acceptance.py adds 148 cases for supplied invoice corrections/historical reporting, independent concurrent caps and paid-tool bounds, and both providers structured output/tool/schema/settings failures. Complete bounded Draft 2020-12 validation denies external schema retrieval and retains supplied usage/model attribution. New direct dependencies jsonschema 4.26.0 and referencing 0.37.0 are locked; earlier dependency versions remain unchanged.",
+        "planning/offline-acceptance.json maps all 40 applicable A01-A38/A43-A44 to concrete node IDs. scripts/verify_offline_acceptance.py runs each selected test once with no inherited credentials, isolated XDG/Git configuration and denied Python socket connections in its pytest process. Commit/tree/working bytes/lock/Python and actual collected JUnit outcomes are bound to the report; missing, skipped, interrupted or partial coverage cannot close T16.",
+        "Final documented uv run pytest: 808 passed, zero failures/errors/skips, independently parsed /tmp/t16-final-results.xml. Final mapped acceptance: 465 passed, all 40 accepted, gate_complete=true; report /tmp/trade-graph-t16-final-acceptance.json binds clean source 1cddb349 and lock SHA256 1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39. Ruff, ten planning tests, DAG/reference and cost illustration passed.",
+        "Fresh git-archive checkout of 1cddb349 installed its frozen Python 3.12.14 environment from the package cache and completed standalone offline CLI demo: all 14 checks passed, four fills retained, zero restart submissions. Generated JUnit, acceptance JSON and demo JSON passed exact-byte credential/private-runtime scan. CI now gates mapped acceptance and scans generated evidence before upload; no new CI conclusion is claimed.",
+        "Final integration corrected harness test loading under uv run pytest and a fixture assumption about random outbox ID order. The earlier rejected report is retained privately; final completion uses only the corrected passing run.",
+        "2026-10-02: normal fast-forward push published T16 through bd46493 to cursor/trade-graph-r1-548a. Configured repository-local GitHub HTTPS credential helper for subsequent pushes. Earlier API authentication failure did not prevent Git publication; no new CI conclusion is claimed."
+      ],
+      "acceptance_scope": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "bd464930704e6b0287cfeec5b9de47b6531a38f5",
+        "transport": "GitHub HTTPS using gh auth git-credential; normal fast-forward push",
+        "previous_blocker": "Initial Git push had no HTTPS credential helper. GitHub API authentication checks remain forbidden, but Git push succeeded with the existing CLI credential."
+      },
+      "local_branch": "codex/t16-offline-fault-suite"
+    },
+    "T17": {
+      "status": "in_progress",
+      "owner": "codex-agent:t17_operations",
+      "branch": "codex/t17-gates-r2",
+      "evidence": [
+        "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
+        "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
+        "Installed six-role approved immutable model routing, explicit routing class grant, real departmental consumers and tested activation/restart; provider wire schemas normalize from official SDK sources with original validation, pre-dispatch refusal and durable billing recovery.",
+        "Controller-evidenced owner-command crash recovery, revision/idempotency fences and separately funded paid permission are implemented. Init installs a bounded mandate/baseline, no funding.",
+        "Actual doctor/report, consistent private backup/offline restore, package defaults and runbook/systemd template implemented. Fresh frozen checkout and wheel each pass all 14 offline checks withfour retained fills and zero restart submissions; bounded installed maintenance uses no paid/live/new decisions.",
+        "Opt-in soak requires owner/runtime permission, real allowance, credentialed routes and data; reports known/estimated/synthetic costs, forecast bounds, unresolved holds and degraded/interrupted evidence. All exercised calls are fixtures.",
+        "Final source ca4d463: 1,232 full tests passed; 464 mapped tests and all 40 criteria accepted; Ruff/planning/hygiene passed. Actual public REST paper smoke failed feed:ProxyError,zero observations/decisions,exit 1 with management continuing. No funded provider soak performed.",
+        "2026-10-02 workstream integrated 321f6cc and 01067ee: bounded public acquisition requires actual sourced FX identity/date. 113 focused tests and the local backup/restore/restart drill passed; actual public probes remain ProxyError/CONNECT 403.",
+        "Round2 e388030/29a68ee: bounded host/source observation and backup/restore artifacts; 93 focused tests passed, actual local offline restore/restart drill succeeded; public probes failed ProxyError/CONNECT403. Funded/invoice/intended-host acceptance absent.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "Working public connectivity, approved current routes/prices, owner-funded credentials, actual provider/invoice observation and intended-host service/backup/alert verification.",
+      "execution_state": "idle",
+      "execution_scope": "implementation_and_verification",
+      "execution_result": "implemented_and_verified_checkpoint"
+    },
+    "T18": {
+      "status": "in_progress",
+      "owner": "codex-agent:t18_evaluation",
+      "branch": "codex/t18-gates-r2",
+      "evidence": [
+        "Immutable ForwardProtocol/private TrialRegistry implements preregistration, untouched fixed blocks, three baseline arms, variant/failed-work retention, globally bounded cost allocation and sealed complete inventory.",
+        "Conditional Decimal uncertainty/sensitivity reports include actual/failed/setup/shared costs, full sampled cumulative drawdown and actual dated block expenses. Missing provenance/dependence/flow/cost timing or unresolved costs cannot support. Regressions reproduce and reject false-support drawdown/cost cases.",
+        "Tests use synthetic source fixtures; no real registered forward horizon or profitability result. See docs/FORWARD-EVALUATION.md.",
+        "2026-10-02 workstream integrated a653969: immutable snapshots bind exact retained bytes and the full current registry/protocol/cost inventory. 47 focused tests passed; upstream verification remains unverified_imports.",
+        "Round2 1cb33a8/b2c99cb/d0e63aa: bounded current complete runtime inventory and derived expense exports; 123 focused and 77 independent tests passed. Native ownership, global retained cost continuity, invoice arithmetic/cutoffs and untouched initial chronology reviewed. External provenance remains false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "After genuine T17 collection, collect preregistered untouched future blocks and all four runtime arms with authenticated complete costs/market provenance; assess independence, regimes and sensitivities. Larger inventories require bounded retention design.",
+      "execution_state": "idle",
+      "execution_scope": "dependency_gated_preparation",
+      "execution_result": "implemented_and_verified_checkpoint"
+    },
+    "T19": {
+      "status": "in_progress",
+      "owner": "codex-agent:t19_adapter",
+      "branch": "codex/t19-gates-r2",
+      "evidence": [
+        "KrakenLiveBroker and protected REST transport normalize metadata/balances/native fees/order IDs/statuses/precise bounded history, preserve uncertainty and default to read-only/disabled orders. No withdrawal method.",
+        "Protected execution scopes dispatch/reconciliation/cancel/replace by venue/account/mode, ingests global chronology once, uses deterministic FIFO and retains incomplete-account health across restart. Missing fees, malformed/unowned history and late replay requirements refuse increases.",
+        "Native fill precision is checked before booking; unsupported native costs/fees/protection remain explicit. Pinned official SDK source was read; direct REST docs were proxy-blocked. Synthetic signing/wire/realSQLite recovery fixtures passed; no private venue call or real order.",
+        "See docs/reviews/2026-10-02-kraken-foundation.md and docs/reviews/2026-10-02-orchestration.md.",
+        "2026-10-02 workstream integrated 3c57eb0 and b47be62 with core 426cd9f: validated native ownership and durable scoped identity recover cold FILLED/CANCELLED history. 243 combined tests passed; no private venue request and time-in-force conformance remains pending.",
+        "Round2 8c479f7: separately owner-granted read-only Kraken evidence collection with exact native wire/source retention, SDK lowercase gtc/ioc and fee-info correction; 269 focused tests passed. No private observation or live order occurred.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "Owner-selected venue eligibility and account scope, authorized authenticated read-only observation, permanent least-privilege/withdrawal permission inventory, native fee/write/cancel/protection and intended-host conformance. SDK REST gtc/ioc mapping is source-confirmed; actual venue acceptance remains pending.",
+      "execution_state": "idle",
+      "execution_scope": "implementation_and_verification",
+      "execution_result": "implemented_and_verified_checkpoint"
+    },
+    "T20": {
+      "status": "blocked",
+      "owner": "codex-agent:t20_pilot_gate",
+      "branch": "codex/t20-gates-r2",
+      "evidence": [
+        "Paper CLI/dashboard live enablement remains false and virtual USD10,000 never sets real allocation.",
+        "No live pilot/real order authorized or performed; prerequisite evaluation/venue verification, eligibility, explicit owner allocation and real operating budget remain absent.",
+        "2026-10-02 workstream integrated 073c441, b7afa6f and 5fe61ee: private issuer evidence/current-state projection and unresolved owner recovery fail closed. 69 focused tests and 58 independent checks passed; readiness, enablement and diagnostic permission remain false.",
+        "Round2 46bd9e1/root93051fe: exact retained producer revalidation and private-safe unresolved reasons; 189 focused and 173 independent tests passed. Economic issuer declarations remain separate from insufficient verified evidence; readiness and enablement false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "T18/T19 verified evidence, exact live instrument/account/policy economics, owner-designated host, explicit live allocation/loss/expense limits, protection and pilot/grant lifecycle. Readiness and enablement remain false.",
+      "execution_state": "idle",
+      "execution_scope": "dependency_gated_preparation",
+      "execution_result": "implemented_and_verified_checkpoint"
+    },
+    "T21": {
+      "status": "in_progress",
+      "owner": "codex-agent:t21_kernel",
+      "branch": "codex/t21-gates-r2",
+      "evidence": [
+        "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
+        "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
+        "Production financial kernel/gateway/controller not extracted; authenticated business RPC, immutable owner deployment images and actual production rollback remain unfinished. See docs/PROCESS-BOUNDARY.md. Deployed Engineer retains R1 artifact permissions.",
+        "2026-10-02 workstream integrated c4d5776 and root migration 3e0b02f: opt-in actual paper financial services use durable authenticated scoped RPC, confined workers, independent management and fenced rollback. 116 combined tests plus 67 independent combined checks passed. Full graph/model extraction and immutable intended-host images remain unfinished.",
+        "Round2 7aeb508/root56c9c20: all six durable handlers use confined graph planning/transformation around protected routing, credentials, budgets, invocation recovery and validated effects; 196 combined and 67 independent tests passed plus local-adapter checks. Atomic genuine-effect rollback baselines and scoped management-only recovery preserve finance/cost/queued work.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "Immutable complete dependency/OS images, trusted owner mounts/distribution, intended-host adversarial/recovery proof and default-runtime adoption. Opt-in six-role model/graph stages with protected budgets/effects are implemented.",
+      "execution_state": "idle",
+      "execution_scope": "implementation_and_verification",
+      "execution_result": "implemented_and_verified_checkpoint"
+    },
+    "T22": {
+      "status": "blocked",
+      "owner": "codex-agent:t22_engineer",
+      "branch": "codex/t22-gates-r2",
+      "evidence": [
+        "Executable plugin/application-code promotion remainsdisabled; AST/protocol fixtures and standaloneprocess scaffold do not grant deployed authority.",
+        "T18 actual economic evidence, T21 production boundary and explicit owner broader class grant are unfinished; no broader code grant supplied.",
+        "2026-10-02 workstream integrated adf6ccf: private sealed pure-feature staging and parent-authenticated finite replay bind exact source/baseline/corpus/protected identities. 25 new focused tests passed; no broader class grant or production promotion.",
+        "Round2 687cdf8/root6dbcb7d: sealed actual executable plugin bundles and baseline/candidate functional shadow with bounded point-in-time numeric corpus, exact Decimal comparisons and retained negative pin-drift attempts; 89 relevant focused tests passed and independent review closed. Production/broader class authorization false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+      ],
+      "remaining": "T18/T21 prerequisites and explicit broader owner class grant; class-scoped Engineer commissioning/spend/repair, immutable intended-host deployment, selected-application migration rehearsal and automatic tested deployment/rollback. Sealed executable feature bundles and finite functional shadow are implemented.",
+      "execution_state": "idle",
+      "execution_scope": "dependency_gated_preparation",
+      "execution_result": "implemented_and_verified_checkpoint"
+    }
+  },
+  "review_checkpoint": {
+    "implementation_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+    "implementation_tree": "3fa27a5d7127fcecc9caa1fcc8cdc4ab62003b39",
+    "preserved_previous_head": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6",
+    "python": "3.12.14",
+    "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+    "baseline_tests": 1473,
+    "tests": 1721,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "mapped_tests": 464,
+    "applicable_acceptance_cases": 40,
+    "accepted_cases": 40,
+    "gate_complete": true,
+    "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/source and exact artifact hygiene; fresh frozen archive installation followed by installed wheel execution outside checkout: migration0012, offline4fills0restart, protected hold/recovery and actual Research, sealed runtime/functional shadow. No new CI result claimed.",
+    "acceptance_note": "Implementation checkpoints and finite local functional proof; genuine funded/forward/venue/intended-host evidence, immutable full deployment images, owner pilot/class grants and selected-application commissioning/migration/deployment remain unfinished. No paid/private/live/broader deployed authority granted.",
+    "next_work": "Close T17 connectivity/approved funding/host; collect real T18 forward period and owner-selected T19 read-only conformance in parallel; T21 immutable intended-host proof can proceed independently. T20/T22 remain prerequisite and owner-authority gated.",
+    "full_junit": "/tmp/trade-graph-gates-r2-full.xml",
+    "acceptance_report": "/tmp/trade-graph-gates-r2-acceptance.json",
+    "installed_proof": "/tmp/trade-graph-gates-r2-install-4cwq5kue/installed-work/installed-proof.json",
+    "publication": {
+      "target_branch": "cursor/trade-graph-r1-548a",
+      "status": "published_source",
+      "transport": "Normal fast-forward; main unchanged; no merge/history rewrite",
+      "published_at": "2026-10-02",
+      "verified_pushed_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+      "documentation_follows_verified_source": true
+    }
+  },
+  "historical_submission": {
+    "commit": "a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+    "owner": "cursor-agent",
+    "reported_tests": 34,
+    "note": "Original per-task evidence is retained below; shared original lint/test claim is recorded here once. This historical submission overclaimed full completion and is superseded by the review status."
+  },
+  "review_checkpoint_history": [
+    {
+      "implementation_commit": "2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0",
+      "preserved_previous_fix_commit": "9e908d4ca22786d1ee49bff963ac98179c79e0b3",
+      "runtime_ci_run": 36699717463,
+      "python": "3.12",
+      "tests": 113,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "new_scheduler_regression_cases": 31,
+      "historical_evidence_note": "Existing evidence below records the earlier submission; it is not a new certification of full task acceptance. See IMPLEMENTATION-STATUS.md."
+    },
+    {
+      "implementation_commit": "5d5ce35a7a0f955f14cbb4ef4c7ca920e4432c09",
+      "implementation_tree": "308d552fc2bb424b1bcb660f9a3678c8627faa5a",
+      "preserved_previous_head": "0025141e7b094a5536deb6fbceb873574c4160a1",
+      "runtime_ci_run": 36744681382,
+      "planning_ci_run": 36744681372,
+      "python": "3.12.14",
+      "tests": 239,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "new_candidate_review_regression_cases": 10,
+      "next_dependency_ready_task": "T13",
+      "acceptance_note": "T12 workflow closure, not complete autonomous R1, production isolation, paid-provider verification or profitability.",
+      "junit_artifact_id": 11111353237,
+      "runtime_ci_conclusion": "success",
+      "planning_ci_conclusion": "success"
+    },
+    {
+      "implementation_commit": "a503cacd481f6f84c1e37723ebcfa2293c26cf07",
+      "preserved_previous_head": "9376d2dc4d1947ce23160a86567af97a3e6ff015",
+      "python": "3.12.14",
+      "tests": 349,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 280,
+      "new_engineering_workflow_cases": 40,
+      "new_httpx_failure_cases": 29,
+      "next_dependency_ready_task": "T14",
+      "validation_scope": "Local locked full suite, Ruff, planning, standalone CLI demo and staged hygiene scan. New CI outcome not retrieved (GitHub GraphQL Forbidden).",
+      "acceptance_note": "T13 data-artifact application workflow closure; T14 consumer/observation, full autonomous R1, paid provider verification and profitability are not complete."
+    },
+    {
+      "implementation_commit": "8447f4c068a62433a2975bccb2292696640baca4",
+      "preserved_previous_head": "51e48b60bfe179b71b53060bc00322c3353d58ec",
+      "python": "3.12.14",
+      "tests": 391,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 349,
+      "new_version_lifecycle_cases": 24,
+      "new_artifact_consumer_cases": 15,
+      "new_schedule_report_cases": 3,
+      "next_dependency_ready_task": "T15",
+      "validation_scope": "Local full locked suite, JUnit, Ruff, ten planning tests, standalone offline demo and staged hygiene scan. No new CI result is claimed.",
+      "acceptance_note": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    },
+    {
+      "implementation_commit": "8760fb2667d4e677cac67646a01e86bdb4d563eb",
+      "implementation_tree": "a75fe189ae9dfb5b639fe1aae4cacef961602f9e",
+      "preserved_previous_head": "85bfb1c424cbcde9947ab4d31dc10c5a5125343f",
+      "python": "3.12.14",
+      "tests": 534,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 391,
+      "next_dependency_ready_task": "T16",
+      "validation_scope": "Local locked full suite, independently parsed JUnit, Ruff, ten planning tests, dependency/reference validation, cost illustration, actual offline-loop dashboard evidence, Chromium desktop/mobile/control-response checks, wheel packaging and staged repository hygiene. No new CI result is claimed.",
+      "acceptance_note": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
+    },
+    {
+      "implementation_commit": "1cddb349492a8b83f83ba1424f1709533e95d687",
+      "implementation_tree": "f8c609b673d61e88b7fe722340ceb36781d4aedf",
+      "preserved_previous_head": "af8e64e1a85400b19d75f5dbb0133c7d9b4151b0",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "tests": 808,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 534,
+      "mapped_tests": 465,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "next_dependency_ready_task": "T17",
+      "validation_scope": "Local locked full suite and independently parsed JUnit, strict mapped offline acceptance, Ruff/planning/hygiene, and fresh-checkout frozen installation/standalone demo. New CI is pending verification.",
+      "acceptance_note": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated."
+    },
+    {
+      "implementation_commit": "ca4d463b9e83218d1e80f863da8b598190575280",
+      "implementation_tree": "78187546d5044f716a7d3b70081c3a4b6c17bf21",
+      "preserved_previous_head": "f6c36e7b6a4b6f0782f8ed72f47874458c708c84",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 808,
+      "tests": 1232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Local locked full suite and independently parsed JUnit, clean bound offline acceptance, Ruff/JS/planning/hygiene and fresh frozen checkout/installed wheel demos plus bounded maintenance. No new CI conclusion.",
+      "acceptance_note": "T17 operating software and T18/T19/T21 preparation. Actual public/funded paper observation, forward economics, authenticated venue conformance, live pilot and production kernel extraction/isolation remain pending. No paid/live/broader Engineer authority granted.",
+      "next_work": "Finish T17 actual authorized public/funded verification; complete T21 production extraction and intended-host evidence; then real T18/T19 observation-dependent gates.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published",
+        "transport": "GitHub HTTPS; normal fast-forward to existing implementation branch; no merge or history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "1b6b800d6246f08d61719fd4015cac265b2d2e07"
+      }
+    },
+    {
+      "implementation_commit": "9664707d5fb12b709424ef0ae8ce45bed2ce77c4",
+      "implementation_tree": "4868b219a49639b403c27748aaae18e074952e37",
+      "preserved_previous_head": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 1232,
+      "tests": 1473,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/exact generated+repository hygiene; fresh frozen checkout dependency install and wheel install outside checkout with actual import assertion/offline4fill0restart/protectedhold+recovery/two confinedpluginreplays. No new CI conclusion.",
+      "acceptance_note": "Local task-agent checkpoints add tested implementation. Actual T17 public/funded/host verification, real T18 future collection/authenticated costs, T19 read-only conformance, T20 pilot authority, full T21 graph/model/image extraction and T22 class/deployment gates remain unfinished. No paid/private-venue/live/broader Engineer authority is granted.",
+      "next_work": "Continue full T21 model/budget/departmental graph extraction and arrange intended-host verification; close T17 external network/funded evidence when configured; collect real T18 forward period and finish owner-selected T19 venue verification before T20/T22 gates.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published_source",
+        "transport": "Normal fast-forward to existing implementation branch; main unchanged, no history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "9664707d5fb12b709424ef0ae8ce45bed2ce77c4"
+      }
+    }
+  ],
+  "orchestration": {
+    "started_at": "2026-10-02T11:28:27Z",
+    "integration_owner": "codex-orchestrator",
+    "integration_branch": "codex/orchestrator-continuation",
+    "base_commit": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+    "state": "checkpoint_complete",
+    "workstreams": {
+      "T17": "t17_operations",
+      "T18": "t18_evaluation",
+      "T19": "t19_adapter",
+      "T20": "t20_pilot_gate",
+      "T21": "t21_kernel",
+      "T22": "t22_engineer"
+    },
+    "authority": "Repository development and credential-free/public checks only; paid, private venue and live authority unchanged.",
+    "finished_at": "2026-10-02T13:35:20Z",
+    "source_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+    "execution_note": "All six task agents finished implementation and independent reviews and are idle. Root integrated/verified/published the checkpoint. External observation and production authority gates remain pending.",
+    "round": 2,
+    "start_checkpoint": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6"
+  }
+}

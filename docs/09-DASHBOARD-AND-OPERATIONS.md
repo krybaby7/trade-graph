@@ -18,18 +18,21 @@ Start with a responsive server-rendered interface backed by FastAPI. Server proj
 
 ## Target API
 
-These are implementation targets, not currently running endpoints:
+These endpoints are implemented by the dashboard application. The standalone paper dashboard serves them
+locally, alongside the separate continuous paper service described in [operations.md](operations.md):
 
 ```text
 GET  /api/v1/overview
 GET  /api/v1/positions
 GET  /api/v1/orders
 GET  /api/v1/tasks
+GET  /api/v1/decisions
 GET  /api/v1/decisions/{id}
 GET  /api/v1/research
 GET  /api/v1/lessons
 GET  /api/v1/costs
 GET  /api/v1/changes
+GET  /api/v1/changes/{id}
 GET  /api/v1/events
 GET  /api/v1/health
 POST /api/v1/owner/budgets
@@ -43,17 +46,24 @@ POST /api/v1/leader/activate
 
 Use authenticated role/owner identities, pagination, redaction, request/idempotency IDs and optimistic revision checks. Events may use authenticated SSE. Owner resume cannot bypass reconciliation; Leader cannot lift an owner halt. Graph editing cannot invent new capabilities. Bind loopback by default; remote access requires authenticated TLS/private access and CSRF protection for cookie-based write sessions.
 
+The local browser login uses a persisted private owner session; cookie writes require CSRF. Owner policy and
+budget writes share one deployment revision and durable command identity. Persisted routing consumes only
+approved immutable price cards; an Engineer needs an explicitly granted routing class and commission.
+Live enablement remains unavailable. Service startup recovers interrupted local owner commands from durable
+effect evidence; ambiguous outcomes require owner review. Emergency manage-only remains available while
+ordinary writes wait for recovery. Browser retries keep the original command ID and exact values.
+
 ## Configuration and secrets
 
 Owner policy lives separately from agent-editable artifacts, with a hash/revision and restricted writer. It defines account allocations, expense periods, provider/venue allowlists, exposure bounds, live eligibility and change classes. Leader configuration validates as a subset. Candidate artifacts cannot select a new policy, DB or secret path.
 
-config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Initialization requires an explicit owner-approved real expense allowance. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
+config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Paper initialization creates no real expense allowance. Paid operation requires a separate owner-approved allowance and explicit owner and runtime paid permission. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
 
 Store actual credentials outside Git and model contexts; broker keys belong only to the protected execution/kernel boundary. ChatGPT/coding-agent integrations do not supply deployed credentials automatically. Optional GitHub mirroring uses a separately scoped integration service, never the Engineer's direct access to an owner token.
 
 ## Target startup CLI
 
-Implement equivalent commands, then replace targets with verified instructions in IMPLEMENTATION-STATUS.md:
+The CLI implements these commands. See [operations.md](operations.md) for private storage, configuration and verified recovery procedures:
 
 ```text
 trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
@@ -64,11 +74,28 @@ trade-graph pause --profile manage-only
 trade-graph backup --destination <private-path>
 trade-graph reconcile
 trade-graph report --format json
+trade-graph soak --mode paper --config <private-file> --duration-seconds <seconds> --report <new-private-file>
 ```
 
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
-Currently supplied scripts/check_plan.py, scripts/next_task.py and scripts/cost_model.py only inspect the plan, emit implementation work and calculate examples. They do not implement the future CLI or start a trading process.
+`run` continuously reconciles, manages protection and schedules scoped work; `--once` performs a bounded tick.
+Default startup assembles no model handlers or external feed. Public data is opt-in, and model dispatch requires
+approved credentialed routes, a real operating allowance and both owner/runtime paid permission. `soak`
+requires those gates and records actual, estimated, synthetic and unresolved costs separately. Planning utilities
+`scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
+
+The T15 local dashboard command is verified:
+
+```bash
+uv run trade-graph init --database runtime/trade_graph.sqlite
+uv run trade-graph dashboard --database runtime/trade_graph.sqlite
+```
+
+Open `http://127.0.0.1:8000/login` and use `session_token` from `runtime/owner-session.json`.
+Keep the database and session file private and outside Git. Initialization creates new directories with mode
+0700; the session file uses 0600. An existing database directory must be private. Serving starts one loopback
+web worker and no scheduler or provider. See IMPLEMENTATION-STATUS.md for evidence and remaining operating work.
 
 ## Runbooks
 
