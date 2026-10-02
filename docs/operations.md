@@ -1,7 +1,9 @@
 # Local paper operations
 
-Use Python 3.12, one scheduler process and private SQLite storage. These instructions
-keep paid calls and live trading disabled. An offline result verifies functional
+Use Python 3.12, one scheduler process and private SQLite storage. Default commands
+keep paid calls and live trading disabled. The optional funded section requires
+explicit owner spending permission and a separately configured real allowance.
+An offline result verifies functional
 behavior; a public-data probe, credentialed model call, funded paper soak and forward
 economic evaluation each require their own evidence. Missing evidence stays pending.
 
@@ -30,7 +32,11 @@ uv run trade-graph doctor --database runtime/trade_graph.sqlite
 uv run trade-graph report --database runtime/trade_graph.sqlite --format json
 ```
 
-Initialization creates a new account and opening event. Do not repeat it to repair
+Initialization creates a new account, opening event, bounded default paper mandate
+and installed baseline artifact version. The initial mandate permits long-only
+paper discretion inside the protected owner exposure/instrument envelope; it
+does not enable inference, create a real operating allowance or grant live use.
+Do not repeat initialization to repair
 an existing deployment or replenish its separate real operating budget. Initial USD
 cash can have unavailable EUR valuations until a sourced USD/EUR rate is persisted;
 the report preserves native balances and marks the reporting result provisional.
@@ -58,12 +64,31 @@ uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite --once
 uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite
 ```
 
+`run` continues until SIGINT/SIGTERM or an explicit bound. `--once` performs one
+tick; `--max-ticks 3` is a bounded local exercise. The service assembles installed
+baseline artifacts into the private `installed-artifacts` directory beside the
+database. It does not require production source-checkout access for the Engineer.
+With configured and owner-permitted model routes, it dispatches Research, Trader,
+Learning, Optimisation and Leader work on durable schedules; authorized Engineer
+work comes from bounded change tasks. Artifacts can override registered settings
+and routing within existing owner grants.
+
 The default service performs software maintenance/reconciliation with no paid role
 dispatch. It holds an OS flock on the database for its lifetime and a durable process
-lease; a second operating service is refused. A bounded local exercise can use
-`--max-ticks 3`. A deliberate `--public-data` option enables the public market feed
-without an exchange trading key. Local observations do not themselves prove that
-an external public-data smoke test succeeded.
+lease; a second operating service is refused. Public market acquisition is also
+opt-in:
+
+```bash
+uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite \
+  --public-data --max-ticks 3
+```
+
+This contacts Kraken public metadata/tickers and Frankfurter USD/EUR reference
+data without an exchange trading key. Metadata, quote receipt/availability times
+and dated FX provenance are persisted; paper fills still use simulation
+assumptions. Carried weekend/holiday FX references remain stale/provisional.
+The same opt-in can use `public_data_enabled: true` in the private configuration.
+Offline fixtures and local readiness do not verify the current external services.
 
 To configure a deployment, copy `config/paper-runtime.example.json` to a private
 mode-0600 file outside Git. Its default `models: null` selects maintenance only.
@@ -87,7 +112,161 @@ uv run trade-graph dashboard --database runtime/trade_graph.sqlite \
 Open `http://127.0.0.1:8000/login` and paste `session_token` from the private session
 file. Keep that file out of logs, reports and repository artifacts. Run one web
 worker with reload disabled. Remote use requires deliberate authenticated private
-access or TLS; the supplied command binds loopback.
+access or TLS; the supplied command binds loopback. The owner page exposes
+persisted budget, policy revision, pause and paid-call permission. Save a positive
+real allowance within the protected owner envelope before enabling paid permission
+in the owner configuration form. Total/period/daily/root limits, per-role caps
+and the priority reserve are separate limits; the priority reserve stays inside
+the total. The owner command rejects paid enablement without the required real
+allowance. The equivalent authenticated endpoint is
+`POST /api/v1/owner/config` with `paid_calls_enabled: true`, a fresh `request_id`
+and the current integer `expected_revision` from `GET /api/v1/owner/config`.
+Successful budget/policy commands advance that revision. This permission alone
+does not configure model routes or provider credentials.
+
+## Protected model routing and funded paper observation
+
+The runtime and persisted owner policy must both set `paid_calls_enabled: true`
+before paid handlers are assembled. A provider key, paper capital, a planning
+price snapshot or a configured model name supplies no spending permission.
+Keep both flags false while preparing private configuration and reviewing
+prices. Only the owner sets the real EUR allowance and permitted change classes;
+routine role reservations and receipts remain enforced by the gateway.
+
+Copy the checked-in maintenance example to a private file:
+
+```bash
+umask 077
+cp config/paper-runtime.example.json runtime/paper-runtime.private.json
+chmod 0600 runtime/paper-runtime.private.json
+```
+
+The following bounded routing structure references a card already approved and
+persisted by the owner. `owner-reviewed-card-v1` is an example ID, not an installed
+card or a quoted rate. Replace it with the exact ID of your verified card:
+
+```json
+{
+  "models": {
+    "deployment_id": "deployment",
+    "paid_calls_enabled": false,
+    "approved_price_card_ids": ["owner-reviewed-card-v1"],
+    "role_routes": {
+      "research": "owner-reviewed-card-v1",
+      "trader": "owner-reviewed-card-v1",
+      "learning": "owner-reviewed-card-v1",
+      "optimisation": "owner-reviewed-card-v1",
+      "leader": "owner-reviewed-card-v1",
+      "engineer": "owner-reviewed-card-v1"
+    }
+  },
+  "price_cards": [],
+  "public_data_enabled": false,
+  "paper_symbols": ["BTC/USD", "ETH/USD"],
+  "tick_interval_seconds": 1,
+  "public_poll_interval_seconds": 10
+}
+```
+
+All six roles can use one approved capable provider with one private credential.
+Different approved cards may be assigned where tested utility warrants them.
+An empty `price_cards` list reuses persisted cards. To seed a new approved card,
+include its actual complete record in that list and include the same ID in
+`models.approved_price_card_ids`. The current
+[PriceCard contract](../src/trade_graph/contracts/models.py) requires
+`price_card_id`, `provider`, `model`, `endpoint`, `currency`,
+`input_per_million`, `output_per_million`, `effective_at`, `verified_at`,
+`source_id`, `tier` and `context_band`. Optional prices are
+`cache_read_per_million`, `cache_write_per_million` and `search_per_call`.
+Use verified nonnegative Decimal strings for rates, current ISO dates and an
+auditable source reference. Paid routing requires a registered provider/model
+with structured-output capability, standard tier and price verification no older
+than 30 days; future verification/effective dates fail readiness. An existing card
+ID cannot be silently repriced. Use another immutable card ID for new prices.
+`planning/model-prices.json` is a dated planning snapshot and is not an approved
+runtime price-card import.
+
+For non-EUR cards, explicitly set `models.fx_rate` to the verified native-to-EUR
+conversion as a Decimal string and `models.fx_buffer` to the chosen conservative
+buffer of at least one. The default rate of one represents identity conversion;
+it is not a USD/EUR quote. This operating-cost conversion is separate from the
+sourced portfolio-valuation FX ledger. Configuration supports at most 32 approved
+card IDs, 50 imported cards and 10 paper symbols, within a 262,144-byte private
+file. Card IDs/prices, private routing and credential injection remain protected;
+approved routing artifacts select existing card IDs and cannot introduce prices,
+vendors or additional authority.
+
+With both paid permissions disabled, seed/review the protected setup and inspect
+readiness without a paid probe:
+
+```bash
+uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json --once
+uv run trade-graph doctor --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json
+```
+
+Configure the real allowance on the authenticated owner page, then deliberately
+enable its paid permission. Set the private `models.paid_calls_enabled` flag true
+only for the intended funded installation, supply the selected provider's
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY` through a private process environment/secret
+store, and set `public_data_enabled` true. The commands do not automatically load
+a `.env` file. Keep credentials out of JSON configuration, model context,
+command-line arguments and Git. Restart the paper service after changing its
+private configuration; enabling an owner flag cannot add handlers to an already
+assembled maintenance-only process. Persisted pauses still require explicit
+owner reconciliation/resume and cannot be lifted by `run` or `soak`.
+
+Run the opt-in funded observation with no other service owning the same database:
+
+```bash
+uv run trade-graph soak --mode paper --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json --duration-seconds 60 \
+  --report runtime/soak-evidence-new.json
+```
+
+Duration must be an integer from 1 through 604800 seconds. The command requires
+both paid permissions, positive available real funding, approved credentialed
+routes for all six roles, public-data configuration and a RUNNING portfolio. It
+creates a new mode-0600 evidence file in a private directory before potentially
+paid work and refuses overwriting an earlier report. Duration bounds observation,
+while the real allowance bounds spending. Signal shutdown drains active work, so
+elapsed duration can exceed the requested timer; stopping early is reported as
+interrupted. Inspect the report even when the command fails.
+
+The soak report includes requested/observed duration and whether the window
+completed, service/failure observations, task/version/price-card attempt
+attribution, known actual EUR accrued expenses, synthetic accruals, estimated or
+unresolved accruals/reservations, and the forecast upper bound for the dispatched
+requests. Forecasts use persisted request limits, immutable cards and configured
+conservative FX; they are not invoices. Unknown usage remains unresolved and
+reserved. `credentialed_provider_verification` can remain `pending`, become
+`unresolved_billing`, or record `responses_observed` when the real transport
+retains known-usage provider receipts. A zero exit status or `status: recorded`
+does not certify every role/provider, invoice reconciliation, current venue
+conditions or economic support. The report always labels `economic_evidence`
+as `insufficient_evidence`.
+
+T17's actual current-public-data verification and funded credentialed soak are
+still pending. T18's [forward-evaluation machinery](FORWARD-EVALUATION.md) is
+partial preparation: preregister untouched fixed forward blocks and baselines,
+retain all attempted/failed variants and complete actual costs, and verify
+independence/regime assumptions before assessing economics. Reports may return
+`supported`, `not_supported` or `insufficient_evidence`; missing, synthetic,
+unresolved or inadequate forward evidence cannot become a support claim. Its
+Decimal uncertainty bounds are conditional on predeclared bounded independent
+blocks, with family/baseline correction; fee/slippage/model-call/missed-fill
+sensitivities are declared scenarios. Neither uncertainty bounds nor positive
+paper P&L authorize live trading.
+
+T19 adapter preparation still needs owner-selected eligibility, permitted
+authenticated reconciliation/conformance and protection evidence. The T21
+[host-tested process scaffold](PROCESS-BOUNDARY.md) still needs production kernel
+extraction, authenticated scoped RPC, independently pinned deployment/controller
+artifacts and validation on the intended deployment host. T20 live enablement
+and T22 broader deployed Engineer authority remain closed.
+
+## Pause and stop
 
 Before stopping a nonflat account, explicitly choose its order/position policy:
 

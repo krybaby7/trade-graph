@@ -2,9 +2,18 @@
 
 An economical autonomous crypto-trading organisation that trades, records outcomes, learns from evidence and implements improvements under a Leader's direction.
 
-**Status: T00–T16 complete at their recorded scopes and published on `cursor/trade-graph-r1-548a`. Autonomous R1 operation is not complete. Paid calls and live trading stay disabled.**
+**The offline demo and continuous paper service are available. Defaults enable no paid calls or live trading.**
 
-Implementation is complete through T16 at the recorded scopes; T17 is next. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for the offline acceptance gate, dashboard, authenticated owner controls, verified artifact consumption and rollback, test evidence and remaining implementation. `run --mode paper` currently performs one recovery pass, not a continuous trading loop.
+The installed runtime includes paper execution, durable scheduling, authenticated owner controls and
+artifact improvement workflows. Default operation performs maintenance and reconciliation. Model-driven
+paper operation requires approved private routing, provider credentials, explicit owner and runtime paid
+permissions, and a separate real operating allowance. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md)
+for recorded evidence and [the operations runbook](docs/operations.md) for setup, funded observation and recovery.
+
+T17's actual current-public-data verification and funded credentialed paper soak remain pending.
+T18 forward-economic reports, T19 live-adapter foundations and T21 protected-process work are partial
+preparation. Forward profitability, authenticated venue conformance and production kernel isolation
+require further evidence. Live trading and broader Engineer code authority remain closed.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
@@ -39,7 +48,7 @@ These prepare implementation work; they do not run a trading bot or launch a pro
 | [Paper capital](docs/10-PAPER-CAPITAL.md) | USD10,000 update, native currencies and real-cost separation |
 | [Sources](docs/90-SOURCES.md) | Official documentation and verification limitations |
 
-## Intended runtime
+## Paper runtime
 
 Python, FastAPI, a small dashboard, one durable scheduler, SQLite, a thin LangGraph layer, provider-neutral model adapters, and deterministic broker/execution/accounting services. Departments are responsibilities, not permanent processes.
 
@@ -48,27 +57,61 @@ The required R1 release must complete Research -> Trader -> paper execution -> e
 Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for commands, synthetic results, and checks that are still pending credentials or an owner decision.
 
 ```bash
-uv sync --frozen --group dev
+uv sync --frozen --group dev --python 3.12
 uv run ruff check src tests
 uv run pytest
 uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-offline-evidence.json
-uv run trade-graph doctor
 uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
 ```
 
-Use a fresh demo work directory. Its private `evidence.json` records actual checked outcomes and
-request/receipt/version provenance. The mapped acceptance gate covers all 40 applicable offline criteria;
-paid-provider, continuous-service, economic and live gates remain separate. `doctor` remains a placeholder
-until T17.
+Use a fresh demo work directory. Its private `evidence.json` records checked outcomes and
+request/receipt/version provenance. Scripted receipts are synthetic. Offline functional checks,
+actual public/provider observation, economic evidence and live authority have separate gates.
 
-Run the authenticated dashboard against a private paper database:
+Initialize a private paper account and inspect it before starting the service:
 
 ```bash
+umask 077
+install -d -m 0700 runtime
 uv run trade-graph init --database runtime/trade_graph.sqlite
+uv run trade-graph doctor --database runtime/trade_graph.sqlite
+uv run trade-graph report --database runtime/trade_graph.sqlite --format json
+uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite --once
+uv run trade-graph run --mode paper --database runtime/trade_graph.sqlite
+```
+
+Initialization creates USD10,000 virtual capital, a bounded paper mandate and the installed baseline
+artifacts. Runtime staging uses private packaged artifacts rather than an operator's source checkout.
+`run` continues until stopped; `--once` performs one tick and `--max-ticks 3` bounds a local exercise.
+One service owns the database lock and lease. `doctor` and `report` read existing records without
+network calls, credential probes or spending; unavailable/stale EUR valuations remain provisional.
+The public Kraken/Frankfurter feed requires `run --public-data` or an explicit private configuration
+setting. It uses no exchange trading key and preserves paper fill assumptions.
+
+Run the authenticated dashboard in a separate terminal:
+
+```bash
 uv run trade-graph dashboard --database runtime/trade_graph.sqlite
 ```
 
 Open `http://127.0.0.1:8000/login` and paste `session_token` from the private
 `runtime/owner-session.json` file. Keep that file outside Git. New runtime directories
 use mode 0700 and session files use 0600; existing database directories must be private.
-The dashboard starts one local web server. Continuous scheduling and provider operation remain T17.
+The dashboard starts one loopback web worker. Its owner controls configure the real allowance and
+paid permission; private runtime configuration must independently enable approved model routes.
+Before stopping a nonflat account, choose its management policy as described in the runbook.
+
+After explicit owner funding, paid permission, private credentials and public-data configuration,
+stop the other paper service before starting the opt-in observation command:
+
+```bash
+uv run trade-graph soak --mode paper --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json --duration-seconds 60 \
+  --report runtime/soak-evidence-new.json
+```
+
+Use a new private report file. The report distinguishes actual accrued expenses, forecast bounds,
+synthetic receipts and unresolved billing, and records whether the requested duration completed.
+Its economic result remains `insufficient_evidence`. A successful command does not establish
+profitability, complete provider-invoice reconciliation or authorize live trading.
+See [forward evaluation](docs/FORWARD-EVALUATION.md) and [process-boundary preparation](docs/PROCESS-BOUNDARY.md).
