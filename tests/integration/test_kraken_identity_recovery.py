@@ -11,6 +11,7 @@ from tests.integration.test_kraken_live_adapter import NOW, ScriptedRest, _broke
 
 from trade_graph.adapters.brokers.kraken_transport import KrakenApiError, KrakenRestTransport
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.broker_identity import DurableBrokerIdentity
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import CancelRequest, OrderLookup
@@ -319,3 +320,59 @@ def test_ambiguous_lookup_and_unowned_fill_survive_sqlite_restart_without_releas
     )
     recovered.close()
     assert not any(method in {"AddOrder", "CancelOrder"} for method, _ in rest.calls)
+
+
+def test_partial_cancel_after_lost_ack_preserves_cold_terminal_fill_identity(tmp_path):
+    path = tmp_path / "partial-cancel-recovery.sqlite"
+    clock = FrozenClock(NOW)
+    database = Database(path)
+    ledger = Ledger(database, clock)
+    portfolio = ledger.create_portfolio(reporting_currency="USD", mode="live")
+    ledger.deposit(portfolio, "USD", Decimal("100"), "synthetic-opening")
+    intent = _intent(portfolio_id=portfolio)
+    payload = intent.model_dump(mode="json") | {"reserve_asset": "USD", "reserve_amount": "10.08"}
+    now = utc_iso(NOW)
+    database.execute(
+        "INSERT INTO order_intents VALUES (?, ?, ?, 'UNKNOWN', ?, ?, ?, ?)",
+        (intent.intent_id, portfolio, intent.client_order_id, intent.symbol, json.dumps(payload), now, now),
+    )
+    database.execute(
+        "INSERT INTO position_reservations VALUES (?, ?, ?, ?, ?, 'held', ?)",
+        ("reservation", portfolio, intent.intent_id, "USD", "10.08", now),
+    )
+    rest = ScriptedRest()
+    rest.results["ClosedOrders"] = {"closed": {"order-1": _order(status="canceled", vol_exec="0.04")}, "count": 1}
+    _fill_history(rest)
+    rest.results["TradesHistory"]["trades"]["trade-1"].update(vol="0.04", cost="4", fee="0.032")
+    rest.results["QueryLedgers"]["base-1"]["amount"] = "0.04"
+    rest.results["QueryLedgers"]["quote-1"].update(amount="-4", fee="0.032")
+    identity = DurableBrokerIdentity(database, venue="kraken", account_id="synthetic-account", mode="live")
+    broker = _broker(rest, intent_resolver=identity)
+    execution = Execution(database, ledger, clock, broker, venue="kraken", account_id="synthetic-account", mode="live")
+    asyncio.run(execution.reconcile())
+    assert execution.intent_state(intent.intent_id) == "CANCELLED"
+    persisted = database.execute("SELECT payload_json FROM order_intents").fetchone()
+    assert json.loads(persisted["payload_json"])["venue_order_id"] == "order-1"
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("95.968")
+    database.close()
+
+    # Rebuild both SQLite and the broker, so no process-local client/status
+    # association survives. A terminal cancellation has no active-order lookup.
+    database = Database(path)
+    ledger = Ledger(database, clock)
+    identity = DurableBrokerIdentity(database, venue="kraken", account_id="synthetic-account", mode="live")
+    broker = _broker(rest, intent_resolver=identity)
+    execution = Execution(database, ledger, clock, broker, venue="kraken", account_id="synthetic-account", mode="live")
+    before_calls = len(rest.calls)
+    asyncio.run(execution.reconcile())
+    asyncio.run(execution.reconcile())
+    assert execution.intent_state(intent.intent_id) == "CANCELLED"
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("95.968")
+    assert execution.owned_quantity(portfolio, "BTC") == Decimal("0.04")
+    assert database.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 1
+    assert database.execute("SELECT state FROM position_reservations").fetchone()["state"] == "released"
+    assert not any(
+        method in {"AddOrder", "CancelOrder", "OpenOrders", "ClosedOrders", "QueryOrders"}
+        for method, _ in rest.calls[before_calls:]
+    )
+    database.close()

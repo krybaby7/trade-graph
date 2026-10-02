@@ -76,6 +76,12 @@ uv run pytest --basetemp=/tmp/trade-graph-t19-verification \
   tests/unit/test_protocols.py tests/e2e/test_offline.py
 ```
 
+After integrating protected execution checkpoint `426cd9f`, the same file list
+plus `tests/integration/test_submission_completion.py` passed **243 tests**, with
+zero failures, errors or skips. This follow-up used isolated
+`--basetemp=/tmp/trade-graph-t19-combined-verification` and wrote
+`--junitxml=/tmp/trade-graph-t19-combined.xml`.
+
 Targeted Ruff checks and `git diff --check` passed. Tests exercise malformed and
 reused identities, exact ledger batches,
 unsupported native movements, required spot fields, strict write flags and malformed
@@ -93,11 +99,13 @@ earlier newly discovered history still require financial replay/contract work or
 documented safe refusal before live acceptance. Native stops remain untested and
 disabled on submission.
 
-One protected-core follow-up remains explicit: a lost submit acknowledgement followed
-by a partial-fill cancellation can enter CANCELLED without persisting the lookup's
-venue ID. The read-only identity helper intentionally refuses that cold unbound
-history. Persisting a proven venue identity during that reconciliation transition
-requires a coordinated execution change; this slice leaves execution and migrations
-unchanged. T17 delivery and owner-selected venue/least-privilege authenticated
-verification remain T19 completion prerequisites. Real-order/protection tests require
-their separate owner authority under T20.
+The integrated protected execution checkpoint `426cd9f0eace524eec2110d174121a2e74ea01c0`
+also retains the proven venue ID when reconciliation moves a partial-fill order to
+CANCELLED after a lost submit acknowledgement. A combined SQLite test closes both
+the database and broker, then reconciles the terminal cancellation twice with no
+active-order lookup: the durable resolver retains one fee-bearing partial fill and
+the released reservation, with no repeat submission or duplicate accounting. This
+T19 continuation does not author execution or migration changes. T17 delivery and
+owner-selected venue/least-privilege authenticated verification remain T19 completion
+prerequisites. Real-order/protection tests require their separate owner authority
+under T20.
