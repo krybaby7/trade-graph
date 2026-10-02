@@ -627,7 +627,7 @@ def test_same_clock_invoice_cutoff_is_pending_rather_than_invented_ordering(setu
     assert verified.actual_external_provenance_verified is False
 
 
-@pytest.mark.parametrize("limit", ["MAX_HISTORY_CAPTURES", "MAX_HISTORY_BYTES", "MAX_CAPTURE_BYTES"])
+@pytest.mark.parametrize("limit", ["MAX_HISTORY_RECORDS", "MAX_HISTORY_BYTES", "MAX_CAPTURE_BYTES"])
 def test_history_verification_refuses_resource_overflow_without_truncating_sources(setup, monkeypatch, limit):
     _, registry, collector, declared = setup
     import trade_graph.runtime_evidence as module
@@ -685,9 +685,32 @@ def test_new_trial_cannot_erase_paid_facts_retained_by_another_trial_in_deployme
     runtime.database.execute("DELETE FROM usage_receipts WHERE receipt_id=?", (received,))
     runtime.database.execute("UPDATE budget_reservations SET state='RELEASED',amount='0' WHERE reservation_id=?",
                              (reservation,))
-    next_trial = declared.model_copy(update={"trial_id": "second-trial-cannot-hide-cost"})
+    next_trial = declared.model_copy(update={"trial_id": "second-trial-cannot-hide-cost", "family_id": "second-family"})
     registry.register(next_trial)
     collector.bind(next_trial.trial_id)
     verified = collector.verify(collector.capture(next_trial.trial_id))
     assert "invalid:captured_runtime_history_changed" in verified.reasons
     assert verified.database_consistent is False
+
+
+def test_initial_paid_fact_retained_by_old_binding_cannot_disappear_without_any_capture(tmp_path):
+    runtime = _stack(tmp_path)
+    runtime.clock.advance((REGISTERED - runtime.clock.now()).total_seconds())
+    declared = protocol(count=2, portfolio_id=runtime.portfolio_id, capital_eur="100")
+    registry = TrialRegistry(tmp_path / "trial.sqlite", runtime.clock)
+    registry.register(declared)
+    _, reservation, received = receipt(runtime)
+    collector = RuntimeEvidenceCollector(runtime.database, registry, runtime.clock, deployment_id="fixture")
+    collector.bind(declared.trial_id)
+    assert registry._rows("runtime_capture") == []
+    runtime.database.execute("DELETE FROM usage_receipts WHERE receipt_id=?", (received,))
+    runtime.database.execute("UPDATE budget_reservations SET state='RELEASED',amount='0' WHERE reservation_id=?",
+                             (reservation,))
+    other = declared.model_copy(update={"trial_id": "later-trial", "family_id": "later-family"})
+    registry.register(other)
+    collector.bind(other.trial_id)
+    verified = collector.verify(collector.capture(other.trial_id))
+    assert "invalid:captured_runtime_history_changed" in verified.reasons
+    assert verified.database_consistent is False
+    registry.close()
+    runtime.database.close()

@@ -176,8 +176,8 @@ request/endpoint digests, scope, timestamps, response bounds and completeness.
 An unfinished or uncertain wire observation remains unresolved even if another
 row describes the reservation as terminal.
 
-Continuity also compares immutable fact identities and bytes against the initial
-binding and every retained capture across the deployment registry. A new trial
+Continuity also compares immutable fact identities and bytes against all initial
+bindings and every retained capture across the deployment registry. A new trial
 cannot erase the deployment's earlier paid facts. Previously collected receipts, native facts,
 price/FX records, invoice records and stable paid-request identities cannot
 disappear or change when a new snapshot is emitted. Reservation settlement and
@@ -186,7 +186,7 @@ retained results and complete HTTP responses remain immutable. Native postings
 must belong to an existing transaction and portfolio, and each transaction's
 metadata and posting group must match its exact replayed ledger event.
 Historical revalidation streams captures after SQLite preflights refuse more
-than 256 captures, 128 MiB total retained capture bytes, or 48 MiB for one capture.
+than 256 bindings/captures, 128 MiB total retained bytes, or 48 MiB for one record.
 Exceeding these protected limits refuses capture/verification without truncation.
 
 Invoice checks derive EUR arithmetic and collection availability, then compare

@@ -48,7 +48,7 @@ MAX_TOTAL_ROWS = 20000
 MAX_CELL_BYTES = 131072
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_CAPTURE_BYTES = 48 * 1024 * 1024
-MAX_HISTORY_CAPTURES = 256
+MAX_HISTORY_RECORDS = 256
 MAX_HISTORY_BYTES = 128 * 1024 * 1024
 TABLES = (
     "schema_migrations", "portfolios", "ledger_events", "journal_transactions", "journal_postings",
@@ -234,6 +234,7 @@ class RuntimeEvidenceCollector:
         return raw
 
     def _binding(self, trial_id: str) -> RuntimeCollectionBinding:
+        self._history_bounds()
         rows = self.registry._rows("runtime_binding", trial_id)
         if len(rows) != 1:
             raise ValueError("runtime collector must be bound before the forward horizon")
@@ -269,15 +270,15 @@ class RuntimeEvidenceCollector:
 
     def _history_bounds(self, *, extra_bytes: int = 0, extra_count: int = 0):
         count = self.registry.connection.execute(
-            "SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records WHERE kind='runtime_capture' "
-            "LIMIT ?)", (MAX_HISTORY_CAPTURES + 1,),
+            "SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records "
+            "WHERE kind IN ('runtime_capture','runtime_binding') LIMIT ?)", (MAX_HISTORY_RECORDS + 1,),
         ).fetchone()[0]
-        if count + extra_count > MAX_HISTORY_CAPTURES:
+        if count + extra_count > MAX_HISTORY_RECORDS:
             raise ValueError("runtime retained capture history exceeds verification bounds")
         sizes = self.registry.connection.execute(
             "SELECT COALESCE(SUM(length(CAST(document_json AS BLOB))),0),"
             "COALESCE(MAX(length(CAST(document_json AS BLOB))),0) FROM evaluation_records "
-            "WHERE kind='runtime_capture'",
+            "WHERE kind IN ('runtime_capture','runtime_binding')",
         ).fetchone()
         if (sizes[0] + extra_bytes > MAX_HISTORY_BYTES or sizes[1] > MAX_CAPTURE_BYTES
                 or extra_bytes > MAX_CAPTURE_BYTES):
@@ -324,12 +325,28 @@ class RuntimeEvidenceCollector:
         if any(current.get(key) != value for key, value in initial.items()):
             reasons.append("invalid:captured_runtime_history_changed")
         rows = self.registry.connection.execute(
-            "SELECT record_key,document_json,document_sha256,collected_at FROM evaluation_records "
-            "WHERE kind='runtime_capture' ORDER BY collected_at,record_key",
+            "SELECT kind,record_key,document_json,document_sha256,collected_at FROM evaluation_records "
+            "WHERE kind IN ('runtime_capture','runtime_binding') ORDER BY collected_at,record_key",
         )
         for row in rows:
             raw = row["document_json"]
-            if document_hash(raw) != row["document_sha256"] or row["record_key"] != document_hash(raw):
+            if document_hash(raw) != row["document_sha256"]:
+                raise ValueError("retained runtime capture history bytes changed")
+            if row["kind"] == "runtime_binding":
+                previous_binding = RuntimeCollectionBinding.model_validate_json(raw)
+                if (row["record_key"] != previous_binding.trial_id
+                        or previous_binding.deployment_id != binding.deployment_id
+                        or previous_binding.database_identity != binding.database_identity
+                        or not previous_binding.bound_at <= parse_utc(row["collected_at"]) <= self.clock.now()):
+                    raise ValueError("retained runtime binding history scope or chronology changed")
+                previous_data = json.loads(previous_binding.initial_source_json)
+                if not self._initial_chronology(previous_data, previous_binding.bound_at):
+                    reasons.append("invalid:future_native_facts_at_preregistration")
+                historical = self._source_facts(previous_data)
+                if any(current.get(key) != value for key, value in historical.items()):
+                    reasons.append("invalid:captured_runtime_history_changed")
+                continue
+            if row["record_key"] != document_hash(raw):
                 raise ValueError("retained runtime capture history bytes changed")
             previous = RuntimeEvidenceCapture.model_validate_json(raw)
             retained_bindings = self.registry._rows("runtime_binding", previous.binding.trial_id)
@@ -384,6 +401,7 @@ class RuntimeEvidenceCollector:
 
     def bind(self, trial_id: str) -> RuntimeCollectionBinding:
         with self.registry._atomic(), self.database.snapshot():
+            self._history_bounds()
             if self.registry._rows("runtime_binding", trial_id):
                 return self._binding(trial_id)
             protocol = self.registry.protocol(trial_id)
@@ -404,6 +422,7 @@ class RuntimeEvidenceCollector:
                 database_identity=self._identity(), bound_at=self.clock.now(), initial_source_sha256=document_hash(raw),
                 initial_source_json=raw,
             )
+            self._history_bounds(extra_bytes=len(binding.model_dump_json().encode()), extra_count=1)
             self.registry._append("runtime_binding", trial_id, trial_id, binding)
             return binding
 
@@ -433,6 +452,8 @@ class RuntimeEvidenceCollector:
 
     def verify(self, capture: RuntimeEvidenceCapture) -> RuntimeVerification:
         capture = RuntimeEvidenceCapture.model_validate(capture.model_dump())
+        with self.registry._atomic():
+            self._history_bounds()
         self.registry.verify_snapshot(capture.evaluation_snapshot)
         with self.registry._atomic(), self.database.snapshot(), localcontext(Context(prec=100)):
             binding = self._binding(capture.binding.trial_id)
@@ -851,6 +872,7 @@ class RuntimeEvidenceCollector:
         data = json.loads(capture.source_json)
         imported = []
         with self.registry._atomic(), self.database.snapshot():
+            self._history_bounds()
             if capture.evaluation_snapshot.source_records != self.registry._source_bindings():
                 raise ValueError("evaluation evidence changed before expense import")
             if self._read() != capture.source_json:
