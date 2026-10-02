@@ -100,3 +100,22 @@ recovery; this coding work can continue independently of T17. T22 still needs it
 T18/T21 prerequisites, explicit class grant, shadow evaluation, compatible
 migrations and automatic tested deployment/rollback. Finite plugin replay does not
 complete those gates. The deployed Engineer retains R1 artifact permissions.
+
+
+## Remaining-gates round 2
+
+The owner requested continued orchestration. All six existing task-agent threads
+resumed in fresh `/workspace/trade-graph-tNN-gates-r2` worktrees on
+`codex/tNN-gates-r2`, starting from the integrated checkpoint `0eb0bdf`.
+Prior worktrees and checkpoints remain preserved.
+
+The round advances protected six-role model/graph extraction, runtime-derived
+forward evidence, private operations facts, source-based read-only venue
+conformance, current upstream verification and immutable plugin shadow builds.
+Root owns common migrations, expense provenance, integration and final checks.
+Actual paid/forward/private-venue/live/deployment activity is absent. External
+host, venue and funded-soak details were requested while independent work proceeds.
+
+Root checkpoint `a263ed6` adds migration 0011 and exact optional expense FX links
+frozen before dispatch. All 230 focused tests passed. Legacy/conservative records
+remain unlinked; source linkage alone does not establish external authenticity.

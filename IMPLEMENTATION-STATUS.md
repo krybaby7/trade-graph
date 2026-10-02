@@ -10,11 +10,13 @@ Source tree: `4868b219a49639b403c27748aaae18e074952e37`.
 Defaults remain USD10,000 virtual capital, EUR reporting, paid calls disabled and
 live trading disabled. Main is unchanged.
 
-Six dedicated agent threads worked in isolated worktrees. They completed their
-assigned checkpoints and are now idle. A task marked `in_progress` means its
-acceptance work is unfinished; `execution_state` separately records actual agent
-activity. No funded/forward observation, private venue test or live pilot is
-running. See [the workstreams and integration results](docs/reviews/2026-10-02-task-workstreams.md).
+Remaining-gates round 2 is running in six fresh isolated worktrees from `0eb0bdf`.
+A task marked `in_progress` means its acceptance work is unfinished;
+`execution_state` separately records actual agent activity. The previous full
+verification above is preserved. Root FX provenance checkpoint `a263ed6` passed
+230 focused tests; the integrated second-round suite is not complete yet. No
+funded/forward observation, private venue test or live pilot is running. See
+[the workstreams and integration results](docs/reviews/2026-10-02-task-workstreams.md).
 
 ## Working paper operation
 
