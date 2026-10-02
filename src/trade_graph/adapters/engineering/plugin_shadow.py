@@ -259,6 +259,8 @@ class PluginShadowRunner:
         started_ns = time.monotonic_ns()
         deadline_ns = started_ns + policy.maximum_seconds * 1_000_000_000
         attempts, earlier, errors = [], {}, {"baseline": [], "candidate": []}
+        runner_pin, policy_pin = self.runner_pin, self.policy_pin
+        pin_failed = False
         if not failures:
             for repetition in range(policy.repetitions):
                 arms = ("baseline", "candidate") if repetition % 2 == 0 else ("candidate", "baseline")
@@ -266,9 +268,17 @@ class PluginShadowRunner:
                     observations = {name: item.value for name, item in case.evidence.items()}
                     for arm in arms:
                         runtime = baseline if arm == "baseline" else candidate
-                        self._assert_pinned()
+                        if not pin_failed:
+                            try:
+                                self._assert_pinned()
+                            except (ValueError, OSError):
+                                pin_failed = True
+                                failures.add("protected_pin_changed_during_shadow")
                         available = deadline_ns - time.monotonic_ns()
-                        if available < int(self.builder.replay_validator.policy.boundary.wall_seconds * 1_000_000_000):
+                        if pin_failed:
+                            outcome = {"status": "not_run_protected_pin_change", "features": None, "exit_code": None}
+                        elif available < int(
+                                self.builder.replay_validator.policy.boundary.wall_seconds * 1_000_000_000):
                             outcome = {"status": "not_run_parent_deadline", "features": None, "exit_code": None}
                             failures.add("shadow_parent_deadline")
                         else:
@@ -317,17 +327,17 @@ class PluginShadowRunner:
                         or candidate_total * baseline_count > baseline_total * candidate_count
                         + Decimal(policy.allowed_mean_error_regression) * candidate_count * baseline_count):
                     failures.add("predeclared_functional_quality_or_regression_limit")
-        self._assert_pinned()
         # Current pins and both exact builds/corpus must still verify. Retain a
         # negative receipt if a controller detects changed bytes after execution.
         try:
+            self._assert_pinned()
             _, _, _, _, final_failures = self._inputs(candidate_digest)
             failures.update(final_failures)
         except (ValueError, OSError):
             failures.add("retained_artifact_changed_during_shadow")
         report = {"schema_version": 1, "kind": "plugin_shadow", "shadow_attempt_id": uuid.uuid4().hex,
                   "status": "functional_shadow_passed" if not failures else "rejected", "failures": sorted(failures),
-                  "shadow_runner_sha256": self.runner_pin, "shadow_policy_sha256": self.policy_pin,
+                  "shadow_runner_sha256": runner_pin, "shadow_policy_sha256": policy_pin,
                   "corpus_sha256": policy.corpus_sha256, "protected_manifest_sha256": policy.protected_manifest_sha256,
                   "baseline_release_id": policy.baseline_release_id,
                   "baseline_runtime_build_sha256": baseline.runtime_build_sha256,

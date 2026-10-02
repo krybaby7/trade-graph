@@ -351,6 +351,38 @@ def test_controller_errors_are_recorded_negatively_and_do_not_erase_baseline_att
     assert "whose text is not copied" not in str(report)
 
 
+def test_environment_pin_drift_after_genuine_shadow_arm_stops_execution_and_retains_rejection(tmp_path, monkeypatch):
+    store, builder, protected, baseline, candidate = stack(tmp_path)
+    runner, _, _, _ = comparison(store, builder, protected, baseline)
+    actual_evaluate = builder.evaluate
+    actual_environment = plugin_runtime.runtime_environment_sha256
+    drifted, calls = False, []
+
+    def observed_environment():
+        return "f" * 64 if drifted else actual_environment()
+
+    def drift_after_first_arm(digest, observations):
+        nonlocal drifted
+        result = actual_evaluate(digest, observations)
+        calls.append(digest)
+        drifted = True
+        return result
+
+    monkeypatch.setattr(plugin_runtime, "runtime_environment_sha256", observed_environment)
+    monkeypatch.setattr(builder, "evaluate", drift_after_first_arm)
+    receipt = runner.compare(candidate["runtime_build_sha256"])
+    retained = store.receipt(receipt)["report"]
+    assert calls == [baseline["runtime_build_sha256"]]
+    assert retained["status"] == "rejected" and "protected_pin_changed_during_shadow" in retained["failures"]
+    assert retained["attempts"][0]["status"] == "validated_numeric_proposal"
+    assert all(item["status"] == "not_run_protected_pin_change" for item in retained["attempts"][1:])
+    assert retained["production_authorization"] is False
+    with pytest.raises(PermissionError, match="environment mismatch"):
+        runner.verify(receipt, candidate_digest=candidate["runtime_build_sha256"])
+    drifted = False
+    assert runner.verify(receipt, candidate_digest=candidate["runtime_build_sha256"])["status"] == "rejected"
+
+
 def test_changed_copied_worker_during_shadow_retains_negative_attempts_and_old_evidence(tmp_path, monkeypatch):
     store, builder, protected, baseline, candidate = stack(tmp_path)
     runner, _, _, _ = comparison(store, builder, protected, baseline)
