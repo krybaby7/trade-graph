@@ -364,15 +364,16 @@ class Execution:
             try:
                 result = await self.broker.submit(intent)
             except UncertainExternal:
-                self._set_state(intent_id, "UNKNOWN", {"error": "timeout"})
+                self._complete_submission(intent_id, "UNKNOWN", {"error": "timeout"})
                 continue
             if result.status == "acknowledged":
-                self._set_state(intent_id, "OPEN", {"venue_order_id": result.venue_order_id})
+                self._complete_submission(intent_id, "OPEN", {"venue_order_id": result.venue_order_id})
             elif result.status == "uncertain":
-                self._set_state(intent_id, "UNKNOWN", {"error": result.error})
+                self._complete_submission(intent_id, "UNKNOWN", {"error": result.error})
             else:
-                self._set_state(intent_id, "REJECTED", {"error": result.error, "message": result.message})
-                self._release(intent_id)
+                self._complete_submission(
+                    intent_id, "REJECTED", {"error": result.error, "message": result.message}, release=True,
+                )
             sent += 1
         return sent
 
@@ -562,7 +563,8 @@ class Execution:
                                 if status.venue_order_id else {})
                 self._release(row["intent_id"])
             elif status.status == "cancelled":
-                self._set_state(row["intent_id"], "CANCELLED", {})
+                self._set_state(row["intent_id"], "CANCELLED", {"venue_order_id": status.venue_order_id}
+                                if status.venue_order_id else {})
                 self._release(row["intent_id"])
         if unowned:
             raise UncertainExternal("broker history includes unowned fills; account reconciliation is incomplete")
@@ -1065,6 +1067,34 @@ class Execution:
                 (str(uuid.uuid4()), intent_id, now),
             )
         return True
+
+    @atomic
+    def _complete_submission(self, intent_id: str, state: str, extra: dict, *, release: bool = False) -> None:
+        """A delayed reply cannot erase newer fill, cancellation or recovery facts.
+
+        The completion and any reservation release share a writer transaction.
+        Once management or a fill has moved the intent beyond SUBMITTING, retain
+        that state and record the delayed reply only as evidence. A newly learned
+        consistent native order ID remains useful for cold-start reconciliation.
+        """
+        current = self.intent_state(intent_id)
+        payload = self._payload(intent_id)
+        reported_id = extra.get("venue_order_id")
+        known_id = payload.get("venue_order_id")
+        if reported_id and known_id and reported_id != known_id:
+            self._incident("submission_identity_discrepancy", {"intent_id": intent_id})
+            self._set_reconciliation_health(incomplete=True, reason="conflicting submission order identity")
+            self._set_state(intent_id, current, {"late_submission": {"state": state, **extra}})
+            return
+        if current != "SUBMITTING":
+            evidence = {"late_submission": {"state": state, **extra}}
+            if reported_id:
+                evidence["venue_order_id"] = reported_id
+            self._set_state(intent_id, current, evidence)
+            return
+        self._set_state(intent_id, state, extra)
+        if release:
+            self._release(intent_id)
 
     def _set_state(self, intent_id: str, state: str, extra: dict) -> None:
         payload = self._payload(intent_id)
