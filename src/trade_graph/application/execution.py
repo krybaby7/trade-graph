@@ -568,10 +568,25 @@ class Execution:
                 self._release(row["intent_id"])
         if unowned:
             raise UncertainExternal("broker history includes unowned fills; account reconciliation is incomplete")
-        self._set_reconciliation_health(
-            incomplete=missing_terminal_fills,
-            reason="terminal order missing fills" if missing_terminal_fills else "resolved full broker history",
-        )
+        with self.database.immediate():
+            # Owned fill history alone cannot resolve two conflicting native
+            # acknowledgements. Keep this durable uncertainty through restart.
+            conflicting_identity = bool(self.database.execute(
+                """SELECT 1 FROM order_intents
+                WHERE json_extract(payload_json, '$.venue') = ?
+                  AND json_extract(payload_json, '$.account_id') = ?
+                  AND json_extract(payload_json, '$.mode') = ?
+                  AND json_extract(payload_json, '$.late_submission.venue_order_id') IS NOT NULL
+                  AND json_extract(payload_json, '$.venue_order_id') IS NOT NULL
+                  AND json_extract(payload_json, '$.late_submission.venue_order_id')
+                      != json_extract(payload_json, '$.venue_order_id') LIMIT 1""",
+                (self.venue, self.account_id, self.mode),
+            ).fetchone())
+            self._set_reconciliation_health(
+                incomplete=missing_terminal_fills or conflicting_identity,
+                reason=("conflicting submission order identity" if conflicting_identity else
+                        "terminal order missing fills" if missing_terminal_fills else "resolved full broker history"),
+            )
 
     async def startup(self) -> None:
         await self.reconcile()

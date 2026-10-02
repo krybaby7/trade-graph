@@ -56,3 +56,21 @@ def test_health_does_not_certify_live_from_paper_or_caller_claims(tmp_path):
     public = health(runtime)
     assert "portfolio_id" not in public
     assert "active_version" not in public
+
+
+def test_health_separates_unverified_declarations_from_passed_checks(tmp_path):
+    runtime = _Runtime(tmp_path)
+    runtime.database.execute(
+        "INSERT INTO live_gate VALUES (?, 1, ?, '2026-01-01T00:00:00Z')",
+        (getattr(runtime, "deployment_id", "deployment"), json.dumps({
+            "eligibility_confirmed": "true", "owner_confirmed": True,
+            "read_only_reconciliation_passed": True, "operating_budget_set": True,
+        })),
+    )
+    gate = health(runtime, authenticated=True)["live_prerequisites"]
+    assert gate["enabled"] is False and gate["ready"] is False
+    assert gate["recorded_eligibility_passed"] is False
+    assert not any(gate["checks"].values())
+    assert gate["unverified_recorded_checks"]["explicit_owner_confirmation"] is True
+    assert gate["unverified_recorded_checks"]["eligibility"] is False
+    assert gate["verification_basis"] == "unverified_dashboard_record"

@@ -36,8 +36,8 @@ def health(runtime, *, authenticated: bool = False) -> dict:
     gate["enabled"] = False
     gate["implementation_ready"] = False
     gate["reasons"] = [*gate["reasons"], "paper-only service; live adapter and owner authorization pending"]
-    gate["checks"] = {
-        name: bool(gate_record.get(field)) for name, field in {
+    gate["unverified_recorded_checks"] = {
+        name: gate_record.get(field) is True for name, field in {
             "eligibility": "eligibility_confirmed", "explicit_owner_confirmation": "owner_confirmed",
             "venue_metadata": "venue_metadata_verified", "broker_conformance": "broker_conformance_passed",
             "read_only_reconciliation": "read_only_reconciliation_passed",
@@ -45,6 +45,8 @@ def health(runtime, *, authenticated: bool = False) -> dict:
             "operating_budget": "operating_budget_set",
         }.items()
     }
+    gate["checks"] = dict.fromkeys(gate["unverified_recorded_checks"], False)
+    gate["verification_basis"] = "unverified_dashboard_record"
     uncertain_orders = database.execute(
         "SELECT COUNT(*) FROM order_intents WHERE portfolio_id = ? "
         "AND state IN ('UNKNOWN', 'SUBMITTING', 'CANCEL_PENDING')", (pid,)

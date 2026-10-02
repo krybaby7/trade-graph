@@ -26,6 +26,7 @@ Review date: **2026-09-29**. These are official documentation/publication refere
 | S20 | [OpenAI SDK strict-schema transformer](https://github.com/openai/openai-python/blob/e5de2e5656fb3d4fa70f050195382e6a4d59f806/src/openai/lib/_pydantic.py) | Focused source review 2026-10-02: recursive object closure and required fields for provider wire schemas; no credentialed API acceptance |
 | S21 | [Anthropic SDK schema transformer](https://github.com/anthropics/anthropic-sdk-python/blob/18f25547f20cf5f01da69ac611e700e3bc9ebf21/src/anthropic/lib/_parse/_transform.py) | Focused source review 2026-10-02: provider keyword subset and constraint descriptions; original software validation remains authoritative |
 | S22 | [Kraken-owned SDK source review](reviews/2026-10-02-kraken-foundation.md) | Focused source review 2026-10-02: pinned official asset/order/trade/ledger/signing references. Direct REST documentation was proxy-blocked; authenticated and unresolved wire conformance stay pending |
+| S23 | [Frankfurter official v2 OpenAPI source](https://github.com/lineofflight/frankfurter/blob/915fabfef4f4074437e32e25aac71f437ecfa76e/lib/public/v2/openapi.json) | Focused source review 2026-10-02: provider-scoped rate endpoint and required actual pair/date. [Continuation evidence](reviews/2026-10-02-t17-operations.md) records failed public probes; source review is not a working current FX response |
 
 ## Verification boundaries
 

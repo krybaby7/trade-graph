@@ -101,6 +101,8 @@ def test_conflicting_late_native_identity_preserves_fill_and_blocks_increases(tm
         assert execution.intent_state(intent) == "FILLED"
         assert execution._payload(intent)["venue_order_id"] == identity
         assert execution._reconciliation_blocked()
+        await execution.reconcile()
+        assert execution._reconciliation_blocked()
 
     try:
         asyncio.run(timeline())
