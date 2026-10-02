@@ -472,10 +472,12 @@ class PaperService:
                 except TimeoutError:
                     pass
         finally:
-            await self.stop()
-            for signum in installed:
-                loop.remove_signal_handler(signum)
-                signal.signal(signum, previous[signum])
+            try:
+                await self.stop()
+            finally:
+                for signum in installed:
+                    loop.remove_signal_handler(signum)
+                    signal.signal(signum, previous[signum])
         summary["completed"] = self._completed_total - initially_completed
         summary["observations"] = self._observations_total - initially_observed
         summary["stopped"] = True

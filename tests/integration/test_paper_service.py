@@ -41,6 +41,28 @@ class Feed:
         self.closed = True
 
 
+def test_failed_feed_shutdown_restores_signals_and_releases_service_ownership(tmp_path):
+    _clock, ledger, execution, _broker, _portfolio = _stack(tmp_path)
+
+    class FailingClose(Feed):
+        def close(self):
+            raise OSError("synthetic private feed shutdown failure")
+
+    service = PaperService(ledger.database, execution, public_feed=FailingClose(), schedule_intervals={})
+
+    async def scenario():
+        previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+        with pytest.raises(OSError, match="shutdown failure"):
+            await service.run(max_ticks=1)
+        assert {signum: signal.getsignal(signum) for signum in previous} == previous
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+        replacement = PaperService(ledger.database, execution, schedule_intervals={})
+        await replacement.start()
+        await replacement.stop()
+
+    asyncio.run(scenario())
+
+
 def test_tick_runs_durable_schedules_and_coalesces_restart(tmp_path):
     clock, ledger, execution, broker, portfolio = _stack(tmp_path)
     seen = []

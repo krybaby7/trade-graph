@@ -18,8 +18,8 @@ Start with a responsive server-rendered interface backed by FastAPI. Server proj
 
 ## Target API
 
-These endpoints are implemented by the T15 dashboard application. The standalone paper dashboard serves them
-locally; continuous operating-service assembly remains T17:
+These endpoints are implemented by the dashboard application. The standalone paper dashboard serves them
+locally, alongside the separate continuous paper service described in [operations.md](operations.md):
 
 ```text
 GET  /api/v1/overview
@@ -47,22 +47,23 @@ POST /api/v1/leader/activate
 Use authenticated role/owner identities, pagination, redaction, request/idempotency IDs and optimistic revision checks. Events may use authenticated SSE. Owner resume cannot bypass reconciliation; Leader cannot lift an owner halt. Graph editing cannot invent new capabilities. Bind loopback by default; remote access requires authenticated TLS/private access and CSRF protection for cookie-based write sessions.
 
 The local browser login uses a persisted private owner session; cookie writes require CSRF. Owner policy and
-budget writes share one deployment revision and durable command identity. Model-routing writes and live
-enablement are explicitly unavailable until their operating consumers and authorization gates exist.
-An interrupted command remains visibly pending; ordinary writes wait for controller recovery, while emergency
-manage-only remains available. Browser retries keep the original command ID and exact values.
+budget writes share one deployment revision and durable command identity. Persisted routing consumes only
+approved immutable price cards; an Engineer needs an explicitly granted routing class and commission.
+Live enablement remains unavailable. Service startup recovers interrupted local owner commands from durable
+effect evidence; ambiguous outcomes require owner review. Emergency manage-only remains available while
+ordinary writes wait for recovery. Browser retries keep the original command ID and exact values.
 
 ## Configuration and secrets
 
 Owner policy lives separately from agent-editable artifacts, with a hash/revision and restricted writer. It defines account allocations, expense periods, provider/venue allowlists, exposure bounds, live eligibility and change classes. Leader configuration validates as a subset. Candidate artifacts cannot select a new policy, DB or secret path.
 
-config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Initialization requires an explicit owner-approved real expense allowance. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
+config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Paper initialization creates no real expense allowance. Paid operation requires a separate owner-approved allowance and explicit owner and runtime paid permission. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
 
 Store actual credentials outside Git and model contexts; broker keys belong only to the protected execution/kernel boundary. ChatGPT/coding-agent integrations do not supply deployed credentials automatically. Optional GitHub mirroring uses a separately scoped integration service, never the Engineer's direct access to an owner token.
 
 ## Target startup CLI
 
-Implement equivalent commands, then replace targets with verified instructions in IMPLEMENTATION-STATUS.md:
+The CLI implements these commands. See [operations.md](operations.md) for private storage, configuration and verified recovery procedures:
 
 ```text
 trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
@@ -73,11 +74,16 @@ trade-graph pause --profile manage-only
 trade-graph backup --destination <private-path>
 trade-graph reconcile
 trade-graph report --format json
+trade-graph soak --mode paper --config <private-file> --duration-seconds <seconds> --report <new-private-file>
 ```
 
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
-`trade-graph` implements those operator commands. `run` performs one paper recovery pass and does not enable paid calls, live trading, or new model decisions. Planning utilities `scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
+`run` continuously reconciles, manages protection and schedules scoped work; `--once` performs a bounded tick.
+Default startup assembles no model handlers or external feed. Public data is opt-in, and model dispatch requires
+approved credentialed routes, a real operating allowance and both owner/runtime paid permission. `soak`
+requires those gates and records actual, estimated, synthetic and unresolved costs separately. Planning utilities
+`scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
 
 The T15 local dashboard command is verified:
 

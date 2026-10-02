@@ -101,6 +101,9 @@
       }
       body.maximum_quote_age_seconds = integer(fields.get("maximum_quote_age_seconds"), "Quote age");
       body.budget_exhaustion_profile = fields.get("budget_exhaustion_profile");
+      const paidPermission = fields.get("paid_calls_enabled");
+      if (!["true", "false"].includes(paidPermission)) throw new Error("Select a paid-call permission.");
+      body.paid_calls_enabled = paidPermission === "true";
     } else if (command === "pause") {
       body.profile = fields.get("profile");
       body.reason = String(fields.get("reason")).trim();
@@ -154,7 +157,7 @@
         }
         const configForm = ownerForms.find(form => form.dataset.command === "config");
         if (body.policy && configForm) {
-          for (const name of ["allowed_venues", "allowed_symbols", "allowed_change_classes", "maximum_gross_exposure_fraction", "maximum_single_asset_exposure_fraction", "maximum_quote_age_seconds", "budget_exhaustion_profile"]) {
+          for (const name of ["allowed_venues", "allowed_symbols", "allowed_change_classes", "maximum_gross_exposure_fraction", "maximum_single_asset_exposure_fraction", "maximum_quote_age_seconds", "budget_exhaustion_profile", "paid_calls_enabled"]) {
             fill(configForm, name, body.policy[name]);
           }
         }
