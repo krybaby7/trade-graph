@@ -28,6 +28,7 @@ from trade_graph.adapters.persistence.db import Database
 from trade_graph.contracts.models import Mandate, OwnerPolicy
 from trade_graph.domain.clock import Clock, parse_utc, utc_iso
 from trade_graph.domain.money import Money, canonical_decimal, parse_decimal
+from trade_graph.live_evidence import LiveUpstreamSources, verify_live_upstream
 
 Fingerprint = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_./:-]+$")]
@@ -273,6 +274,7 @@ def evaluate_live_enablement(record: dict) -> dict:
 
 def evaluate_live_readiness(
     database: Database, clock: Clock, *, scope: LivePilotScope, source: PinnedReadinessSource,
+    upstream: LiveUpstreamSources | None = None,
 ) -> dict:
     """Compare verified issuer documents with one current protected DB snapshot.
 
@@ -282,7 +284,7 @@ def evaluate_live_readiness(
     with localcontext(Context(prec=100)):
         # Exact comparisons for bounded 36-digit native limits, their exponent
         # range, and realistically bounded SQLite reservation counts.
-        return _evaluate_live_readiness(database, clock, scope=scope, source=source)
+        return _evaluate_live_readiness(database, clock, scope=scope, source=source, upstream=upstream)
 
 
 def _state_amount(value) -> Decimal:
@@ -300,6 +302,7 @@ def _owner_recovery_reviewed(raw: str) -> bool:
 
 def _evaluate_live_readiness(
     database: Database, clock: Clock, *, scope: LivePilotScope, source: PinnedReadinessSource,
+    upstream: LiveUpstreamSources | None,
 ) -> dict:
     reasons: list[str] = []
     checks: dict[str, bool] = {}
@@ -458,12 +461,16 @@ def _evaluate_live_readiness(
     # The current forward registry retains unverified imports. Issuer signatures
     # and digest labels cannot substitute for re-reading authenticated upstream
     # receipts/provenance and invalidating evidence when those sources change.
-    check("authoritative_upstream_economic_verification", False)
+    upstream_verification = verify_live_upstream(scope, bundle, clock, upstream)
+    check("authoritative_upstream_economic_verification",
+          upstream_verification["authoritative_external_verification"])
     return {"enabled": False, "ready": False, "diagnostic": False, "recorded_checks_passed": recorded_checks_passed,
             "diagnostic_authorization_recorded": diagnostic and recorded_checks_passed,
             "status": "blocked", "reasons": reasons, "checks": checks,
             "live_allocation": grant.allocation.model_dump(mode="json"),
             "maximum_loss": grant.maximum_loss.model_dump(mode="json"),
             "operating_allowance": grant.operating_allowance.model_dump(mode="json"),
-            "economic_evidence": economics.economic_verdict if economics else "insufficient_evidence",
+            "economic_evidence": "insufficient_evidence",
+            "declared_economic_verdict": economics.economic_verdict if economics else None,
+            "upstream_verification": upstream_verification,
             "execution_authority": "disabled; advisory evidence cannot enable the broker or owner policy"}

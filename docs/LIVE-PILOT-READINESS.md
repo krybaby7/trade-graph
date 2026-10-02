@@ -13,7 +13,7 @@ closed. Paper capital and reset values never create live allocation or expenses.
 
 ## Private advisory evidence contract
 
-`evaluate_live_readiness(database, clock, scope=..., source=...)` is a protected,
+`evaluate_live_readiness(database, clock, scope=..., source=..., upstream=...)` is a protected,
 read-only integration interface. It has no HTTP route, writer, signer, broker call,
 deployment action, or live-policy transition. Its input is private operator data,
 not a model tool or an Engineer-editable artifact.
@@ -98,12 +98,70 @@ and permission bounds at each effect when a future live lifecycle exists.
 
 ## Evidence that remains missing
 
+The optional `LiveUpstreamSources` references are protected runtime configuration,
+not a web/request schema. They point to the actual T18 `RuntimeEvidenceCollector`
+and retained capture, T17 `HostObservationCollector` and pinned private observation,
+and T19 `PinnedVenueObservation`. Arbitrary verifier callbacks or declarations
+cannot supply a replacement implementation. Missing collectors remain pending;
+altered, unretained, stale or mismatched sources are refused.
+
+The forward source is re-read from its exact original runtime database and
+append-only evaluation registry. The gate binds the registered paper portfolio
+separately from the target live portfolio, matches the selected graph version,
+requires the owner-pinned canonical capture digest, and compares the issuer's
+protocol/report/inventory/snapshot digests and actual report verdict. A supported
+label cannot override an insufficient retained report. The sealed ledger export
+must equal the complete runtime source digest, contain every collected receipt
+exactly, and leave no unresolved attempt. The collector independently audits
+native ledger replay, receipts/reservations, price and exact frozen FX links,
+invocation/wire provenance, allocated costs and effective imported expense amounts.
+New receipts, source revisions or registry records invalidate an earlier capture;
+the capture must also be no older than 24 hours.
+The existing protocol binds the paper portfolio, market stream and version, but
+does not authenticate a mapping to the live account, instrument and current owner
+policy. That exact economic scope proof remains explicitly pending.
+
+The host source is authenticated and rechecked against the current local package,
+collector, host and database/configuration identities. Its exact stored policy
+hash, selected paper graph version, independently pinned paper portfolio and
+configured host/package fingerprints must match the deployment. A matching raw
+fingerprint does not authenticate independent owner host designation, which stays
+pending. The signed issuer evidence must retain the report, collector and package digests and postdate
+collection. The local observation must be no older than 24 hours. Configured
+funding and credential presence are preflight facts; they never prove a funded
+soak, actual bill, off-host backup, immutable deployment or delivered alert.
+A loaded, active service still lacks exact unit configuration binding, and a
+successful local backup/restore drill still lacks service restart reconciliation.
+Those proofs remain separately pending.
+
+The venue source is rechecked from the retained private bounded wire captures and
+native normalized summaries. Scope must match every target deployment/account/
+venue/instrument/policy/artifact/version field and remain live. Issuer documents
+must bind the observation and collector/adapter/wire-contract digests and postdate
+capture; the independent verifier applies a 60-second maximum age. Injected or
+scripted transport observations cannot become authenticated account proof.
+Successful reads alone do not verify legal eligibility, key permissions, absence
+of withdrawals, write/cancel uncertainty, native stops or protected ledger recovery.
+
+`upstream_verification` reports structured pending/refused codes and mechanical
+source checks. It omits raw account, path, receipt and diagnostic values. Known
+source gaps such as complete invoice exports, external transport authentication,
+baseline collection and dependence/regime review are reported separately; counts
+preserve unknown or additional diagnostic burdens without exposing private data.
+These checks never write policy, imports, grants, receipts or orders and never
+perform a paid/private/network request.
+
 Even a correctly signed bundle whose recorded checks match current state returns
 `ready=false`, `enabled=false`, `diagnostic=false`, and `status=blocked`.
 `recorded_checks_passed` reports only the consistency of retained issuer documents
-and local state. `authoritative_upstream_economic_verification` remains false:
-the current forward registry preserves `unverified_imports`, and an issuer's digest
-labels cannot replace authenticated upstream collection or current-source rechecks.
+and local state. `declared_economic_verdict` labels the issuer's recorded declaration;
+`economic_evidence` remains `insufficient_evidence` while actual source/cost
+authentication is missing, even when that declaration says `supported`.
+`authoritative_upstream_economic_verification` remains false:
+the current forward registry preserves `unverified_imports`. The new collector
+integration verifies retained local source consistency; its external provenance
+status remains false. Issuer signatures, local wire captures and digest labels
+cannot replace actual complete independent authenticated collection.
 New receipts, invoice resolutions, trials or source changes must invalidate economic
 handoffs through an actual protected verifier. No caller trust flag bypass exists.
 
