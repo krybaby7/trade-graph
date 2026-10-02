@@ -483,6 +483,7 @@ class PaperService:
 
     async def _shutdown(self) -> None:
         self._stopping = True
+        worker_error = None
         try:
             if self._start_task and not self._start_task.done():
                 await asyncio.gather(self._start_task, return_exceptions=True)
@@ -495,7 +496,12 @@ class PaperService:
             # Keep reconciliation and task-lease renewal running while any paid
             # call drains. Releasing the flock early would allow duplicate work.
             if self._role_task:
-                await self._wait_for_work(self._role_task)
+                try:
+                    await self._wait_for_work(self._role_task)
+                except Exception as exc:
+                    # A failed claim/storage operation must not abandon another
+                    # still-running feed thread before it releases ownership.
+                    worker_error = exc
                 self._role_task = None
             if self._feed_task:
                 try:
@@ -522,3 +528,5 @@ class PaperService:
                 self.execution.blocks_increase = self._old_gate
             self._release()
             self._stopping = False
+        if worker_error is not None:
+            raise worker_error

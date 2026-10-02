@@ -524,6 +524,40 @@ def test_concurrent_tick_waits_for_startup_recovery_and_only_one_role_runs(tmp_p
     assert len(seen) == 1
 
 
+def test_failed_worker_task_still_drains_feed_before_releasing_process_fence(tmp_path, monkeypatch):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish = threading.Event(), threading.Event()
+
+    class SlowFeed(Feed):
+        def poll(self):
+            entered.set()
+            assert finish.wait(5)
+            return []
+
+    def fail_claim():
+        raise ValueError("worker storage unavailable")
+
+    service = PaperService(ledger.database, execution, public_feed=SlowFeed(), schedule_intervals={},
+                           tick_interval_seconds=0.02)
+    monkeypatch.setattr(service, "_run_role", fail_claim)
+
+    async def scenario():
+        await service.tick()
+        assert await asyncio.to_thread(entered.wait, 5)
+        shutdown = asyncio.create_task(service.stop())
+        await asyncio.sleep(0.05)
+        assert not shutdown.done()
+        contender = PaperService(ledger.database, execution, schedule_intervals={})
+        with pytest.raises(StaleState):
+            await contender.start()
+        finish.set()
+        with pytest.raises(ValueError, match="worker storage"):
+            await shutdown
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+
+
 def test_artifact_leader_cadence_keeps_digest_and_current_owner_attempt_bound(tmp_path):
     clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
     authority = AuthorityRecord(ledger.database, clock)
