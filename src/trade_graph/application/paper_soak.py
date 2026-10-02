@@ -144,10 +144,20 @@ async def run_funded_soak(runtime, *, duration_seconds: int, report_path: Path) 
         window_completed = elapsed >= duration_seconds
         if not window_completed and failure is None:
             failure = "StoppedBeforeRequestedDuration"
-        expenses = expense_observations(runtime, prior, prior_invocations)
+        expense_failure = None
+        try:
+            expenses = expense_observations(runtime, prior, prior_invocations)
+        except Exception as exc:
+            # Paid attempts and receipts remain authoritative in the database.
+            # An observer failure cannot certify zero cost or discard the run.
+            expenses = None
+            expense_failure = type(exc).__name__
+            failure = failure or expense_failure
         real_transport = isinstance(runtime.model_handlers.gateway.transport, HttpxProviderHttp)
         provider_status = "pending"
-        if expenses["unresolved_reservations"]:
+        if expenses is None:
+            provider_status = "unavailable"
+        elif expenses["unresolved_reservations"]:
             provider_status = "unresolved_billing"
         elif real_transport and expenses["provider_receipts_with_known_usage"]:
             provider_status = "responses_observed"
@@ -158,6 +168,8 @@ async def run_funded_soak(runtime, *, duration_seconds: int, report_path: Path) 
             "requested_duration_seconds": duration_seconds, "service": summary,
             "observed_duration_seconds": f"{elapsed:.3f}", "requested_duration_completed": window_completed,
             "credentialed_provider_verification": provider_status, "expenses": expenses,
+            "expense_observation_status": "unavailable" if expenses is None else "recorded",
+            "expense_failure_type": expense_failure,
             "economic_evidence": "insufficient_evidence",
             "limitations": ["paper fills use declared simulation assumptions",
                             "this observation does not prove profitability or authorize live trading",

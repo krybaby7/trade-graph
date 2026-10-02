@@ -54,3 +54,41 @@ def test_run_refuses_live_and_unknown_pause(capsys) -> None:
         main(["pause", "--profile", "invented"])
     assert pause.value.code == 2
     assert "unknown pause profile" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["run", "soak"])
+@pytest.mark.parametrize("error", [PermissionError, ValueError])
+def test_paper_startup_errors_show_type_and_doctor_without_exception_detail(command, error, monkeypatch, capsys):
+    def failed(path):
+        raise error("secret config contents must not reach stderr")
+
+    monkeypatch.setattr("trade_graph.paper_runtime.load_runtime_config", failed)
+    args = [command]
+    if command == "soak":
+        args += ["--config", "fixture-config", "--duration-seconds", "1", "--report", "fixture-report"]
+    with pytest.raises(SystemExit) as stopped:
+        main(args)
+    assert stopped.value.code == 2
+    output = capsys.readouterr()
+    assert error.__name__ in output.err and "use doctor" in output.err
+    assert "secret config contents" not in output.err
+    assert "Traceback" not in output.err and output.out == ""
+
+
+@pytest.mark.parametrize("error", [OSError, RuntimeError])
+def test_paper_run_errors_show_type_and_doctor_without_exception_detail(tmp_path, error, monkeypatch, capsys):
+    database = tmp_path / "paper.sqlite"
+    assert main(["init", "--database", str(database)]) == 0
+    capsys.readouterr()
+
+    async def failed(self, **kwargs):
+        raise error("provider exception detail must not reach stderr")
+
+    monkeypatch.setattr("trade_graph.application.paper_service.PaperService.run", failed)
+    with pytest.raises(SystemExit) as stopped:
+        main(["run", "--database", str(database), "--once"])
+    assert stopped.value.code == 2
+    output = capsys.readouterr()
+    assert error.__name__ in output.err and "use doctor" in output.err
+    assert "provider exception detail" not in output.err
+    assert "Traceback" not in output.err and output.out == ""

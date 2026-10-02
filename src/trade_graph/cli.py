@@ -259,8 +259,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "run" and args.public_data:
                 config = config.model_copy(update={"public_data_enabled": True})
             runtime = assemble_paper_runtime(Path(args.database), portfolio_id=args.portfolio_id, config=config)
-        except (ValueError, LookupError, TradeGraphError):
-            parser.error("paper startup configuration invalid; use doctor to inspect private runtime readiness")
+        except (ValueError, LookupError, OSError, TradeGraphError) as exc:
+            parser.error(f"paper startup failed ({type(exc).__name__}); "
+                         "use doctor to inspect private runtime readiness")
         try:
             if args.command == "soak":
                 from trade_graph.application.paper_soak import run_funded_soak
@@ -269,7 +270,8 @@ def main(argv: list[str] | None = None) -> int:
                     runtime, duration_seconds=args.duration_seconds, report_path=Path(args.report),
                 ))
                 print(json.dumps(result, default=str))
-                return 1 if result["failure_type"] or result["expenses"]["unresolved_reservations"] else 0
+                expenses = result.get("expenses")
+                return 1 if result.get("failure_type") or expenses is None or expenses["unresolved_reservations"] else 0
             initial_decisions = runtime.database.execute(
                 "SELECT COUNT(*) FROM decisions WHERE portfolio_id = ?", (runtime.portfolio_id,),
             ).fetchone()[0]
@@ -285,8 +287,9 @@ def main(argv: list[str] | None = None) -> int:
                 "SELECT COUNT(*) FROM decisions WHERE portfolio_id = ?", (runtime.portfolio_id,),
             ).fetchone()[0] - initial_decisions
             paid_enabled = runtime.paid_calls_enabled and runtime.execution.authority.active_policy().paid_calls_enabled
-        except (ValueError, LookupError, RuntimeError, TradeGraphError) as exc:
-            parser.error(str(exc))
+        except (ValueError, LookupError, OSError, RuntimeError, TradeGraphError) as exc:
+            parser.error(f"paper operation failed ({type(exc).__name__}); "
+                         "use doctor to inspect private runtime readiness")
         finally:
             runtime.database.close()
         print(

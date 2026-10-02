@@ -9,6 +9,7 @@ import pytest
 from tests.integration.test_runtime_models import RuntimeFlow
 
 from trade_graph.application.paper_soak import expense_observations, run_funded_soak, soak_preflight
+from trade_graph.cli import main
 from trade_graph.contracts.models import Observation
 from trade_graph.domain.errors import AuthorityDenied
 from trade_graph.kernel.pricing import worst_case_cost
@@ -141,3 +142,55 @@ def test_service_start_failure_retains_private_failure_report_and_no_calls(tmp_p
     assert result["status"] == "interrupted" and result["failure_type"] == "RuntimeError"
     assert "untrusted detail" not in destination.read_text()
     assert flow.transport.calls == []
+
+
+def test_cli_observer_failure_after_real_worker_effects_retains_interrupted_evidence(tmp_path, monkeypatch, capsys):
+    flow = RuntimeFlow(tmp_path)
+    configured = runtime(flow)
+    destination = tmp_path / "observer-failed.json"
+
+    def failed_observer(*args):
+        assert flow.transport.calls
+        assert flow.db.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] > 0
+        raise OSError("private observer exception detail must remain private")
+
+    monkeypatch.setattr("trade_graph.paper_runtime.load_runtime_config", lambda path: configured.config)
+    monkeypatch.setattr("trade_graph.paper_runtime.assemble_paper_runtime", lambda *args, **kwargs: configured)
+    monkeypatch.setattr("trade_graph.application.paper_soak.expense_observations", failed_observer)
+    assert main(["soak", "--config", "fixture-config", "--duration-seconds", "1",
+                 "--report", str(destination)]) == 1
+    result = json.loads(destination.read_text())
+    assert result["status"] == "interrupted" and result["failure_type"] == "OSError"
+    assert result["requested_duration_completed"] is True
+    assert result["service"]["completed"] >= 1
+    assert result["expenses"] is None
+    assert result["expense_observation_status"] == "unavailable"
+    assert result["expense_failure_type"] == "OSError"
+    assert result["credentialed_provider_verification"] == "unavailable"
+    assert destination.stat().st_mode & 0o077 == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == result
+    assert "private observer exception detail" not in destination.read_text() + output.out + output.err
+    with flow.db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] > 0
+
+
+def test_cli_existing_report_refusal_is_sanitized_and_precedes_model_work(tmp_path, monkeypatch, capsys):
+    flow = RuntimeFlow(tmp_path)
+    configured = runtime(flow)
+    destination = tmp_path / "private-report-path-must-not-leak.json"
+    destination.write_text("prior evidence must remain intact")
+    monkeypatch.setattr("trade_graph.paper_runtime.load_runtime_config", lambda path: configured.config)
+    monkeypatch.setattr("trade_graph.paper_runtime.assemble_paper_runtime", lambda *args, **kwargs: configured)
+    with pytest.raises(SystemExit) as stopped:
+        main(["soak", "--config", "fixture-config", "--duration-seconds", "1",
+              "--report", str(destination)])
+    assert stopped.value.code == 2
+    output = capsys.readouterr()
+    assert "FileExistsError" in output.err and "use doctor" in output.err
+    assert destination.name not in output.err
+    assert "Traceback" not in output.err and output.out == ""
+    assert destination.read_text() == "prior evidence must remain intact"
+    assert flow.transport.calls == []
+    with flow.db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
