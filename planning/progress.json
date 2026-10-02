@@ -312,8 +312,10 @@
     "next_work": "Finish T17 actual authorized public/funded verification; complete T21 production extraction and intended-host evidence; then real T18/T19 observation-dependent gates.",
     "publication": {
       "target_branch": "cursor/trade-graph-r1-548a",
-      "status": "local_checkpoint_ready",
-      "transport": "normal Git fast-forward; no merge or history rewrite"
+      "status": "published",
+      "transport": "GitHub HTTPS; normal fast-forward to existing implementation branch; no merge or history rewrite",
+      "published_at": "2026-10-02",
+      "verified_pushed_commit": "1b6b800d6246f08d61719fd4015cac265b2d2e07"
     }
   },
   "historical_submission": {

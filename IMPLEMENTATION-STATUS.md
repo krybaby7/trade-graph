@@ -2,7 +2,7 @@
 
 Updated: 2026-10-02. **T00–T16 remain complete at their recorded scopes. T17's operating software is implemented; its actual public-data/funded verification remains pending.**
 Local integration branch: `codex/orchestrator-continuation`.
-Publication target: `cursor/trade-graph-r1-548a`; Git publication is recorded separately below.
+Published implementation branch: `cursor/trade-graph-r1-548a` (normal fast-forward verified on 2026-10-02).
 Verified source: `ca4d463b9e83218d1e80f863da8b598190575280`.
 Source tree: `78187546d5044f716a7d3b70081c3a4b6c17bf21`.
 This handoff updates documentation after that clean tested checkpoint. Defaults remain USD10,000 virtual
@@ -110,5 +110,7 @@ The detailed continuation review is [here](docs/reviews/2026-10-02-orchestration
 
 ## Publication
 
-The source and handoff are committed locally for a normal fast-forward publication to the existing
-implementation branch. Publication verification is recorded in `planning/progress.json`; main is unchanged.
+The source and handoff were published by normal fast-forward through
+`1b6b800d6246f08d61719fd4015cac265b2d2e07` to the existing implementation branch.
+The remote ref was verified after the push; this follow-up records that result.
+Publication evidence is also in `planning/progress.json`. Main is unchanged; no new CI result is claimed.

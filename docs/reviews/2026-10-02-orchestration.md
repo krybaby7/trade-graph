@@ -78,3 +78,6 @@ See [status](../../IMPLEMENTATION-STATUS.md), [operations](../operations.md),
 [provider wire schemas](../PROVIDER-WIRE-SCHEMAS.md), [forward evaluation](../FORWARD-EVALUATION.md),
 [Kraken sources/limits](2026-10-02-kraken-foundation.md) and [process boundary](../PROCESS-BOUNDARY.md).
 The task records distinguish implemented preparation from missing actual verification and authority.
+
+Git publication was verified through `1b6b800d6246f08d61719fd4015cac265b2d2e07` by normal
+fast-forward to `cursor/trade-graph-r1-548a`; this documentation follow-up records the result. Main was not merged.
