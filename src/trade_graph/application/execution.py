@@ -474,41 +474,43 @@ class Execution:
         """Apply the persisted pause profile and record only a verified achieved state."""
         current = self.pause(portfolio_id)
         profile = current["profile"] if current else "RUNNING"
+
+        def achieved_state(achieved: str) -> str:
+            if self._set_achieved(portfolio_id, achieved, expected_pause=current):
+                return achieved
+            # An awaited cancellation/reconciliation may outlive a newer owner
+            # request. Return its actual state without relabelling that pause.
+            latest = self.pause(portfolio_id)
+            return latest["achieved"] if latest else "requested"
+
         if profile == "RUNNING":
             if current:
-                self._set_achieved(portfolio_id, "running")
+                return achieved_state("running")
             return "running"
         if profile == "PAUSE_DECISIONS":
-            self._set_achieved(portfolio_id, "decisions-paused")
-            return "decisions-paused"
+            return achieved_state("decisions-paused")
         if profile == "MANAGE_ONLY":
-            self._set_achieved(portfolio_id, "managing")
-            return "managing"
+            return achieved_state("managing")
         if profile == "NO_NEW_EXPOSURE":
             await self._cancel_for_pause(portfolio_id, sides={"buy"}, keep_flatten_exits=False)
             buy_left = self._has_outstanding(portfolio_id, sides={"buy"})
             achieved = "cancelling-increases" if buy_left else "increases-cleared"
-            self._set_achieved(portfolio_id, achieved)
-            return achieved
+            return achieved_state(achieved)
         if profile == "CANCEL_ALL":
             await self._cancel_for_pause(portfolio_id, sides=None, keep_flatten_exits=False)
             achieved = "cancelling-orders" if self._has_outstanding(portfolio_id) else "orders-cleared"
-            self._set_achieved(portfolio_id, achieved)
-            return achieved
+            return achieved_state(achieved)
         if profile == "FLATTEN":
             await self._cancel_for_pause(portfolio_id, sides=None, keep_flatten_exits=True)
             if self._flatten_ready(portfolio_id):
-                self._set_achieved(portfolio_id, "flat-verified")
-                return "flat-verified"
+                return achieved_state("flat-verified")
             if not self._has_blocking(portfolio_id) and self._has_inventory(portfolio_id):
                 self._queue_flatten_exits(portfolio_id)
                 await self.dispatch()
-            self._set_achieved(portfolio_id, "flattening")
-            return "flattening"
+            return achieved_state("flattening")
         if profile == "STOPPED":
             achieved = "stopped" if self._flatten_ready(portfolio_id) else "blocked-until-flat"
-            self._set_achieved(portfolio_id, achieved)
-            return achieved
+            return achieved_state(achieved)
         raise ValidationFailure("unsupported pause profile")
 
     async def cancel(self, intent_id: str) -> None:
@@ -631,12 +633,22 @@ class Execution:
         "CANCEL_PENDING",
     })
 
-    def _set_achieved(self, portfolio_id: str, achieved: str) -> None:
+    def _set_achieved(self, portfolio_id: str, achieved: str, *, expected_pause: dict | None = None) -> bool:
         with self.database.immediate() as conn:
-            conn.execute(
-                "UPDATE pause_states SET achieved = ? WHERE portfolio_id = ?",
-                (achieved, portfolio_id),
-            )
+            if expected_pause is None:
+                result = conn.execute(
+                    "UPDATE pause_states SET achieved = ? WHERE portfolio_id = ?",
+                    (achieved, portfolio_id),
+                )
+            else:
+                result = conn.execute(
+                    """UPDATE pause_states SET achieved = ? WHERE portfolio_id = ?
+                    AND profile = ? AND originator = ? AND requested_at = ? AND reason = ? AND achieved = ?""",
+                    (achieved, portfolio_id, *(expected_pause[name] for name in (
+                        "profile", "originator", "requested_at", "reason", "achieved",
+                    ))),
+                )
+            return result.rowcount == 1
 
     def _order_rows(self, portfolio_id: str) -> list:
         return self.database.execute(

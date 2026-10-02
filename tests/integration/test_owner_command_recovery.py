@@ -330,3 +330,31 @@ def test_committed_cancellation_is_never_replayed_during_receipt_recovery(stack,
     assert replay.status_code == (200 if phase == "checkpoint-done" else 409)
     assert db.execute("SELECT COUNT(*) FROM synthetic_cancel_audit").fetchone()[0] == 1
     assert runtime.execution.intent_state(intent) == "CANCELLED"
+
+
+def test_awaited_cancellation_cannot_relabel_newer_emergency_management_state(stack):
+    runtime = stack.runtime
+    runtime.ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.90"), source="synthetic FX",
+                              kind="synthetic", stale=False)
+    runtime.execution.save_observation(_quote(runtime.clock, "99", "100"))
+    intent = runtime.execution.authorize(runtime.portfolio_id, _decision(runtime.clock, runtime.portfolio_id))
+    asyncio.run(runtime.execution.dispatch())
+    original = runtime.execution.broker.cancel
+    retained = []
+
+    async def delayed_cancel(request):
+        emergency = {"request_id": "emergency", "expected_revision": 1, "profile": "MANAGE_ONLY"}
+        response = stack.client.post("/api/v1/owner/pause", headers=stack.owner_headers, json=emergency)
+        assert response.status_code == 200
+        retained.append(runtime.execution.pause(runtime.portfolio_id))
+        return await original(request)
+
+    runtime.execution.broker.cancel = delayed_cancel
+    body = {"request_id": "slow-pause", "expected_revision": 0, "profile": "NO_NEW_EXPOSURE"}
+    response = stack.client.post("/api/v1/owner/pause", headers=stack.owner_headers, json=body)
+    assert response.status_code == 409
+    assert runtime.execution.pause(runtime.portfolio_id) == retained[0]
+    assert retained[0]["achieved"] == "reconciliation-required"
+    assert runtime.execution.intent_state(intent) == "CANCELLED"
+    # A subsequent management pass still reconciles the active owner profile.
+    assert asyncio.run(runtime.execution.advance_pause(runtime.portfolio_id)) == "managing"
