@@ -129,14 +129,20 @@ def test_live_gate_and_adapter_have_no_withdrawal(tmp_path) -> None:
     calls = []
 
     def transport(method: str, body: dict) -> dict:
-        calls.append((method, body))
-        if method == "AddOrder":
-            return {"result": {"txid": ["ABC"]}}
-        if method == "QueryOrders":
-            return {"result": {"ABC": {"status": "open", "vol_exec": "0"}}}
-        return {"result": {}}
+        from tests.integration.test_kraken_live_adapter import _assets, _pairs
 
-    broker = KrakenLiveBroker(transport, live_enabled=False, key_present=False)
+        calls.append((method, body))
+        if method == "Assets":
+            return {"error": [], "result": _assets()}
+        if method == "AssetPairs":
+            return {"error": [], "result": _pairs()}
+        if method == "AddOrder":
+            return {"error": [], "result": {"txid": ["ABC"]}}
+        if method == "QueryOrders":
+            return {"error": [], "result": {"ABC": {"status": "open", "vol_exec": "0"}}}
+        return {"error": [], "result": {}}
+
+    broker = KrakenLiveBroker(transport, live_enabled=False, key_present=False, account_id="a")
     capabilities = __import__("asyncio").run(broker.capabilities())
     assert capabilities.withdrawals is False
     assert capabilities.native_stop_tested is False
@@ -162,6 +168,7 @@ def test_live_gate_and_adapter_have_no_withdrawal(tmp_path) -> None:
         )
     broker.live_enabled = True
     broker.key_present = True
+    __import__("asyncio").run(broker.instruments())
     result = __import__("asyncio").run(
         broker.submit(
             __import__("trade_graph.contracts.models", fromlist=["AuthorizedOrderIntent"]).AuthorizedOrderIntent(
