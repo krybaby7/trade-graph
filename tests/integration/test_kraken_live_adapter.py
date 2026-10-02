@@ -629,6 +629,130 @@ def test_transport_stops_stream_before_download_limit_and_enforces_total_deadlin
     assert all(stream.seen < 100 for stream in streams)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1e999999999",
+        "0e-999999999",
+        "1e-999999999",
+        "1e30",
+        "1e-19",
+        Decimal("1e999999999"),
+        Decimal("0e-999999999"),
+        "1" * 97,
+        True,
+        False,
+    ],
+)
+def test_wire_numeric_shape_bounds_precede_fixed_formatting(value, monkeypatch):
+    import trade_graph.adapters.brokers.kraken_live as adapter
+
+    rest = ScriptedRest()
+    rest.results["BalanceEx"]["ZUSD"]["balance"] = value
+
+    def forbidden_format(number):
+        raise AssertionError("unsupported wire number reached fixed-point formatting")
+
+    monkeypatch.setattr(adapter, "canonical_decimal", forbidden_format)
+    with pytest.raises(ValidationFailure, match="numeric field"):
+        asyncio.run(_broker(rest).balances())
+
+
+def test_oversized_source_fields_are_refused_before_decimal_construction(monkeypatch):
+    import trade_graph.adapters.brokers.kraken_live as adapter
+
+    def forbidden_parse(value):
+        raise AssertionError("oversized field reached Decimal construction")
+
+    monkeypatch.setattr(adapter, "parse_decimal", forbidden_parse)
+    for value in ("1" * 97, 1 << 4096):
+        with pytest.raises(ValidationFailure):
+            adapter._decimal(value)
+
+
+@pytest.mark.parametrize("field", ["pair_decimals", "lot_decimals", "cost_decimals"])
+@pytest.mark.parametrize("value", ["1e999999999", "0e-999999999", 19, -1, True, False])
+def test_metadata_precision_is_bounded_even_with_explicit_tick_size(field, value):
+    rest = ScriptedRest()
+    rest.results["AssetPairs"]["XXBTZUSD"][field] = value
+    with pytest.raises(ValidationFailure):
+        asyncio.run(_broker(rest).instruments())
+
+
+@pytest.mark.parametrize("value", [True, False, "1e999999999", 2])
+def test_lot_multiplier_refuses_boolean_and_unsupported_numeric_values(value):
+    rest = ScriptedRest()
+    rest.results["AssetPairs"]["XXBTZUSD"]["lot_multiplier"] = value
+    with pytest.raises(ValidationFailure):
+        asyncio.run(_broker(rest).instruments())
+
+
+@pytest.mark.parametrize("value", ["1e999999999", "0e-999999999", "18446744073709551616", True, False])
+def test_history_counts_are_bounded_before_integer_materialization(value):
+    rest = ScriptedRest()
+    rest.results["TradesHistory"] = {"trades": {}, "count": value}
+    with pytest.raises(ValidationFailure):
+        asyncio.run(_broker(rest).fills_since(None))
+    assert not any(method == "QueryLedgers" for method, _ in rest.calls)
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"quantity": "1e999999999"},
+        {"quantity": "0e-999999999"},
+        {"limit_price": "1e999999999"},
+        {"limit_price": "0e-999999999"},
+        {"order_type": "market", "limit_price": "0e-999999999"},
+        {"order_type": "market", "limit_price": "100"},
+        {"order_type": "stop", "stop_price": "1e999999999"},
+    ],
+)
+def test_outbound_typed_intents_are_bounded_before_arithmetic_or_fixed_formatting(updates, monkeypatch):
+    import trade_graph.adapters.brokers.kraken_live as adapter
+
+    rest = ScriptedRest()
+    broker = _broker(rest, live_enabled=True, key_present=True)
+    asyncio.run(broker.instruments())
+
+    def forbidden_format(number):
+        raise AssertionError("unsupported typed intent reached fixed-point formatting")
+
+    monkeypatch.setattr(adapter, "canonical_decimal", forbidden_format)
+    assert asyncio.run(broker.submit(_intent(**updates))).status == "rejected"
+    assert not any(method == "AddOrder" for method, _ in rest.calls)
+
+
+def test_declared_native_precision_is_exact_without_changing_caller_context():
+    from decimal import getcontext
+
+    rest = ScriptedRest()
+    source = "12345678901234567890.123456789012345678"
+    rest.results["BalanceEx"]["ZUSD"] = {"balance": source, "hold_trade": "0.000000000000000001"}
+    broker = _broker(rest)
+    precision = getcontext().prec
+    assert asyncio.run(broker.balances()).amounts["USD"] == source
+    assert broker.available_balances["USD"] == "12345678901234567890.123456789012345677"
+    rest.results["OpenOrders"] = {"open": {"order-1": _order(vol=source, vol_exec="0.000000000000000001")}}
+    assert asyncio.run(broker.open_orders())[0].remaining_quantity == Decimal(broker.available_balances["USD"])
+    assert getcontext().prec == precision
+
+
+def test_precision_boundaries_preserve_native_quantums_and_integer_limit():
+    from trade_graph.adapters.brokers.kraken_live import _decimal, _integer
+
+    assert _decimal("1e-18") == Decimal("0.000000000000000001")
+    assert _decimal("999999999999999999999999999999") == Decimal("999999999999999999999999999999")
+    assert _integer("18446744073709551615") == 2**64 - 1
+    rest = ScriptedRest()
+    pair = rest.results["AssetPairs"]["XXBTZUSD"]
+    pair.update(pair_decimals=18, lot_decimals=18, cost_decimals=18)
+    del pair["tick_size"]
+    rule = asyncio.run(_broker(rest).instruments())[0]
+    assert rule.price_increment == Decimal("1e-18")
+    assert rule.quantity_increment == Decimal("1e-18")
+
+
 def test_kraken_fill_reconciliation_survives_restart_through_real_ledger_without_resubmit(tmp_path):
     clock = FrozenClock(NOW)
     path = tmp_path / "live-fixture.sqlite"

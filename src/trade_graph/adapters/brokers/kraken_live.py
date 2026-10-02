@@ -14,7 +14,7 @@ import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from functools import wraps
 
 from trade_graph.adapters.brokers.kraken_transport import KrakenApiError, check_response
@@ -38,13 +38,24 @@ from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 PAGE_SIZE = 50
+MAX_NUMERIC_CHARACTERS = 96
+MAX_NUMERIC_DIGITS = 48
+MAX_INTEGER_DIGITS = 30
+MAX_NATIVE_SCALE = 18
+MAX_UNSIGNED_INTEGER = 2**64 - 1
+ARITHMETIC_PRECISION = 128
 
 
 def _safe_read(method):
     @wraps(method)
     async def guarded(*args, **kwargs):
         try:
-            return await method(*args, **kwargs)
+            # Declared native widths may exceed Python's default precision 28.
+            # This task-local context keeps subtraction, sums and products exact
+            # for the bounded fields, without changing the caller's context.
+            with localcontext() as context:
+                context.prec = ARITHMETIC_PRECISION
+                return await method(*args, **kwargs)
         except (KeyError, TypeError, ValueError, ArithmeticError):
             raise ValidationFailure("Kraken response fields could not be normalized safely") from None
 
@@ -53,7 +64,20 @@ def _safe_read(method):
 
 def _decimal(value, *, positive: bool = False) -> Decimal:
     try:
+        # Validate source width before Decimal construction. In particular never
+        # stringify an arbitrarily large Python int supplied by a transport.
+        if isinstance(value, str) and len(value) > MAX_NUMERIC_CHARACTERS:
+            raise ValueError("numeric field is oversized")
+        if isinstance(value, int) and value.bit_length() > 100:
+            raise ValueError("numeric integer is oversized")
         number = parse_decimal(value)
+        shape = number.as_tuple()
+        if (
+            len(shape.digits) > MAX_NUMERIC_DIGITS
+            or not -MAX_NATIVE_SCALE <= shape.exponent <= MAX_INTEGER_DIGITS
+            or len(shape.digits) + shape.exponent > MAX_INTEGER_DIGITS
+        ):
+            raise ValueError("numeric fixed-point width is unsupported")
         if positive and number <= 0:
             raise ValueError("positive value required")
         return number
@@ -61,9 +85,9 @@ def _decimal(value, *, positive: bool = False) -> Decimal:
         raise ValidationFailure("Kraken numeric field could not be normalized safely") from None
 
 
-def _integer(value, *, minimum: int = 0) -> int:
+def _integer(value, *, minimum: int = 0, maximum: int = MAX_UNSIGNED_INTEGER) -> int:
     number = _decimal(value)
-    if number != number.to_integral_value() or number < minimum:
+    if number != number.to_integral_value() or not minimum <= number <= maximum:
         raise ValidationFailure("Kraken integer field could not be normalized safely")
     return int(number)
 
@@ -206,14 +230,18 @@ class KrakenLiveBroker:
             symbol = base + "/" + quote
             if symbol in rules:
                 raise ValidationFailure("Kraken metadata contains ambiguous normalized pairs")
+            price_decimals = _integer(info["pair_decimals"], maximum=MAX_NATIVE_SCALE)
+            lot_decimals = _integer(info["lot_decimals"], maximum=MAX_NATIVE_SCALE)
+            if "cost_decimals" in info:
+                _integer(info["cost_decimals"], maximum=MAX_NATIVE_SCALE)
             price_step = (
                 _decimal(info["tick_size"], positive=True)
                 if info.get("tick_size") is not None
-                else Decimal(10) ** -_integer(info["pair_decimals"])
+                else Decimal(10) ** -price_decimals
             )
-            quantity_step = Decimal(10) ** -_integer(info["lot_decimals"])
-            if info.get("lot_multiplier") not in {None, 1, "1"}:
-                raise ValidationFailure("non-unit Kraken lot multipliers require separate conformance")
+            quantity_step = Decimal(10) ** -lot_decimals
+            if info.get("lot_multiplier") is not None:
+                _integer(info["lot_multiplier"], minimum=1, maximum=1)
             rules[symbol] = InstrumentRules(
                 venue="kraken",
                 symbol=symbol,
@@ -339,6 +367,7 @@ class KrakenLiveBroker:
             raise ValidationFailure("Kraken open orders response is incomplete")
         return [self._order(txid, order) for txid, order in opened.items()]
 
+    @_safe_read
     async def order_status(self, key: OrderLookup) -> OrderLookupResult:
         await self._metadata()
         try:
@@ -532,6 +561,13 @@ class KrakenLiveBroker:
 
     async def submit(self, intent: AuthorizedOrderIntent) -> SubmitResult:
         self._writes()
+        try:
+            quantity = _decimal(intent.quantity, positive=True)
+            limit_price = _decimal(intent.limit_price, positive=True) if intent.limit_price is not None else None
+            if intent.stop_price is not None:
+                _decimal(intent.stop_price, positive=True)
+        except ValidationFailure:
+            return SubmitResult(status="rejected", error="rejected", message="Kraken order numeric bounds rejected")
         # Readiness must precede execution's reservation/dispatch fee check.
         # Loading or changing fee bounds inside a write would bypass that check.
         age = None if self._metadata_at is None else (self.clock.now() - self._metadata_at).total_seconds()
@@ -543,33 +579,38 @@ class KrakenLiveBroker:
             return SubmitResult(status="rejected", error="rejected", message="Kraken broker binding mismatch")
         if intent.order_type == "stop" or intent.stop_price is not None or intent.reduce_only:
             return SubmitResult(status="rejected", error="rejected", message="untested native protection is disabled")
+        if intent.order_type == "market" and limit_price is not None:
+            return SubmitResult(
+                status="rejected", error="rejected", message="market orders cannot include a limit price"
+            )
         rule = self._rules.get(intent.symbol)
         if rule is None or self.instrument_statuses.get(intent.symbol) != "online" or intent.symbol not in self._fees:
             return SubmitResult(
                 status="rejected", error="rejected", message="Kraken instrument/fee readiness incomplete"
             )
-        if intent.quantity < rule.min_quantity or intent.quantity % rule.quantity_increment:
-            return SubmitResult(
-                status="rejected", error="rejected", message="Kraken quantity precision/minimum rejected"
-            )
-        if intent.order_type == "limit" and (
-            intent.limit_price is None
-            or intent.limit_price <= 0
-            or intent.limit_price % rule.price_increment
-            or intent.limit_price * intent.quantity < rule.min_notional
-        ):
-            return SubmitResult(status="rejected", error="rejected", message="Kraken price precision/minimum rejected")
+        with localcontext() as context:
+            context.prec = ARITHMETIC_PRECISION
+            if quantity < rule.min_quantity or quantity % rule.quantity_increment:
+                return SubmitResult(
+                    status="rejected", error="rejected", message="Kraken quantity precision/minimum rejected"
+                )
+            if intent.order_type == "limit" and (
+                limit_price is None or limit_price % rule.price_increment or limit_price * quantity < rule.min_notional
+            ):
+                return SubmitResult(
+                    status="rejected", error="rejected", message="Kraken price precision/minimum rejected"
+                )
         body = {
             "pair": self._wire_pairs[intent.symbol],
             "type": intent.side,
             "ordertype": intent.order_type,
-            "volume": canonical_decimal(intent.quantity),
+            "volume": canonical_decimal(quantity),
             "cl_ord_id": _client_id(intent.client_order_id),
             "timeinforce": intent.time_in_force.upper(),
             "oflags": "fciq",
         }
-        if intent.limit_price is not None:
-            body["price"] = canonical_decimal(intent.limit_price)
+        if limit_price is not None:
+            body["price"] = canonical_decimal(limit_price)
         try:
             result = await self._request("AddOrder", body)
             ids = result.get("txid")
