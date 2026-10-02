@@ -40,12 +40,16 @@ from trade_graph.evaluation_contracts import (
     fixed_decimal,
 )
 from trade_graph.evaluation_registry import TrialRegistry, document_hash
+from trade_graph.kernel.books import Books
 from trade_graph.kernel.pricing import usage_cost
 
 MAX_ROWS = 10000
 MAX_TOTAL_ROWS = 20000
 MAX_CELL_BYTES = 131072
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
+MAX_CAPTURE_BYTES = 48 * 1024 * 1024
+MAX_HISTORY_CAPTURES = 256
+MAX_HISTORY_BYTES = 128 * 1024 * 1024
 TABLES = (
     "schema_migrations", "portfolios", "ledger_events", "journal_transactions", "journal_postings",
     "fx_rates", "valuation_marks", "instruments", "observations", "decisions", "snapshots",
@@ -59,6 +63,15 @@ TABLES = (
     "version_events", "artifact_bundles", "version_rollouts", "consumer_loads", "version_observations",
     "dashboard_commands", "dashboard_command_evidence", "dashboard_control_state",
 )
+IMMUTABLE_IDENTITIES = {
+    "ledger_events": ("event_id",), "journal_transactions": ("transaction_id",),
+    "journal_postings": ("posting_id",), "observations": ("observation_id",),
+    "decisions": ("decision_id",), "snapshots": ("snapshot_id",), "fills": ("fill_id",),
+    "usage_receipts": ("receipt_id",), "price_cards": ("price_card_id",),
+    "valuation_marks": ("mark_id",), "fx_rates": ("rate_id",),
+    "invoice_reconciliations": ("reconciliation_id",), "cost_allocations": ("receipt_id", "portfolio_id"),
+    "version_history": ("portfolio_id", "version_id"), "activity_events": ("event_id",),
+}
 
 
 def _canonical(value) -> str:
@@ -240,6 +253,12 @@ class RuntimeEvidenceCollector:
 
     def _retained_capture(self, key: str, trial_id: str):
         # Read only this capture, never all historical multi-megabyte snapshots.
+        size = self.registry.connection.execute(
+            "SELECT length(CAST(document_json AS BLOB)) FROM evaluation_records "
+            "WHERE kind='runtime_capture' AND record_key=? AND trial_id=?", (key, trial_id),
+        ).fetchone()
+        if size is not None and size[0] > MAX_CAPTURE_BYTES:
+            raise ValueError("retained runtime capture exceeds verification byte bounds")
         row = self.registry.connection.execute(
             "SELECT document_json,document_sha256,collected_at FROM evaluation_records "
             "WHERE kind='runtime_capture' AND record_key=? AND trial_id=?", (key, trial_id),
@@ -247,6 +266,121 @@ class RuntimeEvidenceCollector:
         if row is not None and document_hash(row["document_json"]) != row["document_sha256"]:
             raise ValueError("retained runtime capture bytes changed")
         return row
+
+    def _history_bounds(self, *, extra_bytes: int = 0, extra_count: int = 0):
+        count = self.registry.connection.execute(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records WHERE kind='runtime_capture' "
+            "LIMIT ?)", (MAX_HISTORY_CAPTURES + 1,),
+        ).fetchone()[0]
+        if count + extra_count > MAX_HISTORY_CAPTURES:
+            raise ValueError("runtime retained capture history exceeds verification bounds")
+        sizes = self.registry.connection.execute(
+            "SELECT COALESCE(SUM(length(CAST(document_json AS BLOB))),0),"
+            "COALESCE(MAX(length(CAST(document_json AS BLOB))),0) FROM evaluation_records "
+            "WHERE kind='runtime_capture'",
+        ).fetchone()
+        if (sizes[0] + extra_bytes > MAX_HISTORY_BYTES or sizes[1] > MAX_CAPTURE_BYTES
+                or extra_bytes > MAX_CAPTURE_BYTES):
+            raise ValueError("runtime retained capture history exceeds verification byte bounds")
+
+    @staticmethod
+    def _source_facts(data):
+        facts = {}
+
+        def retain(kind, identity, record):
+            key = kind, document_hash(_canonical(identity))
+            value = document_hash(_canonical(record))
+            if key in facts and facts[key] != value:
+                raise ValueError("ambiguous immutable runtime source identity")
+            facts[key] = value
+
+        for table, columns in IMMUTABLE_IDENTITIES.items():
+            for row in data[table]:
+                retain(table, [row[column] for column in columns], row)
+        for table, identity, mutable in (
+            ("budget_reservations", "reservation_id", {"amount", "state", "updated_at"}),
+            ("model_invocations", "invocation_id", {"state", "result_json", "updated_at"}),
+            ("provider_transport_attempts", "attempt_id", {
+                "outcome", "response_sha256", "status_code", "response_bytes", "error_category", "finished_at",
+            }),
+        ):
+            for row in data[table]:
+                retain(table + "_identity", [row[identity]], {key: value for key, value in row.items()
+                                                           if key not in mutable})
+                if table == "provider_transport_attempts" and row["outcome"] == "HTTP_RESPONSE":
+                    retain("complete_provider_response", [row[identity]], row)
+                if table == "model_invocations" and row["result_json"] is not None:
+                    retain("retained_provider_result", [row[identity]], {key: value for key, value in row.items()
+                                                                      if key not in {"state", "updated_at"}})
+                if table == "budget_reservations" and row["state"] in {"COMMITTED", "CONSERVATIVE", "RECONCILED"}:
+                    retain("retained_paid_obligation", [row[identity]], {key: value for key, value in row.items()
+                                                                      if key not in {"state", "updated_at"}})
+        return facts
+
+    def _history_consistency(self, data, binding, reasons):
+        self._history_bounds()
+        current = self._source_facts(data)
+        initial = self._source_facts(json.loads(binding.initial_source_json))
+        if any(current.get(key) != value for key, value in initial.items()):
+            reasons.append("invalid:captured_runtime_history_changed")
+        rows = self.registry.connection.execute(
+            "SELECT record_key,document_json,document_sha256,collected_at FROM evaluation_records "
+            "WHERE kind='runtime_capture' ORDER BY collected_at,record_key",
+        )
+        for row in rows:
+            raw = row["document_json"]
+            if document_hash(raw) != row["document_sha256"] or row["record_key"] != document_hash(raw):
+                raise ValueError("retained runtime capture history bytes changed")
+            previous = RuntimeEvidenceCapture.model_validate_json(raw)
+            retained_bindings = self.registry._rows("runtime_binding", previous.binding.trial_id)
+            if (len(retained_bindings) != 1
+                    or RuntimeCollectionBinding.model_validate_json(retained_bindings[0]["document_json"])
+                    != previous.binding or previous.binding.deployment_id != binding.deployment_id
+                    or previous.binding.database_identity != binding.database_identity
+                    or not previous.captured_at <= parse_utc(row["collected_at"]) <= self.clock.now()):
+                raise ValueError("retained runtime capture history scope or chronology changed")
+            historical = self._source_facts(json.loads(previous.source_json))
+            if any(current.get(key) != value for key, value in historical.items()):
+                reasons.append("invalid:captured_runtime_history_changed")
+
+    @staticmethod
+    def _initial_chronology(data, at):
+        timestamps = {
+            "portfolios": ("created_at",), "ledger_events": ("effective_at",),
+            "journal_transactions": ("created_at",), "observations": ("event_time", "available_at"),
+            "decisions": ("created_at",), "snapshots": ("as_of", "created_at"), "fills": ("created_at",),
+            "usage_receipts": ("created_at",), "budget_reservations": ("created_at", "updated_at"),
+            "model_invocations": ("created_at", "updated_at"),
+            "provider_transport_attempts": ("started_at", "finished_at"),
+            "invoice_reconciliations": ("created_at",), "activity_events": ("created_at",),
+            "valuation_marks": ("observed_at",), "fx_rates": ("observed_at", "valid_as_of", "retrieved_at"),
+            "price_cards": ("created_at",),
+        }
+        for table, columns in timestamps.items():
+            for row in data[table]:
+                if any(row[column] is not None and parse_utc(row[column]) > at for column in columns):
+                    return False
+        for row in data["decisions"]:
+            if Decision.model_validate_json(row["payload_json"]).created_at_utc > at:
+                return False
+        for row in data["observations"]:
+            value = Observation.model_validate_json(row["document_json"])
+            if max(value.event_time_utc, value.available_at_utc) > at:
+                return False
+        for row in data["snapshots"]:
+            for market in json.loads(row["payload_json"]).get("market", {}).values():
+                if market.get("observation") is not None:
+                    value = Observation.model_validate(market["observation"])
+                    if max(value.event_time_utc, value.available_at_utc) > at:
+                        return False
+        for row in data["fills"]:
+            if FillRecord.model_validate_json(row["document_json"]).filled_at_utc > at:
+                return False
+        for row in data["ledger_events"]:
+            if (row["kind"] == "fill"
+                    and FillRecord.model_validate(json.loads(row["payload_json"])["fill"]).filled_at_utc > at):
+                return False
+        return True
 
     def bind(self, trial_id: str) -> RuntimeCollectionBinding:
         with self.registry._atomic(), self.database.snapshot():
@@ -262,6 +396,8 @@ class RuntimeEvidenceCollector:
             if row is None or row["mode"] != "paper" or row["status"] != "open":
                 raise ValueError("runtime collection requires the registered paper portfolio")
             raw = self._read()
+            if not self._initial_chronology(json.loads(raw), self.clock.now()):
+                raise ValueError("runtime binding contains future collected facts")
             binding = RuntimeCollectionBinding(
                 trial_id=trial_id, deployment_id=self.deployment_id, portfolio_id=protocol.portfolio_id,
                 market_stream_id=protocol.market_stream_id, protocol_sha256=document_hash(protocol.model_dump_json()),
@@ -291,6 +427,7 @@ class RuntimeEvidenceCollector:
             if retained is not None and retained["document_json"] != capture.model_dump_json():
                 raise ValueError("retained runtime capture bytes changed")
             if retained is None:
+                self._history_bounds(extra_bytes=len(capture.model_dump_json().encode()), extra_count=1)
                 self.registry._append("runtime_capture", key, trial_id, capture)
             return capture
 
@@ -331,6 +468,9 @@ class RuntimeEvidenceCollector:
                    "baseline_runtime_collection_missing", "independence_and_regime_source_verification_pending"]
         ledger = Ledger(self.database, self.clock)
         initial = json.loads(binding.initial_source_json)
+        if not self._initial_chronology(initial, binding.bound_at):
+            reasons.append("invalid:future_native_facts_at_preregistration")
+        self._history_consistency(data, binding, reasons)
         for table in ("ledger_events", "journal_transactions", "journal_postings", "observations",
                       "decisions", "snapshots", "fills", "usage_receipts", "price_cards", "valuation_marks"):
             if data[table][:len(initial[table])] != initial[table]:
@@ -338,24 +478,50 @@ class RuntimeEvidenceCollector:
         if not ledger.activity_intact():
             reasons.append("invalid:runtime_activity_chain")
         postings = defaultdict(Decimal)
+        portfolios = {row["portfolio_id"] for row in data["portfolios"]}
+        transactions = {row["transaction_id"]: row for row in data["journal_transactions"]}
+        events = {(row["portfolio_id"], row["external_ref"]): row for row in data["ledger_events"]}
+        if len(events) != len(data["ledger_events"]):
+            reasons.append("invalid:ambiguous_native_event_identity")
+        posting_groups = defaultdict(list)
         for row in data["journal_postings"]:
             postings[(row["transaction_id"], row["asset"])] += fixed_decimal(row["amount"])
+            transaction = transactions.get(row["transaction_id"])
+            if (transaction is None or row["portfolio_id"] not in portfolios
+                    or row["portfolio_id"] != transaction["portfolio_id"]):
+                reasons.append("invalid:native_posting_transaction_ownership")
+            posting_groups[row["transaction_id"]].append((row["account"], row["asset"], fixed_decimal(row["amount"])))
         if any(amount != 0 for amount in postings.values()):
             reasons.append("invalid:unbalanced_native_journal")
+        event_transactions = defaultdict(list)
+        for transaction in transactions.values():
+            identity = transaction["portfolio_id"], transaction["external_ref"]
+            event = events.get(identity)
+            if (transaction["portfolio_id"] not in portfolios or event is None
+                    or transaction["kind"] != event["kind"]
+                    or parse_utc(transaction["created_at"]) != parse_utc(event["effective_at"])):
+                reasons.append("invalid:native_transaction_event_link")
+            event_transactions[identity].append(sorted(posting_groups[transaction["transaction_id"]]))
+        if any(row["portfolio_id"] not in portfolios for row in data["ledger_events"]):
+            reasons.append("invalid:native_event_portfolio_ownership")
         for portfolio in data["portfolios"]:
             identity = portfolio["portfolio_id"]
-            transactions = [row for row in data["journal_transactions"] if row["portfolio_id"] == identity]
             # Replay the protected native ledger and compare every posting group,
-            # not just its zero sum. Balanced fabricated postings are insufficient.
+            # with its exact event metadata, rather than matching global zero sums.
+            rows = sorted((row for row in data["ledger_events"] if row["portfolio_id"] == identity),
+                          key=lambda row: row["sequence"])
+            if [row["sequence"] for row in rows] != list(range(1, len(rows) + 1)):
+                reasons.append("invalid:native_event_sequence")
+            books = Books()
             with localcontext(Context(prec=28)):
-                books = ledger.books(identity)
-            derived = [sorted((item.account, item.asset, item.amount) for item in group) for group in books.groups]
-            retained = [sorted((row["account"], row["asset"], fixed_decimal(row["amount"]))
-                               for row in data["journal_postings"]
-                               if row["transaction_id"] == transaction["transaction_id"])
-                        for transaction in transactions]
-            if retained != derived:
-                reasons.append("invalid:native_journal_does_not_match_event_replay")
+                for row in rows:
+                    before = len(books.groups)
+                    ledger._mutate(books, row["kind"], json.loads(row["payload_json"]),
+                                   row["effective_at"], row["external_ref"])
+                    derived = [sorted((item.account, item.asset, item.amount) for item in group)
+                               for group in books.groups[before:]]
+                    if event_transactions[(identity, row["external_ref"])] != derived:
+                        reasons.append("invalid:native_journal_does_not_match_event_replay")
         if any(parse_utc(row["effective_at"]) > self.clock.now() for row in data["ledger_events"]):
             reasons.append("invalid:future_native_ledger_event")
         fills = {(row["venue"], row["account_id"], row["trade_id"]): row for row in data["fills"]}
@@ -510,9 +676,7 @@ class RuntimeEvidenceCollector:
                 unresolved.append(identity)
                 reasons.append("unresolved_or_unreceipted_attempt")
         self._transport_links(data, reservations, invocations, reasons, unresolved)
-        for row in data["invoice_reconciliations"]:
-            if row["deployment_id"] == self.deployment_id and fixed_decimal(row["unexplained"]) != 0:
-                reasons.append("unexplained_provider_invoice_difference")
+        self._invoice_links(data, reservations, reasons)
         receipt_map = {row["receipt_id"]: row for row in data["usage_receipts"]}
         weights = defaultdict(Decimal)
         for row in data["cost_allocations"]:
@@ -525,6 +689,42 @@ class RuntimeEvidenceCollector:
         if any(value != 1 for value in weights.values()):
             reasons.append("invalid:incomplete_or_duplicate_shared_allocation")
         return reasons, receipts, synthetic, set(unresolved)
+
+    def _invoice_links(self, data, reservations, reasons):
+        for row in data["invoice_reconciliations"]:
+            if row["deployment_id"] != self.deployment_id:
+                continue
+            total, recorded, difference = (fixed_decimal(row[key])
+                                           for key in ("invoice_total", "recorded_total", "unexplained"))
+            cutoff = parse_utc(row["created_at"])
+            if (total < 0 or recorded < 0 or total - recorded != difference or row["currency"] != "EUR"
+                    or cutoff > self.clock.now()):
+                reasons.append("invalid:provider_invoice_arithmetic_currency_or_availability")
+            before, at = Decimal("0"), Decimal("0")
+            for receipt in data["usage_receipts"]:
+                if (receipt["reservation_id"] not in reservations or receipt["synthetic"]
+                        or receipt["status"] == "uncertain"):
+                    continue
+                observed = parse_utc(receipt["created_at"])
+                if observed > cutoff:
+                    continue
+                if receipt["reporting_cost"] is None or receipt["reporting_currency"] != "EUR":
+                    reasons.append("invalid:provider_invoice_receipt_currency_or_cost")
+                    continue
+                amount = fixed_decimal(receipt["reporting_cost"])
+                if observed < cutoff:
+                    before += amount
+                else:
+                    at += amount
+            if not before <= recorded <= before + at:
+                reasons.append("invalid:provider_invoice_recorded_cost_cutoff")
+            elif at != 0:
+                # Equal timestamps do not prove which receipts preceded this
+                # historical reconciliation. A future sequence/cutoff receipt link
+                # can resolve this; current arithmetic only bounds the total.
+                reasons.append("provider_invoice_receipt_cutoff_ambiguous")
+            if difference != 0:
+                reasons.append("unexplained_provider_invoice_difference")
 
     def _transport_links(self, data, reservations, invocations, reasons, unresolved):
         all_reservations = {row["reservation_id"] for row in data["budget_reservations"]}

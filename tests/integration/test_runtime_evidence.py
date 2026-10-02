@@ -44,7 +44,8 @@ def receipt(runtime, *, linked=True, synthetic=False):
     reservation = _reserve(runtime, fx_rate=Decimal("0.9"), fx_rate_id=identity if linked else None,
                            synthetic=synthetic)
     received = runtime.budget.commit(reservation,
-        ModelUsage(uncached_input_tokens=100, billed_output_tokens=2, provider_request_id="synthetic-provider-id"),
+        ModelUsage(uncached_input_tokens=100, billed_output_tokens=2,
+                   provider_request_id=f"synthetic-provider:{reservation}"),
         provider="openai", model="gpt-6-luna", fx_rate=Decimal("0.9"))
     return identity, reservation, received
 
@@ -318,7 +319,7 @@ def test_actual_native_fill_link_and_current_record_corruption_are_rechecked(set
     assert "invalid:fill_native_ledger_link" in collector.verify(collector.capture(declared.trial_id)).reasons
 
 
-def _wire_receipt(runtime, monkeypatch):
+def _wire_receipt(runtime, monkeypatch, *, before_response=None):
     task = Scheduler(runtime.database, runtime.clock).add_task(
         role="trader", objective="synthetic collector wire test", portfolio_id=runtime.portfolio_id,
         allocated_spend=Decimal("1"),
@@ -327,10 +328,15 @@ def _wire_receipt(runtime, monkeypatch):
     fx = runtime.ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.9"),
                                   source="synthetic source", kind="reference", stale=False)
     gateway = ModelGateway(runtime.budget, paid_calls_enabled=True, transport=HttpxProviderHttp())
-    mock_stream(monkeypatch, lambda *args, **options: response(429, {
-        "id": "synthetic-wire-response", "model": request.model,
-        "usage": {"input_tokens": 7, "output_tokens": 3}, "error": {"message": "fixture error"},
-    }))
+    def transport(*args, **options):
+        if before_response:
+            before_response()
+        return response(429, {
+            "id": "synthetic-wire-response", "model": request.model,
+            "usage": {"input_tokens": 7, "output_tokens": 3}, "error": {"message": "fixture error"},
+        })
+
+    mock_stream(monkeypatch, transport)
     result = gateway.invoke(request, deployment_id="fixture", price_card_id="openai",
         fx_rate=Decimal("0.9"), fx_buffer=Decimal("1"), fx_rate_id=fx,
         invocation_id="synthetic-durable-wire", portfolio_id=runtime.portfolio_id)
@@ -491,4 +497,197 @@ def test_actual_decision_input_time_links_and_version_are_not_caller_declaration
         runtime.database.execute("UPDATE observations SET available_at=?", (utc_iso(declared.forward_blocks[0].end),))
     verified = collector.verify(collector.capture(declared.trial_id))
     assert reason in verified.reasons
+    assert verified.database_consistent is False
+
+
+def test_balanced_orphan_postings_cannot_pass_native_transaction_ownership(setup):
+    runtime, _, collector, declared = setup
+    for identity, amount in (("orphan-positive", "1"), ("orphan-negative", "-1")):
+        runtime.database.execute("INSERT INTO journal_postings VALUES (?,?,?,?,?,?)", (
+            identity, "nonexistent-transaction", runtime.portfolio_id, "cash", "EUR", amount,
+        ))
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert "invalid:native_posting_transaction_ownership" in verified.reasons
+    assert verified.database_consistent is False
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    ("portfolio", "invalid:native_posting_transaction_ownership"),
+    ("reference", "invalid:native_transaction_event_link"),
+    ("kind", "invalid:native_transaction_event_link"),
+    ("sequence", "invalid:native_event_sequence"),
+])
+def test_native_posting_owner_and_exact_event_metadata_must_agree(setup, mutation, reason):
+    runtime, _, collector, declared = setup
+    if mutation == "portfolio":
+        runtime.database.execute("UPDATE journal_postings SET portfolio_id='nonexistent-portfolio'")
+    elif mutation == "reference":
+        runtime.database.execute("UPDATE journal_transactions SET external_ref='wrong-event'")
+    elif mutation == "kind":
+        runtime.database.execute("UPDATE journal_transactions SET kind='withdraw'")
+    else:
+        runtime.database.execute("UPDATE ledger_events SET sequence=2")
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert reason in verified.reasons
+    assert verified.database_consistent is False
+
+
+def test_postbinding_receipt_cannot_disappear_into_released_zero_cost_even_after_restart(setup):
+    runtime, registry, collector, declared = setup
+    _, reservation, received = receipt(runtime)
+    collector.capture(declared.trial_id)
+    runtime.database.execute("DELETE FROM usage_receipts WHERE receipt_id=?", (received,))
+    runtime.database.execute("UPDATE budget_reservations SET state='RELEASED',amount='0' WHERE reservation_id=?",
+                             (reservation,))
+    reopened_db = Database(runtime.database.path)
+    reopened_registry = TrialRegistry(registry.connection.execute("PRAGMA database_list").fetchone()[2], runtime.clock)
+    reopened = RuntimeEvidenceCollector(reopened_db, reopened_registry, runtime.clock, deployment_id="fixture")
+    captured = reopened.capture(declared.trial_id)
+    verified = reopened.verify(captured)
+    assert "invalid:captured_runtime_history_changed" in verified.reasons
+    assert verified.database_consistent is False
+    assert verified.actual_external_provenance_verified is False
+    reopened_registry.close()
+    reopened_db.close()
+
+
+def test_pending_durable_attempt_can_legitimately_settle_without_history_rewrite(setup, monkeypatch):
+    runtime, _, collector, declared = setup
+    pending = []
+
+    def retained_before_response():
+        captured = collector.capture(declared.trial_id)
+        verification = collector.verify(captured)
+        assert verification.database_consistent is True
+        assert len(verification.unresolved_reservation_ids) == 1
+        pending.append(captured)
+
+    _wire_receipt(runtime, monkeypatch, before_response=retained_before_response)
+    assert len(pending) == 1
+    current = collector.verify(collector.capture(declared.trial_id))
+    assert current.database_consistent is True
+    assert not current.unresolved_reservation_ids
+    assert len(current.receipt_ids) == 1
+    assert "invalid:captured_runtime_history_changed" not in current.reasons
+    assert current.actual_external_provenance_verified is False
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    ("arithmetic", "invalid:provider_invoice_arithmetic_currency_or_availability"),
+    ("currency", "invalid:provider_invoice_arithmetic_currency_or_availability"),
+    ("future", "invalid:provider_invoice_arithmetic_currency_or_availability"),
+    ("cutoff", "invalid:provider_invoice_recorded_cost_cutoff"),
+])
+def test_impossible_invoice_arithmetic_currency_time_or_receipt_total_is_invalid(setup, mutation, reason):
+    runtime, _, collector, declared = setup
+    _, _, received = receipt(runtime)
+    amount = Decimal(runtime.database.execute("SELECT reporting_cost FROM usage_receipts WHERE receipt_id=?",
+                                              (received,)).fetchone()[0])
+    runtime.clock.advance(1)
+    runtime.budget.reconcile_invoice("fixture", "synthetic-consistency-invoice", amount)
+    if mutation == "arithmetic":
+        runtime.database.execute("UPDATE invoice_reconciliations SET invoice_total='100',unexplained='0'")
+    elif mutation == "currency":
+        runtime.database.execute("UPDATE invoice_reconciliations SET currency='USD'")
+    elif mutation == "future":
+        runtime.database.execute("UPDATE invoice_reconciliations SET created_at=?",
+                                 (utc_iso(declared.forward_blocks[0].end),))
+    else:
+        runtime.database.execute("UPDATE invoice_reconciliations SET recorded_total='0',unexplained=?", (str(amount),))
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert reason in verified.reasons
+    assert verified.database_consistent is False
+
+
+def test_historical_invoice_cutoff_does_not_include_receipts_collected_later(setup):
+    runtime, _, collector, declared = setup
+    _, _, received = receipt(runtime)
+    amount = Decimal(runtime.database.execute("SELECT reporting_cost FROM usage_receipts WHERE receipt_id=?",
+                                              (received,)).fetchone()[0])
+    runtime.clock.advance(1)
+    runtime.budget.reconcile_invoice("fixture", "synthetic-consistency-invoice", amount)
+    collector.capture(declared.trial_id)
+    runtime.clock.advance(1)
+    receipt(runtime)
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert verified.database_consistent is True
+    assert "provider_invoice_receipt_cutoff_ambiguous" not in verified.reasons
+    assert "invalid:provider_invoice_recorded_cost_cutoff" not in verified.reasons
+
+
+def test_same_clock_invoice_cutoff_is_pending_rather_than_invented_ordering(setup):
+    runtime, _, collector, declared = setup
+    _, _, received = receipt(runtime)
+    amount = Decimal(runtime.database.execute("SELECT reporting_cost FROM usage_receipts WHERE receipt_id=?",
+                                              (received,)).fetchone()[0])
+    runtime.budget.reconcile_invoice("fixture", "synthetic-consistency-invoice", amount)
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert verified.database_consistent is True
+    assert "provider_invoice_receipt_cutoff_ambiguous" in verified.reasons
+    assert verified.actual_external_provenance_verified is False
+
+
+@pytest.mark.parametrize("limit", ["MAX_HISTORY_CAPTURES", "MAX_HISTORY_BYTES", "MAX_CAPTURE_BYTES"])
+def test_history_verification_refuses_resource_overflow_without_truncating_sources(setup, monkeypatch, limit):
+    _, registry, collector, declared = setup
+    import trade_graph.runtime_evidence as module
+
+    captured = collector.capture(declared.trial_id)
+    before = len(registry._rows("runtime_capture", declared.trial_id))
+    monkeypatch.setattr(module, limit, 0)
+    with pytest.raises(ValueError, match="verification.*bounds"):
+        collector.verify(captured)
+    with pytest.raises(ValueError, match="verification.*bounds"):
+        collector.clock.advance(1)
+        collector.capture(declared.trial_id)
+    assert len(registry._rows("runtime_capture", declared.trial_id)) == before
+
+
+def test_future_initial_native_decisions_cannot_be_bound_as_untouched_future_evidence(tmp_path):
+    runtime = _stack(tmp_path)
+    runtime.clock.advance((REGISTERED - runtime.clock.now()).total_seconds())
+    declared = protocol(count=2, portfolio_id=runtime.portfolio_id, capital_eur="100")
+    registry = TrialRegistry(tmp_path / "trial.sqlite", runtime.clock)
+    registry.register(declared)
+    runtime.clock.advance((declared.forward_blocks[0].start - runtime.clock.now()).total_seconds() + 10)
+    _record_native_decision(runtime, declared)
+    runtime.clock.advance((REGISTERED - runtime.clock.now()).total_seconds())
+    collector = RuntimeEvidenceCollector(runtime.database, registry, runtime.clock, deployment_id="fixture")
+    with pytest.raises(ValueError, match="future collected facts"):
+        collector.bind(declared.trial_id)
+    assert registry._rows("runtime_binding", declared.trial_id) == []
+    registry.close()
+    runtime.database.close()
+
+
+def test_initial_immutable_fx_fact_cannot_change_before_the_first_capture(tmp_path):
+    runtime = _stack(tmp_path)
+    runtime.clock.advance((REGISTERED - runtime.clock.now()).total_seconds())
+    declared = protocol(count=2, portfolio_id=runtime.portfolio_id, capital_eur="100")
+    registry = TrialRegistry(tmp_path / "trial.sqlite", runtime.clock)
+    registry.register(declared)
+    identity = runtime.ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.9"),
+        source="synthetic initial reference", kind="reference", stale=False)
+    collector = RuntimeEvidenceCollector(runtime.database, registry, runtime.clock, deployment_id="fixture")
+    collector.bind(declared.trial_id)
+    runtime.database.execute("UPDATE fx_rates SET rate='0.8' WHERE rate_id=?", (identity,))
+    verified = collector.verify(collector.capture(declared.trial_id))
+    assert "invalid:captured_runtime_history_changed" in verified.reasons
+    assert verified.database_consistent is False
+    registry.close()
+    runtime.database.close()
+
+
+def test_new_trial_cannot_erase_paid_facts_retained_by_another_trial_in_deployment_registry(setup):
+    runtime, registry, collector, declared = setup
+    _, reservation, received = receipt(runtime)
+    collector.capture(declared.trial_id)
+    runtime.database.execute("DELETE FROM usage_receipts WHERE receipt_id=?", (received,))
+    runtime.database.execute("UPDATE budget_reservations SET state='RELEASED',amount='0' WHERE reservation_id=?",
+                             (reservation,))
+    next_trial = declared.model_copy(update={"trial_id": "second-trial-cannot-hide-cost"})
+    registry.register(next_trial)
+    collector.bind(next_trial.trial_id)
+    verified = collector.verify(collector.capture(next_trial.trial_id))
+    assert "invalid:captured_runtime_history_changed" in verified.reasons
     assert verified.database_consistent is False

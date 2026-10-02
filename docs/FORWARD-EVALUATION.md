@@ -139,6 +139,10 @@ forward block and before any forward observation import. The retained binding
 fixes deployment, open paper portfolio, market stream, protocol digest, database
 file identity and the complete initial source inventory. Reopening the same file
 is supported; an identical copy cannot substitute for the bound database.
+Future-dated actual observations, decisions, snapshots, native events, fills,
+receipts or collected source facts in that initial inventory are rejected.
+Future scheduling, expiry and configured price effective dates do not represent
+collected outcome observations and remain permissible configuration.
 
 `capture(trial_id)` retains canonical current source bytes and their SHA-256,
 the exact evaluation snapshot and its SHA-256, and collection time. It reads
@@ -171,6 +175,26 @@ shared allocations, unresolved reservations, and provider transport identities,
 request/endpoint digests, scope, timestamps, response bounds and completeness.
 An unfinished or uncertain wire observation remains unresolved even if another
 row describes the reservation as terminal.
+
+Continuity also compares immutable fact identities and bytes against the initial
+binding and every retained capture across the deployment registry. A new trial
+cannot erase the deployment's earlier paid facts. Previously collected receipts, native facts,
+price/FX records, invoice records and stable paid-request identities cannot
+disappear or change when a new snapshot is emitted. Reservation settlement and
+invocation/transport completion can change their documented mutable state;
+retained results and complete HTTP responses remain immutable. Native postings
+must belong to an existing transaction and portfolio, and each transaction's
+metadata and posting group must match its exact replayed ledger event.
+Historical revalidation streams captures after SQLite preflights refuse more
+than 256 captures, 128 MiB total retained capture bytes, or 48 MiB for one capture.
+Exceeding these protected limits refuses capture/verification without truncation.
+
+Invoice checks derive EUR arithmetic and collection availability, then compare
+historical recorded totals to the receipts available at the invoice cutoff.
+Later receipts cannot inflate an earlier invoice's recorded total. Equal-time
+receipt ordering lacks a retained sequence link and is reported as pending
+cutoff ambiguity; a contradictory amount, currency or future timestamp is invalid.
+These checks establish local consistency rather than provider authentication.
 
 `import_expenses(capture)` derives registry records from current retained native
 receipts, reservations and durable results; callers supply no monetary amount or
