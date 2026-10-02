@@ -97,19 +97,23 @@ class PaperService:
                                  reconcile=self._reconcile, artifact_runtime=artifact_runtime)
         self._lock_fd: int | None = None
         self._started = False
+        self._ready = False
         self._stopping = False
         self._stop_requested = asyncio.Event()
         self._heartbeat_task: asyncio.Task | None = None
         self._role_task: asyncio.Task | None = None
         self._feed_task: asyncio.Task | None = None
+        self._shutdown_task: asyncio.Task | None = None
+        self._start_task: asyncio.Task | None = None
+        self._tick_lock = asyncio.Lock()
+        self._pending_operations: set[asyncio.Task] = set()
         self._active_lease: TaskLease | None = None
         self._completed_total = 0
+        self._observations_total = 0
         self._lease_lock = threading.Lock()
         self._execution_lock = threading.RLock()
         self._feed_failed = public_feed is not None
-        self._old_gate = execution.blocks_increase
-        if public_feed is not None:
-            execution.blocks_increase = self._blocks_increase
+        self._old_gate = None
 
     def _blocks_increase(self, symbol: str) -> bool:
         gate = getattr(self.public_feed, "blocks_increase", None)
@@ -158,10 +162,19 @@ class PaperService:
                 self._lock_fd = None
 
     async def start(self) -> None:
-        if self._started:
+        if self._ready:
             return
+        if self._start_task is None or self._start_task.done():
+            self._start_task = asyncio.create_task(self._start())
+        await asyncio.shield(self._start_task)
+
+    async def _start(self) -> None:
         self._stop_requested.clear()
         self._acquire()
+        self._shutdown_task = None
+        self._old_gate = self.execution.blocks_increase
+        if self.public_feed is not None:
+            self.execution.blocks_increase = self._blocks_increase
         try:
             rows = self.database.execute(
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper' ORDER BY created_at, rowid",
@@ -174,16 +187,30 @@ class PaperService:
             self._started = True
             self._heartbeat_task = asyncio.create_task(self._heartbeat())
             if self.recover_commands:
-                await asyncio.to_thread(self._thread_call, self.recover_commands)
+                await self._offload(self.recover_commands)
             # No graph handler may run before uncertainty and owner pauses recover.
-            await asyncio.to_thread(self._thread_call, self._management)
+            await self._offload(self._management)
+            self._ready = True
         except BaseException:
-            await self.stop()
+            self._started = False
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+                self._heartbeat_task = None
+            if self.execution.blocks_increase == self._blocks_increase:
+                self.execution.blocks_increase = self._old_gate
+            self._release()
             raise
 
     def _thread_call(self, callback: Callable, *args):
         with self.database.thread_connection():
             return _call(callback, *args)
+
+    async def _offload(self, callback: Callable, *args):
+        task = asyncio.create_task(asyncio.to_thread(self._thread_call, callback, *args))
+        self._pending_operations.add(task)
+        task.add_done_callback(self._pending_operations.discard)
+        return await asyncio.shield(task)
 
     def _heartbeat_once(self) -> None:
         with self.database.immediate():
@@ -204,7 +231,7 @@ class PaperService:
     async def _heartbeat(self) -> None:
         try:
             while self._started:
-                await asyncio.to_thread(self._thread_call, self._heartbeat_once)
+                await self._offload(self._heartbeat_once)
                 await asyncio.sleep(min(self.role_ttl_seconds / 3, 5))
         except Exception:
             self.request_stop()
@@ -245,6 +272,7 @@ class PaperService:
             if profile in PAUSED_WORK:
                 continue
             settings = {}
+            bundle = None
             if self.artifact_runtime:
                 bundle = self.artifact_runtime.versions.load_active(pid)
                 settings = self.artifact_runtime.schedule_settings(bundle)
@@ -281,6 +309,12 @@ class PaperService:
                             self.scheduler.allocate(
                                 task_id, self.execution.authority.active_policy().root_paid_limit.amount,
                             )
+                    if task_id:
+                        self.database.execute(
+                            "UPDATE tasks SET max_attempts = ?, expected_version = ? WHERE task_id = ?",
+                            (min(3, self.execution.authority.active_policy().ordinary_max_paid_attempts),
+                             bundle["artifact_hash"] if bundle else None, task_id),
+                        )
                     created += bool(task_id)
         return created
 
@@ -314,15 +348,18 @@ class PaperService:
         finally:
             with self._lease_lock:
                 self._active_lease = None
-        result = self.database.execute("SELECT status FROM tasks WHERE task_id = ?", (lease.task_id,)).fetchone()
-        if result["status"] == "BLOCKED_BUDGET" or (
-            row["role"] == "trader" and result["status"] in {"FAILED", "WAITING_EXTERNAL", "DEAD_LETTER"}
-        ):
-            pause = self.execution.pause(row["portfolio_id"])
-            if not pause or pause["profile"] == "RUNNING":
-                profile = (self.execution.authority.active_policy().budget_exhaustion_profile
-                           if result["status"] == "BLOCKED_BUDGET" else "MANAGE_ONLY")
-                self.execution.set_pause(row["portfolio_id"], profile, "system", "role unavailable; manage positions")
+        with self.database.immediate():
+            result = self.database.execute("SELECT status FROM tasks WHERE task_id = ?", (lease.task_id,)).fetchone()
+            if result["status"] == "BLOCKED_BUDGET" or (
+                row["role"] == "trader" and result["status"] in {"FAILED", "WAITING_EXTERNAL", "DEAD_LETTER"}
+            ):
+                pause = self.execution.pause(row["portfolio_id"])
+                if not pause or pause["profile"] == "RUNNING":
+                    profile = (self.execution.authority.active_policy().budget_exhaustion_profile
+                               if result["status"] == "BLOCKED_BUDGET" else "MANAGE_ONLY")
+                    self.execution.set_pause(
+                        row["portfolio_id"], profile, "system", "role unavailable; manage positions",
+                    )
         self._completed_total += 1
         return 1
 
@@ -336,15 +373,26 @@ class PaperService:
                     "observation_id": self.owner + ":" + observation.observation_id,
                 })
                 self.execution.on_observation(observation)
+                self._observations_total += 1
         return len(observations)
 
+    async def _wait_for_work(self, task: asyncio.Task):
+        """Drain blocking work while keeping financial maintenance alive."""
+        while not task.done():
+            await self._offload(self._management)
+            await asyncio.wait({task}, timeout=self.tick_interval_seconds)
+        return task.result()
+
     async def tick(self, *, wait_roles: bool = False, wait_feed: bool = False) -> TickResult:
-        if not self._started:
-            await self.start()
+        await self.start()
+        async with self._tick_lock:
+            return await self._tick(wait_roles=wait_roles, wait_feed=wait_feed)
+
+    async def _tick(self, *, wait_roles: bool, wait_feed: bool) -> TickResult:
         if self._heartbeat_task and self._heartbeat_task.done():
             self._heartbeat_task.result()
         # Explicit ticks renew immediately as well as through the wall-clock heartbeat.
-        await asyncio.to_thread(self._thread_call, self._heartbeat_once)
+        await self._offload(self._heartbeat_once)
         completed, observations, failures = 0, 0, []
         if self._role_task and self._role_task.done():
             completed += self._role_task.result()
@@ -354,25 +402,25 @@ class PaperService:
                 self._feed_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.public_feed.poll))
             if wait_feed or self._feed_task.done():
                 try:
-                    emitted = await self._feed_task
-                    observations = await asyncio.to_thread(self._thread_call, self._ingest, emitted)
+                    emitted = await self._wait_for_work(self._feed_task)
+                    observations = await self._offload(self._ingest, emitted)
                     self._feed_failed = False
                 except Exception as exc:
                     self._feed_failed = True
                     failures.append("feed:" + type(exc).__name__)
                 self._feed_task = None
-        management, management_failures = await asyncio.to_thread(self._thread_call, self._management)
+        management, management_failures = await self._offload(self._management)
         failures.extend(management_failures)
         scheduled = 0
         if not self._stop_requested.is_set():
             try:
-                scheduled = await asyncio.to_thread(self._thread_call, self._schedules)
+                scheduled = await self._offload(self._schedules)
             except Exception as exc:
                 failures.append("scheduler:" + type(exc).__name__)
             if self._role_task is None and not management_failures:
                 self._role_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self._run_role))
                 if wait_roles:
-                    completed += await self._role_task
+                    completed += await self._wait_for_work(self._role_task)
                     self._role_task = None
         return TickResult(observations, scheduled, completed, self._role_task is not None,
                           management, tuple(failures))
@@ -389,10 +437,11 @@ class PaperService:
         summary = {"ticks": 0, "observations": 0, "scheduled": 0, "completed": 0,
                    "failures": [], "stopped": False, "management": {}}
         initially_completed = self._completed_total
+        initially_observed = self._observations_total
         try:
             await self.start()
             while not self._stop_requested.is_set() and (max_ticks is None or summary["ticks"] < max_ticks):
-                result = await self.tick()
+                result = await self.tick(wait_feed=max_ticks is not None and summary["ticks"] + 1 == max_ticks)
                 summary["ticks"] += 1
                 summary["observations"] += result.observations
                 summary["scheduled"] += result.scheduled
@@ -410,6 +459,7 @@ class PaperService:
                 loop.remove_signal_handler(signum)
                 signal.signal(signum, previous[signum])
         summary["completed"] = self._completed_total - initially_completed
+        summary["observations"] = self._observations_total - initially_observed
         summary["stopped"] = True
         return summary
 
@@ -417,31 +467,58 @@ class PaperService:
         if not self._started and self._lock_fd is None:
             return
         self.request_stop()
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(self._shutdown())
+        cancelled = False
+        while not self._shutdown_task.done():
+            try:
+                await asyncio.shield(self._shutdown_task)
+            except asyncio.CancelledError:
+                # Cancellation belongs to the caller. It cannot release a fence
+                # around a still-running synchronous provider or feed thread.
+                cancelled = True
+        self._shutdown_task.result()
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _shutdown(self) -> None:
         self._stopping = True
         try:
+            if self._start_task and not self._start_task.done():
+                await asyncio.gather(self._start_task, return_exceptions=True)
+            # A cancelled caller may have left a short transaction/scheduler job
+            # running. Those jobs also finish before process ownership is released.
+            async with self._tick_lock:
+                pending = tuple(self._pending_operations)
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
             # Keep reconciliation and task-lease renewal running while any paid
             # call drains. Releasing the flock early would allow duplicate work.
-            while self._role_task is not None and not self._role_task.done():
-                await asyncio.to_thread(self._thread_call, self._management)
-                await asyncio.wait({self._role_task}, timeout=self.tick_interval_seconds)
             if self._role_task:
-                self._role_task.result()
+                await self._wait_for_work(self._role_task)
                 self._role_task = None
             if self._feed_task:
                 try:
-                    await self._feed_task
+                    emitted = await self._wait_for_work(self._feed_task)
+                    await self._offload(self._ingest, emitted)
+                    self._feed_failed = False
                 except Exception:
                     self._feed_failed = True
                 self._feed_task = None
             close = getattr(self.public_feed, "close", None)
             if close:
-                await asyncio.to_thread(self._thread_call, close)
-            await asyncio.to_thread(self._thread_call, self._management)
+                close_task = asyncio.create_task(asyncio.to_thread(self._thread_call, close))
+                await self._wait_for_work(close_task)
+            if self._ready:
+                await self._offload(self._management)
         finally:
             self._started = False
+            self._ready = False
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
                 await asyncio.gather(self._heartbeat_task, return_exceptions=True)
                 self._heartbeat_task = None
+            if self.execution.blocks_increase == self._blocks_increase:
+                self.execution.blocks_increase = self._old_gate
             self._release()
             self._stopping = False
