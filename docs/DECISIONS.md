@@ -62,6 +62,8 @@
 | D58 | Pure-feature plugins stage in sealed content-addressed private storage and receive parent-authenticated finite replay receipts from fresh confined processes | Tested-corpus repeatability is limited evidence. Broader class grants, shadow evaluation, immutable runtime builds and automatic production rollout remain separate T22 work |
 | D59 | Delayed submission replies cannot overwrite newer fill/cancellation/recovery facts or release partial-fill reservations; conflicting native identities remain incomplete across reconciliation | Submission completion and reservation effects share a writer transaction. A known conflict requires explicit protected resolution rather than treating owned fills alone as complete account evidence |
 
+| D60 | Optional model expense FX source IDs bind the exact stored pair, value and available source bytes before dispatch; usage receipts retain that frozen link and actual conversion value | Migration 0011 leaves legacy provenance NULL. Later source drift cannot erase billed facts and independently invalidates evidence; a source link does not authenticate an external publisher |
+
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
 ## Remaining decisions

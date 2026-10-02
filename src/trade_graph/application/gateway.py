@@ -66,6 +66,7 @@ class ModelGateway:
         invocation_id: str | None = None,
         portfolio_id: str | None = None,
         authorize: Callable[[], None] | None = None,
+        fx_rate_id: str | None = None,
     ) -> ModelResult:
         if invocation_id and (request.max_tool_calls != 0 or not portfolio_id):
             raise ValidationFailure("durable invocation requires scoped tool-free request")
@@ -109,6 +110,7 @@ class ModelGateway:
                 invocation_id=invocation_id,
                 portfolio_id=portfolio_id,
                 authorize=authorize,
+                fx_rate_id=fx_rate_id,
             )
             if not result.ok or not result.tool_requests:
                 return result
@@ -136,6 +138,7 @@ class ModelGateway:
         max_attempts: int = 3,
         max_schema_repairs: int = 1,
         fallback: ProviderFallback | None = None,
+        fx_rate_id: str | None = None,
     ) -> ModelResult:
         """Repair, retry and fallback each reserve. They share the root-task limit."""
         if max_attempts < 1 or max_schema_repairs < 0:
@@ -155,6 +158,7 @@ class ModelGateway:
                 fx_buffer=fx_buffer,
                 priority=priority,
                 attempt_kind=kind,
+                fx_rate_id=fx_rate_id,
             )
             if last.ok or _budget_stop(last):
                 return last
@@ -184,6 +188,7 @@ class ModelGateway:
             fx_buffer=fx_buffer,
             priority=priority,
             attempt_kind="fallback",
+            fx_rate_id=fx_rate_id,
         )
 
     def _attempt(
@@ -200,6 +205,7 @@ class ModelGateway:
         invocation_id: str | None = None,
         portfolio_id: str | None = None,
         authorize: Callable[[], None] | None = None,
+        fx_rate_id: str | None = None,
     ) -> ModelResult:
         card = self.budget.card(price_card_id)
         if request.provider != "scripted" and (card.provider != request.provider or card.model != request.model):
@@ -208,10 +214,14 @@ class ModelGateway:
             "http_fixture" not in request.context and not self.api_keys.get(request.provider)
         )
         journal = InvocationJournal(self.budget)
-        binding = journal.binding(request, portfolio_id or "", {
+        billing = {
             "deployment_id": deployment_id, "price_card_id": price_card_id, "fx_rate": fx_rate,
             "fx_buffer": fx_buffer, "priority": priority, "attempt_kind": attempt_kind,
-        }) if invocation_id else ""
+        }
+        # Keep existing durable hashes recoverable when no link was supplied.
+        if fx_rate_id is not None:
+            billing["fx_rate_id"] = fx_rate_id
+        binding = journal.binding(request, portfolio_id or "", billing) if invocation_id else ""
         wire_body = None
         try:
             # The authorization check, reservation and dispatch intent commit together.
@@ -238,6 +248,7 @@ class ModelGateway:
                     max_output=request.max_output_tokens, max_tools=request.max_tool_calls,
                     fx_rate=fx_rate, fx_buffer=fx_buffer, priority=priority, synthetic=synthetic,
                     purpose=request.role, system_version_id=request.system_version_id, attempt_kind=attempt_kind,
+                    fx_rate_id=fx_rate_id,
                 )
                 if invocation_id:
                     journal.start(invocation_id, binding, request, portfolio_id, reservation)

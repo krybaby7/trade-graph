@@ -10,6 +10,7 @@ from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as EN
 from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS as PROTECTED_RUNTIME_STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
 from trade_graph.adapters.persistence.service_schema import STATEMENTS as SERVICE_STATEMENTS
+from trade_graph.adapters.persistence.usage_provenance_schema import STATEMENTS as USAGE_PROVENANCE_STATEMENTS
 
 STATEMENTS: list[tuple[str, list[str]]] = [
     (
@@ -425,6 +426,7 @@ STATEMENTS.append(("0007", ACTIVATION_STATEMENTS))
 STATEMENTS.append(("0008", DASHBOARD_STATEMENTS))
 STATEMENTS.append(("0009", SERVICE_STATEMENTS))
 STATEMENTS.append(("0010", PROTECTED_RUNTIME_STATEMENTS))
+STATEMENTS.append(("0011", USAGE_PROVENANCE_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

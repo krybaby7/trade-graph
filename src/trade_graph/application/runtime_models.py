@@ -38,6 +38,7 @@ class RuntimeModelConfig(ContractModel):
     role_routes: dict[ModelRole, str] = Field(default_factory=dict)
     fx_rate: Decimal = Decimal("1")
     fx_buffer: Decimal = Decimal("1.02")
+    fx_rate_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("fx_rate", "fx_buffer")
     @classmethod
@@ -130,6 +131,11 @@ class RuntimeGateway(ModelGateway):
             raise AuthorityDenied("runtime cannot relabel paid provider work as synthetic")
         if request.provider != "scripted" and "http_fixture" in request.context:
             raise AuthorityDenied("runtime task cannot supply provider fixtures")
+        configured_id = self.router.config.fx_rate_id
+        if configured_id is not None and self.budget.card(kwargs["price_card_id"]).currency != "EUR":
+            if "fx_rate_id" in kwargs and kwargs["fx_rate_id"] != configured_id:
+                raise AuthorityDenied("invocation FX source differs from protected runtime configuration")
+            kwargs["fx_rate_id"] = configured_id
         return super().invoke(request, **kwargs)
 
     def _usage_is_priced(self, request: ModelRequest, result: ModelResult) -> bool:

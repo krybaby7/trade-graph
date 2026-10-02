@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.contracts.models import ModelUsage, PriceCard
-from trade_graph.domain.clock import Clock, utc_iso
+from trade_graph.domain.clock import Clock, parse_utc, utc_iso
 from trade_graph.domain.errors import BudgetExhausted, NotFound
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.pricing import usage_cost, worst_case_cost
@@ -128,11 +128,13 @@ class BudgetGateway:
         purpose: str,
         system_version_id: str = "",
         attempt_kind: str = "primary",
+        fx_rate_id: str | None = None,
     ) -> str:
         card = self.card(price_card_id)
         native = worst_case_cost(card, max_input, max_output, max_tools)
         if not fx_rate.is_finite() or fx_rate <= 0 or not fx_buffer.is_finite() or fx_buffer < 1:
             raise ValueError("FX must be positive and the reservation buffer at least one")
+        fx_source = self._fx_source(card.currency, fx_rate, fx_rate_id)
         amount = native * (Decimal("1") if card.currency == "EUR" else fx_rate) * fx_buffer
         reservation_id = str(uuid.uuid4())
         now = utc_iso(self.clock.now())
@@ -152,8 +154,8 @@ class BudgetGateway:
                 """INSERT INTO budget_reservations
                 (reservation_id, deployment_id, role, task_id, root_task_id, amount, currency,
                  state, price_card_id, purpose, synthetic, created_at, updated_at,
-                 system_version_id, attempt_kind)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?, ?)""",
+                 system_version_id, attempt_kind, fx_rate_id, fx_rate_value, fx_source_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     reservation_id,
                     deployment_id,
@@ -169,9 +171,33 @@ class BudgetGateway:
                     now,
                     system_version_id,
                     attempt_kind,
+                    fx_rate_id,
+                    canonical_decimal(Decimal("1") if card.currency == "EUR" else fx_rate),
+                    fx_source,
                 ),
             )
         return reservation_id
+
+    def _fx_source(self, native_currency: str, fx_rate: Decimal, rate_id: str | None) -> str | None:
+        """Bind an exact stored source before dispatch; never infer one by value."""
+        if rate_id is None:
+            return None
+        if type(rate_id) is not str or not 1 <= len(rate_id) <= 128 or native_currency == "EUR":
+            raise ValueError("FX source ID requires an exact cross-currency source")
+        row = self.database.execute("SELECT * FROM fx_rates WHERE rate_id=?", (rate_id,)).fetchone()
+        if row is None:
+            raise ValueError("FX source ID is not retained")
+        document = dict(row)
+        if (document["base"] != native_currency or document["quote"] != "EUR"
+                or Decimal(document["rate"]) != fx_rate or document["stale"] != 0
+                or not document["source"] or not document["kind"]
+                or any(parse_utc(document[name]) > self.clock.now()
+                       for name in ("observed_at", "valid_as_of", "retrieved_at"))):
+            raise ValueError("FX source pair, value or point-in-time availability mismatch")
+        raw = json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if len(raw.encode()) > 8192:
+            raise ValueError("FX source exceeds retained provenance bound")
+        return raw
 
     def _assert_task_room(self, conn, task_id, root_task_id, role, amount, synthetic) -> None:
         task = conn.execute('SELECT * FROM tasks WHERE task_id = ?', (task_id,)).fetchone()
@@ -204,6 +230,11 @@ class BudgetGateway:
         card = self.card(row["price_card_id"])
         if not fx_rate.is_finite() or fx_rate <= 0:
             raise ValueError("FX must be positive")
+        # The verified pre-dispatch source is retained even if somebody changes
+        # the source table while an external response is pending. Cost facts
+        # must survive; the collector independently detects that later drift.
+        if row["fx_rate_id"] is not None and Decimal(row["fx_rate_value"]) != fx_rate:
+            raise ValueError("FX conversion conflicts with the reserved source")
         native = usage_cost(card, usage)
         reporting = native if card.currency == "EUR" else native * fx_rate
         existing = self.database.execute("SELECT * FROM usage_receipts WHERE reservation_id = ?",
@@ -211,7 +242,9 @@ class BudgetGateway:
         if existing is not None:
             if (existing["status"] == "committed" and existing["provider"] == provider
                     and existing["model"] == model and existing["usage_json"] == usage.model_dump_json()
-                    and Decimal(existing["reporting_cost"]) == reporting):
+                    and Decimal(existing["reporting_cost"]) == reporting
+                    and existing["fx_rate_id"] == row["fx_rate_id"]
+                    and existing["fx_source_json"] == row["fx_source_json"]):
                 return existing["receipt_id"]
             raise ValueError("receipt conflict requires explicit reconciliation")
         if row["state"] not in {"RESERVED", "UNCERTAIN"}:
@@ -227,8 +260,9 @@ class BudgetGateway:
             conn.execute(
                 """INSERT INTO usage_receipts
                 (receipt_id, reservation_id, provider, provider_request_id, model, native_cost,
-                 native_currency, reporting_cost, reporting_currency, status, usage_json, synthetic, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EUR', 'committed', ?, ?, ?)""",
+                 native_currency, reporting_cost, reporting_currency, status, usage_json, synthetic, created_at,
+                 fx_rate_id, fx_rate_value, fx_source_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EUR', 'committed', ?, ?, ?, ?, ?, ?)""",
                 (
                     receipt_id,
                     reservation_id,
@@ -241,6 +275,9 @@ class BudgetGateway:
                     usage.model_dump_json(),
                     row["synthetic"],
                     now,
+                    row["fx_rate_id"],
+                    canonical_decimal(Decimal("1") if card.currency == "EUR" else fx_rate),
+                    row["fx_source_json"],
                 ),
             )
         return receipt_id
