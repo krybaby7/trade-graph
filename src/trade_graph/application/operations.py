@@ -10,6 +10,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -18,6 +19,7 @@ from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import date
 from pathlib import Path
+from time import monotonic
 from types import SimpleNamespace
 
 from trade_graph.adapters.models.providers import lookup_capabilities
@@ -316,8 +318,17 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def private_backup(database_path: Path | str, destination: Path | str) -> str:
+def private_backup(
+    database_path: Path | str, destination: Path | str, *, maximum_bytes: int | None = None,
+    wall_seconds: float | None = None,
+) -> str:
     """Publish a consistent private backup and checksum without overwriting history."""
+    if maximum_bytes is not None and (type(maximum_bytes) is not int or maximum_bytes <= 0):
+        raise ValueError("positive backup byte limit required")
+    if wall_seconds is not None and (isinstance(wall_seconds, bool) or not isinstance(wall_seconds, (int, float))
+                                     or not math.isfinite(wall_seconds) or wall_seconds <= 0):
+        raise ValueError("positive finite backup deadline required")
+    deadline = None if wall_seconds is None else monotonic() + wall_seconds
     source, destination = Path(database_path), Path(destination)
     checksum = destination.with_suffix(destination.suffix + ".sha256")
     if not source.is_file() or source.is_symlink():
@@ -334,10 +345,23 @@ def private_backup(database_path: Path | str, destination: Path | str) -> str:
             staged = Path(directory) / "snapshot.sqlite"
             staged.touch(mode=0o600)
             with _read_database(source) as database, closing(sqlite3.connect(staged)) as target:
-                database.connection.backup(target)
+                page_size = database.execute("PRAGMA page_size").fetchone()[0]
+
+                def progress(status, remaining, total):
+                    if deadline is not None and monotonic() >= deadline:
+                        raise ValueError("backup copy deadline exceeded")
+                    if maximum_bytes is not None and total * page_size > maximum_bytes:
+                        raise ValueError("backup exceeded its byte limit")
+
+                progress(0, 0, database.execute("PRAGMA page_count").fetchone()[0])
+                database.connection.backup(target, pages=128, progress=progress, sleep=0.01)
+                if deadline is not None:
+                    target.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
                 target.execute("PRAGMA journal_mode=DELETE")
                 if target.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                     raise ValueError("backup integrity check failed")
+            if maximum_bytes is not None and staged.stat().st_size > maximum_bytes:
+                raise ValueError("backup exceeded its byte limit")
             digest = hashlib.sha256(staged.read_bytes()).hexdigest()
             with staged.open("rb") as completed:
                 os.fsync(completed.fileno())

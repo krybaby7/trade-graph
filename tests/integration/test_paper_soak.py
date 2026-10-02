@@ -106,6 +106,11 @@ def test_synthetic_transport_soak_reports_pending_and_measures_requested_wall_wi
     assert result["requested_duration_completed"] is True
     assert Decimal(result["observed_duration_seconds"]) >= 1
     assert result["credentialed_provider_verification"] == "pending"
+    assert result["provider_transport_observation"] == "pending"
+    assert result["source_window"]["start"]["status"] == "observed"
+    assert result["source_window"]["end"]["status"] == "observed"
+    assert result["source_window"]["start"]["database_snapshot_sha256"] != result["source_window"]["end"][
+        "database_snapshot_sha256"]
     assert result["economic_evidence"] == "insufficient_evidence"
     assert result["live_enabled"] is False
     assert result["service"]["completed"] >= 1
@@ -128,6 +133,63 @@ def test_early_graceful_stop_is_interrupted_not_a_completed_duration(tmp_path, m
     assert result["requested_duration_completed"] is False
     assert result["credentialed_provider_verification"] == "pending"
     assert flow.transport.calls == []
+
+
+def test_cancelled_service_retains_interrupted_evidence_and_exact_source_window(tmp_path, monkeypatch):
+    flow = RuntimeFlow(tmp_path)
+
+    async def stopped(self):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("trade_graph.application.paper_soak.PaperService.run", stopped)
+    destination = tmp_path / "cancelled.json"
+    result = asyncio.run(run_funded_soak(runtime(flow), duration_seconds=60, report_path=destination))
+    assert result["status"] == "interrupted" and result["failure_type"] == "CancelledError"
+    assert json.loads(destination.read_text()) == result
+    assert result["source_window"]["start"]["status"] == "observed"
+    assert result["source_window"]["end"]["status"] == "observed"
+    assert result["credentialed_provider_verification"] == "pending"
+    assert flow.transport.calls == []
+
+
+def test_known_usage_request_id_and_transport_class_do_not_promote_wire_or_external_proof(tmp_path):
+    flow = RuntimeFlow(tmp_path)
+    flow.add("research")
+    flow.run("research")
+    report = expense_observations(runtime(flow), set(), set())
+    assert report["provider_receipts_with_known_usage"] == 1
+    assert report["protected_wire_linked_known_usage_receipts"] == 0
+    assert report["transport_observations"][0]["transport_basis"] == "unverified_transport"
+    assert report["external_provider_or_invoice_authenticated"] is False
+
+
+def test_protected_wire_metadata_links_to_known_receipt_and_excludes_prior_attempts(tmp_path, monkeypatch):
+    flow = RuntimeFlow(tmp_path)
+    flow.add("research")
+    flow.run("research")
+    # This is a retained synthetic fixture, not an authenticated paid request.
+    attempt = flow.db.execute("SELECT attempt_id FROM provider_transport_attempts").fetchone()[0]
+    flow.db.execute("""UPDATE provider_transport_attempts SET transport_basis='protected_httpx_observation',
+        outcome='HTTP_RESPONSE',response_sha256=? WHERE attempt_id=?""", ("1" * 64, attempt))
+    report = expense_observations(runtime(flow), set(), set())
+    assert report["protected_wire_linked_known_usage_receipts"] == 1
+    assert report["external_provider_or_invoice_authenticated"] is False
+    filtered = expense_observations(runtime(flow), set(), set(), {attempt})
+    assert filtered["protected_wire_linked_known_usage_receipts"] == 0
+    assert filtered["transport_observations"] == []
+
+    async def stopped(self):
+        flow.add("learning")
+        flow.run("learning")
+        flow.db.execute("""UPDATE provider_transport_attempts SET transport_basis='protected_httpx_observation',
+            outcome='HTTP_RESPONSE',response_sha256=?""", ("2" * 64,))
+        return {"ticks": 1, "stopped": True, "failures": []}
+
+    monkeypatch.setattr("trade_graph.application.paper_soak.PaperService.run", stopped)
+    result = asyncio.run(run_funded_soak(runtime(flow), duration_seconds=60, report_path=tmp_path / "wire.json"))
+    assert result["provider_transport_observation"] == "responses_observed_external_unverified"
+    assert result["credentialed_provider_verification"] == "pending"
+    assert len(result["expenses"]["transport_observations"]) == 1
 
 
 def test_service_start_failure_retains_private_failure_report_and_no_calls(tmp_path, monkeypatch):
