@@ -419,7 +419,7 @@ def test_append_only_storage_and_sealing_preserve_evidence(tmp_path):
     assert instance.report(declared.trial_id)["sample"]["blocks_observed"] == 2
 
 
-@pytest.mark.parametrize("amount", [0.1, "NaN", "Infinity", True, "0.0000000000000000001"])
+@pytest.mark.parametrize("amount", [0.1, "NaN", "Infinity", True, "0.0000000000000000001", "0e-999999999"])
 def test_financial_inputs_reject_floats_nonfinite_and_excess_precision(amount):
     with pytest.raises(ValidationError):
         protocol(capital_eur=amount)

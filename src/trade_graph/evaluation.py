@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from trade_graph.domain.money import canonical_decimal, parse_decimal
+from trade_graph.domain.money import canonical_decimal
+from trade_graph.evaluation_contracts import fixed_decimal
 
 
 def evaluate_forward(
@@ -20,8 +21,8 @@ def evaluate_forward(
             raise ValueError("decision counts must be integers")
     if independent_decisions < 0 or minimum_decisions <= 0:
         raise ValueError("counts require a nonnegative sample and positive minimum")
-    net_economic = parse_decimal(net_economic)
-    predeclared_hurdle = parse_decimal(predeclared_hurdle)
+    net_economic = fixed_decimal(net_economic)
+    predeclared_hurdle = fixed_decimal(predeclared_hurdle)
     if not costs_included:
         raise ValueError("failed and external costs must be included")
     return {

@@ -10,8 +10,18 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSeriali
 
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
+
+def fixed_decimal(value):
+    try:
+        parsed = parse_decimal(value)
+    except ArithmeticError as exc:
+        raise ValueError("invalid fixed-point decimal") from exc
+    if not -18 <= parsed.as_tuple().exponent <= 36:
+        raise ValueError("evaluation amounts require bounded fixed-point precision")
+    return parsed
+
 Amount = Annotated[
-    Decimal, BeforeValidator(parse_decimal), Field(max_digits=36, decimal_places=18),
+    Decimal, BeforeValidator(fixed_decimal), Field(max_digits=36, decimal_places=18),
     PlainSerializer(canonical_decimal, return_type=str),
 ]
 Fingerprint = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
