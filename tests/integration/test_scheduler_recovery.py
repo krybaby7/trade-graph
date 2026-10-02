@@ -268,7 +268,7 @@ def test_additive_migration_preserves_old_tasks_and_is_repeatable(tmp_path):
         database = Database(path)
         assert database.execute("SELECT attempts_used FROM tasks WHERE task_id = 'old'").fetchone()[0] == 1
         assert migrate.applied_versions(database.connection) == {
-            "0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009",
+            "0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010",
         }
         database.close()
     database = Database(path)

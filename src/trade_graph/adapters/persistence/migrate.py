@@ -7,6 +7,7 @@ import sqlite3
 from trade_graph.adapters.persistence.activation_schema import STATEMENTS as ACTIVATION_STATEMENTS
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
+from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS as PROTECTED_RUNTIME_STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
 from trade_graph.adapters.persistence.service_schema import STATEMENTS as SERVICE_STATEMENTS
 
@@ -423,6 +424,7 @@ STATEMENTS.append(("0006", ENGINEERING_STATEMENTS))
 STATEMENTS.append(("0007", ACTIVATION_STATEMENTS))
 STATEMENTS.append(("0008", DASHBOARD_STATEMENTS))
 STATEMENTS.append(("0009", SERVICE_STATEMENTS))
+STATEMENTS.append(("0010", PROTECTED_RUNTIME_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
