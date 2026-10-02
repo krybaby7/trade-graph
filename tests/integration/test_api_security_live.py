@@ -124,8 +124,9 @@ def test_live_gate_and_adapter_have_no_withdrawal(tmp_path) -> None:
             "economic_verdict": "insufficient_evidence",
         }
     )
-    assert diagnostic["enabled"] is True
-    assert diagnostic["diagnostic"] is True
+    assert diagnostic["enabled"] is False
+    assert diagnostic["diagnostic"] is False
+    assert diagnostic["status"] == "unverified_record"
     calls = []
 
     def transport(method: str, body: dict) -> dict:
