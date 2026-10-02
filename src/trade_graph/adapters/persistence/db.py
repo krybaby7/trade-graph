@@ -42,7 +42,30 @@ class Database:
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return getattr(self._local, "connection", None) or self._connection
+        return (getattr(self._local, "connection", None)
+                or getattr(self._local, "thread_connection", None) or self._connection)
+
+    @contextmanager
+    def thread_connection(self) -> Iterator[sqlite3.Connection]:
+        """Bind an idle connection to a worker thread without opening a transaction.
+
+        Application objects can share this Database while a synchronous model
+        handler runs alongside maintenance. Writer transactions and read snapshots
+        continue to bind their own connections for their usual short lifetimes.
+        """
+        active = getattr(self._local, "connection", None) or getattr(self._local, "thread_connection", None)
+        if active is not None:
+            yield active
+            return
+        connection = self._open()
+        self._local.thread_connection = connection
+        try:
+            yield connection
+        finally:
+            self._local.thread_connection = None
+            if connection.in_transaction:
+                connection.rollback()
+            connection.close()
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         return self.connection.execute(sql, params)

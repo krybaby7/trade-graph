@@ -1,0 +1,414 @@
+"""Actual fenced paper controller, database, broker and role-worker paths; no network."""
+
+import asyncio
+import json
+import multiprocessing
+import os
+import signal
+import threading
+from datetime import timedelta
+from decimal import Decimal
+
+import pytest
+from tests.integration.test_execution import _decision, _quote, _stack
+
+from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
+from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.execution import Execution
+from trade_graph.application.ledger import Ledger
+from trade_graph.application.paper_service import PaperService
+from trade_graph.application.scheduler import Scheduler
+from trade_graph.domain.clock import SystemClock
+from trade_graph.domain.errors import StaleState, ValidationFailure
+
+
+class Feed:
+    def __init__(self, *batches):
+        self.batches = list(batches)
+        self.closed = False
+
+    def poll(self):
+        batch = self.batches.pop(0) if self.batches else []
+        if isinstance(batch, Exception):
+            raise batch
+        return batch
+
+    def close(self):
+        self.closed = True
+
+
+def test_tick_runs_durable_schedules_and_coalesces_restart(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    seen = []
+    service = PaperService(ledger.database, execution, handlers={"research": lambda task: seen.append(task) or {}},
+                           schedule_intervals={"research": 60})
+
+    async def scenario():
+        result = await service.tick(wait_roles=True)
+        assert result.completed == result.scheduled == 1
+        assert result.failures == ()
+        assert seen[0]["role"] == "research"
+        assert seen[0]["snapshot_id"]
+        assert (await service.tick(wait_roles=True)).scheduled == 0
+        await service.stop()
+        clock.advance(60 * 100)
+        replacement = PaperService(ledger.database, execution,
+                                   handlers={"research": lambda task: seen.append(task) or {}},
+                                   schedule_intervals={"research": 60})
+        assert (await replacement.tick(wait_roles=True)).scheduled == 1
+        assert (await replacement.tick(wait_roles=True)).scheduled == 0
+        await replacement.stop()
+
+    asyncio.run(scenario())
+    assert len(seen) == 2
+    assert broker.submit_count == 0
+    assert ledger.database.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 2
+    assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+
+def test_single_queued_occurrence_does_not_accumulate_during_slow_role(tmp_path):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish = threading.Event(), threading.Event()
+
+    def slow(task):
+        entered.set()
+        assert finish.wait(5)
+        return {}
+
+    service = PaperService(ledger.database, execution, handlers={"research": slow},
+                           schedule_intervals={"research": 1}, role_ttl_seconds=100)
+
+    async def scenario():
+        await service.tick()
+        assert await asyncio.to_thread(entered.wait, 5)
+        clock.advance(10)
+        assert (await service.tick()).scheduled == 0
+        assert ledger.database.execute("SELECT count(*) FROM tasks").fetchone()[0] == 1
+        finish.set()
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert ledger.database.execute("SELECT status FROM tasks").fetchone()[0] == "SUCCEEDED"
+
+
+def test_execution_reconciles_unknown_on_restart_without_resubmission(tmp_path):
+    clock, ledger, execution, drop, portfolio = _stack(tmp_path, lambda db, clk: DropAckBroker(PaperBroker(db, clk)))
+    execution.save_observation(_quote(clock, "99", "100"))
+    intent = execution.authorize(portfolio, _decision(clock, portfolio))
+    asyncio.run(execution.dispatch())
+    assert execution.intent_state(intent) == "UNKNOWN"
+    clock.advance(1)
+    # Matching has happened in the broker, but process died before recording its fill.
+    drop.inner.match(_quote(clock, "99", "100", observation_id="lost-fill"))
+    database = Database(ledger.database.path)
+    replacement_broker = PaperBroker(database, clock)
+    replacement = Execution(database, Ledger(database, clock), clock, replacement_broker)
+    service = PaperService(database, replacement, schedule_intervals={})
+
+    async def scenario():
+        await service.start()
+        assert replacement.intent_state(intent) == "FILLED"
+        assert replacement.owned_quantity(portfolio, "BTC") == Decimal("0.01")
+        await service.tick()
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert drop.inner.submit_count == 1
+    assert replacement_broker.submit_count == 0
+    assert database.execute("SELECT count(*) FROM fills").fetchone()[0] == 1
+    assert database.execute("SELECT count(*) FROM position_reservations WHERE state = 'held'").fetchone()[0] == 0
+    database.close()
+
+
+def test_failure_does_not_stop_paused_position_protection(tmp_path):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    execution.save_observation(_quote(clock, "99", "100", observation_id="entry"))
+    execution.authorize(portfolio, _decision(clock, portfolio))
+    asyncio.run(execution.dispatch())
+    clock.advance(1)
+    execution.on_observation(_quote(clock, "99", "100", observation_id="fill-entry"))
+    ledger.observe_mark(portfolio, "BTC", Decimal("100"), "USD", source="fixture")
+    protection = execution.place_protection(portfolio, "BTC/USD", Decimal("0.01"), Decimal("90"), "snapshot")
+    asyncio.run(execution.dispatch())
+
+    def fail(task):
+        raise ValueError("model provider refused")
+
+    service = PaperService(ledger.database, execution, handlers={"trader": fail},
+                           schedule_intervals={"trader": 60})
+
+    async def scenario():
+        assert (await service.tick(wait_roles=True)).completed == 1
+        assert execution.pause(portfolio)["profile"] == "MANAGE_ONLY"
+        clock.advance(1)
+        service.public_feed = Feed([_quote(clock, "80", "81", observation_id="stop")])
+        result = await service.tick(wait_feed=True, wait_roles=True)
+        assert result.observations == 1
+        assert execution.intent_state(protection) == "FILLED"
+        assert execution.owned_quantity(portfolio, "BTC") == 0
+        assert result.scheduled == 0
+        await service.stop()
+
+    asyncio.run(scenario())
+    failed = ledger.database.execute("SELECT * FROM tasks WHERE role = 'trader'").fetchone()
+    assert failed["status"] == "FAILED"
+    assert json.loads(failed["output_json"])["reason"] == "ValueError"
+    assert ledger.database.execute("SELECT count(*) FROM secretary_reports WHERE kind = 'failed'").fetchone()[0] == 1
+
+
+def test_software_secretary_keeps_owner_halt_and_routes_material_evidence_once(tmp_path):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    service = PaperService(ledger.database, execution, handlers={"leader": lambda task: {}}, schedule_intervals={})
+    ledger._activity(portfolio, "execution_failed", {"synthetic": True})
+
+    async def scenario():
+        execution.set_pause(portfolio, "MANAGE_ONLY", "owner", "owner halt")
+        await service.tick(wait_roles=True)
+        assert ledger.database.execute("SELECT count(*) FROM secretary_reports").fetchone()[0] == 1
+        assert ledger.database.execute("SELECT count(*) FROM tasks").fetchone()[0] == 0
+        assert execution.pause(portfolio)["originator"] == "owner"
+        execution.set_pause(portfolio, "RUNNING", "owner", "resume")
+        # New material event creates one current route; already-digested halted
+        # reports remain available in the digest and periodic review.
+        ledger._activity(portfolio, "execution_failed", {"synthetic": True, "next": True})
+        await service.tick(wait_roles=True)
+        await service.tick(wait_roles=True)
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert ledger.database.execute("SELECT count(*) FROM tasks WHERE role = 'leader'").fetchone()[0] == 1
+
+
+def test_feed_failure_blocks_increases_but_still_manages_orders(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    execution.save_observation(_quote(clock, "99", "100"))
+    intent = execution.authorize(portfolio, _decision(clock, portfolio))
+    feed = Feed(OSError("offline"), [_quote(clock, "99", "100", observation_id="next")])
+    service = PaperService(ledger.database, execution, public_feed=feed, schedule_intervals={})
+
+    async def scenario():
+        result = await service.tick(wait_feed=True)
+        assert result.failures == ("feed:OSError",)
+        assert broker.submit_count == 0
+        assert execution.intent_state(intent) == "SUBMISSION_PENDING"
+        assert execution.blocks_increase("BTC/USD")
+        clock.advance(1)
+        assert (await service.tick(wait_feed=True)).failures == ()
+        assert broker.submit_count == 1
+        assert not execution.blocks_increase("BTC/USD")
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert feed.closed
+
+
+def test_future_feed_input_is_rejected_and_does_not_refresh_market(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    observation = _quote(clock, "99", "100").model_copy(update={
+        "event_time_utc": clock.now() + timedelta(hours=1),
+    })
+    service = PaperService(ledger.database, execution, public_feed=Feed([observation]), schedule_intervals={})
+
+    async def scenario():
+        result = await service.tick(wait_feed=True)
+        assert result.failures == ("feed:ValidationFailure",)
+        await service.stop()
+
+    asyncio.run(scenario())
+    assert ledger.database.execute("SELECT count(*) FROM observations").fetchone()[0] == 0
+    assert broker.submit_count == 0
+
+
+def test_feed_local_sequence_reuse_survives_restart(tmp_path):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+
+    async def scenario():
+        for price in ("99", "100"):
+            feed = Feed([_quote(clock, price, "101", observation_id="feed-sequence-1")])
+            service = PaperService(ledger.database, execution, public_feed=feed, schedule_intervals={})
+            await service.tick(wait_feed=True)
+            await service.stop()
+            clock.advance(1)
+
+    asyncio.run(scenario())
+    assert ledger.database.execute("SELECT count(*) FROM observations").fetchone()[0] == 2
+    assert execution.latest_observation("BTC/USD", execution.now()).bid == Decimal("100")
+
+
+def test_flock_blocks_aliases_even_after_persisted_lease_expiry(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    service = PaperService(ledger.database, execution, schedule_intervals={})
+    alias = tmp_path / "hardlink.sqlite"
+    os.link(ledger.database.path, alias)
+    # Opening another Database via a hardlink could create independent SQLite WAL
+    # sidecars. Only open an OS file here: same-inode flock must still conflict.
+    import fcntl
+
+    async def scenario():
+        await service.start()
+        ledger.database.execute("UPDATE process_leases SET expires_at = '2000-01-01T00:00:00.000000Z'")
+        contender = PaperService(ledger.database, execution, schedule_intervals={})
+        with pytest.raises(StaleState, match="another paper service"):
+            await contender.start()
+        descriptor = os.open(alias, os.O_RDONLY)
+        try:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(descriptor)
+        await service.stop()
+        await contender.start()
+        await contender.stop()
+
+    asyncio.run(scenario())
+    assert broker.submit_count == 0
+
+
+def test_startup_recovers_previous_boot_lease_before_controller_work(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    scheduler = Scheduler(ledger.database, clock)
+    previous = "paper-service-crashed-boot"
+    assert scheduler.acquire_process_lease("paper-service", previous)
+    assert scheduler.acquire_process_lease("role-worker", previous)
+    evidence = []
+    service = PaperService(ledger.database, execution, schedule_intervals={}, recover_commands=lambda: evidence.append(
+        ledger.database.execute("SELECT owner FROM process_leases WHERE lease_name='paper-service'").fetchone()[0],
+    ))
+    asyncio.run(service.run(max_ticks=1))
+    assert evidence == [service.owner]
+    assert broker.submit_count == 0
+
+
+def test_startup_never_reclaims_an_unrelated_role_worker(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    scheduler = Scheduler(ledger.database, clock)
+    scheduler.acquire_process_lease("role-worker", "unrelated-worker")
+    service = PaperService(ledger.database, execution, schedule_intervals={})
+    with pytest.raises(StaleState, match="persisted lease"):
+        asyncio.run(service.start())
+    assert ledger.database.execute("SELECT owner FROM process_leases").fetchone()[0] == "unrelated-worker"
+
+
+def _slow_child(path, entered, finish):
+    database = Database(path)
+    clock = SystemClock()
+    execution = Execution(database, Ledger(database, clock), clock, PaperBroker(database, clock))
+
+    def slow(task):
+        entered.set()
+        if not finish.wait(10):
+            raise AssertionError("test did not release synthetic handler")
+        return {"done": True}
+
+    service = PaperService(database, execution, handlers={"research": slow}, schedule_intervals={},
+                           role_ttl_seconds=1, tick_interval_seconds=0.02)
+    try:
+        asyncio.run(service.run())
+    finally:
+        database.close()
+
+
+def test_slow_synchronous_role_renews_lease_and_drains_sigterm(tmp_path):
+    _clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    scheduler = Scheduler(ledger.database, SystemClock())
+    task_id = scheduler.add_task(role="research", objective="synthetic slow inference", portfolio_id=portfolio)
+    context = multiprocessing.get_context("spawn")
+    entered, finish = context.Event(), context.Event()
+    child = context.Process(target=_slow_child, args=(ledger.database.path, entered, finish))
+    child.start()
+    try:
+        assert entered.wait(8)
+        # More than one lease TTL elapses during a blocked synchronous handler.
+        assert not finish.wait(1.3)
+        row = ledger.database.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+        assert row["status"] == "RUNNING"
+        assert row["lease_expires_at"] > Scheduler(ledger.database, SystemClock()).now()
+        contender = PaperService(ledger.database, execution, schedule_intervals={})
+        with pytest.raises(StaleState, match="another paper service"):
+            asyncio.run(contender.start())
+        os.kill(child.pid, signal.SIGTERM)
+        child.join(timeout=0.2)
+        assert child.is_alive()  # A real paid attempt would retain its fence while draining.
+        finish.set()
+        child.join(timeout=8)
+        assert child.exitcode == 0
+    finally:
+        finish.set()
+        if child.is_alive():
+            child.terminate()
+            child.join(timeout=3)
+    row = ledger.database.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    assert row["status"] == "SUCCEEDED"
+    assert row["attempts_used"] == 1
+    assert ledger.database.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1
+    assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+
+def test_market_poll_does_not_block_reconciliation_while_waiting(tmp_path):
+    clock, ledger, execution, broker, portfolio = _stack(tmp_path)
+    entered, finish = threading.Event(), threading.Event()
+
+    class SlowFeed(Feed):
+        def poll(self):
+            entered.set()
+            assert finish.wait(5)
+            return []
+
+    service = PaperService(ledger.database, execution, public_feed=SlowFeed(), schedule_intervals={})
+    execution.set_pause(portfolio, "MANAGE_ONLY", "owner", "manage during feed outage")
+
+    async def scenario():
+        assert (await service.tick()).management[portfolio] == "managing"
+        assert await asyncio.to_thread(entered.wait, 5)
+        result = await asyncio.wait_for(service.tick(), timeout=1)
+        assert result.management[portfolio] == "managing"
+        finish.set()
+        await service.stop()
+
+    asyncio.run(scenario())
+
+
+def test_service_loads_activated_bytes_and_keeps_receipt_provenance(tmp_path, monkeypatch):
+    from tests.integration.test_artifact_consumers import NEW_PROMPT, _consumer_flow
+
+    flow = _consumer_flow(tmp_path, schedule=True)
+    flow.bind_consumer()
+    requests = []
+    complete = flow.gateway.scripted.complete
+
+    def capture(request):
+        requests.append(request)
+        return complete(request)
+
+    monkeypatch.setattr(flow.gateway.scripted, "complete", capture)
+    # The prior fixture worker finished commissioning before the controller starts.
+    flow.db.execute("DELETE FROM process_leases")
+    service = PaperService(flow.db, flow.office.execution, handlers={"trader": flow.handler},
+                           artifact_runtime=flow.runtime, secretary=flow.secretary,
+                           schedule_intervals={"trader": 14400})
+
+    async def scenario():
+        result = await service.tick(wait_roles=True)
+        assert result.scheduled == 1
+        assert result.completed == 1
+        assert result.failures == ()
+        await service.stop()
+
+    asyncio.run(scenario())
+    task = flow.db.execute("SELECT * FROM tasks WHERE role='trader'").fetchone()
+    assert task["status"] == "SUCCEEDED", task["output_json"]
+    snapshot = json.loads(flow.db.execute(
+        "SELECT payload_json FROM snapshots WHERE json_extract(payload_json, '$.task_id') = ?", (task["task_id"],),
+    ).fetchone()[0])
+    assert NEW_PROMPT in requests[0].instructions
+    assert snapshot["artifact"]["artifact_hash"] == flow.versions.current_hash(flow.pid)
+    assert flow.receipts(task["task_id"])[0]["system_version_id"] == snapshot["artifact"]["artifact_hash"]
+
+
+@pytest.mark.parametrize("options", [{"tick_interval_seconds": 0}, {"role_ttl_seconds": True},
+                                    {"schedule_intervals": {"engineer": 1}}])
+def test_invalid_service_configuration_fails_before_startup(tmp_path, options):
+    _clock, ledger, execution, _broker, _portfolio = _stack(tmp_path)
+    with pytest.raises(ValidationFailure):
+        PaperService(ledger.database, execution, **options)
+    assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
