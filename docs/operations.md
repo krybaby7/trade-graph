@@ -247,6 +247,12 @@ does not certify every role/provider, invoice reconciliation, current venue
 conditions or economic support. The report always labels `economic_evidence`
 as `insufficient_evidence`.
 
+Recorded service failures produce a degraded report and nonzero exit status even
+when the requested window completes. If expense extraction fails, the interrupted
+report keeps `expenses: null` and an explicit unavailable diagnostic; it does not
+replace missing accounting with zero spend. Preserve that report and the database
+for local recovery before another funded observation.
+
 T17's actual current-public-data verification and funded credentialed soak are
 still pending. T18's [forward-evaluation machinery](FORWARD-EVALUATION.md) is
 partial preparation: preregister untouched fixed forward blocks and baselines,
