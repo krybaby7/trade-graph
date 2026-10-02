@@ -149,10 +149,11 @@ preregistration, real source provenance or uncertainty.
   trial/expense exports and venue differences, collect the untouched forward
   blocks and review independence/regime assumptions. The software/tests are
   preparation, not completion of this observation-dependent task.
-- T19's original Kraken adapter is a wire fixture: metadata, open orders and
-  fills return empty data and authenticated transport/conformance are absent.
-  Complete normalized metadata/fees/order/fill mapping and read-only
-  reconciliation first. Actual authenticated checks need owner-selected venue,
+- T19 now has normalized Kraken metadata, native fees, orders, balances and
+  bounded fill history, plus a protected REST transport. The
+  [adapter review](reviews/2026-10-02-kraken-foundation.md) records official
+  source evidence, synthetic conformance and unresolved wire/accounting limits.
+  Actual authenticated checks need owner-selected venue,
   eligibility and permitted least-privilege credentials. Real-order testing
   requires separate explicit owner authority.
 - T20 stays closed pending T18/T19 plus eligibility, explicit owner loss-capital
@@ -160,12 +161,12 @@ preregistration, real source provenance or uncertainty.
   readiness and a deliberate owner enablement record. USD10,000 paper capital
   cannot establish live allocation. Caller-supplied booleans in a fixture gate
   are not verified prerequisite evidence.
-- T21 is dependency-ready after T14/T16, but its same-UID process protocol
-  fixture and AST denylist do not separate the production kernel. Implement an
-  independently pinned kernel/controller with scoped authenticated RPC and an
-  unprivileged OS-enforced mutable runtime; test host-files, inherited
-  descriptors, credentials, network, resource limits and independent rollback
-  on the intended deployment host before claiming A39/A40.
+- T21 is dependency-ready after T14/T16. Its new
+  [owner-pinned process scaffold](PROCESS-BOUNDARY.md) confines arbitrary Python
+  before parsing candidate input and has actual-host synthetic adversarial
+  evidence. The production financial kernel, gateway and controller still need
+  extraction, authenticated durable business RPC, immutable owner-pinned images
+  and deployment-host protection/recovery tests before claiming A39/A40.
 - T22 requires T18 and demonstrated T21 plus an owner-granted broader class,
   then pure-plugin capability/determinism checks, immutable staging/build
   artifacts, compatible migrations and controller-driven rollout/rollback.
