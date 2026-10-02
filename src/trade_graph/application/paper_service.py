@@ -206,6 +206,9 @@ class PaperService:
                 self._heartbeat_task.cancel()
                 await asyncio.gather(self._heartbeat_task, return_exceptions=True)
                 self._heartbeat_task = None
+            pending = tuple(self._pending_operations)
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             if self.execution.blocks_increase == self._blocks_increase:
                 self.execution.blocks_increase = self._old_gate
             self._release()
@@ -394,12 +397,32 @@ class PaperService:
                 self._observations_total += 1
         return len(observations)
 
-    async def _wait_for_work(self, task: asyncio.Task):
+    async def _wait_for_work(self, task: asyncio.Task, *, maintenance_errors: list[Exception] | None = None):
         """Drain blocking work while keeping financial maintenance alive."""
+        maintenance_error = None
         while not task.done():
-            await self._offload(self._management)
+            try:
+                await self._offload(self._management)
+            except Exception as exc:
+                # A failed storage connection cannot cancel an external attempt
+                # or release its ownership. Retain the error and keep draining;
+                # later maintenance attempts may recover position management.
+                if maintenance_error is None:
+                    maintenance_error = exc
+                self.request_stop()
             await asyncio.wait({task}, timeout=self.tick_interval_seconds)
-        return task.result()
+        if maintenance_error is not None and maintenance_errors is not None:
+            maintenance_errors.append(maintenance_error)
+        try:
+            result = task.result()
+        except Exception as exc:
+            if maintenance_error is not None and maintenance_errors is None:
+                maintenance_error.add_note("Additional work error: " + type(exc).__name__)
+                raise maintenance_error from exc
+            raise
+        if maintenance_error is not None and maintenance_errors is None:
+            raise maintenance_error
+        return result
 
     async def tick(self, *, wait_roles: bool = False, wait_feed: bool = False) -> TickResult:
         await self.start()
@@ -419,14 +442,17 @@ class PaperService:
             if self._feed_task is None:
                 self._feed_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.public_feed.poll))
             if wait_feed or self._feed_task.done():
+                maintenance_errors: list[Exception] = []
                 try:
-                    emitted = await self._wait_for_work(self._feed_task)
+                    emitted = await self._wait_for_work(self._feed_task, maintenance_errors=maintenance_errors)
                     observations = await self._offload(self._ingest, emitted)
                     self._feed_failed = False
                 except Exception as exc:
                     self._feed_failed = True
                     failures.append("feed:" + type(exc).__name__)
                 self._feed_task = None
+                if maintenance_errors:
+                    raise maintenance_errors[0]
         management, management_failures = await self._offload(self._management)
         failures.extend(management_failures)
         scheduled = 0
@@ -503,7 +529,7 @@ class PaperService:
 
     async def _shutdown(self) -> None:
         self._stopping = True
-        worker_error = None
+        errors: list[Exception] = []
         try:
             if self._start_task and not self._start_task.done():
                 await asyncio.gather(self._start_task, return_exceptions=True)
@@ -512,41 +538,61 @@ class PaperService:
             async with self._tick_lock:
                 pending = tuple(self._pending_operations)
                 if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+                    results = await asyncio.gather(*pending, return_exceptions=True)
+                    errors.extend(result for result in results if isinstance(result, Exception))
             # Keep reconciliation and task-lease renewal running while any paid
             # call drains. Releasing the flock early would allow duplicate work.
             if self._role_task:
                 try:
-                    await self._wait_for_work(self._role_task)
+                    await self._wait_for_work(self._role_task, maintenance_errors=errors)
                 except Exception as exc:
                     # A failed claim/storage operation must not abandon another
                     # still-running feed thread before it releases ownership.
-                    worker_error = exc
+                    errors.append(exc)
                 self._role_task = None
             if self._feed_task:
                 try:
-                    emitted = await self._wait_for_work(self._feed_task)
+                    emitted = await self._wait_for_work(self._feed_task, maintenance_errors=errors)
                     await self._offload(self._ingest, emitted)
                     self._feed_failed = False
-                except Exception:
+                except Exception as exc:
                     self._feed_failed = True
+                    errors.append(exc)
                 self._feed_task = None
             close = getattr(self.public_feed, "close", None)
             if close:
                 close_task = asyncio.create_task(asyncio.to_thread(self._thread_call, close))
-                await self._wait_for_work(close_task)
+                try:
+                    await self._wait_for_work(close_task, maintenance_errors=errors)
+                except Exception as exc:
+                    errors.append(exc)
             if self._ready:
-                await self._offload(self._management)
+                try:
+                    await self._offload(self._management)
+                except Exception as exc:
+                    errors.append(exc)
         finally:
             self._started = False
             self._ready = False
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
-                await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+                results = await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+                errors.extend(result for result in results if isinstance(result, Exception))
                 self._heartbeat_task = None
+            # Cancelling the heartbeat leaves its shielded storage operation
+            # alive. Drain that final operation before dropping the OS fence.
+            pending = tuple(self._pending_operations)
+            if pending:
+                results = await asyncio.gather(*pending, return_exceptions=True)
+                errors.extend(result for result in results if isinstance(result, Exception))
             if self.execution.blocks_increase == self._blocks_increase:
                 self.execution.blocks_increase = self._old_gate
-            self._release()
+            try:
+                self._release()
+            except Exception as exc:
+                errors.append(exc)
             self._stopping = False
-        if worker_error is not None:
-            raise worker_error
+        if errors:
+            for error in errors[1:]:
+                errors[0].add_note("Additional shutdown error: " + type(error).__name__)
+            raise errors[0]

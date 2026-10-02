@@ -580,6 +580,124 @@ def test_failed_worker_task_still_drains_feed_before_releasing_process_fence(tmp
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("blocked_work", ["role", "feed", "close"])
+def test_failed_maintenance_retains_fence_until_blocking_work_and_cleanup_finish(tmp_path, monkeypatch, blocked_work):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    entered, finish, maintenance_failed = threading.Event(), threading.Event(), threading.Event()
+
+    def blocked():
+        entered.set()
+        assert finish.wait(5)
+
+    def role(task):
+        blocked()
+        return {}
+
+    class SlowFeed(Feed):
+        def poll(self):
+            if blocked_work == "feed":
+                blocked()
+                return [_quote(clock, "99", "100", observation_id="drained-feed")]
+            return []
+
+        def close(self):
+            if blocked_work == "close":
+                blocked()
+            super().close()
+            if blocked_work == "role":
+                raise ValueError("later feed cleanup failure")
+
+    feed = SlowFeed()
+    service = PaperService(ledger.database, execution, public_feed=feed,
+                           handlers={"research": role} if blocked_work == "role" else {},
+                           schedule_intervals={"research": 60} if blocked_work == "role" else {},
+                           tick_interval_seconds=0.02)
+
+    def unavailable_management():
+        maintenance_failed.set()
+        raise OSError("management storage unavailable")
+
+    async def scenario():
+        await service.tick()
+        if blocked_work != "close":
+            assert await asyncio.to_thread(entered.wait, 5)
+        monkeypatch.setattr(service, "_management", unavailable_management)
+        shutdown = asyncio.create_task(service.stop())
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            assert await asyncio.to_thread(maintenance_failed.wait, 5)
+            assert not shutdown.done()
+            contender = PaperService(ledger.database, execution, schedule_intervals={})
+            with pytest.raises(StaleState, match="another paper service"):
+                await contender.start()
+        finally:
+            finish.set()
+        with pytest.raises(OSError, match="management storage") as error:
+            await shutdown
+        if blocked_work == "role":
+            assert any("ValueError" in note for note in error.value.__notes__)
+        assert feed.closed
+        assert service._lock_fd is None
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+    if blocked_work == "role":
+        assert ledger.database.execute("SELECT status FROM tasks").fetchone()[0] == "SUCCEEDED"
+    if blocked_work == "feed":
+        assert ledger.database.execute("SELECT count(*) FROM observations").fetchone()[0] == 1
+
+
+def test_shutdown_drains_heartbeat_storage_started_while_role_is_draining(tmp_path, monkeypatch):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    role_entered, role_finish = threading.Event(), threading.Event()
+    drain_entered, heartbeat_entered, heartbeat_finish = threading.Event(), threading.Event(), threading.Event()
+
+    def role(task):
+        role_entered.set()
+        assert role_finish.wait(5)
+        return {}
+
+    service = PaperService(ledger.database, execution, handlers={"research": role},
+                           schedule_intervals={"research": 60}, role_ttl_seconds=1, tick_interval_seconds=0.02)
+    heartbeat, management = service._heartbeat_once, service._management
+
+    def blocked_heartbeat():
+        heartbeat_entered.set()
+        assert heartbeat_finish.wait(5)
+        heartbeat()
+
+    def draining_management():
+        drain_entered.set()
+        return management()
+
+    async def scenario():
+        await service.tick()
+        assert await asyncio.to_thread(role_entered.wait, 5)
+        monkeypatch.setattr(service, "_management", draining_management)
+        shutdown = asyncio.create_task(service.stop())
+        try:
+            # Management during role drain proves the first pending-operation
+            # snapshot has completed before the next heartbeat offload starts.
+            assert await asyncio.to_thread(drain_entered.wait, 5)
+            monkeypatch.setattr(service, "_heartbeat_once", blocked_heartbeat)
+            assert await asyncio.to_thread(heartbeat_entered.wait, 5)
+            role_finish.set()
+            await asyncio.sleep(0.05)
+            assert not shutdown.done()
+            contender = PaperService(ledger.database, execution, schedule_intervals={})
+            with pytest.raises(StaleState, match="another paper service"):
+                await contender.start()
+        finally:
+            role_finish.set()
+            heartbeat_finish.set()
+        await shutdown
+        assert service._pending_operations == set()
+        assert service._lock_fd is None
+        assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
+
+    asyncio.run(scenario())
+
+
 def test_artifact_leader_cadence_keeps_digest_and_current_owner_attempt_bound(tmp_path):
     clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
     authority = AuthorityRecord(ledger.database, clock)
