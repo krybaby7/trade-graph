@@ -206,7 +206,12 @@ For non-EUR cards, explicitly set `models.fx_rate` to the verified native-to-EUR
 conversion as a Decimal string and `models.fx_buffer` to the chosen conservative
 buffer of at least one. The default rate of one represents identity conversion;
 it is not a USD/EUR quote. This operating-cost conversion is separate from the
-sourced portfolio-valuation FX ledger. Configuration supports at most 32 approved
+sourced portfolio-valuation FX ledger. `models.fx_rate_id` can bind the conversion
+to an exact persisted dated FX source; the protected gateway freezes the source
+bytes and value before dispatch and retains that link on the receipt. Legacy
+numeric-only conversions remain explicitly unlinked and cannot supply authenticated
+cost-source evidence. A retained FX record still requires publisher corroboration
+for external provenance. Configuration supports at most 32 approved
 card IDs, 50 imported cards and 10 paper symbols, within a 262,144-byte private
 file. Card IDs/prices, private routing and credential injection remain protected;
 approved routing artifacts select existing card IDs and cannot introduce prices,
@@ -254,17 +259,25 @@ The soak report includes requested/observed duration and whether the window
 completed, service/failure observations, task/version/price-card attempt
 attribution, known actual EUR accrued expenses, synthetic accruals, estimated or
 unresolved accruals/reservations, and the forecast upper bound for the dispatched
-requests. Forecasts use persisted request limits, immutable cards and configured
-conservative FX; they are not invoices. Unknown usage remains unresolved and
-reserved. `credentialed_provider_verification` can remain `pending`, become
-`unresolved_billing`, or record `responses_observed` when the real transport
-retains known-usage provider receipts. A zero exit status or `status: recorded`
+requests. Forecasts use persisted request limits, immutable cards, frozen linked
+FX values where available and the configured conservative buffer; legacy FX
+falls back to the configured conversion. They are not invoices. Unknown usage
+remains unresolved and reserved. The report binds start/end cutoffs to exact bounded
+private SQLite snapshot digests and retains newly observed protected transport
+attempts with endpoint/request/response hashes, timestamps and receipt links.
+Pre-existing attempts are excluded from the observation's wire count.
+`provider_transport_observation` can record `responses_observed_external_unverified`
+when complete wire observations link to known-usage receipts. Native request IDs,
+credential presence, transport classes and local signing do not authenticate the
+provider, billing or invoice. `credentialed_provider_verification` remains
+`pending`, `unresolved_billing` or `unavailable`. A zero exit status or `status: recorded`
 does not certify every role/provider, invoice reconciliation, current venue
 conditions or economic support. The report always labels `economic_evidence`
 as `insufficient_evidence`.
 
 Recorded service failures produce a degraded report and nonzero exit status even
-when the requested window completes. If expense extraction fails, the interrupted
+when the requested window completes. Cancellation retains an interrupted report.
+If expense extraction fails, the interrupted
 report keeps `expenses: null` and an explicit unavailable diagnostic; it does not
 replace missing accounting with zero spend. Preserve that report and the database
 for local recovery before another funded observation.
@@ -329,6 +342,72 @@ Stop the unit before restore, and disable automatic restart while investigating:
 ```bash
 sudo systemctl stop trade-graph-paper.service
 ```
+
+## Retained host and funding preflight facts
+
+The fact-only `HostObservationCollector` reads an existing paper database and
+private runtime configuration without migrating, creating a budget, changing
+owner permissions or calling a paid provider. It lists missing configuration,
+owner paid permission, real allowance, current approved role routes, selected
+credential-variable presence and pause/resume prerequisites. Credential and
+proxy values never enter the report. Missing sources remain pending or unavailable.
+
+Run this on the workspace for preparation, and repeat on the owner-designated
+deployment host when it is available. Use fresh private evidence/key names:
+
+```bash
+umask 077
+uv run python - <<'PY'
+import json
+import os
+from pathlib import Path
+from trade_graph.application.operations_evidence import HostObservationCollector
+
+key = os.urandom(32)
+with Path("runtime/operations-observation-new.key").open("xb") as handle:
+    os.fchmod(handle.fileno(), 0o600)
+    handle.write(key)
+collector = HostObservationCollector(
+    "runtime/trade_graph.sqlite", signing_key=key,
+    config_path="runtime/paper-runtime.private.json",
+)
+retained = collector.capture(
+    "runtime/host-observation-new.json", backup_restore=True, public_data=False,
+)
+verified = collector.verify(retained.path, retained.sha256)
+print(json.dumps({"sha256": retained.sha256,
+                  "checks": {name: check["status"]
+                             for name, check in verified.document["checks"].items()}}))
+PY
+```
+
+The backup/restore drill creates new private copies beside the report and compares
+their complete financial projections. It does not restore over the operating
+database. Database snapshots/copies are capped at 16 MiB; SQLite queries have a
+five-second progress deadline, backup copy/verification uses a ten-second progress
+deadline, and the fixed systemd status probe has bounded output and a five-second
+process deadline. Filesystem operations and blocked SQLite/network phases can
+extend elapsed collection time. Optional `public_data=True` makes only three
+bounded official public GETs through the configured proxy and validates their
+actual response pair/date/schema. It creates no portfolio observations and proves
+neither current executable books nor funded-provider availability.
+
+The report retains timestamps, actual installation fingerprint, exact stored
+owner-policy hash, selected artifact hash, configuration/DB snapshot digests and
+protected source/interpreter identities. Verification rechecks those sources,
+filesystem permissions/inodes, any observed service state and retained
+backup/restore bytes/checksums/projections. Changed sources invalidate the record;
+a change during collection is retained as refused evidence. A verified document
+returns a separate dictionary on each access to preserve its authenticated bytes.
+
+The local key authenticates collector output only. An installation fingerprint is
+not machine attestation. A loaded active systemd unit does not prove that its
+configuration uses the observed DB/config or an owner-pinned release. Intended
+host, unit binding/restart reconciliation, immutable image/mounts, off-host recovery
+and actual alert delivery require separately retained deployment facts. This
+collector preserves those missing claims; local recovery copies and workspace
+process checks cannot satisfy them. The [second T17 gate review](reviews/2026-10-02-t17-gates-r2.md)
+records actual setup/proxy outcomes and the remaining owner/host inputs.
 
 ## Consistent private backups
 
