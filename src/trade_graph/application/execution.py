@@ -64,7 +64,9 @@ class Execution:
         self.fee_reserve_rate = parse_decimal(fee_reserve_rate)
         if self.fee_reserve_rate < 0:
             raise ValidationFailure("fee reserve rate must be nonnegative")
-        self._validate_fee_reserve_rate()
+        # A cold live adapter must still support read-only crash reconciliation.
+        # Readiness is mandatory before an intent/reservation or submission.
+        self._validate_fee_reserve_rate(require_ready=False)
         self.authority = AuthorityRecord(database, clock)
 
     def now(self) -> str:
@@ -170,8 +172,12 @@ class Execution:
 
     @atomic
     def authorize(self, portfolio_id: str, decision: Decision) -> str:
+        if self.mode == "live":
+            self._validate_fee_reserve_rate()
         if decision.action not in {"enter", "exit"}:
             raise ValidationFailure("authorize requires enter/exit; resize and adjustment need explicit semantics")
+        if decision.action == "enter" and self._reconciliation_blocked():
+            raise StaleState("incomplete account reconciliation blocks new exposure")
         portfolio = self.database.execute(
             "SELECT mode FROM portfolios WHERE portfolio_id = ?", (portfolio_id,)
         ).fetchone()
@@ -322,7 +328,12 @@ class Execution:
     async def dispatch(self) -> int:
         capabilities = await self._require_broker_binding()
         rows = self.database.execute(
-            """SELECT payload_ref FROM outbox WHERE kind = 'submit' AND status = 'pending'"""
+            """SELECT o.payload_ref FROM outbox o JOIN order_intents i ON i.intent_id = o.payload_ref
+            WHERE o.kind = 'submit' AND o.status = 'pending'
+            AND json_extract(i.payload_json, '$.venue') = ?
+            AND json_extract(i.payload_json, '$.account_id') = ?
+            AND json_extract(i.payload_json, '$.mode') = ?""",
+            (self.venue, self.account_id, self.mode),
         ).fetchall()
         sent = 0
         for row in rows:
@@ -334,12 +345,13 @@ class Execution:
             if unsupported is not None:
                 self._abandon_unsent(intent_id, "rejected", message=unsupported)
                 continue
-            if intent.side == "buy":
+            if intent.side == "buy" or self.mode == "live":
                 try:
                     self._validate_fee_reserve_rate()
                 except ValidationFailure as exc:
                     self._abandon_unsent(intent_id, "rejected", message=str(exc))
                     continue
+            if intent.side == "buy":
                 block = self._unsent_increase_block(intent)
                 if block == "reject":
                     self._abandon_unsent(intent_id, "authority")
@@ -427,32 +439,118 @@ class Execution:
 
     async def reconcile(self) -> None:
         rows = self.database.execute(
-            """SELECT intent_id, payload_json, state FROM order_intents
-            WHERE state IN ('UNKNOWN', 'SUBMITTING', 'OPEN', 'PARTIALLY_FILLED', 'CANCEL_PENDING')"""
+            """SELECT intent_id, portfolio_id, payload_json, state FROM order_intents
+            WHERE json_extract(payload_json, '$.venue') = ?
+            AND json_extract(payload_json, '$.account_id') = ?
+            AND json_extract(payload_json, '$.mode') = ?""",
+            (self.venue, self.account_id, self.mode),
         ).fetchall()
-        for row in rows:
+        if not rows and self.mode != "live":
+            return
+        owned = {row["intent_id"]: row for row in rows}
+        active = [row for row in rows if row["state"] in {
+            "UNKNOWN", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "CANCEL_PENDING",
+        }]
+        statuses = {}
+        # Resolve every recoverable identity before querying account-wide trades.
+        # An adapter may need these lookups to link a venue order to its client ID.
+        for row in active:
             payload = json.loads(row["payload_json"])
             if row["state"] == "SUBMITTING":
                 self._set_state(row["intent_id"], "UNKNOWN", {})
-            status = await self.broker.order_status(
-                OrderLookup(client_order_id=payload["client_order_id"], symbol=payload["symbol"])
+            statuses[row["intent_id"]] = await self.broker.order_status(
+                OrderLookup(client_order_id=payload["client_order_id"],
+                            venue_order_id=payload.get("venue_order_id"), symbol=payload["symbol"])
             )
-            cursor = None
-            seen_cursors: set[str] = set()
-            while True:
-                page = await self.broker.fills_since(cursor)
-                for fill in page.fills:
-                    if fill.intent_id == row["intent_id"]:
+
+        fills = []
+        cursor = None
+        seen_cursors: set[str] = set()
+        while True:
+            page = await self.broker.fills_since(cursor)
+            fills.extend(page.fills)
+            if page.next_cursor is None:
+                break
+            if page.next_cursor in seen_cursors:
+                raise UncertainExternal("fill pagination did not advance")
+            seen_cursors.add(page.next_cursor)
+            cursor = page.next_cursor
+        # Sort globally, not per intent: FIFO/cash must observe the same chronology
+        # across interleaved orders. Stable ties preserve the adapter's precise
+        # wire ordering when distinct timestamps truncate to one DTO microsecond.
+        fills.sort(key=lambda fill: fill.filled_at_utc)
+        unowned = {}
+        owned_portfolios = {row["portfolio_id"] for row in rows}
+        latest_recorded_at = {}
+        recorded_identities = set()
+        for row in self.database.execute("SELECT portfolio_id, document_json FROM fills"):
+            if row["portfolio_id"] not in owned_portfolios:
+                continue
+            fill = FillRecord.model_validate_json(row["document_json"])
+            previous = latest_recorded_at.get(row["portfolio_id"])
+            if previous is None or fill.filled_at_utc > previous:
+                latest_recorded_at[row["portfolio_id"]] = fill.filled_at_utc
+            recorded_identities.add((fill.venue, fill.account_id, fill.trade_id))
+        new_at_same_time = set()
+        try:
+            with self.database.immediate():
+                for fill in fills:
+                    if fill.intent_id in owned:
+                        if fill.filled_at_utc > self.clock.now():
+                            raise ValidationFailure("broker fill is later than reconciliation time")
+                        existing = self.database.execute(
+                            "SELECT document_json FROM fills WHERE venue = ? AND account_id = ? AND trade_id = ?",
+                            (fill.venue, fill.account_id, fill.trade_id),
+                        ).fetchone()
+                        if existing is not None and existing["document_json"] != fill.model_dump_json():
+                            raise ValidationFailure("broker fill conflicts with recorded history")
+                        portfolio_id = owned[fill.intent_id]["portfolio_id"]
+                        identity = (fill.venue, fill.account_id, fill.trade_id)
+                        tie = (portfolio_id, fill.filled_at_utc)
+                        if existing is None:
+                            latest = latest_recorded_at.get(portfolio_id)
+                            if latest is not None and fill.filled_at_utc < latest:
+                                raise ValidationFailure("late fill requires chronological ledger replay")
+                            new_at_same_time.add(tie)
+                        elif identity in recorded_identities and tie in new_at_same_time:
+                            raise ValidationFailure("late fill requires chronological ledger replay")
                         self.record_fill(fill)
-                if page.next_cursor is None:
-                    break
-                if page.next_cursor in seen_cursors:
-                    raise UncertainExternal("fill pagination did not advance")
-                seen_cursors.add(page.next_cursor)
-                cursor = page.next_cursor
+                    elif (fill.venue, fill.account_id) == (self.venue, self.account_id):
+                        referenced = self.database.execute(
+                            "SELECT 1 FROM order_intents WHERE intent_id = ?", (fill.intent_id,),
+                        ).fetchone() if fill.intent_id is not None else None
+                        if referenced:
+                            raise ValidationFailure("broker fill references another execution scope")
+                        unowned[fill.trade_id] = fill
+                for fill in unowned.values():
+                    previous = self.database.execute(
+                        """SELECT 1 FROM activity_events WHERE kind = 'unreconciled_broker_fill'
+                        AND json_extract(payload_json, '$.venue') = ?
+                        AND json_extract(payload_json, '$.account_id') = ?
+                        AND json_extract(payload_json, '$.trade_id') = ? LIMIT 1""",
+                        (fill.venue, fill.account_id, fill.trade_id),
+                    ).fetchone()
+                    if previous is None:
+                        self._incident("unreconciled_broker_fill", {
+                            "venue": fill.venue, "account_id": fill.account_id, "trade_id": fill.trade_id,
+                            "reason": "fill has no owned durable intent; account reconciliation is incomplete",
+                        })
+                if unowned:
+                    self._set_reconciliation_health(incomplete=True, reason="unowned broker fills")
+        except ValidationFailure:
+            # The fill batch rolls back, but readiness must remain blocked across
+            # restart until this binding's full history can be validated again.
+            self._set_reconciliation_health(incomplete=True, reason="invalid owned broker fills")
+            raise
+
+        missing_terminal_fills = False
+        for row in active:
+            payload = json.loads(row["payload_json"])
+            status = statuses[row["intent_id"]]
             recorded = self._filled_quantity(row["intent_id"])
             expected = Decimal(payload["quantity"]) if status.status == "filled" else status.filled_quantity
             if status.status in {"filled", "cancelled"} and recorded != expected:
+                missing_terminal_fills = True
                 self._set_state(row["intent_id"], "UNKNOWN", {})
                 self._incident("terminal_order_missing_fills", {"intent_id": row["intent_id"]})
                 continue
@@ -460,11 +558,18 @@ class Execution:
                 self._incident("unknown_order_not_visible", {"intent_id": row["intent_id"]})
                 continue
             if status.status == "filled":
-                self._set_state(row["intent_id"], "FILLED", {})
+                self._set_state(row["intent_id"], "FILLED", {"venue_order_id": status.venue_order_id}
+                                if status.venue_order_id else {})
                 self._release(row["intent_id"])
             elif status.status == "cancelled":
                 self._set_state(row["intent_id"], "CANCELLED", {})
                 self._release(row["intent_id"])
+        if unowned:
+            raise UncertainExternal("broker history includes unowned fills; account reconciliation is incomplete")
+        self._set_reconciliation_health(
+            incomplete=missing_terminal_fills,
+            reason="terminal order missing fills" if missing_terminal_fills else "resolved full broker history",
+        )
 
     async def startup(self) -> None:
         await self.reconcile()
@@ -794,6 +899,8 @@ class Execution:
         return None
 
     def _unsent_increase_block(self, intent: AuthorizedOrderIntent) -> str:
+        if self._reconciliation_blocked():
+            return "hold"
         if self.blocks_increase is not None and self.blocks_increase(intent.symbol):
             return "hold"
         if self._uncertain_exposure(intent.symbol):
@@ -849,10 +956,20 @@ class Execution:
                 return True
         return False
 
-    def _validate_fee_reserve_rate(self) -> None:
+    def _validate_fee_reserve_rate(self, *, require_ready: bool = True) -> None:
         """Operator's worst anticipated rate must cover any fee bound the broker exposes."""
         required = getattr(self.broker, "fee_reserve_rate", None)
-        if required is not None and self.fee_reserve_rate < parse_decimal(required):
+        if required is None:
+            if require_ready and self.mode == "live":
+                raise ValidationFailure("live broker fee readiness is unavailable")
+            return
+        try:
+            bound = parse_decimal(required)
+        except (ValueError, TypeError) as exc:
+            raise ValidationFailure("broker fee bound must be a finite Decimal rate") from exc
+        if bound < 0:
+            raise ValidationFailure("broker fee bound must be nonnegative")
+        if self.fee_reserve_rate < bound:
             raise ValidationFailure("fee reserve rate is below the broker's configured fees")
 
     def _abandon_unsent(self, intent_id: str, reason: str, *, message: str | None = None) -> None:
@@ -1077,3 +1194,29 @@ class Execution:
 
     def _incident(self, kind: str, payload: dict) -> None:
         self.ledger._activity(None, kind, payload)
+
+    def _reconciliation_health(self) -> dict | None:
+        row = self.database.execute(
+            """SELECT payload_json FROM activity_events WHERE kind = 'execution_reconciliation_health'
+            AND json_extract(payload_json, '$.venue') = ?
+            AND json_extract(payload_json, '$.account_id') = ?
+            AND json_extract(payload_json, '$.mode') = ? ORDER BY rowid DESC LIMIT 1""",
+            (self.venue, self.account_id, self.mode),
+        ).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def _reconciliation_blocked(self) -> bool:
+        health = self._reconciliation_health()
+        return health is not None and health["state"] == "incomplete"
+
+    def _set_reconciliation_health(self, *, incomplete: bool, reason: str) -> None:
+        state = "incomplete" if incomplete else "complete"
+        health = self._reconciliation_health()
+        if health is None and not incomplete:
+            return
+        if health is not None and health["state"] == state and health["reason"] == reason:
+            return
+        self._incident("execution_reconciliation_health", {
+            "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
+            "state": state, "reason": reason,
+        })

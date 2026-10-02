@@ -307,13 +307,14 @@ class Ledger:
         elif kind == "internal":
             internal_transfer(books, payload["asset"], Decimal(payload["amount"]), at, ref)
         elif kind == "fill":
+            fill = FillRecord.model_validate(payload["fill"])
             apply_fill(
                 books,
-                FillRecord.model_validate(payload["fill"]),
+                fill,
                 base_asset=payload["base_asset"],
                 quote_asset=payload["quote_asset"],
                 lot_id=payload["lot_id"],
-                at=at,
+                at=utc_iso(fill.filled_at_utc),
             )
         elif kind == "expense":
             add_expense(

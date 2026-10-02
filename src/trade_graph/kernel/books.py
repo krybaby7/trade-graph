@@ -182,7 +182,9 @@ def _fifo_consume(
     remaining = quantity
     proceeds_left = proceeds
     cost_released = Decimal("0")
-    lots = sorted(books.lots, key=lambda item: (item.opened_at, item.lot_id))
+    # Ledger replay appends lots in durable event sequence. Stable ties preserve
+    # that order, including wire timestamps finer than the DTO's microseconds.
+    lots = sorted(books.lots, key=lambda item: item.opened_at)
     for lot in lots:
         if lot.asset != asset:
             continue
