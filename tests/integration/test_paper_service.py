@@ -661,6 +661,31 @@ def test_mixed_mode_database_is_refused_before_any_financial_management(tmp_path
     assert ledger.database.execute("SELECT count(*) FROM process_leases").fetchone()[0] == 0
 
 
+def test_leader_can_review_and_resume_its_own_pause_while_other_roles_wait(tmp_path):
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    seen = []
+    execution.set_pause(portfolio, "MANAGE_ONLY", "leader", "bounded leadership review")
+
+    def leader(task):
+        seen.append(task["role"])
+        execution.set_pause(portfolio, "RUNNING", "leader", "review completed")
+        return {}
+
+    service = PaperService(ledger.database, execution, handlers={
+        "leader": leader, "research": lambda task: seen.append(task["role"]) or {},
+    }, schedule_intervals={"research": 60, "leader": 60})
+
+    async def scenario():
+        assert (await service.tick(wait_roles=True)).scheduled == 1
+        assert seen == ["leader"]
+        assert execution.pause(portfolio)["profile"] == "RUNNING"
+        assert (await service.tick(wait_roles=True)).scheduled == 1
+        assert seen == ["leader", "research"]
+        await service.stop()
+
+    asyncio.run(scenario())
+
+
 def test_service_loads_activated_bytes_and_keeps_receipt_provenance(tmp_path, monkeypatch):
     from tests.integration.test_artifact_consumers import NEW_PROMPT, _consumer_flow
 

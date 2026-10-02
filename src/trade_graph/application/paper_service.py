@@ -276,9 +276,13 @@ class PaperService:
             self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
         for pid in self.portfolio_ids:
             profile = self.execution.profile(pid)
+            pause = self.execution.pause(pid)
+            own_leader_pause = bool(pause and pause["originator"] == "leader")
             # Secretary remains software even when discretionary tasks are paused.
-            self.secretary.process(pid, route=profile == "RUNNING" and "leader" in self.handlers)
-            if profile in PAUSED_WORK:
+            self.secretary.process(
+                pid, route=(profile == "RUNNING" or own_leader_pause) and "leader" in self.handlers,
+            )
+            if profile in PAUSED_WORK and not own_leader_pause:
                 continue
             settings = {}
             bundle = None
@@ -288,6 +292,8 @@ class PaperService:
                 self.artifact_runtime.apply_schedules(pid, bundle)
             for role, interval in self.schedule_intervals.items():
                 if role not in self.handlers:
+                    continue
+                if profile in PAUSED_WORK and role != "leader":
                     continue
                 name = f"artifact-{role}-review" if role in settings else f"{role}-review"
                 if role not in settings:
@@ -336,7 +342,10 @@ class PaperService:
         if row["portfolio_id"] not in self.portfolio_ids:
             self.scheduler.defer(lease, {"reason": "portfolio is outside service scope"}, 30)
             return 0
-        if self.execution.profile(row["portfolio_id"]) in PAUSED_WORK:
+        pause = self.execution.pause(row["portfolio_id"])
+        if self.execution.profile(row["portfolio_id"]) in PAUSED_WORK and not (
+            row["role"] == "leader" and pause and pause["originator"] == "leader"
+        ):
             self.scheduler.defer(lease, {"reason": "discretionary work paused"}, 30)
             return 0
         with self._lease_lock:
