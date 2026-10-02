@@ -273,7 +273,8 @@ class TrialRegistry:
         # Bind the whole deployment registry: new family variants and shared-cost
         # allocations can change interpretation even without changing this trial.
         rows = self.connection.execute(
-            "SELECT * FROM evaluation_records WHERE kind != 'snapshot' ORDER BY kind, record_key",
+            "SELECT * FROM evaluation_records WHERE kind NOT IN ('snapshot', 'runtime_capture') "
+            "ORDER BY kind, record_key",
         ).fetchall()
         bindings = []
         for row in rows:

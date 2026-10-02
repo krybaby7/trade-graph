@@ -334,6 +334,7 @@ class EvidenceRecordBinding(EvaluationContract):
     kind: Literal[
         "protocol", "observation", "attempt", "attempt_result", "expense",
         "expense_resolution", "allocation", "inventory",
+        "runtime_binding",
     ]
     record_key: Annotated[str, Field(min_length=1, max_length=2048)]
     trial_id: Reference | None

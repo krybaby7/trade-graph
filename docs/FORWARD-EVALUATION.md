@@ -94,7 +94,8 @@ reconciliation, allocation and inventory. Each frozen source binding includes
 both its canonical document digest and the digest of the exact retained document
 bytes, along with record identity, trial identity and collection timestamp.
 Report scope, as-of time, protocol and inventory must agree with these bindings.
-Snapshot records are excluded from source manifests to avoid recursive hashes.
+Snapshot and derived runtime-capture records are excluded from source manifests
+to avoid recursive hashes. Runtime collection bindings remain in the manifest.
 Repeated emission under the same fixed test clock is idempotent.
 
 `verify_snapshot(snapshot)` revalidates nested structures, requires the identical
@@ -128,6 +129,85 @@ registry.verify_snapshot(snapshot)
 No real protocol dates, operating allowance or observation data are supplied by
 this example. The real collector still needs the T17 funded-paper evidence and
 an operator-selected future protocol registered before collecting its holdout.
+
+## Protected runtime source collection
+
+`trade_graph.runtime_evidence.RuntimeEvidenceCollector(database, registry, clock,
+deployment_id=...)` reads the actual operator-owned runtime database. Bind it to
+an existing registered trial with `bind(trial_id)` strictly before the first
+forward block and before any forward observation import. The retained binding
+fixes deployment, open paper portfolio, market stream, protocol digest, database
+file identity and the complete initial source inventory. Reopening the same file
+is supported; an identical copy cannot substitute for the bound database.
+
+`capture(trial_id)` retains canonical current source bytes and their SHA-256,
+the exact evaluation snapshot and its SHA-256, and collection time. It reads
+every row of the required source tables in one SQLite snapshot: native ledger
+events/postings, fills, market observations, decision snapshots and versions,
+deployment budgets, reservations, usage receipts, price cards, exact FX source
+links, shared allocations, invoice reconciliations, engineering attempts and
+provider transport attempts. Owner policy, mandates, pause states, outbox,
+broker orders, artifact admission and protected runtime/RPC state also belong to
+the footprint. This is a complete inventory of those required tables, rather
+than a claim that unknown external invoices or hosting expenses were discovered.
+Unrelated presentation/session tables are outside the financial source footprint.
+
+Collection refuses oversized cells in SQLite before fetching their contents.
+Rows stream under per-table, total-row and exact canonical byte limits (10,000
+rows per table, 20,000 total, 128 KiB per cell and 8 MiB per source inventory).
+Exceeding a bound rejects the whole capture; no pagination, truncation or first
+page can impersonate a complete export. Captures contain private requests and
+journals and belong in ignored protected storage.
+
+`verify(capture)` revalidates frozen nested contracts, retained bytes and exact
+registry/report digests, then re-reads the current runtime inventory and scope
+under consistent transactions. Any required source or registry change makes an
+old capture stale. Verification compares native posting groups to ledger replay,
+fill records to ledger events, decision inputs to their actual retained market
+snapshots and preregistered versions, usage costs to native price-card arithmetic,
+and non-EUR receipts to their exact pre-dispatch frozen FX rows. Changed FX facts
+invalidate evidence while the original billed costs remain retained. It audits
+shared allocations, unresolved reservations, and provider transport identities,
+request/endpoint digests, scope, timestamps, response bounds and completeness.
+An unfinished or uncertain wire observation remains unresolved even if another
+row describes the reservation as terminal.
+
+`import_expenses(capture)` derives registry records from current retained native
+receipts, reservations and durable results; callers supply no monetary amount or
+source reference. Its source digest covers the full receipt/reservation/invocation
+link and its conversion reference binds the frozen FX bytes. Missing or partial
+non-EUR FX links remain unknown, and usage without a durable result cannot prove
+work succeeded. Synthetic classifications persist. Known operative versions can
+be attributed from protected version history; candidate-specific engineering
+attribution still needs its commissioned candidate evidence. Importing expenses
+changes the registry manifest, so emit another capture afterward. Existing or
+reconciled registry records with the same receipt ID must match the derived
+amount, classification, outcome and source/conversion links exactly.
+
+The downstream gate can require a sealed inventory's ledger-export SHA-256 to
+equal the complete runtime source SHA-256, its receipt set to equal the collector's
+derived `receipt_ids`, and no `unresolved_reservation_ids`. These conditions prove
+current local consistency. `RuntimeVerification.actual_external_provenance_verified`
+is always false: protected HTTP observations, request IDs, source labels, supplied
+keys and synthetic flags do not independently corroborate a real provider bill or
+venue observation. Missing external transport provenance, complete provider
+invoices, baseline runtime collection and independence/regime source verification
+remain explicit reasons. The collector emits source/expense evidence, and cannot
+invent four-arm performance, measured risk, independent regimes or a completed
+future horizon from missing records. Arbitrary observation imports retain
+`verification_basis="unverified_imports"`; no method grants live authority.
+
+For an operator-selected future trial, the protected composition uses:
+
+```python
+collector.bind(existing_trial_id)  # before its forward horizon
+capture = collector.capture(existing_trial_id)
+verification = collector.verify(capture)
+collector.import_expenses(capture)
+capture = collector.capture(existing_trial_id)  # binds the changed registry
+```
+
+The example neither supplies an owner deployment nor starts a real forward trial.
 
 Trading-only P&L is closing equity minus opening equity and external flows, with
 embedded operating expenses added back. Fill fees and measured slippage already
