@@ -117,6 +117,37 @@ def _boundary_drawdown(protocol, observations, arm, receipts, allocations):
     }
 
 
+def _dated_costs(protocol, observations, receipts, allocations):
+    """Forward work belongs to its dated block; historical setup is fixed overhead."""
+    result = {
+        arm: {"forward_blocks_eur": [ZERO for _ in observations], "historical_fixed_setup_eur": ZERO,
+              "unestablished_timing_eur": ZERO, "unestablished_receipt_ids": []} for arm in ARMS
+    }
+    for allocation in allocations:
+        receipt = receipts[allocation.receipt_id]
+        if receipt.evidence_kind != "actual" or receipt.amount_eur is None:
+            continue
+        amount = receipt.amount_eur * allocation.weight
+        if amount == 0:
+            continue
+        target = result[allocation.arm]
+        if receipt.incurred_at < protocol.forward_blocks[0].start and receipt.cost_class == "setup_engineering":
+            target["historical_fixed_setup_eur"] += amount
+            continue
+        index = next((index for index, window in enumerate(protocol.forward_blocks) if (
+            window.start < receipt.incurred_at <= window.end
+            or (index == 0 and receipt.incurred_at == window.start)
+        )), None)
+        if index is not None and index < len(observations):
+            target["forward_blocks_eur"][index] += amount
+        else:
+            # Keep these expenses in all-in arithmetic, but do not invent a
+            # fixed/independent statistical allocation from an ambiguous date.
+            target["unestablished_timing_eur"] += amount
+            target["unestablished_receipt_ids"].append(receipt.receipt_id)
+    return result
+
+
 def build_forward_report(
     *, protocol: ForwardProtocol, as_of: datetime, registration: dict,
     observations: list[ForwardObservation], expenses: list[ExpenseEvidence],
@@ -242,21 +273,32 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
         }
 
     comparisons = {}
+    dated_costs = _dated_costs(protocol, observations, receipts, allocations)
+    timing_unestablished = any(item["unestablished_receipt_ids"] for item in dated_costs.values())
+    if timing_unestablished:
+        reasons.append("allocated_cost_timing_unestablished")
     count = len(observations)
     if count:
         correction = Decimal(2 * protocol.maximum_family_trials * (len(ARMS) - 1))
         width = protocol.block_excess_upper_eur - protocol.block_excess_lower_eur
         radius = width * ((correction / protocol.uncertainty_alpha).ln() / Decimal(2 * count)).sqrt()
         for arm in ARMS[1:]:
-            agent_expenses = metrics["agent"]["actual_recurring_expenses_eur"] + \
-                metrics["agent"]["actual_setup_engineering_expenses_eur"]
-            baseline_expenses = metrics[arm]["actual_recurring_expenses_eur"] + \
-                metrics[arm]["actual_setup_engineering_expenses_eur"]
-            expense_shift = (agent_expenses - baseline_expenses) / count
-            excess = [left - right - expense_shift for left, right in zip(series["agent"], series[arm])]
-            valid = all(protocol.block_excess_lower_eur <= value <= protocol.block_excess_upper_eur
-                        for value in excess)
-            if not valid:
+            agent_costs, baseline_costs = dated_costs["agent"], dated_costs[arm]
+            fixed_shift = (agent_costs["historical_fixed_setup_eur"] -
+                           baseline_costs["historical_fixed_setup_eur"]) / count
+            # Unknown timing stays in the descriptive all-in mean. It can never
+            # produce a valid confidence interval or a support verdict.
+            unknown_shift = (agent_costs["unestablished_timing_eur"] -
+                             baseline_costs["unestablished_timing_eur"]) / count
+            excess = [
+                left - right - agent_costs["forward_blocks_eur"][index] +
+                baseline_costs["forward_blocks_eur"][index] - fixed_shift - unknown_shift
+                for index, (left, right) in enumerate(zip(series["agent"], series[arm]))
+            ]
+            bounds_respected = all(protocol.block_excess_lower_eur <= value <= protocol.block_excess_upper_eur
+                                   for value in excess)
+            valid = bounds_respected and not timing_unestablished
+            if not bounds_respected:
                 reasons.append(f"{arm}_predeclared_uncertainty_bounds_violated")
             mean = _sum(excess) / count
             comparisons[arm] = {
@@ -264,7 +306,11 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
                 "lower_eur": mean - radius if valid else None,
                 "upper_eur": mean + radius if valid else None,
                 "radius_eur": radius if valid else None,
-                "predeclared_bounds_respected": valid,
+                "predeclared_bounds_respected": bounds_respected if not timing_unestablished else None,
+                "cost_timing_established": not timing_unestablished,
+                "net_economic_excess_by_block_eur": excess,
+                "historical_fixed_setup_shift_per_block_eur": fixed_shift,
+                "unestablished_cost_shift_per_block_eur": unknown_shift,
             }
 
     scenarios = []
@@ -336,7 +382,7 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
             "alpha": protocol.uncertainty_alpha, "maximum_family_trials": protocol.maximum_family_trials,
             "assumptions": ["independent equal-duration blocks; nonoverlap alone does not establish independence",
                             "population paired net-economic excess remains inside predeclared bounds",
-                            "fixed all-in expenses are spread equally over observed blocks for comparisons",
+                            "forward expenses use their actual block; only historical fixed setup is spread equally",
                             "market-regime change can invalidate the population interpretation"],
         },
         "sensitivity": scenarios,
@@ -344,6 +390,7 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
             "sealed": bool(inventories), "unresolved_receipt_ids": sorted(set(unresolved)),
             "imports": [json.loads(row["document_json"]) for row in inventories],
             "receipts": receipt_details,
+            "dated_block_allocations": dated_costs,
             "original_receipts": [json.loads(row["document_json"]) for row in expense_history
                                   if json.loads(row["document_json"])["receipt_id"] in
                                   {item.receipt_id for item in allocations}],

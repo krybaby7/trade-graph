@@ -34,7 +34,7 @@ def test_continuous_equity_path_drawdown_can_exceed_every_within_block_drawdown(
 
 @pytest.mark.parametrize("embedded", [False, True])
 def test_actual_paid_costs_affect_the_same_all_in_drawdown_inside_or_outside_paper_equity(tmp_path, embedded):
-    declared = protocol(count=4, block_excess_lower_eur="-100", block_excess_upper_eur="100")
+    declared = protocol(count=4, block_excess_lower_eur="-300", block_excess_upper_eur="300")
     instance, clock, _ = registry(tmp_path, declared)
     closing = {arm: declared.capital_eur for arm in ("agent", "cash", "buy_and_hold", "deterministic")}
     for index, block in enumerate(declared.forward_blocks):
@@ -123,7 +123,8 @@ def test_late_attributed_actual_cost_uses_an_explicit_frozen_final_market_mark(t
     ))
     report = instance.report(declared.trial_id)
     assert report["financial_metrics"]["agent"]["all_in_net_economic_eur"] == "30"
-    assert report["verdict"] == "not_supported"
+    assert report["verdict"] == "insufficient_evidence"
+    assert "allocated_cost_timing_unestablished" in report["reasons"]
     last = report["sampled_drawdown"]["agent"]["samples"][-1]
     assert last["kind"] == "final_all_in_cost_attribution_at_last_market_mark"
     assert last["trading_flow_adjusted_equity_eur"] == "1080"

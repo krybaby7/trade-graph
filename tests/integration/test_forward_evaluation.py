@@ -110,10 +110,10 @@ def populate(instance, clock, declared, **options):
 
 
 def expense(instance, declared, receipt_id, amount="2", *, cost_class="recurring", outcome="succeeded",
-            evidence_kind="actual", arm="agent", weight="1"):
+            evidence_kind="actual", arm="agent", weight="1", incurred_at=REGISTERED):
     instance.record_expense(ExpenseEvidence(
         receipt_id=receipt_id, source_ref=f"fixture-only:receipt:{receipt_id}",
-        conversion_ref="fixture-only:EUR-identity", incurred_at=REGISTERED,
+        conversion_ref="fixture-only:EUR-identity", incurred_at=incurred_at,
         amount_eur=amount, evidence_kind=evidence_kind, cost_class=cost_class, outcome=outcome,
         variant_sha256=OTHER_SHA if outcome == "failed" else SHA,
     ))
@@ -147,10 +147,11 @@ def test_imported_fixture_math_includes_failed_and_external_costs_without_double
     instance, clock, declared = registry(tmp_path)
     instance.start_attempt(declared.trial_id, Attempt(attempt_id="bad-variant", variant_sha256=OTHER_SHA,
                                                     objective="attempt before selecting the fixed version"))
-    expense(instance, declared, "recurring", "2")
     expense(instance, declared, "failed", "3", cost_class="setup_engineering", outcome="failed")
     instance.finish_attempt(declared.trial_id, AttemptResult(attempt_id="bad-variant", outcome="failed",
                                                            source_ref="fixture:failed-tests", receipt_ids=("failed",)))
+    clock.advance((declared.forward_blocks[0].end - clock.now()).total_seconds())
+    expense(instance, declared, "recurring", "2", incurred_at=clock.now())
     populate(instance, clock, declared)
     seal(instance, declared)
     result = instance.report(declared.trial_id)

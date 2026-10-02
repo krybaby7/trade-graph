@@ -102,8 +102,17 @@ collection contract supplies that missing information.
 
 Uncertainty uses a two-sided Decimal Hoeffding bound on each block's paired
 net-economic excess against each baseline, with a Bonferroni correction for the
-three baselines and the predeclared maximum family trial count. All-in expenses
-shift the paired block amounts equally. Blocks must be equally sized, untouched,
+three baselines and the predeclared maximum family trial count. Actual forward
+recurring and engineering expenses belong to their incurred block, so a large
+first-block expense cannot disappear from its bounds check by being averaged
+across the trial. A receipt exactly at a closing boundary belongs to the completed
+block; a receipt at the first opening belongs to the first block. Only setup
+expenses incurred strictly before the forward window are fixed overhead shifted
+equally across blocks. Historical recurring expenses, expenses after the forward
+window and costs for uncollected blocks keep their all-in monetary attribution
+but cannot establish a dated statistical allocation. Their intervals remain
+unavailable and the verdict stays `insufficient_evidence` until a richer trusted
+collection contract supplies the missing allocation evidence. Blocks must be equally sized, untouched,
 complete, independent and drawn from a population inside the predeclared excess
 bounds. A bounds violation invalidates the interval. Nonoverlapping outcome
 horizons provide a count used for the minimum-decision gate; they do not prove
