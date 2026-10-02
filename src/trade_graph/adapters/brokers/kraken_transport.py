@@ -14,6 +14,8 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -35,6 +37,19 @@ PRIVATE_READ_METHODS = frozenset(
 )
 ORDER_METHODS = frozenset({"AddOrder", "CancelOrder"})
 MAXIMUM_JSON_DEPTH = 64
+
+
+@dataclass(frozen=True)
+class KrakenReadResponse:
+    """Protected read capture; credentials/signature headers are never included."""
+
+    method: str
+    parameters: bytes
+    request_sha256: str
+    response: bytes
+    started_at: datetime
+    finished_at: datetime
+    transport_basis: str
 
 
 class KrakenApiError(TradeGraphError):
@@ -153,6 +168,7 @@ class KrakenRestTransport:
         nonce: Callable[[], int] | None = None,
         timeout_seconds: float = 10,
         maximum_response_bytes: int = 4 * 1024 * 1024,
+        read_observer: Callable[[KrakenReadResponse], None] | None = None,
     ) -> None:
         if type(allow_order_writes) is not bool:
             raise ValueError("order-write authority must be an explicit boolean")
@@ -164,6 +180,17 @@ class KrakenRestTransport:
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False)
         self._timeout, self._maximum = timeout_seconds, maximum_response_bytes
         self._nonce, self._lock = nonce or MonotonicNonce(), asyncio.Lock()
+        self._read_observer = read_observer
+
+    @property
+    def observation_basis(self) -> str:
+        """Injected clients never establish production HTTPS origin."""
+        if (self._owns_client and type(self._client) is httpx.AsyncClient
+                and type(self._client._transport) is httpx.AsyncHTTPTransport
+                and all(value is None or type(value) is httpx.AsyncHTTPTransport
+                        for value in self._client._mounts.values())):
+            return "owned_https"
+        return "injected_transport"
 
     async def __call__(self, method: str, params: dict) -> dict:
         if method not in PUBLIC_METHODS | PRIVATE_READ_METHODS | ORDER_METHODS:
@@ -174,12 +201,14 @@ class KrakenRestTransport:
             raise AuthorityDenied("a private read-only Kraken credential is required")
         # The same protected key is serialized through nonce creation and dispatch.
         async with self._lock:
+            started_at = datetime.now(UTC)
             try:
                 headers = {"Accept-Encoding": "identity"}
                 kwargs = {"headers": headers, "timeout": self._timeout, "follow_redirects": False}
                 if method in PUBLIC_METHODS:
                     verb, url = "GET", "https://api.kraken.com/0/public/" + method
                     kwargs["params"] = params
+                    request_sha256 = hashlib.sha256(urlencode(params).encode()).hexdigest()
                 else:
                     nonce = self._nonce()
                     if not isinstance(nonce, int) or isinstance(nonce, bool) or not 0 < nonce < 2**64:
@@ -197,6 +226,7 @@ class KrakenRestTransport:
                     )
                     verb, url = "POST", "https://api.kraken.com" + path
                     kwargs["content"] = body
+                    request_sha256 = hashlib.sha256(body.encode()).hexdigest()
                 async with asyncio.timeout(self._timeout):
                     async with self._client.stream(verb, url, **kwargs) as response:
                         if response.status_code != 200:
@@ -229,6 +259,12 @@ class KrakenRestTransport:
                 if exc.kind == "malformed" and method in ORDER_METHODS:
                     raise KrakenApiError("malformed", uncertain=True) from None
                 raise
+            if self._read_observer is not None and method not in ORDER_METHODS:
+                parameters = json.dumps(params, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+                self._read_observer(KrakenReadResponse(
+                    method=method, parameters=parameters, request_sha256=request_sha256, response=bytes(content),
+                    started_at=started_at, finished_at=datetime.now(UTC), transport_basis=self.observation_basis,
+                ))
             return payload
 
     async def aclose(self) -> None:

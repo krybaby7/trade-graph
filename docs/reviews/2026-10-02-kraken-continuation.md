@@ -5,6 +5,10 @@ SQLite recovery. It makes no private Kraken request and does not establish owner
 eligibility, current key permissions, venue acceptance, economic evidence or live
 authority. Paid provider calls and real orders remain disabled.
 
+The [read-only conformance continuation](../KRAKEN-CONFORMANCE.md) adds a protected
+bounded retained-source collector/verifier and records the subsequent official REST
+SDK mapping check. Historical verification below remains scoped to this checkpoint.
+
 ## Resulting behavior
 
 Order parsing is side-effect-free until a complete open-order response or a unique

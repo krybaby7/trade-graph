@@ -365,7 +365,7 @@ def test_writes_require_ready_precision_fee_and_untested_protection_checks():
     result = asyncio.run(broker.submit(_intent()))
     assert result.status == "acknowledged" and result.venue_order_id == "order-1"
     body = rest.calls[-1][1]
-    assert body["pair"] == "XXBTZUSD" and body["timeinforce"] == "GTC"
+    assert body["pair"] == "XXBTZUSD" and body["timeinforce"] == "gtc"
     assert body["price"] == "100" and body["volume"] == "0.1"
     assert body["oflags"] == "fciq"
     assert "leverage" not in body and "reduce_only" not in body
@@ -385,6 +385,15 @@ def test_missing_pair_status_prevents_writes_and_lost_ack_never_becomes_rejectio
         assert asyncio.run(broker.submit(_intent())).status == "uncertain"
     rest.results["AddOrder"] = {"error": ["EOrder:Insufficient funds"]}
     assert asyncio.run(broker.submit(_intent())).status == "rejected"
+
+
+@pytest.mark.parametrize("time_in_force", ["gtc", "ioc"])
+def test_time_in_force_matches_current_official_rest_sdk_form(time_in_force):
+    rest = ScriptedRest()
+    broker = _broker(rest, live_enabled=True, key_present=True)
+    asyncio.run(broker.instruments())
+    assert asyncio.run(broker.submit(_intent(time_in_force=time_in_force))).status == "acknowledged"
+    assert rest.calls[-1][1]["timeinforce"] == time_in_force
 
 
 def test_cancel_uses_one_identifier_and_always_requires_followup():
@@ -595,6 +604,7 @@ def test_account_fee_lookup_cannot_lower_conservative_execution_reserve_bound():
     schedule = asyncio.run(broker.fee_schedule(account_specific=True))
     assert schedule["BTC/USD"]["taker"] == Decimal("0.002")
     assert broker.fee_reserve_rate == Decimal("0.008")
+    assert rest.calls[-1] == ("TradeVolume", {"pair": "XXBTZUSD", "fee-info": "true"})
 
 
 def test_transport_stops_stream_before_download_limit_and_enforces_total_deadline():

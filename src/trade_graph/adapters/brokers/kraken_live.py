@@ -296,7 +296,9 @@ class KrakenLiveBroker:
     async def fee_schedule(self, *, account_specific: bool = False) -> dict[str, dict]:
         await self._metadata()
         if account_specific:
-            result = await self._request("TradeVolume", {"pair": ",".join(self._wire_pairs.values())})
+            result = await self._request(
+                "TradeVolume", {"pair": ",".join(self._wire_pairs.values()), "fee-info": "true"}
+            )
             takers, makers = result.get("fees"), result.get("fees_maker", {})
             if not isinstance(takers, dict) or not isinstance(makers, dict):
                 raise ValidationFailure("Kraken account fee schedule is incomplete")
@@ -690,7 +692,7 @@ class KrakenLiveBroker:
             "ordertype": intent.order_type,
             "volume": canonical_decimal(quantity),
             "cl_ord_id": client_id,
-            "timeinforce": intent.time_in_force.upper(),
+            "timeinforce": intent.time_in_force,
             "oflags": "fciq",
         }
         if limit_price is not None:
