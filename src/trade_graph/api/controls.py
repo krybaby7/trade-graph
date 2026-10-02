@@ -15,6 +15,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     field_validator,
     model_validator,
@@ -91,6 +92,7 @@ class ConfigCommand(Command):
     maximum_single_asset_exposure_fraction: Fraction | None = None
     maximum_quote_age_seconds: Annotated[StrictInt, Field(ge=1, le=3600)] | None = None
     budget_exhaustion_profile: Literal["PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "FLATTEN"] | None = None
+    paid_calls_enabled: StrictBool | None = None
 
     @field_validator("allowed_venues", "allowed_symbols", "allowed_change_classes")
     @classmethod
@@ -385,8 +387,34 @@ def _update_config(runtime, body: ConfigCommand) -> dict:
     updated = OwnerPolicy.model_validate({**policy.model_dump(), **updates, "revision_id": _policy_revision()})
     if updated.maximum_single_asset_exposure_fraction > updated.maximum_gross_exposure_fraction:
         raise ValidationFailure("single-asset exposure cannot exceed gross exposure")
+    if updates.get("paid_calls_enabled") is True:
+        _paid_permission(runtime, updated)
     authority.install_policy(updated, role="owner")
     return {"policy": updated.model_dump(mode="json"), "routing": {"supported": False}}
+
+
+def _paid_permission(runtime, policy: OwnerPolicy) -> None:
+    """Paper equity cannot supply real inference spending authority."""
+    budget = runtime.database.execute(
+        "SELECT * FROM deployment_budget WHERE deployment_id = ?", (_deployment(runtime),)
+    ).fetchone()
+    owner_limits = {
+        "total_allowance": policy.monthly_operating,
+        "period_allowance": policy.monthly_operating,
+        "daily_limit": policy.daily_paid_limit,
+        "root_limit": policy.root_paid_limit,
+        "priority_reserve": policy.priority_reserve,
+    }
+    if budget is None or budget["currency"] != "EUR" or any(
+        limit.currency != "EUR" for limit in owner_limits.values()
+    ):
+        raise AuthorityDenied("paid calls require a persisted EUR operating allowance and owner limits")
+    if any(Decimal(budget[name]) <= 0 for name in (
+        "total_allowance", "period_allowance", "daily_limit", "root_limit",
+    )):
+        raise AuthorityDenied("paid calls require positive real total, period, daily and root allowances")
+    if any(Decimal(budget[name]) > bound.amount for name, bound in owner_limits.items()):
+        raise AuthorityDenied("deployment operating allowances exceed the owner financial envelope")
 
 
 def _budget(runtime, body: BudgetCommand) -> dict:

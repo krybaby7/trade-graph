@@ -145,6 +145,7 @@
       ownerRevision = integer(body.revision, "Owner revision");
       document.querySelector("[data-owner-revision]").textContent = String(ownerRevision);
       document.querySelector("[data-owner-profile]").textContent = body.pause?.profile || "No persisted pause";
+      document.querySelector("[data-owner-paid]").textContent = body.policy?.paid_calls_enabled ? "Enabled" : "Disabled";
       if (populate) {
         const budgetForm = ownerForms.find(form => form.dataset.command === "budgets");
         if (body.budget && budgetForm) {

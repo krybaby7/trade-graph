@@ -170,7 +170,6 @@ def test_config_is_persisted_runtime_authority_and_replay_is_side_effect_free(st
     [
         {"live_enabled": True},
         {"withdrawals_allowed": True},
-        {"paid_calls_enabled": True},
         {"database_path": "/tmp/untrusted.sqlite"},
         {"model_routing": {"provider": "unapproved"}},
         {"maximum_gross_exposure_fraction": 0.6},
