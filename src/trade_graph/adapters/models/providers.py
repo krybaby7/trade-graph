@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from copy import deepcopy
 from typing import Any
 
 from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage, ToolRequest
@@ -37,6 +38,139 @@ def lookup_capabilities(provider: str, model: str) -> ModelCapabilities | None:
     )
 
 
+_SCHEMA_FORMATS = {"date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"}
+_SCHEMA_ANNOTATIONS = {"title", "description"}
+_SCHEMA_CONSTRAINTS = {
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minLength", "maxLength", "pattern", "format", "minItems", "maxItems", "default", "examples",
+}
+
+
+def _wire_schema(schema: dict[str, Any], *, provider: str) -> dict[str, Any]:
+    """Project the domain schema onto the provider dialect without changing it.
+
+    References: official openai-python lib/_pydantic.py and anthropic-sdk-python
+    lib/_parse/_transform.py (reviewed 2026-10-02). Claude moves unsupported
+    constraints into descriptions; software still validates the original schema.
+    OpenAI requires every property. Defaulted lists/bools retain their original
+    types, so no nullable placeholder can turn into invented/defaulted evidence.
+    """
+    root = deepcopy(schema)
+
+    def resolve(ref: str) -> dict[str, Any]:
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            raise ValueError("provider schemas require local references")
+        target = root
+        for part in ref[2:].split("/"):
+            target = target[part.replace("~1", "/").replace("~0", "~")]
+        if not isinstance(target, dict):
+            raise ValueError("schema reference must identify an object")
+        return target
+
+    def visit(node: dict[str, Any], depth: int = 0) -> dict[str, Any]:
+        if depth > 64 or not isinstance(node, dict):
+            raise ValueError("unsupported provider schema structure")
+        raw = dict(node)
+        if "$defs" in raw and not isinstance(raw["$defs"], dict):
+            raise ValueError("schema definitions must be an object")
+        ref = raw.get("$ref")
+        if ref is not None:
+            target = resolve(ref)
+            # OpenAI does not support annotations/constraints beside a ref.
+            if set(raw) - {"$ref", "$defs"}:
+                raw = {**target, **raw}
+                raw.pop("$ref")
+            else:
+                result = {"$ref": ref}
+                if "$defs" in raw:
+                    result["$defs"] = {name: visit(value, depth + 1) for name, value in raw["$defs"].items()}
+                return result
+        result = {key: raw[key] for key in _SCHEMA_ANNOTATIONS if key in raw}
+        if "$defs" in raw:
+            result["$defs"] = {name: visit(value, depth + 1) for name, value in raw["$defs"].items()}
+        if "const" in raw:
+            result["enum"] = [raw["const"]]
+        elif "enum" in raw:
+            result["enum"] = raw["enum"]
+        for key in ("anyOf", "oneOf", "allOf"):
+            if key not in raw:
+                continue
+            variants = raw[key]
+            if not isinstance(variants, list) or not variants:
+                raise ValueError("schema variants must be a nonempty array")
+            if key == "allOf" and provider == "openai":
+                if len(variants) != 1:
+                    raise ValueError("OpenAI does not support schema intersections")
+                merged = {**variants[0], **raw}
+                merged.pop("allOf")
+                return visit(merged, depth + 1)
+            result["anyOf" if key == "oneOf" else key] = [visit(value, depth + 1) for value in variants]
+        kind = raw.get("type")
+        if kind is not None:
+            result["type"] = kind
+        if kind == "object":
+            if isinstance(raw.get("additionalProperties"), dict) or raw.get("patternProperties"):
+                raise ValueError("provider schemas require named object properties")
+            properties = raw.get("properties", {})
+            if not isinstance(properties, dict):
+                raise ValueError("schema properties must be an object")
+            result["properties"] = {name: visit(value, depth + 1) for name, value in properties.items()}
+            result["additionalProperties"] = False
+            result["required"] = list(properties) if provider == "openai" else list(raw.get("required", []))
+        elif kind == "array":
+            if "items" not in raw:
+                raise ValueError("provider arrays require an item schema")
+            result["items"] = visit(raw["items"], depth + 1)
+        elif kind not in {None, "string", "integer", "number", "boolean", "null"}:
+            raise ValueError("unsupported provider schema type")
+        elif kind is None and not any(key in result for key in ("anyOf", "allOf")):
+            raise ValueError("provider schemas require an explicit type or union")
+        understood = _SCHEMA_ANNOTATIONS | _SCHEMA_CONSTRAINTS | {
+            "$defs", "$ref", "type", "enum", "const", "anyOf", "oneOf", "allOf", "discriminator",
+            "properties", "additionalProperties", "required", "items",
+        }
+        if set(raw) - understood:
+            raise ValueError("unsupported provider schema keyword")
+        hints = {}
+        for key in _SCHEMA_CONSTRAINTS:
+            if key not in raw:
+                continue
+            # Use a conservative OpenAI dialect for string length annotations.
+            # Claude's SDK only keeps minItems=0/1 and its supported formats.
+            supported = (provider == "openai" and key not in {"default", "examples", "minLength", "maxLength"})
+            supported |= (provider == "anthropic" and (
+                (key == "minItems" and raw[key] in (0, 1))
+                or (key == "format" and raw[key] in _SCHEMA_FORMATS)
+            ))
+            if supported:
+                result[key] = raw[key]
+            else:
+                hints[key] = raw[key]
+        if hints:
+            prefix = result.get("description", "")
+            result["description"] = (prefix + "\n\n" if prefix else "") + "Domain constraints: " + json.dumps(
+                hints, sort_keys=True, ensure_ascii=False,
+            )
+        return result
+
+    normalized = visit(root)
+    if normalized.get("type") != "object" or "anyOf" in normalized:
+        raise ValueError("structured output requires an object root")
+    return normalized
+
+
+def _wire_tools(tools: list[dict[str, Any]], *, provider: str) -> list[dict[str, Any]]:
+    """Normalize registered strict functions, retaining original validation schemas."""
+    result = deepcopy(tools)
+    for tool in result:
+        function = tool.get("function", tool)
+        if function.get("strict") is True:
+            key = "parameters" if provider == "openai" else "input_schema"
+            if key in function:
+                function[key] = _wire_schema(function[key], provider=provider)
+    return result
+
+
 class OpenAIAdapter:
     provider = "openai"
     endpoint = "https://api.openai.com/v1/responses"
@@ -55,7 +189,7 @@ class OpenAIAdapter:
                 "format": {
                     "type": "json_schema",
                     "name": request.schema_name,
-                    "schema": request.output_schema,
+                    "schema": _wire_schema(request.output_schema, provider=self.provider),
                     "strict": True,
                 }
             },
@@ -63,7 +197,7 @@ class OpenAIAdapter:
         }
         tools = request.context.get("tools")
         if tools:
-            body["tools"] = tools
+            body["tools"] = _wire_tools(tools, provider=self.provider)
         for item in request.context.get("tool_results") or []:
             body["input"].append(
                 {
@@ -128,8 +262,7 @@ class AnthropicAdapter:
         return lookup_capabilities(self.provider, model)
 
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
-        schema = dict(request.output_schema)
-        schema.setdefault("additionalProperties", False)
+        schema = _wire_schema(request.output_schema, provider=self.provider)
         body: dict[str, Any] = {
             "model": request.model,
             "max_tokens": request.max_output_tokens,
@@ -139,7 +272,7 @@ class AnthropicAdapter:
         }
         tools = request.context.get("tools")
         if tools:
-            body["tools"] = tools
+            body["tools"] = _wire_tools(tools, provider=self.provider)
         results = request.context.get("tool_results") or []
         if results:
             body["messages"].append(

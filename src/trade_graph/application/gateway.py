@@ -212,6 +212,7 @@ class ModelGateway:
             "deployment_id": deployment_id, "price_card_id": price_card_id, "fx_rate": fx_rate,
             "fx_buffer": fx_buffer, "priority": priority, "attempt_kind": attempt_kind,
         }) if invocation_id else ""
+        wire_body = None
         try:
             # The authorization check, reservation and dispatch intent commit together.
             # No database transaction is held over the external call.
@@ -222,6 +223,14 @@ class ModelGateway:
                     recovered = journal.recover(invocation_id, binding)
                     if recovered is not None:
                         return recovered
+                if request.provider != "scripted":
+                    try:
+                        _bounded_json(request.output_schema)
+                        Draft202012Validator.check_schema(request.output_schema)
+                        wire_body = adapter.build_body(request)
+                    except (KeyError, TypeError, ValueError, RuntimeError, SchemaError):
+                        return ModelResult(ok=False, failure="unsupported",
+                                           message="request cannot be represented by the provider schema dialect")
                 reservation = self.budget.reserve(
                     deployment_id=deployment_id, role=request.role, task_id=request.task_id,
                     root_task_id=request.root_task_id, price_card_id=price_card_id,
@@ -239,7 +248,7 @@ class ModelGateway:
             if request.provider == "scripted":
                 result = self.scripted.complete(request)
             else:
-                result = _parse_provider_result(adapter, self._payload(request, adapter))
+                result = _parse_provider_result(adapter, self._payload(request, adapter, wire_body))
         except (TimeoutError, OSError):
             result = ModelResult(ok=False, failure="timeout_uncertain", message="provider transport outcome uncertain")
         except ProviderHttpResponseError as exc:
@@ -289,7 +298,8 @@ class ModelGateway:
         """Runtime installations may require exact protected resolved-model pricing."""
         return True
 
-    def _payload(self, request: ModelRequest, adapter: InferenceAdapter) -> dict[str, Any]:
+    def _payload(self, request: ModelRequest, adapter: InferenceAdapter,
+                 wire_body: dict[str, Any] | None = None) -> dict[str, Any]:
         fixture = request.context.get("http_fixture")
         if isinstance(fixture, dict):
             return fixture
@@ -303,7 +313,8 @@ class ModelGateway:
         # Legacy/custom transports keep their three-argument contract. Inspect before
         # calling: retrying after TypeError could duplicate an already-dispatched request.
         return post(
-            getattr(adapter, "endpoint"), adapter.build_body(request), self._headers(request.provider), **kwargs,
+            getattr(adapter, "endpoint"), wire_body if wire_body is not None else adapter.build_body(request),
+            self._headers(request.provider), **kwargs,
         )
 
     def _headers(self, provider: str) -> dict[str, str]:

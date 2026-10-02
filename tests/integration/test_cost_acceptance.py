@@ -515,12 +515,13 @@ def test_a06_tool_call_bound_blocks_excess_batch_and_cumulative_continuation(tmp
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)
-def test_a17_malformed_local_schema_retains_supplied_usage(tmp_path, provider):
+def test_a17_malformed_local_schema_refuses_before_dispatch_or_billing(tmp_path, provider):
     runtime = _stack(tmp_path)
+    transport = ScriptedProviderHttp([_response(provider)])
     gateway = ModelGateway(
         runtime.budget,
         paid_calls_enabled=True,
-        transport=ScriptedProviderHttp([_response(provider)]),
+        transport=transport,
     )
     result = gateway.invoke(
         _request(provider, output_schema={"type": "object", "properties": []}),
@@ -529,28 +530,34 @@ def test_a17_malformed_local_schema_retains_supplied_usage(tmp_path, provider):
         fx_rate=Decimal("0.9"),
         fx_buffer=Decimal("1"),
     )
-    assert not result.ok and result.failure == "validation"
-    assert result.usage.uncached_input_tokens == 7 and result.usage.billed_output_tokens == 3
-    assert runtime.database.execute("SELECT synthetic FROM usage_receipts").fetchone()[0] == 1
-    assert runtime.database.execute("SELECT state FROM budget_reservations").fetchone()[0] == "COMMITTED"
+    _assert_local_refusal(runtime, result, transport)
     runtime.database.close()
 
 
 SCHEMA_CASES = [
-    pytest.param({"oneOf": [{"type": "integer"}, {"type": "string"}]}, "TEST", True, id="oneOf-valid"),
-    pytest.param({"oneOf": [{"type": "number"}, {"type": "integer"}]}, 7, False, id="oneOf-ambiguous"),
-    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 3, True, id="allOf-valid"),
-    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 1, False, id="allOf-invalid"),
-    pytest.param({"type": "number", "minimum": 2}, 1, False, id="minimum"),
-    pytest.param({"type": "string", "pattern": "^[A-Z]+$"}, "bad", False, id="pattern"),
-    pytest.param({"type": "string", "minLength": 2}, "X", False, id="minLength"),
-    pytest.param({"type": "array", "maxItems": 1}, [1, 2], False, id="maxItems"),
-    pytest.param({"enum": [1]}, True, False, id="enum-bool-is-not-number"),
-    pytest.param({"const": 1}, True, False, id="const-bool-is-not-number"),
-    pytest.param({"type": "not-a-json-type"}, "TEST", False, id="bad-schema-type"),
-    pytest.param({"oneOf": []}, "TEST", False, id="bad-schema-oneOf"),
-    pytest.param({"type": "string", "pattern": "["}, "TEST", False, id="bad-schema-pattern"),
+    pytest.param({"oneOf": [{"type": "integer"}, {"type": "string"}]}, "TEST", True, True, id="oneOf-valid"),
+    pytest.param({"oneOf": [{"type": "number"}, {"type": "integer"}]}, 7, False, True, id="oneOf-ambiguous"),
+    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 3, True, False, id="allOf-valid"),
+    pytest.param({"allOf": [{"type": "integer"}, {"minimum": 2}]}, 1, False, False, id="allOf-invalid"),
+    pytest.param({"type": "number", "minimum": 2}, 1, False, True, id="minimum"),
+    pytest.param({"type": "string", "pattern": "^[A-Z]+$"}, "bad", False, True, id="pattern"),
+    pytest.param({"type": "string", "minLength": 2}, "X", False, True, id="minLength"),
+    pytest.param({"type": "array", "items": {"type": "integer"}, "maxItems": 1}, [1, 2], False, True, id="maxItems"),
+    pytest.param({"type": "integer", "enum": [1]}, True, False, True, id="enum-bool-is-not-number"),
+    pytest.param({"type": "integer", "const": 1}, True, False, True, id="const-bool-is-not-number"),
+    pytest.param({"type": "not-a-json-type"}, "TEST", False, False, id="bad-schema-type"),
+    pytest.param({"oneOf": []}, "TEST", False, False, id="bad-schema-oneOf"),
+    pytest.param({"type": "string", "pattern": "["}, "TEST", False, False, id="bad-schema-pattern"),
 ]
+
+
+def _assert_local_refusal(runtime, result, transport):
+    assert not result.ok and result.failure == "unsupported" and result.usage is None
+    assert transport.calls == []
+    assert runtime.database.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
+    assert runtime.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 0
+    assert runtime.database.execute("SELECT COUNT(*) FROM model_invocations").fetchone()[0] == 0
+    assert runtime.budget.remaining("fixture") == 10
 
 
 def _assert_billed_fixture(runtime, result, *, valid, calls):
@@ -566,7 +573,7 @@ def _assert_billed_fixture(runtime, result, *, valid, calls):
 
 @pytest.mark.parametrize("provider", PROVIDERS)
 @pytest.mark.parametrize("target", ["output", "tool"])
-@pytest.mark.parametrize("constraint,value,valid", SCHEMA_CASES)
+@pytest.mark.parametrize("constraint,value,valid,representable", SCHEMA_CASES)
 def test_a17_complete_json_schema_constraints_retain_both_provider_usage(
     tmp_path,
     provider,
@@ -574,6 +581,7 @@ def test_a17_complete_json_schema_constraints_retain_both_provider_usage(
     constraint,
     value,
     valid,
+    representable,
 ):
     runtime = _stack(tmp_path)
     schema = {"type": "object", "properties": {"symbol": constraint}, "required": ["symbol"]}
@@ -597,6 +605,11 @@ def test_a17_complete_json_schema_constraints_retain_both_provider_usage(
     result = gateway.invoke(
         request, deployment_id="fixture", price_card_id=provider, fx_rate=Decimal("0.9"), fx_buffer=Decimal("1")
     )
+    if target == "output" and not representable:
+        _assert_local_refusal(runtime, result, transport)
+        assert handlers == []
+        runtime.database.close()
+        return
     expected_calls = 2 if target == "tool" and valid else 1
     assert len(transport.calls) == expected_calls
     assert handlers == ([data] if target == "tool" and valid else [])
@@ -705,6 +718,11 @@ def test_a17_local_refs_work_and_external_retrieval_is_denied_with_usage(
         request, deployment_id="fixture", price_card_id=provider, fx_rate=Decimal("0.9"), fx_buffer=Decimal("1")
     )
     valid = reference.startswith("#")
+    if target == "output" and not valid:
+        _assert_local_refusal(runtime, result, transport)
+        assert handlers == []
+        runtime.database.close()
+        return
     expected_calls = 2 if target == "tool" and valid else 1
     assert handlers == ([{"symbol": "TEST"}] if target == "tool" and valid else [])
     assert len(transport.calls) == expected_calls
@@ -764,6 +782,11 @@ def test_a17_schema_and_provider_data_bounds_fail_safely_with_usage(tmp_path, pr
         fx_rate=Decimal("0.9"),
         fx_buffer=Decimal("1"),
     )
+    if target == "output" and bound in {"schema-depth", "schema-size"}:
+        _assert_local_refusal(runtime, result, transport)
+        assert handlers == []
+        runtime.database.close()
+        return
     _assert_billed_fixture(runtime, result, valid=False, calls=1)
     assert result.provider_model == PROVIDERS[provider]
     assert len(transport.calls) == 1
