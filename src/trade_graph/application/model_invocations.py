@@ -41,6 +41,9 @@ class InvocationJournal:
         if row["result_json"] is not None:
             return ModelResult.model_validate_json(row["result_json"])
         self.budget.mark_uncertain(row["reservation_id"])
+        self.database.execute("""UPDATE provider_transport_attempts SET outcome='UNCERTAIN',finished_at=?
+            WHERE reservation_id=? AND outcome='DISPATCH_POSSIBLE'""",
+            (utc_iso(self.clock.now()), row["reservation_id"]))
         result = ModelResult(ok=False, failure="timeout_uncertain",
                              message="recovered dispatch without a durable response; reconcile before new work")
         self.save(invocation_id, result, "UNCERTAIN")

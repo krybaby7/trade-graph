@@ -16,9 +16,15 @@ from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
-from trade_graph.adapters.models.transport import ProviderHttp, ProviderHttpResponseError
+from trade_graph.adapters.models.transport import (
+    HttpxProviderHttp,
+    ProviderHttp,
+    ProviderHttpResponseError,
+    provider_request_bytes,
+)
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.model_invocations import InvocationJournal
+from trade_graph.application.transport_evidence import TransportJournal
 from trade_graph.contracts.models import ModelRequest, ModelResult
 from trade_graph.domain.errors import BudgetExhausted, PaidCallsDisabled, ValidationFailure
 from trade_graph.domain.protocols import InferenceAdapter
@@ -223,6 +229,8 @@ class ModelGateway:
             billing["fx_rate_id"] = fx_rate_id
         binding = journal.binding(request, portfolio_id or "", billing) if invocation_id else ""
         wire_body = None
+        has_transport_attempt = request.provider != "scripted" and "http_fixture" not in request.context
+        transport_journal = TransportJournal(self.budget)
         try:
             # The authorization check, reservation and dispatch intent commit together.
             # No database transaction is held over the external call.
@@ -236,8 +244,10 @@ class ModelGateway:
                 if request.provider != "scripted":
                     try:
                         _bounded_json(request.output_schema)
+                        _bounded_json(request.context.get("tools") or [])
                         Draft202012Validator.check_schema(request.output_schema)
                         wire_body = adapter.build_body(request)
+                        provider_request_bytes(wire_body)
                     except (KeyError, TypeError, ValueError, RuntimeError, SchemaError):
                         return ModelResult(ok=False, failure="unsupported",
                                            message="request cannot be represented by the provider schema dialect")
@@ -252,6 +262,9 @@ class ModelGateway:
                 )
                 if invocation_id:
                     journal.start(invocation_id, binding, request, portfolio_id, reservation)
+                if has_transport_attempt:
+                    transport_journal.start(reservation, invocation_id, request, adapter, wire_body,
+                                            self.transport, synthetic)
         except BudgetExhausted as exc:
             return ModelResult(ok=False, failure="validation", message=str(exc))
         self.attempts.append(reservation)
@@ -259,7 +272,8 @@ class ModelGateway:
             if request.provider == "scripted":
                 result = self.scripted.complete(request)
             else:
-                result = _parse_provider_result(adapter, self._payload(request, adapter, wire_body))
+                result = _parse_provider_result(adapter, self._payload(
+                    request, adapter, wire_body, transport_attempt_id=reservation if has_transport_attempt else None))
         except (TimeoutError, OSError):
             result = ModelResult(ok=False, failure="timeout_uncertain", message="provider transport outcome uncertain")
         except ProviderHttpResponseError as exc:
@@ -278,6 +292,9 @@ class ModelGateway:
         # Recording cost facts must survive revoked authority or a stale worker. Only
         # the application effect/publication is fenced, never the real bill.
         with self.budget.database.immediate():
+            if has_transport_attempt:
+                transport_journal.unresolved(reservation, "UNCERTAIN" if result.failure == "timeout_uncertain"
+                                             else "UNVERIFIED_RESPONSE")
             state = "COMPLETED"
             if not self._usage_is_priced(request, result):
                 result = _invalid_result(result, "resolved provider model has no approved price binding")
@@ -310,7 +327,8 @@ class ModelGateway:
         return True
 
     def _payload(self, request: ModelRequest, adapter: InferenceAdapter,
-                 wire_body: dict[str, Any] | None = None) -> dict[str, Any]:
+                 wire_body: dict[str, Any] | None = None,
+                 transport_attempt_id: str | None = None) -> dict[str, Any]:
         fixture = request.context.get("http_fixture")
         if isinstance(fixture, dict):
             return fixture
@@ -321,6 +339,8 @@ class ModelGateway:
         kwargs = {"timeout_seconds": request.timeout_seconds} if (
             "timeout_seconds" in parameters or any(p.kind == Parameter.VAR_KEYWORD for p in parameters.values())
         ) else {}
+        if type(self.transport) is HttpxProviderHttp and transport_attempt_id:
+            kwargs["observe"] = lambda facts: TransportJournal(self.budget).observe(transport_attempt_id, facts)
         # Legacy/custom transports keep their three-argument contract. Inspect before
         # calling: retrying after TypeError could duplicate an already-dispatched request.
         return post(

@@ -64,6 +64,8 @@
 
 | D60 | Optional model expense FX source IDs bind the exact stored pair, value and available source bytes before dispatch; usage receipts retain that frozen link and actual conversion value | Migration 0011 leaves legacy provenance NULL. Later source drift cannot erase billed facts and independently invalidates evidence; a source link does not authenticate an external publisher |
 
+| D61 | Provider dispatches persist exact endpoint/request digests before external effects; the built-in HTTP transport refuses redirects/compression and bounds request/response bytes, elapsed time and network phases | Protected private response observations survive billing interruption, unknown attempts never redispatch, and custom transports stay unverified. Local wire hashes do not authenticate external acceptance, billing or profitability; raw bodies/headers/keys are absent from the journal |
+
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
 ## Remaining decisions

@@ -1,5 +1,6 @@
 """Actual HTTPX exception types exercise durable gateway costs; all HTTP is mocked."""
 
+from contextlib import contextmanager
 from decimal import Decimal
 
 import httpx
@@ -11,6 +12,14 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.application.scheduler import Scheduler
 
 PRIVATE_SENTINEL = "synthetic-private-header-url-and-body"
+
+
+def mock_stream(monkeypatch, factory):
+    @contextmanager
+    def stream(method, url, **options):
+        assert method == "POST"
+        yield factory(url, **options)
+    monkeypatch.setattr(httpx, "stream", stream)
 
 
 def durable_gateway(tmp_path, *, provider="openai", timeout=12):
@@ -49,7 +58,7 @@ def test_httpx_request_errors_are_durable_uncertainty_not_worker_exceptions(tmp_
         calls.append(options)
         raise error_type(PRIVATE_SENTINEL, request=httpx.Request("POST", f"https://invalid/{PRIVATE_SENTINEL}"))
 
-    monkeypatch.setattr(httpx, "post", fail)
+    mock_stream(monkeypatch, fail)
     result = gateway.invoke(request, **kwargs)
     assert result.failure == "timeout_uncertain" and result.usage is None
     assert PRIVATE_SENTINEL not in result.model_dump_json()
@@ -70,7 +79,7 @@ def test_http_denials_classify_failure_but_never_invent_zero_usage(tmp_path, mon
     payload = {"error": {"message": PRIVATE_SENTINEL}, "output": [{"type": "message", "content": [
         {"type": "output_text", "text": '{"action":"hold"}'},
     ]}]}
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: response(status, payload))
+    mock_stream(monkeypatch, lambda *args, **options: response(status, payload))
     result = gateway.invoke(request, **kwargs)
     assert not result.ok and result.failure == failure and result.usage is None
     assert result.message == f"provider HTTP {status}" and PRIVATE_SENTINEL not in result.model_dump_json()
@@ -84,12 +93,12 @@ def test_http_denial_with_reported_usage_has_exactly_one_receipt_and_allocation(
     gateway, database, request, kwargs = durable_gateway(tmp_path, provider=provider)
     payload = {"id": "synthetic-denial-usage", "model": request.model,
                "usage": {"input_tokens": 7, "output_tokens": 3}, "error": {"message": PRIVATE_SENTINEL}}
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: response(429, payload))
+    mock_stream(monkeypatch, lambda *args, **options: response(429, payload))
     result = gateway.invoke(request, **kwargs)
     assert not result.ok and result.failure == "rate_limit"
     assert result.usage.uncached_input_tokens == 7 and result.usage.billed_output_tokens == 3
     assert result.usage.provider_request_id == "synthetic-denial-usage"
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: pytest.fail("denied attempt dispatched twice"))
+    mock_stream(monkeypatch, lambda *args, **options: pytest.fail("denied attempt dispatched twice"))
     assert gateway.invoke(request, **kwargs) == result
     assert database.execute("SELECT state FROM model_invocations").fetchone()[0] == "COMPLETED"
     assert database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 1
@@ -105,7 +114,7 @@ def test_http_denial_with_reported_usage_has_exactly_one_receipt_and_allocation(
 ])
 def test_malformed_reported_usage_remains_uncertain_and_redacted(tmp_path, monkeypatch, usage):
     gateway, database, request, kwargs = durable_gateway(tmp_path)
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: response(429, {
+    mock_stream(monkeypatch, lambda *args, **options: response(429, {
         "usage": usage,
         "error": {"message": PRIVATE_SENTINEL},
     }))
@@ -117,7 +126,7 @@ def test_malformed_reported_usage_remains_uncertain_and_redacted(tmp_path, monke
 
 def test_non_json_error_body_cannot_escape_or_leak(tmp_path, monkeypatch):
     gateway, database, request, kwargs = durable_gateway(tmp_path)
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: response(502, text=PRIVATE_SENTINEL))
+    mock_stream(monkeypatch, lambda *args, **options: response(502, text=PRIVATE_SENTINEL))
     result = gateway.invoke(request, **kwargs)
     assert result.failure == "temporary" and result.usage is None
     assert PRIVATE_SENTINEL not in result.model_dump_json()
@@ -135,7 +144,7 @@ def test_gateway_forwards_request_timeout_with_transport_maximum(
         observed.append(options["timeout"])
         return response(401, {})
 
-    monkeypatch.setattr(httpx, "post", denial)
+    mock_stream(monkeypatch, denial)
     gateway.invoke(request.model_copy(update={"timeout_seconds": requested}), **kwargs)
     assert observed == [effective]
 
@@ -177,7 +186,7 @@ def test_legacy_transport_type_error_after_dispatch_is_never_retried(tmp_path):
 
 
 def test_error_contract_retains_only_billing_metadata(monkeypatch):
-    monkeypatch.setattr(httpx, "post", lambda *args, **options: response(403, {
+    mock_stream(monkeypatch, lambda *args, **options: response(403, {
         "id": "synthetic-response", "model": "gpt-6-luna", "usage": {"input_tokens": 2, "output_tokens": 1},
         "error": {"message": PRIVATE_SENTINEL}, "raw_headers": PRIVATE_SENTINEL,
     }))

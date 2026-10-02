@@ -782,7 +782,7 @@ def test_a17_schema_and_provider_data_bounds_fail_safely_with_usage(tmp_path, pr
         fx_rate=Decimal("0.9"),
         fx_buffer=Decimal("1"),
     )
-    if target == "output" and bound in {"schema-depth", "schema-size"}:
+    if bound in {"schema-depth", "schema-size"}:
         _assert_local_refusal(runtime, result, transport)
         assert handlers == []
         runtime.database.close()
