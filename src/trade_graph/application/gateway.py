@@ -216,9 +216,8 @@ class ModelGateway:
         card = self.budget.card(price_card_id)
         if request.provider != "scripted" and (card.provider != request.provider or card.model != request.model):
             return ModelResult(ok=False, failure="unsupported", message="price card does not match the request")
-        synthetic = request.provider == "scripted" or (
-            "http_fixture" not in request.context and not self.api_keys.get(request.provider)
-        )
+        uses_fixture = isinstance(request.context.get("http_fixture"), dict)
+        synthetic = request.provider == "scripted" or (not uses_fixture and not self.api_keys.get(request.provider))
         journal = InvocationJournal(self.budget)
         billing = {
             "deployment_id": deployment_id, "price_card_id": price_card_id, "fx_rate": fx_rate,
@@ -229,7 +228,7 @@ class ModelGateway:
             billing["fx_rate_id"] = fx_rate_id
         binding = journal.binding(request, portfolio_id or "", billing) if invocation_id else ""
         wire_body = None
-        has_transport_attempt = request.provider != "scripted" and "http_fixture" not in request.context
+        has_transport_attempt = request.provider != "scripted" and not uses_fixture
         transport_journal = TransportJournal(self.budget)
         try:
             # The authorization check, reservation and dispatch intent commit together.

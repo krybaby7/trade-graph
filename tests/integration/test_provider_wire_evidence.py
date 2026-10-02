@@ -127,3 +127,21 @@ def test_request_memory_bound_rejects_oversized_data_before_dispatch():
         for _ in range(65):
             body = {"next": body}
         provider_request_bytes(body)
+
+
+@pytest.mark.parametrize("value", [None, "invalid-fixture", []])
+def test_nondict_fixture_key_cannot_bypass_wire_journal_or_synthetic_classification(tmp_path, monkeypatch, value):
+    gateway, database, request, kwargs = durable_gateway(tmp_path)
+    request = request.model_copy(update={"context": {"http_fixture": value}})
+
+    def deny(*args, **options):
+        attempt = dict(database.execute("SELECT * FROM provider_transport_attempts").fetchone())
+        assert attempt["outcome"] == "DISPATCH_POSSIBLE" and attempt["synthetic"] == 1
+        return response(403, {})
+
+    mock_stream(monkeypatch, deny)
+    result = gateway.invoke(request, **kwargs)
+    assert result.failure == "credentials"
+    assert database.execute("SELECT synthetic FROM budget_reservations").fetchone()[0] == 1
+    assert database.execute("SELECT outcome FROM provider_transport_attempts").fetchone()[0] == "HTTP_RESPONSE"
+    database.close()
