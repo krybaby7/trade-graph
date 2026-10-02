@@ -1,4 +1,4 @@
-"""Bounded pipes and wall-clock enforcement for the owner-pinned checker process."""
+"""Bounded pipes and deadlines for owner-pinned checker and confined prototype processes."""
 
 from __future__ import annotations
 
@@ -50,8 +50,23 @@ def run_bounded(command: list[str], payload: bytes, *, cwd: str, wall_seconds: f
                 if stopped:
                     break
             if stopped:
-                os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=3)
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=3)
+            else:
+                # Hostile mutable code can close both output pipes and continue
+                # running. Empty selector state is not process completion.
+                try:
+                    process.wait(timeout=max(0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    stopped = "checker wall-clock limit exceeded"
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=3)
     return {"exit_code": process.returncode if not stopped else 1,
             "stdout": bytes(output["stdout"][:OUTPUT_BYTES]).decode("utf-8", errors="replace"),
             "stderr": bytes(output["stderr"][:OUTPUT_BYTES]).decode("utf-8", errors="replace") + stopped}
