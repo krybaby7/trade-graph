@@ -74,7 +74,9 @@ least-privilege key inventory with funding/withdrawal permissions absent, actual
 authenticated fee/order/history reconciliation, intended-host identity and
 separately authorized write/cancel/protection conformance remain pending.
 Adapter method absence and a signed owner declaration do not prove permanent
-withdrawal permission absence. Native stops stay untested and disabled. Rounded
-native cost, multi-asset fee, rebate and late-history replay limits retain their
-existing safe refusals and require a protected financial contract before live
-acceptance. Real pilot authority remains a separate T20 owner decision.
+withdrawal permission absence. Native stops stay untested and disabled. The later
+[native principal checkpoint](2026-10-04-kraken-native-principal.md) implements
+bounded rounded-cost accounting under an agreed additive financial contract.
+Multi-asset fees, rebates and late-history replay retain their safe refusals and
+require protected financial contracts before live acceptance. Real pilot authority
+remains a separate T20 owner decision.

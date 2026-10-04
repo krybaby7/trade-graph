@@ -40,6 +40,7 @@ def _pairs():
             "quote": "ZUSD",
             "pair_decimals": 1,
             "lot_decimals": 8,
+            "cost_decimals": 9,
             "tick_size": "0.1",
             "ordermin": "0.0001",
             "costmin": "0.5",
@@ -854,6 +855,7 @@ def test_unrepresentable_native_fills_refuse_before_real_ledger_changes(
         ),
     )
     rest = ScriptedRest()
+    del rest.results["AssetPairs"]["XXBTZUSD"]["cost_decimals"]
     rest.results["ClosedOrders"] = {
         "closed": {"order-1": _order(status="closed", vol=quantity, vol_exec=quantity)},
         "count": 1,

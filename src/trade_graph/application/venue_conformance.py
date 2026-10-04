@@ -188,12 +188,14 @@ def _write(directory: Path, name: str, data: bytes) -> None:
 def _source_digests() -> tuple[str, str, str]:
     root = Path(__file__).resolve().parents[1]
     paths = ("adapters/brokers/kraken_live.py", "adapters/brokers/kraken_transport.py",
-             "application/broker_identity.py", "contracts/models.py", "domain/money.py")
+             "application/broker_identity.py", "contracts/models.py", "domain/money.py",
+             "kernel/books.py", "application/ledger.py", "application/execution.py")
     adapter = _hash(_canonical({name: _hash((root / name).read_bytes()) for name in paths}))
     wire = _hash(_canonical({
         "read_methods": sorted(PRIVATE_READ_METHODS | PUBLIC_METHODS), "time_in_force": ["gtc", "ioc"],
         "page_size": kraken_live.PAGE_SIZE, "native_scale": kraken_live.MAX_NATIVE_SCALE,
         "ledger_precision": kraken_live.CORE_LEDGER_PRECISION, "maximum_ledger_refs_per_trade": 20,
+        "native_quote_principal": "declared_quantum_and_exact_ledger_legs",
         "native_stop_tested": False, "order_writes": False,
     }))
     return _hash(Path(__file__).read_bytes()), adapter, wire

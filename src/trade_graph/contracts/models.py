@@ -487,6 +487,9 @@ class FillRecord(ContractModel):
     side: Literal["buy", "sell"]
     quantity: Decimal
     price: Decimal
+    # Native quote principal excludes fees. Older records omit this field and
+    # retain quantity-times-price behavior and their exact serialized identity.
+    quote_cost: Decimal | None = Field(default=None, exclude_if=lambda value: value is None)
     fee_amount: Decimal
     fee_asset: str
     liquidity: Literal["maker", "taker"]
@@ -498,6 +501,7 @@ class FillRecord(ContractModel):
     @field_validator(
         "quantity",
         "price",
+        "quote_cost",
         "fee_amount",
         "reference_mid",
         "fee_identified_rate",
@@ -509,9 +513,21 @@ class FillRecord(ContractModel):
             return None
         return _dec(value)
 
+    @field_validator("quote_cost")
+    @classmethod
+    def _positive_quote_cost(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise ValueError("native quote principal must be positive")
+        return value
+
+    @property
+    def quote_principal(self) -> Decimal:
+        return self.quote_cost if self.quote_cost is not None else self.quantity * self.price
+
     @field_serializer(
         "quantity",
         "price",
+        "quote_cost",
         "fee_amount",
         "reference_mid",
         "fee_identified_rate",

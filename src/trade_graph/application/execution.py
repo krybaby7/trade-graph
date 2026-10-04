@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
-from decimal import ROUND_CEILING, Decimal
+from decimal import ROUND_CEILING, Decimal, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.authority import AuthorityRecord
@@ -395,6 +395,8 @@ class Execution:
         if existing is not None:
             if existing["document_json"] != fill.model_dump_json():
                 self._incident("fill_discrepancy", {"trade_id": fill.trade_id})
+            else:
+                self._record_native_cost_limits(fill)
             return False
         base, quote = fill.symbol.split("/")
         portfolio_id = self._portfolio_for_intent(fill.intent_id) if fill.intent_id else None
@@ -434,6 +436,7 @@ class Execution:
                 ),
             )
         if fill.intent_id:
+            self._record_native_cost_limits(fill)
             self._consume_reservation(fill)
             self._refresh_order_state(fill.intent_id)
         return True
@@ -1210,7 +1213,7 @@ class Execution:
         if asset is None:
             return
         if fill.side == "buy":
-            used = fill.price * fill.quantity
+            used = fill.quote_principal
         else:
             used = fill.quantity
         if fill.fee_asset == asset:
@@ -1268,9 +1271,57 @@ class Execution:
 
     def _reconciliation_blocked(self) -> bool:
         health = self._reconciliation_health()
-        return health is not None and health["state"] == "incomplete"
+        return (health is not None and health["state"] == "incomplete") or self._native_cost_limits_blocked()
+
+    def _native_cost_limits_blocked(self) -> bool:
+        return bool(self.database.execute(
+            """SELECT 1 FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'
+            AND json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=?
+            AND json_extract(payload_json,'$.mode')=? LIMIT 1""", (self.venue, self.account_id, self.mode),
+        ).fetchone())
+
+    def _record_native_cost_limits(self, fill: FillRecord) -> None:
+        if fill.quote_cost is None or fill.intent_id is None:
+            return
+        payload = self._payload(fill.intent_id)
+        reasons = []
+        if payload.get("limit_price") is not None:
+            with localcontext() as context:
+                context.prec = 128
+                limit = Decimal(payload["limit_price"]) * fill.quantity
+                if ((fill.side == "buy" and fill.quote_cost > limit)
+                        or (fill.side == "sell" and fill.quote_cost < limit)):
+                    reasons.append("native_principal_exceeds_limit")
+        asset = payload.get("reserve_asset")
+        if asset is not None and payload.get("reserve_amount") is not None:
+            used = Decimal("0")
+            with localcontext() as context:
+                context.prec = 128
+                rows = self.database.execute("SELECT document_json FROM fills WHERE intent_id=?", (fill.intent_id,))
+                for row in rows:
+                    recorded = FillRecord.model_validate_json(row["document_json"])
+                    used += recorded.quote_principal if recorded.side == "buy" else recorded.quantity
+                    if recorded.fee_asset == asset:
+                        used += recorded.fee_amount
+                if used > Decimal(payload["reserve_amount"]):
+                    reasons.append("native_fills_exceed_original_reservation")
+        if not reasons or self.database.execute(
+            """SELECT 1 FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'
+            AND json_extract(payload_json,'$.intent_id')=? AND json_extract(payload_json,'$.trade_id')=? LIMIT 1""",
+            (fill.intent_id, fill.trade_id),
+        ).fetchone():
+            return
+        self._incident("native_fill_execution_limit_discrepancy", {
+            "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
+            "intent_id": fill.intent_id, "trade_id": fill.trade_id,
+            "quote_principal": canonical_decimal(fill.quote_cost), "reasons": reasons,
+            "financial_facts_preserved": True, "owner_review_required": True,
+        })
+        self._set_reconciliation_health(incomplete=True, reason="native fill execution limits require review")
 
     def _set_reconciliation_health(self, *, incomplete: bool, reason: str) -> None:
+        if self._native_cost_limits_blocked():
+            incomplete, reason = True, "native fill execution limits require review"
         state = "incomplete" if incomplete else "complete"
         health = self._reconciliation_health()
         # Every actually completed live history scan retains a fresh observation.

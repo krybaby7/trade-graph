@@ -27,6 +27,18 @@ Funds reserved for an open order are a classification of existing funds, not add
 
 Use FIFO lots for initial internal realized/unrealized reporting, explicitly not a jurisdiction-specific tax report. Capitalize acquisition fees in lot cost and subtract disposal fees from sale proceeds, allocating partial fills proportionally. If a fee is paid in a third asset, reduce that asset's inventory and value the fee with an identified rate; account for its cost-basis disposal without charging the same fee twice. Fee rebates are signed amounts. Preserve original brokerage precision and rounding rules.
 
+`FillRecord.quote_cost`, when present, is the positive finite native quote principal
+excluding fees. Cash consideration, FIFO acquisition basis/disposal proceeds and
+buy reservation consumption use `quote_principal`; quantity and reported price
+remain unchanged. Legacy fills omit the new field and retain `quantity * price`
+and identical durable JSON. Native principal, quantities, fees, identified
+third-asset fee valuation and resulting cash/basis/proceeds must fit the protected
+28-digit arithmetic context without rounding before mutation. Existing proportional
+FIFO allocation remains a separate reporting policy. A genuine already executed
+native principal that exceeds its authorized limit or original reservation is
+conserved and linked to a durable execution incident; subsequent clean history
+cannot clear that incident or authorize new increases.
+
 Trading friction is already present in actual fill prices and fee debits. Spread/slippage are explanatory execution metrics against a contemporaneous reference; do not deduct them a second time from actual equity-based P&L. Estimated future liquidation fees may be shown as a separate conservative projection, not mixed with incurred costs.
 
 ## Primary performance equation

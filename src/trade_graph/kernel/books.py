@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, Inexact, localcontext
 
 from trade_graph.contracts.models import FillRecord
 
@@ -220,8 +220,47 @@ def apply_fill(
     lot_id: str,
     at: str,
 ) -> None:
+    if fill.quote_cost is None:
+        _apply_fill(books, fill, base_asset=base_asset, quote_asset=quote_asset, lot_id=lot_id, at=at)
+        return
+    # Native postings must fit the protected arithmetic context before any
+    # mutation. FIFO proportional basis allocation keeps its existing policy;
+    # it must never round the venue's cash principal or native quantities.
+    with localcontext() as context:
+        context.prec = 28
+        context.traps[Inexact] = True
+        try:
+            for number in (fill.quantity, fill.price, fill.quote_cost, fill.fee_amount):
+                context.plus(number)
+            principal = fill.quote_cost
+            if fill.fee_asset == quote_asset:
+                delta = (-principal - fill.fee_amount if fill.side == "buy" else principal - fill.fee_amount)
+            else:
+                delta = -principal if fill.side == "buy" else principal
+            books.cash_amount(quote_asset) + delta
+            if fill.fee_asset == base_asset:
+                fill.quantity - fill.fee_amount if fill.side == "buy" else fill.quantity + fill.fee_amount
+            elif fill.fee_asset != quote_asset and fill.fee_identified_rate is not None:
+                context.plus(fill.fee_identified_rate)
+                identified = fill.fee_amount * fill.fee_identified_rate
+                principal + identified if fill.side == "buy" else principal - identified
+        except ArithmeticError:
+            raise BooksError("native fill principal cannot be posted without rounding") from None
+        context.traps[Inexact] = False
+        _apply_fill(books, fill, base_asset=base_asset, quote_asset=quote_asset, lot_id=lot_id, at=at)
+
+
+def _apply_fill(
+    books: Books,
+    fill: FillRecord,
+    *,
+    base_asset: str,
+    quote_asset: str,
+    lot_id: str,
+    at: str,
+) -> None:
     quantity = fill.quantity
-    notional = fill.price * quantity
+    notional = fill.quote_principal
     fee = fill.fee_amount
     group: list[Posting] = []
     if fill.side == "buy":

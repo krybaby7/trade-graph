@@ -169,6 +169,7 @@ class KrakenLiveBroker:
         self._pairs: dict[str, str] = {}
         self._wire_pairs: dict[str, str] = {}
         self._rules: dict[str, InstrumentRules] = {}
+        self._cost_steps: dict[str, Decimal] = {}
         self.instrument_statuses: dict[str, str | None] = {}
         self._fees: dict[str, dict] = {}
         self._order_clients: dict[str, str | None] = {}
@@ -256,7 +257,7 @@ class KrakenLiveBroker:
                 requested.add(self._asset(base, aliases=aliases) + "/" + self._asset(quote, aliases=aliases))
             params["pair"] = ",".join(symbol.replace("BTC", "XBT").replace("/", "") for symbol in self.symbols)
         pairs = await self._request("AssetPairs", params)
-        rules, names, wire, statuses, fees = {}, {}, {}, {}, {}
+        rules, names, wire, statuses, fees, cost_steps = {}, {}, {}, {}, {}, {}
         for name, info in pairs.items():
             if not isinstance(info, dict):
                 raise ValidationFailure("Kraken pair metadata is malformed")
@@ -268,7 +269,7 @@ class KrakenLiveBroker:
             price_decimals = _integer(info["pair_decimals"], maximum=MAX_NATIVE_SCALE)
             lot_decimals = _integer(info["lot_decimals"], maximum=MAX_NATIVE_SCALE)
             if "cost_decimals" in info:
-                _integer(info["cost_decimals"], maximum=MAX_NATIVE_SCALE)
+                cost_steps[symbol] = Decimal(10) ** -_integer(info["cost_decimals"], maximum=MAX_NATIVE_SCALE)
             price_step = (
                 _decimal(info["tick_size"], positive=True)
                 if info.get("tick_size") is not None
@@ -314,6 +315,7 @@ class KrakenLiveBroker:
         # readiness. Publish the complete validated snapshot together.
         self._assets = aliases
         self._rules, self._pairs, self._wire_pairs = rules, names, wire
+        self._cost_steps = cost_steps
         self.instrument_statuses, self._fees = statuses, fees
         self._metadata_at = self.clock.now()
         current = max((max(row["maker"], row["taker"]) for row in fees.values()), default=None)
@@ -564,9 +566,13 @@ class KrakenLiveBroker:
         symbol = self._symbol(value["pair"])
         base, quote = symbol.split("/")
         quantity, price = _decimal(value["vol"], positive=True), _decimal(value["price"], positive=True)
-        native_cost = _decimal(value["cost"])
-        if native_cost != quantity * price:
-            raise ValidationFailure("Kraken rounded trade cost cannot be represented by the shared fill contract")
+        native_cost = _decimal(value["cost"], positive=True)
+        cost_step = self._cost_steps.get(symbol)
+        rounded = native_cost != quantity * price
+        if cost_step is not None and native_cost % cost_step:
+            raise ValidationFailure("Kraken native cost does not match its declared quote precision")
+        if rounded and (cost_step is None or abs(native_cost - quantity * price) >= cost_step):
+            raise ValidationFailure("Kraken rounded trade cost requires declared bounded quote precision")
         at = _decimal(value["time"])
         if not self.history_start <= at <= end:
             raise ValidationFailure("Kraken trade falls outside the requested point-in-time history")
@@ -586,7 +592,7 @@ class KrakenLiveBroker:
             if amount:
                 fees[asset] = fees.get(asset, Decimal("0")) + amount
         sign = Decimal("1") if value["type"] == "buy" else Decimal("-1")
-        if legs.get(base) != sign * quantity or legs.get(quote) != -sign * quantity * price:
+        if legs.get(base) != sign * quantity or legs.get(quote) != -sign * native_cost:
             raise ValidationFailure("Kraken native trade legs disagree with the shared fill contract")
         if len(fees) > 1:
             raise ValidationFailure("multi-asset Kraken fill fees require an extended financial contract")
@@ -609,7 +615,7 @@ class KrakenLiveBroker:
                 context.traps[Inexact] = True
                 for number in (quantity, price, native_cost, nominal, fee):
                     context.plus(number)
-                notional = price * quantity
+                notional = native_cost if rounded else price * quantity
                 if asset == quote:
                     notional + fee if value["type"] == "buy" else notional - fee
                 elif asset == base:
@@ -632,6 +638,7 @@ class KrakenLiveBroker:
             side=value["type"],
             quantity=quantity,
             price=price,
+            quote_cost=native_cost if rounded else None,
             fee_amount=fee,
             fee_asset=asset,
             liquidity="maker" if value["maker"] else "taker",
@@ -708,6 +715,16 @@ class KrakenLiveBroker:
             )
         with localcontext() as context:
             context.prec = ARITHMETIC_PRECISION
+            cost_step = self._cost_steps.get(intent.symbol)
+            if cost_step is None:
+                return SubmitResult(
+                    status="rejected", error="rejected", message="explicit native quote cost precision required",
+                )
+            if rule.price_increment * rule.quantity_increment % cost_step:
+                return SubmitResult(
+                    status="rejected", error="rejected",
+                    message="native quote rounding requires a protected partial-fill reserve bound",
+                )
             if quantity < rule.min_quantity or quantity % rule.quantity_increment:
                 return SubmitResult(
                     status="rejected", error="rejected", message="Kraken quantity precision/minimum rejected"

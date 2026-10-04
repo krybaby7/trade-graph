@@ -115,11 +115,27 @@ account reconciliation, host/dependency identity or paper/live economic differen
 The verifier always reports these missing facts. A narrowed history start also
 remains explicit; it cannot silently prove the full earlier account history.
 
-Rounded native trade costs, multiple native fee assets, rebates, late earlier fill
-history and protected-ledger precision overflow continue to fail closed under the
-existing financial contract. Completing replay requires an append-only audit and
-financial projection contract agreed with the protected execution owner; this
-collector does not rewrite ledger events or cached portfolio state. Native stops
+Rounded native trade costs are supported when the selected public metadata explicitly
+declares `cost_decimals`, cost is aligned to that quote quantum, its difference from
+exact reported quantity times price is strictly less than one quantum, and the
+independent native base and quote ledger legs agree. The durable fill retains the
+reported quantity/price and the native quote principal separately; fees stay separate.
+Exact cash, basis and reservations use that principal. Protected precision overflow
+and a wrong ledger leg remain refused. Guarded submission requires explicit native
+quote precision and refuses grids that permit rounding without a proven protected
+native fill/reserve bound. Compatible declared order grids are a necessary arithmetic
+check; `lot_decimals` alone does not prove actual partial-fill granularity. The concrete
+production conformance/pilot gates remain refused pending that native execution and
+reserve contract. Low-level synthetic request tests cannot establish acceptance.
+A rounded already executed fill is retained even
+if its cost violates the original limit/reservation; a durable incident blocks new
+increases and requires a separately implemented protected owner resolution.
+
+Multiple native fee assets, rebates and late earlier fill history continue to fail
+closed. The fee vector, rebate cash/inventory semantics and append-only chronological
+financial correction contracts remain unimplemented; see
+[native principal review](reviews/2026-10-04-kraken-native-principal.md).
+This collector does not rewrite ledger events or cached portfolio state. Native stops
 remain untested and disabled. T19 needs T17 delivery and actual separately authorized
 venue eligibility, least-privilege permissions and authenticated conformance before
 completion. T20 real orders and protection tests need their separate owner grant.
