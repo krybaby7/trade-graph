@@ -129,6 +129,12 @@ native fill/reserve bound. Compatible declared order grids are a necessary arith
 check; `lot_decimals` alone does not prove actual partial-fill granularity. The concrete
 production conformance/pilot gates remain refused pending that native execution and
 reserve contract. Low-level synthetic request tests cannot establish acceptance.
+Conditional partial-fill rounding arithmetic and a separate paper-only auxiliary
+fee-hold controller are now implemented; see
+[fee reserves and bounds](reviews/2026-10-04-native-fee-reserves-and-bounds.md).
+The arithmetic always reports that venue evidence is unverified and has no production
+admission path. `native_partial_fill_reserve_bound_unverified` remains a permanent
+verifier gate. Actual future native quantity/count and fee facts are still required.
 A rounded already executed fill is retained even
 if its cost violates the original limit/reservation; a durable incident blocks new
 increases and requires a separately implemented protected owner resolution.

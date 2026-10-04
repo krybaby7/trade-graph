@@ -881,14 +881,26 @@ def positions(runtime, limit: int = 50, offset: int = 0) -> dict:
             WHERE portfolio_id = ? AND state = 'held' AND created_at <= ? ORDER BY reservation_id""",
             (runtime.portfolio_id, at),
         )
+        reservations.extend(_rows(
+            runtime, """SELECT reservation_id,asset,current_amount AS amount FROM native_fee_reservations
+            WHERE portfolio_id=? AND state='held' AND created_at<=? ORDER BY reservation_id""",
+            (runtime.portfolio_id, at),
+        ))
         reserved = defaultdict(lambda: ZERO)
         for reservation in reservations:
             reserved[reservation["asset"]] += Decimal(reservation["amount"])
         decisions, intents = _decision_maps(runtime)
-        trades = {event["fill"]["trade_id"]: event["fill"] for event in _fill_events(runtime)}
+        trades = {}
+        for event in _fill_events(runtime):
+            fill = event["fill"]
+            trade_id = fill["trade_id"]
+            trades[trade_id] = fill
+            trades[f"{trade_id}:fee"] = fill
+            for index, _component in enumerate(fill.get("fee_components") or ()):
+                trades[f"{trade_id}:fee:{index}"] = fill
 
         def provenance(ref: str) -> dict:
-            fill = trades.get(ref.removesuffix(":fee"), {})
+            fill = trades.get(ref, {})
             intent = intents.get(fill.get("intent_id"), {})
             decision_id = intent.get("decision_id")
             decision = decisions.get(decision_id, {})

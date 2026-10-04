@@ -1117,10 +1117,7 @@ class Execution:
             )
             if cursor.rowcount != 1:
                 return
-            conn.execute(
-                "UPDATE position_reservations SET state = 'released' WHERE intent_id = ? AND state = 'held'",
-                (intent_id,),
-            )
+            self._release(intent_id)
             conn.execute(
                 """UPDATE outbox SET status = 'cancelled'
                 WHERE kind = 'submit' AND payload_ref = ? AND status = 'pending'""",
@@ -1251,6 +1248,9 @@ class Execution:
                 "UPDATE position_reservations SET state = 'released' WHERE intent_id = ? AND state = 'held'",
                 (intent_id,),
             )
+            conn.execute(
+                "UPDATE native_fee_reservations SET state='released' WHERE intent_id=? AND state='held'", (intent_id,),
+            )
 
     def _reserved(self, portfolio_id: str, asset: str) -> Decimal:
         rows = self.database.execute(
@@ -1258,7 +1258,18 @@ class Execution:
             WHERE portfolio_id = ? AND asset = ? AND state = 'held'""",
             (portfolio_id, asset),
         ).fetchall()
-        return sum((Decimal(row["amount"]) for row in rows), Decimal("0"))
+        fees = self.database.execute(
+            """SELECT current_amount AS amount,original_amount FROM native_fee_reservations
+            WHERE portfolio_id=? AND asset=? AND state='held'""",
+            (portfolio_id, asset),
+        ).fetchall()
+        with localcontext(Context(prec=28)) as context:
+            context.traps[Inexact] = True
+            for row in fees:
+                current, original = parse_decimal(row["amount"]), parse_decimal(row["original_amount"])
+                if not 0 <= current <= original or original <= 0:
+                    raise StaleState("invalid original/current native fee reservation")
+            return sum((Decimal(row["amount"]) for row in [*rows, *fees]), Decimal("0"))
 
     def _owned(self, books, asset: str) -> Decimal:
         return sum((lot.open_quantity() for lot in books.lots if lot.asset == asset), Decimal("0"))
@@ -1327,18 +1338,27 @@ class Execution:
             (fill.intent_id,),
         ).fetchall()
         debits = _fill_reservation_debits(fill)
+        fee_rows = self.database.execute(
+            """SELECT reservation_id,asset,current_amount AS amount FROM native_fee_reservations
+            WHERE intent_id=? AND state='held'""", (fill.intent_id,),
+        ).fetchall()
         with localcontext() as context:
             context.prec = 28
             context.traps[Inexact] = True
-            updates = []
-            for row in rows:
-                used = debits.get(row["asset"], Decimal("0"))
-                remaining = Decimal("0") if used >= Decimal(row["amount"]) else Decimal(row["amount"]) - used
-                updates.append((canonical_decimal(max(remaining, Decimal("0"))),
-                                "released" if remaining <= 0 else "held", row["reservation_id"]))
+            primary_updates, auxiliary_updates = [], []
+            for group, updates in ((rows, primary_updates), (fee_rows, auxiliary_updates)):
+                for row in group:
+                    used = debits.get(row["asset"], Decimal("0"))
+                    remaining = Decimal("0") if used >= Decimal(row["amount"]) else Decimal(row["amount"]) - used
+                    updates.append((canonical_decimal(max(remaining, Decimal("0"))),
+                                    "released" if remaining <= 0 else "held", row["reservation_id"]))
             with self.database.immediate() as conn:
                 conn.executemany(
-                    "UPDATE position_reservations SET amount = ?, state = ? WHERE reservation_id = ?", updates,
+                    "UPDATE position_reservations SET amount = ?, state = ? WHERE reservation_id = ?", primary_updates,
+                )
+                conn.executemany(
+                    "UPDATE native_fee_reservations SET current_amount=?,state=? WHERE reservation_id=?",
+                    auxiliary_updates,
                 )
 
     def _refresh_order_state(self, intent_id: str) -> None:
@@ -1405,6 +1425,9 @@ class Execution:
         originals = {}
         if asset is not None and payload.get("reserve_amount") is not None:
             originals[asset] = parse_decimal(payload["reserve_amount"])
+        originals.update({row["asset"]: parse_decimal(row["original_amount"]) for row in self.database.execute(
+            "SELECT asset,original_amount FROM native_fee_reservations WHERE intent_id=?", (fill.intent_id,),
+        )})
         cumulative = {}
         with localcontext(Context(prec=128)):
             for row in self.database.execute("SELECT document_json FROM fills WHERE intent_id=?", (fill.intent_id,)):

@@ -51,6 +51,7 @@ _PERMANENT_PENDING = (
     "key_permission_inventory_unverified", "withdrawals_absent_unverified",
     "write_cancel_uncertainty_conformance_unverified", "native_stop_protection_unverified",
     "protected_account_ledger_reconciliation_unverified", "intended_host_dependency_identity_unverified",
+    "native_partial_fill_reserve_bound_unverified",
 )
 
 
