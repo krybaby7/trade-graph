@@ -1,6 +1,14 @@
 # Implementation status — integrated takeover checkpoint
 
-Updated: 2026-10-04. The six T17–T22 continuation workstreams are integrated and
+Updated: 2026-10-04.
+
+Continuation: a new authorized implementation round is active from `1cb4e5a`.
+Six isolated streams are implementing the remaining accounting, producer, service,
+deployment and selected-application commissioning contracts. The results below
+remain the verified previous checkpoint until the new integration is tested.
+Acceptance and spending/live authority are unchanged.
+
+The previous six T17–T22 continuation workstreams are integrated and
 their local implementation/review work is complete. **Their real acceptance
 gates remain open.** T00–T16 retain their recorded completion scopes; 17 of 23
 plan tasks are complete. No funded soak, authenticated venue collection, live
