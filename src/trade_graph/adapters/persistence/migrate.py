@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from trade_graph.adapters.persistence.activation_schema import STATEMENTS as ACTIVATION_STATEMENTS
+from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as BUDGET_ORIGIN_STATEMENTS
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
 from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEMENTS as FINANCIAL_CHECKPOINT_STATEMENTS
@@ -438,6 +439,7 @@ STATEMENTS.append(("0012", TRANSPORT_EVIDENCE_STATEMENTS))
 STATEMENTS.append(("0013", PILOT_STATEMENTS))
 STATEMENTS.append(("0014", [*NATIVE_INCIDENT_STATEMENTS, *FINANCIAL_CHECKPOINT_STATEMENTS]))
 STATEMENTS.append(("0015", NATIVE_FEE_RESERVATION_STATEMENTS))
+STATEMENTS.append(("0016", BUDGET_ORIGIN_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
