@@ -83,3 +83,15 @@ def test_review_capacity_failure_keeps_native_facts_and_management_latch(inciden
     hooked._set_reconciliation_health(incomplete=False, reason="incident scan finished")
     assert hooked._reconciliation_blocked()
     assert [dict(row) for row in incident.db.execute("SELECT * FROM fills")] == before
+
+
+@pytest.mark.parametrize("field", ["scope", "database", "clock"])
+def test_malformed_or_missing_binding_keeps_native_fact_retention_closed(incident, field):
+    hooked = bound_execution(incident)
+    before = [dict(row) for row in incident.db.execute("SELECT * FROM fills")]
+    setattr(incident.resolver, field, None)
+    assert hooked._native_cost_limits_blocked()
+    hooked._set_reconciliation_health(incomplete=False, reason="corrupt fixture binding")
+    delattr(incident.resolver, field)
+    assert hooked._native_cost_limits_blocked()
+    assert [dict(row) for row in incident.db.execute("SELECT * FROM fills")] == before

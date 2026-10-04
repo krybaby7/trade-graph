@@ -38,6 +38,7 @@ from trade_graph.domain.money import canonical_decimal, parse_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
 from trade_graph.domain.protocols import Broker
 from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
+from trade_graph.live_gate import LivePilotScope
 from trade_graph.live_pilot import ProtectedPilotLifecycle
 
 TAKER = Decimal("0.008")
@@ -1427,12 +1428,20 @@ class Execution:
 
     def _incident_resolver_bound(self) -> bool:
         resolver = self._native_incident_resolver
+        if type(resolver) is not ProtectedNativeIncidentResolver:
+            return False
+        scope = getattr(resolver, "scope", None)
+        pilot = self._pilot_lifecycle
         return (
-            type(resolver) is ProtectedNativeIncidentResolver
-            and resolver.database is self.database and resolver.clock is self.clock
-            and self.mode == "live" and resolver.scope.venue == self.venue
-            and resolver.scope.account_id == self.account_id
-            and (self._pilot_lifecycle is None or resolver.scope == self._pilot_lifecycle.scope)
+            type(scope) is LivePilotScope
+            and getattr(resolver, "database", None) is self.database
+            and getattr(resolver, "clock", None) is self.clock
+            and self.mode == "live" and getattr(scope, "venue", None) == self.venue
+            and getattr(scope, "account_id", None) == self.account_id
+            and (pilot is None or (
+                type(pilot) is ProtectedPilotLifecycle
+                and type(getattr(pilot, "scope", None)) is LivePilotScope and scope == pilot.scope
+            ))
         )
 
     def _record_native_cost_limits(self, fill: FillRecord) -> None:
