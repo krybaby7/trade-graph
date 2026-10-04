@@ -199,9 +199,10 @@ inline bindings retain their original allowance; another trial cannot raise it,
 switch storage or prune retained costs. Preserve one operator-owned deployment
 registry: the collector cannot discover earlier histories in unrelated registries.
 
-The archive allows at most 4,096 bindings/captures, 128 MiB of stored binding and
-capture documents plus compressed objects, 2 GiB of aggregate expanded historical
-documents, and 48 MiB for one expanded document. These are complete-history
+The archive allows at most 4,096 bindings/captures and 4,096 report snapshots,
+128 MiB of stored policy/binding/capture/report documents plus compressed objects,
+2 GiB of aggregate expanded historical documents, 48 MiB for one expanded
+capture/binding and 16 MiB for one report snapshot. These are complete-history
 bounds, not pagination limits. The current complete source inventory remains
 limited to 8 MiB and 20,000 rows; archiving captures does not permit discarding
 native financial records or referenced observations to fit that limit. Longer
@@ -226,6 +227,16 @@ expanded history still contributes its immutable native/paid facts to global
 continuity checks. The latest report snapshot is fetched by its exact immutable
 key under a 16 MiB per-snapshot bound, without loading previous report bodies.
 Compression establishes no external source authenticity or economic result.
+Standalone report snapshot emission consumes the same preregistered aggregate
+budget. A runtime capture retains its report snapshot, archive manifest and blob
+in one registry transaction; exceeding any bound rolls back all new records
+without pruning earlier evidence.
+
+The paper collector's schema-1 source footprint ends at the protected tables
+available in application migration 0012. Migration 0013's live-pilot lifecycle
+grants, effects and events remain outside this paper source footprint. T20's
+protected lifecycle separately validates current owner scope and readiness;
+paper capture verification cannot certify that live financial authority.
 
 Invoice checks derive EUR arithmetic and collection availability, then compare
 historical recorded totals to the receipts available at the invoice cutoff.

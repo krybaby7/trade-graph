@@ -27,6 +27,7 @@ from trade_graph.evaluation_contracts import (
     ForwardObservation,
     ForwardProtocol,
 )
+from trade_graph.runtime_evidence_archive import RuntimeHistoryPolicy, check_archived_history
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 
@@ -306,6 +307,52 @@ class TrialRegistry:
             raise ValueError("evaluation evidence digest mismatch")
         return row
 
+    def _snapshot_budget(self, *, extra_bytes: int = 0, extra_count: int = 0):
+        sizes = self.connection.execute(
+            "SELECT COUNT(*),COALESCE(MAX(length(CAST(document_json AS BLOB))),0) "
+            "FROM (SELECT document_json FROM evaluation_records WHERE kind='runtime_history_policy' LIMIT 2)",
+        ).fetchone()
+        if sizes[0] > 1 or sizes[1] > 4096:
+            raise ValueError("runtime history policy exceeds protected verification bounds")
+        rows = self._rows("runtime_history_policy")
+        if rows:
+            policy = RuntimeHistoryPolicy.model_validate_json(rows[0]["document_json"])
+            if policy.storage == "lossless_zlib":
+                check_archived_history(self.connection, policy, extra_stored_bytes=extra_bytes,
+                                       extra_expanded_bytes=extra_bytes, extra_snapshots=extra_count)
+
+    def _snapshot(self, trial_id: str) -> EvaluationSnapshot:
+        """Retain under the caller's registry transaction, including storage bounds."""
+        if not self.connection.in_transaction:
+            raise ValueError("evaluation snapshot requires its protected registry transaction")
+        self._snapshot_budget()
+        as_of = self.clock.now()
+        protocol = self.protocol(trial_id)
+        sources = self._source_bindings()
+        manifest = json.dumps([item.model_dump(mode="json") for item in sources],
+                              sort_keys=True, separators=(",", ":"), allow_nan=False)
+        report = json.dumps(self._report(trial_id, as_of), sort_keys=True, separators=(",", ":"), allow_nan=False)
+        inventories = self._rows("inventory", trial_id)
+        inventory = CostInventory.model_validate_json(inventories[0]["document_json"]) if inventories else None
+        snapshot = EvaluationSnapshot(
+            trial_id=trial_id, portfolio_id=protocol.portfolio_id, market_stream_id=protocol.market_stream_id,
+            selected_version_sha256=protocol.selected_version_sha256, collected_as_of=as_of,
+            protocol_sha256=self._rows("protocol", trial_id)[0]["document_sha256"],
+            report_sha256=document_hash(report),
+            inventory_sha256=inventories[0]["document_sha256"] if inventories else None,
+            ledger_export_sha256=inventory.ledger_export_sha256 if inventory else None,
+            source_cutoff=inventory.source_cutoff if inventory else None,
+            source_manifest_sha256=document_hash(manifest), source_records=sources, report_json=report,
+        )
+        key = document_hash(snapshot.model_dump_json())
+        raw_bytes = len(snapshot.model_dump_json().encode())
+        if raw_bytes > MAX_SNAPSHOT_BYTES:
+            raise ValueError("evaluation snapshot exceeds retained byte bounds")
+        if self._retained_snapshot(key, trial_id) is None:
+            self._snapshot_budget(extra_bytes=raw_bytes, extra_count=1)
+            self._append("snapshot", key, trial_id, snapshot)
+        return snapshot
+
     def snapshot(self, trial_id: str) -> EvaluationSnapshot:
         """Persist an immutable report with every source binding in one transaction.
 
@@ -313,32 +360,7 @@ class TrialRegistry:
         provenance. Its verification basis cannot be promoted by an input flag.
         """
         with self._atomic():
-            as_of = self.clock.now()
-            protocol = self.protocol(trial_id)
-            sources = self._source_bindings()
-            manifest = json.dumps([item.model_dump(mode="json") for item in sources],
-                                  sort_keys=True, separators=(",", ":"), allow_nan=False)
-            report = json.dumps(self._report(trial_id, as_of), sort_keys=True, separators=(",", ":"), allow_nan=False)
-            inventories = self._rows("inventory", trial_id)
-            inventory = CostInventory.model_validate_json(inventories[0]["document_json"]) if inventories else None
-            snapshot = EvaluationSnapshot(
-                trial_id=trial_id, portfolio_id=protocol.portfolio_id, market_stream_id=protocol.market_stream_id,
-                selected_version_sha256=protocol.selected_version_sha256, collected_as_of=as_of,
-                protocol_sha256=self._rows("protocol", trial_id)[0]["document_sha256"],
-                report_sha256=document_hash(report),
-                inventory_sha256=inventories[0]["document_sha256"] if inventories else None,
-                ledger_export_sha256=inventory.ledger_export_sha256 if inventory else None,
-                source_cutoff=inventory.source_cutoff if inventory else None,
-                source_manifest_sha256=document_hash(manifest), source_records=sources, report_json=report,
-            )
-            key = document_hash(snapshot.model_dump_json())
-            # Emitting the same frozen-clock snapshot is idempotent. Existing
-            # snapshots do not recursively become report sources.
-            if len(snapshot.model_dump_json().encode()) > MAX_SNAPSHOT_BYTES:
-                raise ValueError("evaluation snapshot exceeds retained byte bounds")
-            if self._retained_snapshot(key, trial_id) is None:
-                self._append("snapshot", key, trial_id, snapshot)
-            return snapshot
+            return self._snapshot(trial_id)
 
     def verify_snapshot(self, snapshot: EvaluationSnapshot) -> None:
         """Reject altered, unretained or stale snapshots; never elevate upstream trust.
@@ -350,6 +372,7 @@ class TrialRegistry:
         """
         snapshot = EvaluationSnapshot.model_validate(snapshot.model_dump())
         with self._atomic():
+            self._snapshot_budget()
             key = document_hash(snapshot.model_dump_json())
             retained = self._retained_snapshot(key, snapshot.trial_id)
             if retained is None or retained["document_sha256"] != key:

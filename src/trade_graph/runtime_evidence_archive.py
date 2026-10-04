@@ -21,9 +21,11 @@ class RuntimeHistoryPolicy(EvaluationContract):
     declared_at: datetime
     storage: Literal["inline", "lossless_zlib"]
     maximum_records: int = Field(strict=True, gt=0)
+    maximum_snapshots: int = Field(strict=True, gt=0)
     maximum_stored_bytes: int = Field(strict=True, gt=0)
     maximum_expanded_bytes: int = Field(strict=True, gt=0)
     maximum_record_bytes: int = Field(strict=True, gt=0)
+    maximum_snapshot_record_bytes: int = Field(strict=True, gt=0)
 
     @field_validator("declared_at")
     @classmethod
@@ -43,6 +45,55 @@ class ArchivedRuntimeCapture(EvaluationContract):
     compressed_sha256: Fingerprint
     expanded_bytes: int = Field(strict=True, gt=0)
     compressed_bytes: int = Field(strict=True, gt=0)
+
+
+def check_archived_history(connection, policy: RuntimeHistoryPolicy, *, extra_stored_bytes: int = 0,
+                          extra_expanded_bytes: int = 0, extra_records: int = 0, extra_snapshots: int = 0):
+    """Preflight all retained capture, report and blob storage without payload reads."""
+    for kinds, maximum, extra in (
+        (("runtime_capture", "runtime_binding"), policy.maximum_records, extra_records),
+        (("snapshot",), policy.maximum_snapshots, extra_snapshots),
+    ):
+        placeholders = ",".join("?" for _ in kinds)
+        count = connection.execute(
+            f"SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records WHERE kind IN ({placeholders}) LIMIT ?)",
+            (*kinds, maximum + 1),
+        ).fetchone()[0]
+        if count + extra > maximum:
+            raise ValueError("runtime archived capture/report history exceeds verification bounds")
+    blob_count = connection.execute(
+        "SELECT COUNT(*) FROM (SELECT 1 FROM runtime_capture_blobs LIMIT ?)", (policy.maximum_records + 1,),
+    ).fetchone()[0]
+    if blob_count > policy.maximum_records:
+        raise ValueError("runtime archived capture object history exceeds verification bounds")
+    # Validate expansion metadata before SUM so SQLite integer arithmetic cannot
+    # be overflowed by false manifests. A stream is checked again while decoding.
+    if connection.execute(
+        "SELECT 1 FROM evaluation_records WHERE "
+        "(kind='runtime_capture' AND (length(CAST(document_json AS BLOB)) > 4096 OR "
+        "json_extract(document_json,'$.storage') IS NOT 'lossless_zlib' OR "
+        "json_type(document_json,'$.expanded_bytes') IS NOT 'integer' OR "
+        "json_extract(document_json,'$.expanded_bytes') <= 0 OR "
+        "json_extract(document_json,'$.expanded_bytes') > ?)) OR "
+        "(kind='snapshot' AND length(CAST(document_json AS BLOB)) > ?) OR "
+        "(kind='runtime_binding' AND length(CAST(document_json AS BLOB)) > ?) LIMIT 1",
+        (policy.maximum_record_bytes, policy.maximum_snapshot_record_bytes, policy.maximum_record_bytes),
+    ).fetchone():
+        raise ValueError("runtime archived history metadata exceeds verification byte bounds")
+    documents = connection.execute(
+        "SELECT COALESCE(SUM(length(CAST(document_json AS BLOB))),0),"
+        "COALESCE(SUM(CASE WHEN kind='runtime_capture' THEN json_extract(document_json,'$.expanded_bytes') "
+        "ELSE length(CAST(document_json AS BLOB)) END),0) FROM evaluation_records "
+        "WHERE kind IN ('runtime_capture','runtime_binding','runtime_history_policy','snapshot')",
+    ).fetchone()
+    blobs = connection.execute(
+        "SELECT COALESCE(SUM(length(compressed_data)),0),COALESCE(MAX(length(compressed_data)),0) "
+        "FROM runtime_capture_blobs",
+    ).fetchone()
+    if (documents[0] + blobs[0] + extra_stored_bytes > policy.maximum_stored_bytes
+            or documents[1] + extra_expanded_bytes > policy.maximum_expanded_bytes
+            or blobs[1] > policy.maximum_record_bytes):
+        raise ValueError("runtime archived capture/report history exceeds verification byte bounds")
 
 
 def archive_capture(raw: str, capture_sha256: str, *, maximum_bytes: int):

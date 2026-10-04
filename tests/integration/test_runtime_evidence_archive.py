@@ -259,6 +259,8 @@ def test_honest_collection_stops_at_the_predeclared_aggregate_budget_without_pru
             pytest.fail("the finite preregistered aggregate bound must stop collection")
         assert retained
         assert len(registry._rows("runtime_capture")) == len(retained)
+        assert len(registry._rows("snapshot")) == len(retained)
+        assert registry.connection.execute("SELECT COUNT(*) FROM runtime_capture_blobs").fetchone()[0] == len(retained)
         assert collector.verify(retained[-1]).database_consistent is True
         for capture in retained:
             key = document_hash(capture.model_dump_json())
@@ -269,6 +271,59 @@ def test_honest_collection_stops_at_the_predeclared_aggregate_budget_without_pru
         with pytest.raises(ValueError, match="verification.*bounds"):
             collector.capture(declared.trial_id)
         assert len(registry._rows("runtime_capture")) == len(retained)
+        assert len(registry._rows("snapshot")) == len(retained)
+    finally:
+        registry.close()
+        runtime.database.close()
+
+
+@pytest.mark.parametrize("kind", ["runtime_binding", "runtime_capture"])
+def test_historical_trial_metadata_cannot_move_retained_financial_facts_to_another_trial(archived, kind):
+    runtime, registry, collector, declared = archived
+    collector.capture(declared.trial_id)
+    runtime.clock.advance(1)
+    current = collector.capture(declared.trial_id)
+    row = registry._rows(kind)[0]
+    registry.connection.execute("DROP TRIGGER evaluation_no_update")
+    registry.connection.execute("UPDATE evaluation_records SET trial_id='foreign-trial' WHERE kind=? AND record_key=?",
+                                (kind, row["record_key"]))
+    with pytest.raises(ValueError, match="stale|history.*identity|bound before|binding"):
+        collector.verify(current)
+
+
+def test_standalone_snapshot_emission_obeys_the_same_frozen_aggregate_archive_budget(tmp_path, monkeypatch):
+    import trade_graph.runtime_evidence as module
+
+    monkeypatch.setattr(module, "MAX_ARCHIVED_HISTORY_BYTES", 100000)
+    runtime = _stack(tmp_path)
+    runtime.clock.advance((REGISTERED - runtime.clock.now()).total_seconds())
+    declared = protocol(count=2, portfolio_id=runtime.portfolio_id, capital_eur="100")
+    registry = TrialRegistry(tmp_path / "trial.sqlite", runtime.clock)
+    try:
+        registry.register(declared)
+        collector = RuntimeEvidenceCollector(runtime.database, registry, runtime.clock,
+                                             deployment_id="fixture", history_storage="lossless_zlib")
+        collector.bind(declared.trial_id)
+        retained = []
+        for _ in range(50):
+            runtime.clock.advance(1)
+            try:
+                snapshot = registry.snapshot(declared.trial_id)
+            except ValueError as error:
+                assert "verification" in str(error) and "bounds" in str(error)
+                break
+            retained.append(snapshot)
+        else:
+            pytest.fail("snapshot documents must consume the frozen aggregate storage budget")
+        assert retained
+        assert len(registry._rows("snapshot")) == len(retained)
+        assert registry._rows("runtime_capture") == []
+        assert registry.connection.execute("SELECT COUNT(*) FROM runtime_capture_blobs").fetchone()[0] == 0
+        registry.verify_snapshot(retained[-1])
+        with pytest.raises(ValueError, match="verification.*bounds"):
+            collector.capture(declared.trial_id)
+        assert len(registry._rows("snapshot")) == len(retained)
+        assert registry._rows("runtime_capture") == []
     finally:
         registry.close()
         runtime.database.close()
