@@ -1,5 +1,10 @@
 # T21 immutable offline image checkpoint
 
+The image below records the isolated T21 checkpoint. The later whole-source
+integration at `959d2cd` also passed a fresh build and actual Docker proof; see
+[the final takeover review](2026-10-04-orchestrator-takeover.md) for its source,
+image, archive and proof identities. Intended-host/production gates remain open.
+
 The complete offline protected paper image builds from a digest-pinned Linux amd64
 Python/Debian base, hash-verified frozen runtime wheels and a separately hash-pinned
 build backend. The actual build has no network or production mounts. Exact archive,
@@ -46,7 +51,8 @@ four full independent inspections are in `container-inspections.json`. Root-owne
 synthetic mounts remain under the private `/opt` fixture identified by that proof.
 The proof leaves `intended_host_verified`, `owner_deployment_authorization`, paid,
 live and broader Engineer authorization false. The final integrated application
-requires a fresh build and proof because its complete protected package changes.
+received the separate fresh build and proof linked above because its complete
+protected package changed.
 Production T21 completion still needs the intended host, owner-pinned distribution
 there and repeated actual-host adversarial/recovery verification. Funded networking
 requires its separately reviewed profile. See [the deployment contract](../PROTECTED-DEPLOYMENT.md).

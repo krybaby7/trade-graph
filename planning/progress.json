@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-04",
-  "status_note": "2026-10-04: orchestrator takeover from published 264e7b0; six isolated T17-T22 implementation/preparation workstreams active. Prior verified d0e63aa checkpoint preserved. Root coordinates shared schema/contracts/integration. Paid/private/live operations and production deployment remain unconfigured; no task acceptance is upgraded by a running worker.",
+  "status_note": "2026-10-04: all six takeover local implementation/review streams integrated and idle. Clean source 959d2cd verified: 2057 full tests, 464 mapped tests/all 40 applicable offline cases, installed wheel and actual immutable Docker rehearsal passed. T00-T16 completion scopes preserved; T17/T18/T19/T21 in progress and T20/T22 blocked on remaining contracts, authenticated producers, genuine observation, intended-host and owner-authority gates. Local branch only; no push/new CI or funded/private/live operation or production/broader Engineer grant.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -236,12 +236,14 @@
         "Final source ca4d463: 1,232 full tests passed; 464 mapped tests and all 40 criteria accepted; Ruff/planning/hygiene passed. Actual public REST paper smoke failed feed:ProxyError,zero observations/decisions,exit 1 with management continuing. No funded provider soak performed.",
         "2026-10-02 workstream integrated 321f6cc and 01067ee: bounded public acquisition requires actual sourced FX identity/date. 113 focused tests and the local backup/restore/restart drill passed; actual public probes remain ProxyError/CONNECT 403.",
         "Round2 e388030/29a68ee: bounded host/source observation and backup/restore artifacts; 93 focused tests passed, actual local offline restore/restart drill succeeded; public probes failed ProxyError/CONNECT403. Funded/invoice/intended-host acceptance absent.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Takeover native public pair/ticker identities and descriptor-protected installed operations preflight integrated (ea56c0e/1db9a08). Author 201 tests and independent native/path reviews passed; actual backup/offline restore preserved source facts. Three opt-in official public GETs remain ProxyError through configured proxy; no funded observation.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "Working public connectivity, approved current routes/prices, owner-funded credentials, actual provider/invoice observation and intended-host service/backup/alert verification.",
-      "execution_state": "running",
+      "remaining": "Approved public connectivity/current model routes and price cards; separately owner-funded credentials and both paid permissions; actual provider receipts/invoices and bounded paper soak; intended-host service/restart, encrypted off-host restore and alert delivery. Exact service-unit/configuration binding and restart-reconciliation proof recording need production integration.",
+      "execution_state": "idle",
       "execution_scope": "implementation_and_verification",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T18": {
       "status": "in_progress",
@@ -253,12 +255,14 @@
         "Tests use synthetic source fixtures; no real registered forward horizon or profitability result. See docs/FORWARD-EVALUATION.md.",
         "2026-10-02 workstream integrated a653969: immutable snapshots bind exact retained bytes and the full current registry/protocol/cost inventory. 47 focused tests passed; upstream verification remains unverified_imports.",
         "Round2 1cb33a8/b2c99cb/d0e63aa: bounded current complete runtime inventory and derived expense exports; 123 focused and 77 independent tests passed. Native ownership, global retained cost continuity, invoice arithmetic/cutoffs and untouched initial chronology reviewed. External provenance remains false.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Bounded opt-in lossless runtime archive and atomic immutable snapshots integrated (ab314c0/1bd3fdb): 4,096 capture/binding and 4,096 snapshot limits,128 MiB stored/2 GiB expanded, complete historical cost/trial checks. Author 200 and independent 34 archive/snapshot tests passed. External provenance remains false.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "After genuine T17 collection, collect preregistered untouched future blocks and all four runtime arms with authenticated complete costs/market provenance; assess independence, regimes and sensitivities. Larger inventories require bounded retention design.",
-      "execution_state": "running",
+      "remaining": "Authenticated price/billing/economic producer integration; preregistered untouched future blocks with all four arms, failed/shared costs, independence/regimes and sensitivity assessment. Current-source snapshots on a collocated live database need a separately reviewed historical/current-state design; separate frozen paper evidence must remain scoped. No genuine economics collected. Protected source retention or incremental checkpoints beyond the current 8 MiB/20,000-row inventory need design if the selected horizon exceeds those limits.",
+      "execution_state": "idle",
       "execution_scope": "dependency_gated_preparation",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T19": {
       "status": "in_progress",
@@ -271,12 +275,14 @@
         "See docs/reviews/2026-10-02-kraken-foundation.md and docs/reviews/2026-10-02-orchestration.md.",
         "2026-10-02 workstream integrated 3c57eb0 and b47be62 with core 426cd9f: validated native ownership and durable scoped identity recover cold FILLED/CANCELLED history. 243 combined tests passed; no private venue request and time-in-force conformance remains pending.",
         "Round2 8c479f7: separately owner-granted read-only Kraken evidence collection with exact native wire/source retention, SDK lowercase gtc/ioc and fee-info correction; 269 focused tests passed. No private observation or live order occurred.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Exact native selected scope/replay/fact-window conformance plus separately retained rounded native quote principal integrated (07e8cb6/059f77c/e88cb83). Exact cash/FIFO/reserves and sticky over-limit incidents preserve executed facts. Retained replay verifies synchronously inside async dispatch (61f5d07). Native-cost independent 208 and broad author 319 async/conformance tests passed; no private venue observation or order.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "Owner-selected venue eligibility and account scope, authorized authenticated read-only observation, permanent least-privilege/withdrawal permission inventory, native fee/write/cancel/protection and intended-host conformance. SDK REST gtc/ioc mapping is source-confirmed; actual venue acceptance remains pending.",
-      "execution_state": "running",
+      "remaining": "Owner-selected eligible venue/account and authorized least-privilege authenticated conformance, including permanent withdrawal-disabled permission inventory and native write/cancel/protection behavior. Unsupported native multiasset fee vectors/rebates, append-only earlier-fill corrections, factual partial-fill/reserve bounds and protected incident resolution remain code/contract gaps; production submission gates remain closed.",
+      "execution_state": "idle",
       "execution_scope": "implementation_and_verification",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T20": {
       "status": "blocked",
@@ -287,12 +293,14 @@
         "No live pilot/real order authorized or performed; prerequisite evaluation/venue verification, eligibility, explicit owner allocation and real operating budget remain absent.",
         "2026-10-02 workstream integrated 073c441, b7afa6f and 5fe61ee: private issuer evidence/current-state projection and unresolved owner recovery fail closed. 69 focused tests and 58 independent checks passed; readiness, enablement and diagnostic permission remain false.",
         "Round2 46bd9e1/root93051fe: exact retained producer revalidation and private-safe unresolved reasons; 189 focused and 173 independent tests passed. Economic issuer declarations remain separate from insufficient verified evidence; readiness and enablement false.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Migration 0013 and durable closed pilot lifecycle, permanent committed holds, scoped fresh post-effect observations and concrete atomic execution/dispatch adoption integrated (292c3d8/13d820c/11f2c8b/eb96c10/8560dfd). Root timestamp/owned-history corrections included. Author 383 and independent 28 dispatch tests passed; no callbacks or caller booleans grant live increases.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "T18/T19 verified evidence, exact live instrument/account/policy economics, owner-designated host, explicit live allocation/loss/expense limits, protection and pilot/grant lifecycle. Readiness and enablement remain false.",
-      "execution_state": "running",
+      "remaining": "Genuine T18/T19 evidence, authenticated producer and exact live account/instrument/policy mapping, owner-designated host, explicit capital/loss/all-role expense envelope and protected live commissioning. Then separately authorized measured pilot/protection/recovery/stop evidence. Same-database economic capture freshness requires review. Readiness and enablement remain false.",
+      "execution_state": "idle",
       "execution_scope": "dependency_gated_preparation",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T21": {
       "status": "in_progress",
@@ -304,12 +312,14 @@
         "Production financial kernel/gateway/controller not extracted; authenticated business RPC, immutable owner deployment images and actual production rollback remain unfinished. See docs/PROCESS-BOUNDARY.md. Deployed Engineer retains R1 artifact permissions.",
         "2026-10-02 workstream integrated c4d5776 and root migration 3e0b02f: opt-in actual paper financial services use durable authenticated scoped RPC, confined workers, independent management and fenced rollback. 116 combined tests plus 67 independent combined checks passed. Full graph/model extraction and immutable intended-host images remain unfinished.",
         "Round2 7aeb508/root56c9c20: all six durable handlers use confined graph planning/transformation around protected routing, credentials, budgets, invocation recovery and validated effects; 196 combined and 67 independent tests passed plus local-adapter checks. Atomic genuine-effect rollback baselines and scoped management-only recovery preserve finance/cost/queued work.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Owner-pinned protected service bootstrap and complete immutable offline image/container configuration integrated (0cb3caf/57682d3). All six actual handlers run confined stages under protected parent effects and exclusive service ownership. Source/default paper boot and package pins validated; final root image build/rehearsal recorded in review checkpoint.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "Immutable complete dependency/OS images, trusted owner mounts/distribution, intended-host adversarial/recovery proof and default-runtime adoption. Opt-in six-role model/graph stages with protected budgets/effects are implemented.",
-      "execution_state": "running",
+      "remaining": "Owner designation and approval of actual intended host, immutable image/distribution/mounts and repeated adversarial/recovery proof there. A separately reviewed funded credential/network profile and production admission are required; the verified default offline image has network disabled. Production/broader-class authority remains ungranted. Protected incremental financial-history/checkpoint design beyond current 8 MiB/10,000-row bounds remains unimplemented.",
+      "execution_state": "idle",
       "execution_scope": "implementation_and_verification",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T22": {
       "status": "blocked",
@@ -320,22 +330,24 @@
         "T18 actual economic evidence, T21 production boundary and explicit owner broader class grant are unfinished; no broader code grant supplied.",
         "2026-10-02 workstream integrated adf6ccf: private sealed pure-feature staging and parent-authenticated finite replay bind exact source/baseline/corpus/protected identities. 25 new focused tests passed; no broader class grant or production promotion.",
         "Round2 687cdf8/root6dbcb7d: sealed actual executable plugin bundles and baseline/candidate functional shadow with bounded point-in-time numeric corpus, exact Decimal comparisons and retained negative pin-drift attempts; 89 relevant focused tests passed and independent review closed. Production/broader class authorization false.",
-        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md."
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Class-scoped offline commissioned Engineer/spend/repair integrated(d1d34bb), authenticated autonomous synthetic plugin activation/health/restart/rollback(9e07365) and separate confined Secretary projection effects/compatible sidecar expansion/backfill/disposable contraction(f0937c6). Author 33 combined plugin and 26 application tests passed; independent 14 rollout and 26 projection repeats passed. No default runtime scheduling, real model route or owner class grant added.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open."
       ],
-      "remaining": "T18/T21 prerequisites and explicit broader owner class grant; class-scoped Engineer commissioning/spend/repair, immutable intended-host deployment, selected-application migration rehearsal and automatic tested deployment/rollback. Sealed executable feature bundles and finite functional shadow are implemented.",
-      "execution_state": "running",
+      "remaining": "Genuine T18/T21 prerequisites and explicit owner broader classes; trusted production scheduling/routing/admission for commissioned plugins; selected-application model commissioning and general compatible migration/deployment integration. The parent-staged Secretary sidecar rehearsal and synthetic numeric rollout do not grant production authority or arbitrary migration hooks.",
+      "execution_state": "idle",
       "execution_scope": "dependency_gated_preparation",
-      "execution_result": "implementation_in_progress"
+      "execution_result": "local_implementation_verified_acceptance_pending"
     }
   },
   "review_checkpoint": {
-    "implementation_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
-    "implementation_tree": "3fa27a5d7127fcecc9caa1fcc8cdc4ab62003b39",
-    "preserved_previous_head": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6",
+    "implementation_commit": "959d2cd67dffa4d30cc840916b83f507c7212780",
+    "implementation_tree": "78756537f3ce158488123ccc9efd62f911499165",
+    "preserved_previous_head": "264e7b0686979310c77c2e6a1848474c61ab61f4",
     "python": "3.12.14",
     "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
-    "baseline_tests": 1473,
-    "tests": 1721,
+    "baseline_tests": 1721,
+    "tests": 2057,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
@@ -343,19 +355,29 @@
     "applicable_acceptance_cases": 40,
     "accepted_cases": 40,
     "gate_complete": true,
-    "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/source and exact artifact hygiene; fresh frozen archive installation followed by installed wheel execution outside checkout: migration0012, offline4fills0restart, protected hold/recovery and actual Research, sealed runtime/functional shadow. No new CI result claimed.",
-    "acceptance_note": "Implementation checkpoints and finite local functional proof; genuine funded/forward/venue/intended-host evidence, immutable full deployment images, owner pilot/class grants and selected-application commissioning/migration/deployment remain unfinished. No paid/private/live/broader deployed authority granted.",
-    "next_work": "Close T17 connectivity/approved funding/host; collect real T18 forward period and owner-selected T19 read-only conformance in parallel; T21 immutable intended-host proof can proceed independently. T20/T22 remain prerequisite and owner-authority gated.",
-    "full_junit": "/tmp/trade-graph-gates-r2-full.xml",
-    "acceptance_report": "/tmp/trade-graph-gates-r2-acceptance.json",
-    "installed_proof": "/tmp/trade-graph-gates-r2-install-4cwq5kue/installed-work/installed-proof.json",
+    "validation_scope": "Frozen clean full suite and independent JUnit parse; clean identical source-bound offline gate; Ruff source/tests/four verification scripts, ten planning tests/DAG and tracked/staged/exact artifact hygiene; fresh frozen archive environment and offline built/installed wheel outside checkout, migrations through 0013, four offline fills with zero restart/provider calls, backup/restore and confined selected application effects/migration/restart; actual final immutable Docker image with four inspections, 30 OS and five loader attacks, lost-ack fill, independent management/rollback/restart and fixed protected service boot. No new CI result claimed.",
+    "acceptance_note": "Local implementation preparation only; unsupported native financial contracts, authenticated economic producers/live mappings, production plugin/application commissioning/routing, funded provider/forward/venue evidence, intended-host proof and owner pilot/code-class authority remain open. No paid/private/live operation or production/broader Engineer grant.",
+    "next_work": "T17 approved public/funded/intended-host setup, then genuine untouched T18 forward collection and separately authorized T19 conformance; T21 intended-host verification independently. Implement remaining native financial/producer/production integration contracts before T20/T22 admission.",
+    "full_junit": "/tmp/trade-graph-takeover-final.xml",
+    "full_junit_sha256": "ca7b00bc37361843fadcc445788a8ff7112c78d4837635325bfbd7872cb9a622",
+    "acceptance_report": "/tmp/trade-graph-takeover-final-acceptance.json",
+    "acceptance_report_sha256": "db0139ba8a206815f4a55fc32522dd56aa9c1823e61c8f41ce6348e469d12236",
+    "installed_proof": "/tmp/trade-graph-takeover-installed-dnfyc7dj/installed-work/installed-proof.json",
+    "installed_proof_sha256": "931b9f60338768b030def5eb2150f18ad893866cff6e77f09eb94ec952b00dfe",
+    "installed_archive_sha256": "60a1560c1438d5ac61583e997dde7b75891c4adfe17f80206d85e8a2667b8f00",
+    "installed_wheel_sha256": "a8ba88bc814bcdb9e2a8d374e90a0cb92c74c6d13c97f6fad89579a4cf118c9a",
+    "image_pin": "/tmp/trade-graph-final-image-20261004-959d2cd/image-pin.json",
+    "image_id": "sha256:af4e55b39b365de186ee1de09c88680749ee3aabfedd96a5fea6bb7c9578a6ee",
+    "image_archive_sha256": "83703804372b9b1b9472d0d7d660a16e7e719e20a0dcc33380b4b25b7b5a3b06",
+    "image_seal_sha256": "88b69aa9fa112b57c8d80b37360f47066e13e902a242775d6049299977b288df",
+    "image_proof": "/tmp/trade-graph-final-image-proof-20261004-959d2cd/proof.json",
+    "image_proof_sha256": "223ae95280a3e43c042489a5a30ab910129a8a1cc0f2ae8148580c209ce73fda",
+    "public_probe_status": "three opt-in official GETs failed ProxyError/proxy_connection_failed; no response digests",
     "publication": {
-      "target_branch": "cursor/trade-graph-r1-548a",
-      "status": "published_source",
-      "transport": "Normal fast-forward; main unchanged; no merge/history rewrite",
-      "published_at": "2026-10-02",
-      "verified_pushed_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
-      "documentation_follows_verified_source": true
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "status": "local_only",
+      "documentation_follows_verified_source": true,
+      "push_or_merge_performed": false
     }
   },
   "historical_submission": {
@@ -510,14 +532,47 @@
         "published_at": "2026-10-02",
         "verified_pushed_commit": "9664707d5fb12b709424ef0ae8ce45bed2ce77c4"
       }
+    },
+    {
+      "implementation_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+      "implementation_tree": "3fa27a5d7127fcecc9caa1fcc8cdc4ab62003b39",
+      "preserved_previous_head": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 1473,
+      "tests": 1721,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/source and exact artifact hygiene; fresh frozen archive installation followed by installed wheel execution outside checkout: migration0012, offline4fills0restart, protected hold/recovery and actual Research, sealed runtime/functional shadow. No new CI result claimed.",
+      "acceptance_note": "Implementation checkpoints and finite local functional proof; genuine funded/forward/venue/intended-host evidence, immutable full deployment images, owner pilot/class grants and selected-application commissioning/migration/deployment remain unfinished. No paid/private/live/broader deployed authority granted.",
+      "next_work": "Close T17 connectivity/approved funding/host; collect real T18 forward period and owner-selected T19 read-only conformance in parallel; T21 immutable intended-host proof can proceed independently. T20/T22 remain prerequisite and owner-authority gated.",
+      "full_junit": "/tmp/trade-graph-gates-r2-full.xml",
+      "acceptance_report": "/tmp/trade-graph-gates-r2-acceptance.json",
+      "installed_proof": "/tmp/trade-graph-gates-r2-install-4cwq5kue/installed-work/installed-proof.json",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published_source",
+        "transport": "Normal fast-forward; main unchanged; no merge/history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+        "documentation_follows_verified_source": true
+      }
     }
   ],
   "orchestration": {
-    "started_at": "2026-10-02T11:28:27Z",
+    "started_at": "2026-10-04T10:40:40Z",
+    "finished_at": "2026-10-04T12:15:02.524066Z",
     "integration_owner": "codex-orchestrator",
-    "integration_branch": "codex/orchestrator-continuation",
-    "base_commit": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+    "integration_branch": "codex/orchestrator-takeover-2026-10-04",
+    "base_commit": "264e7b0686979310c77c2e6a1848474c61ab61f4",
     "state": "checkpoint_complete",
+    "round": 3,
+    "source_commit": "959d2cd67dffa4d30cc840916b83f507c7212780",
     "workstreams": {
       "T17": "t17_operations",
       "T18": "t18_evaluation",
@@ -526,11 +581,31 @@
       "T21": "t21_kernel",
       "T22": "t22_engineer"
     },
-    "authority": "Repository development and credential-free/public checks only; paid, private venue and live authority unchanged.",
-    "finished_at": "2026-10-02T13:35:20Z",
-    "source_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
-    "execution_note": "All six task agents finished implementation and independent reviews and are idle. Root integrated/verified/published the checkpoint. External observation and production authority gates remain pending.",
-    "round": 2,
-    "start_checkpoint": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6"
-  }
+    "authority": "Repository development and credential-free/public checks only; paid/private/live/production authority unchanged.",
+    "execution_note": "All six local implementation and independent-review streams integrated and idle; root combined verification completed. Actual acceptance and owner-authority gates remain open.",
+    "review": "docs/reviews/2026-10-04-orchestrator-takeover.md"
+  },
+  "orchestration_history": [
+    {
+      "started_at": "2026-10-02T11:28:27Z",
+      "integration_owner": "codex-orchestrator",
+      "integration_branch": "codex/orchestrator-continuation",
+      "base_commit": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+      "state": "checkpoint_complete",
+      "workstreams": {
+        "T17": "t17_operations",
+        "T18": "t18_evaluation",
+        "T19": "t19_adapter",
+        "T20": "t20_pilot_gate",
+        "T21": "t21_kernel",
+        "T22": "t22_engineer"
+      },
+      "authority": "Repository development and credential-free/public checks only; paid, private venue and live authority unchanged.",
+      "finished_at": "2026-10-02T13:35:20Z",
+      "source_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+      "execution_note": "All six task agents finished implementation and independent reviews and are idle. Root integrated/verified/published the checkpoint. External observation and production authority gates remain pending.",
+      "round": 2,
+      "start_checkpoint": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6"
+    }
+  ]
 }
