@@ -48,11 +48,19 @@ operation, actual future trial or intended-host authorization was performed.
 
 ## Evidence and limits
 
-The earlier source slice passed **201 tests**, zero failures/errors/skips,
-across producer/history and existing runtime/archive/forward-report/snapshot/live
-upstream paths (`/tmp/trade-graph-r4-t18-final.xml`). That result precedes the final
-native replay/fee cross-contract integration and independent expense-link review
-fix. The final expanded run is recorded by the integration owner after it finishes.
+The final frozen source checkpoint `5886ae4` passed **258 tests**, zero
+failures/errors/skips, in 25.458 seconds across producer/history,
+runtime/archive/forward-report/snapshot/live-upstream and native fee/replay paths
+(`/tmp/trade-graph-r4-t18-source-final.xml`). The isolated checkout included exact
+development dependencies from root migrations 0014–0016, T20 mapping `31b26dd`
+and T19 fee/replay modules `aaeeb88` plus ledger boundary fix `4541d327`;
+these were not duplicated in this workstream's commit. Scoped Ruff passed.
+
+Independent review found that historical verification also needed the current
+path's native-receipt/imported-expense equality check. The frozen checkpoint
+fixes this using only original snapshot expense imports/resolutions and exact
+captured native receipt facts. A forged amount/source for a real runtime receipt
+is invalid on both paths; later legitimate imports require a new current report.
 
 These tests use real local `Execution`, `PaperBroker`, `Ledger`, `TrialRegistry`,
 retained source objects and restart verification with synthetic market facts.
