@@ -138,9 +138,11 @@ implemented; see [fee component review](reviews/2026-10-04-native-fee-components
 Kraken retains separately attributed base/quote components only with exact native
 ledger effective times and matching aggregate quote valuation. Multiple third-asset
 fees still require individual identified rate sources and remain refused. Synthetic
-rebate fixtures do not establish actual venue support. Late earlier fills and late
-fee adjustments still require append-only chronological correction contracts; see
-[native principal review](reviews/2026-10-04-kraken-native-principal.md).
+rebate fixtures do not establish actual venue support. Strictly earlier discovered
+fills now have a bounded append-only chronological projection/adjustment receipt;
+see [replay review](reviews/2026-10-04-append-only-fill-replay.md). Finer timestamp
+ties, late fee-only adjustments and prefixes beyond 4,096 events or 8 MiB remain
+refused. Original native facts and earlier record-time views are preserved.
 This collector does not rewrite ledger events or cached portfolio state. Native stops
 remain untested and disabled. T19 needs T17 delivery and actual separately authorized
 venue eligibility, least-privilege permissions and authenticated conformance before

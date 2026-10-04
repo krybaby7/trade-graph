@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
-from decimal import ROUND_CEILING, Decimal, Inexact, localcontext
+from decimal import ROUND_CEILING, Context, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.authority import AuthorityRecord
@@ -38,6 +38,22 @@ from trade_graph.kernel.authority import pause_allows_increase, pause_allows_red
 from trade_graph.live_pilot import ProtectedPilotLifecycle
 
 TAKER = Decimal("0.008")
+
+
+def _fill_reservation_debits(fill: FillRecord) -> dict[str, Decimal]:
+    """Gross debits; same-fill proceeds can pay quote fees, rebates never refill holds."""
+    base, quote = fill.symbol.split("/")
+    with localcontext(Context(prec=128)):
+        charges = {}
+        for fee in fill.fee_legs():
+            charges[fee.asset] = charges.get(fee.asset, Decimal("0")) + max(Decimal("0"), fee.amount)
+        if fill.side == "buy":
+            charges[quote] = fill.quote_principal + charges.get(quote, Decimal("0"))
+            charges[base] = max(Decimal("0"), charges.get(base, Decimal("0")) - fill.quantity)
+        else:
+            charges[base] = fill.quantity + charges.get(base, Decimal("0"))
+            charges[quote] = max(Decimal("0"), charges.get(quote, Decimal("0")) - fill.quote_principal)
+        return {asset: amount for asset, amount in charges.items() if amount > 0}
 
 
 class Execution:
@@ -463,7 +479,7 @@ class Execution:
         return recorded
 
     @atomic
-    def record_fill(self, fill: FillRecord) -> bool:
+    def record_fill(self, fill: FillRecord, *, _allow_chronological_replay: bool = False) -> bool:
         existing = self.database.execute(
             "SELECT document_json FROM fills WHERE venue = ? AND account_id = ? AND trade_id = ?",
             (fill.venue, fill.account_id, fill.trade_id),
@@ -486,7 +502,17 @@ class Execution:
         if self._filled_quantity(fill.intent_id) + fill.quantity > intent.quantity:
             raise ValidationFailure("fill exceeds authorized quantity")
         try:
-            self.ledger.apply_fill(portfolio_id, fill, base_asset=base, quote_asset=quote)
+            previous = self.database.execute(
+                "SELECT document_json FROM fills WHERE portfolio_id=?", (portfolio_id,),
+            ).fetchall()
+            late = any(FillRecord.model_validate_json(row["document_json"]).filled_at_utc > fill.filled_at_utc
+                       for row in previous)
+            if late:
+                if not _allow_chronological_replay:
+                    raise ValidationFailure("late fill requires chronological ledger replay")
+                self.ledger.apply_late_fill(portfolio_id, fill, base_asset=base, quote_asset=quote)
+            else:
+                self.ledger.apply_fill(portfolio_id, fill, base_asset=base, quote_asset=quote)
         except DuplicateRecord:
             ref = f"{fill.venue}:{fill.account_id}:{fill.trade_id}"
             prior = self.database.execute(
@@ -561,15 +587,11 @@ class Execution:
         fills.sort(key=lambda fill: fill.filled_at_utc)
         unowned = {}
         owned_portfolios = {row["portfolio_id"] for row in rows}
-        latest_recorded_at = {}
         recorded_identities = set()
         for row in self.database.execute("SELECT portfolio_id, document_json FROM fills"):
             if row["portfolio_id"] not in owned_portfolios:
                 continue
             fill = FillRecord.model_validate_json(row["document_json"])
-            previous = latest_recorded_at.get(row["portfolio_id"])
-            if previous is None or fill.filled_at_utc > previous:
-                latest_recorded_at[row["portfolio_id"]] = fill.filled_at_utc
             recorded_identities.add((fill.venue, fill.account_id, fill.trade_id))
         new_at_same_time = set()
         try:
@@ -588,13 +610,10 @@ class Execution:
                         identity = (fill.venue, fill.account_id, fill.trade_id)
                         tie = (portfolio_id, fill.filled_at_utc)
                         if existing is None:
-                            latest = latest_recorded_at.get(portfolio_id)
-                            if latest is not None and fill.filled_at_utc < latest:
-                                raise ValidationFailure("late fill requires chronological ledger replay")
                             new_at_same_time.add(tie)
                         elif identity in recorded_identities and tie in new_at_same_time:
                             raise ValidationFailure("late fill requires chronological ledger replay")
-                        self.record_fill(fill)
+                        self.record_fill(fill, _allow_chronological_replay=True)
                     elif (fill.venue, fill.account_id) == (self.venue, self.account_id):
                         referenced = self.database.execute(
                             "SELECT 1 FROM order_intents WHERE intent_id = ?", (fill.intent_id,),
@@ -1307,17 +1326,14 @@ class Execution:
             "SELECT reservation_id, asset, amount FROM position_reservations WHERE intent_id = ? AND state = 'held'",
             (fill.intent_id,),
         ).fetchall()
+        debits = _fill_reservation_debits(fill)
         with localcontext() as context:
             context.prec = 28
             context.traps[Inexact] = True
             updates = []
             for row in rows:
-                used = fill.quote_principal if fill.side == "buy" and row["asset"] == asset else Decimal("0")
-                if fill.side == "sell" and row["asset"] == asset:
-                    used = fill.quantity
-                used += sum((max(Decimal("0"), fee.amount) for fee in fill.fee_legs()
-                             if fee.asset == row["asset"]), Decimal("0"))
-                remaining = Decimal(row["amount"]) - used
+                used = debits.get(row["asset"], Decimal("0"))
+                remaining = Decimal("0") if used >= Decimal(row["amount"]) else Decimal(row["amount"]) - used
                 updates.append((canonical_decimal(max(remaining, Decimal("0"))),
                                 "released" if remaining <= 0 else "held", row["reservation_id"]))
             with self.database.immediate() as conn:
@@ -1386,24 +1402,21 @@ class Execution:
                         or (fill.side == "sell" and fill.quote_principal < limit)):
                     reasons.append("native_principal_exceeds_limit")
         asset = payload.get("reserve_asset")
+        originals = {}
         if asset is not None and payload.get("reserve_amount") is not None:
-            used = Decimal("0")
-            with localcontext() as context:
-                context.prec = 128
-                rows = self.database.execute("SELECT document_json FROM fills WHERE intent_id=?", (fill.intent_id,))
-                for row in rows:
-                    recorded = FillRecord.model_validate_json(row["document_json"])
-                    used += recorded.quote_principal if recorded.side == "buy" else recorded.quantity
-                    used += sum((max(Decimal("0"), fee.amount) for fee in recorded.fee_legs()
-                                 if fee.asset == asset), Decimal("0"))
-                if used > Decimal(payload["reserve_amount"]):
-                    reasons.append("native_fills_exceed_original_reservation")
-        unreserved_fee_assets = sorted({fee.asset for fee in fill.fee_legs()
-                                       if fee.amount > 0 and fee.asset not in fill.symbol.split("/")
-                                       and self.database.execute(
-                                           "SELECT 1 FROM position_reservations WHERE intent_id=? AND asset=?",
-                                           (fill.intent_id, fee.asset),
-                                       ).fetchone() is None})
+            originals[asset] = parse_decimal(payload["reserve_amount"])
+        cumulative = {}
+        with localcontext(Context(prec=128)):
+            for row in self.database.execute("SELECT document_json FROM fills WHERE intent_id=?", (fill.intent_id,)):
+                recorded = FillRecord.model_validate_json(row["document_json"])
+                for name, amount in _fill_reservation_debits(recorded).items():
+                    cumulative[name] = cumulative.get(name, Decimal("0")) + amount
+        excess = [{"asset": name, "used": canonical_decimal(amount), "original": canonical_decimal(originals[name])}
+                  for name, amount in sorted(cumulative.items()) if name in originals and amount > originals[name]]
+        if excess:
+            reasons.append("native_fills_exceed_original_reservation")
+        unreserved_fee_assets = sorted(name for name, amount in _fill_reservation_debits(fill).items()
+                                       if amount > 0 and name not in originals and name != asset)
         if unreserved_fee_assets:
             reasons.append("native_fee_asset_has_no_original_reservation")
         if not reasons or self.database.execute(
@@ -1416,7 +1429,7 @@ class Execution:
             "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
             "intent_id": fill.intent_id, "trade_id": fill.trade_id,
             "quote_principal": canonical_decimal(fill.quote_principal), "reasons": reasons,
-            "unreserved_fee_assets": unreserved_fee_assets,
+            "unreserved_fee_assets": unreserved_fee_assets, "reservation_excess": excess,
             "financial_facts_preserved": True, "owner_review_required": True,
         })
         self._set_reconciliation_health(incomplete=True, reason="native fill execution limits require review")

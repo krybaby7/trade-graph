@@ -308,3 +308,58 @@ def test_dashboard_reports_each_signed_fee_source_without_legacy_double_charge(t
     assert [item["source_ref"] for item in fees["items"]] == ["charge", "rebate", "base-credit"]
     assert [item["amount"] for item in fees["items"]] == ["0.2", "-0.1", "-0.01"]
     runtime.database.close()
+
+
+def test_sell_quote_fee_draw_above_proceeds_retains_facts_and_unreserved_quote_incident(tmp_path):
+    database, clock, ledger, portfolio, intent = _stack(
+        tmp_path / "quote-sale.sqlite",
+        quantity=Decimal("1"),
+        side="sell",
+        limit="9",
+        reservation="1",
+    )
+    opening = _fill(_leg("USD", "-0.1", "opening-credit"), trade_id="opening")
+    ledger.apply_fill(portfolio, opening, base_asset="BTC", quote_asset="USD")
+    execution = _execution(database, clock, ledger, ScriptedRest())
+    sale = _fill(_leg("USD", "11", "quote-charge"), side="sell", intent_id=intent.intent_id)
+    assert execution.record_fill(sale)
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("89.1")
+    payload = json.loads(
+        database.execute(
+            "SELECT payload_json FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'",
+        ).fetchone()[0]
+    )
+    assert payload["unreserved_fee_assets"] == ["USD"]
+    assert payload["financial_facts_preserved"] is True
+    assert execution._reconciliation_blocked()
+    database.close()
+
+
+def test_claimed_secondary_asset_map_without_native_hold_cannot_cover_fee_debit(tmp_path):
+    database, clock, ledger, portfolio, intent = _stack(
+        tmp_path / "secondary.sqlite",
+        quantity=Decimal("1"),
+        limit="11",
+        reservation="20",
+    )
+    seed = _fill(_leg("USD", "-0.1", "seed-credit"), trade_id="eth-seed", symbol="ETH/USD")
+    ledger.apply_fill(portfolio, seed, base_asset="ETH", quote_asset="USD")
+    payload = json.loads(database.execute("SELECT payload_json FROM order_intents").fetchone()[0])
+    payload["reserve_amounts"] = {"USD": "20", "ETH": "100"}
+    database.execute("UPDATE order_intents SET payload_json=?", (json.dumps(payload),))
+    execution = _execution(database, clock, ledger, ScriptedRest())
+    fill = _fill(
+        _leg("ETH", "0.5", "third-charge", identified_rate="10", rate_source_ref="native-fx"),
+        intent_id=intent.intent_id,
+        quantity="0.5",
+        quote_cost="5",
+    )
+    assert execution.record_fill(fill)
+    payload = json.loads(
+        database.execute(
+            "SELECT payload_json FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'",
+        ).fetchone()[0]
+    )
+    assert payload["unreserved_fee_assets"] == ["ETH"]
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("85.1")
+    database.close()

@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from decimal import Decimal
+from dataclasses import asdict
+from decimal import Context, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.contracts.models import FillRecord
-from trade_graph.domain.clock import Clock, utc_iso
-from trade_graph.domain.errors import DuplicateRecord, StaleState
+from trade_graph.domain.clock import Clock, parse_utc, utc_iso
+from trade_graph.domain.errors import DuplicateRecord, StaleState, ValidationFailure
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import (
     Books,
@@ -19,6 +20,8 @@ from trade_graph.kernel.books import (
     FxRate,
     Mark,
     Performance,
+    Posting,
+    _apply_group,
     _convert,
     add_expense,
     apply_fill,
@@ -32,6 +35,57 @@ from trade_graph.kernel.books import (
 
 def _json(payload: dict) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+REPLAY_KIND = "fill_chronological_replay"
+REPLAY_VERSION = "chronological_replay_v1"
+MAX_REPLAY_ROWS = 4096
+MAX_REPLAY_SOURCE_BYTES = 8 * 1024 * 1024
+
+
+def _projection_sha256(books: Books) -> str:
+    def native(value):
+        if isinstance(value, Decimal):
+            return canonical_decimal(value)
+        if isinstance(value, dict):
+            return {key: native(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [native(item) for item in value]
+        return value
+
+    projection = native(
+        {
+            "cash": books.cash,
+            "lots": [asdict(item) for item in books.lots],
+            "flows": [asdict(item) for item in books.flows],
+            "expenses": [asdict(item) for item in books.expenses],
+        }
+    )
+    return hashlib.sha256(_json(projection).encode()).hexdigest()
+
+
+def _source_manifest(rows) -> list[dict]:
+    if len(rows) > MAX_REPLAY_ROWS or sum(len(row["payload_json"].encode()) for row in rows) > MAX_REPLAY_SOURCE_BYTES:
+        raise ValidationFailure("chronological replay exceeds protected source bounds")
+    fields = ("event_id", "portfolio_id", "sequence", "kind", "payload_json", "effective_at", "external_ref")
+    return [
+        {
+            "event_id": row["event_id"],
+            "sha256": hashlib.sha256(
+                _json({key: row[key] for key in fields}).encode(),
+            ).hexdigest(),
+        }
+        for row in rows
+    ]
+
+
+def _native_totals(books: Books) -> dict[tuple[str, str], Decimal]:
+    totals = {}
+    for group in books.groups:
+        for posting in group:
+            key = posting.account, posting.asset
+            totals[key] = totals.get(key, Decimal("0")) + posting.amount
+    return totals
 
 
 class Ledger:
@@ -94,6 +148,127 @@ class Ledger:
         }
         ref = f"{fill.venue}:{fill.account_id}:{fill.trade_id}"
         self._append(portfolio_id, "fill", payload, ref)
+        return lot_id
+
+    def apply_late_fill(
+        self,
+        portfolio_id: str,
+        fill: FillRecord,
+        *,
+        base_asset: str,
+        quote_asset: str,
+    ) -> str:
+        """Append the late original fact and a verified restatement atomically."""
+        at = self.now()
+        if (
+            fill.filled_at_utc.tzinfo is None
+            or fill.filled_at_utc > parse_utc(at)
+            or fill.symbol != f"{base_asset}/{quote_asset}"
+        ):
+            raise ValidationFailure("late fill has no valid bounded native time or asset scope")
+        lot_id = str(uuid.uuid4())
+        ref = f"{fill.venue}:{fill.account_id}:{fill.trade_id}"
+        payload = {
+            "fill": fill.model_dump(mode="json"),
+            "base_asset": base_asset,
+            "quote_asset": quote_asset,
+            "lot_id": lot_id,
+            "projection_deferred": REPLAY_VERSION,
+        }
+        with self.database.immediate() as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM ledger_events WHERE portfolio_id=? ORDER BY sequence",
+                    (portfolio_id,),
+                )
+            ]
+            if any(row["external_ref"] == ref for row in rows):
+                raise DuplicateRecord(ref)
+            if any(parse_utc(row["effective_at"]) > parse_utc(at) for row in rows):
+                raise ValidationFailure("chronological replay record time precedes known native sources")
+            before = self._replay_rows(rows)
+            new = {
+                "event_id": str(uuid.uuid4()),
+                "portfolio_id": portfolio_id,
+                "sequence": len(rows) + 1,
+                "kind": "fill",
+                "payload_json": _json(payload),
+                "effective_at": at,
+                "external_ref": ref,
+            }
+            sources = rows + [new]
+            manifest = _source_manifest(sources)
+            # A new native tie cannot prove its relative execution ordering from
+            # the truncated shared timestamp. Existing stable ties stay stable.
+            if any(
+                row["kind"] == "fill"
+                and FillRecord.model_validate(
+                    json.loads(row["payload_json"])["fill"],
+                ).filled_at_utc
+                == fill.filled_at_utc
+                for row in rows
+            ):
+                raise ValidationFailure("late fill requires chronological ledger replay with precise tie evidence")
+            try:
+                corrected = self._chronological_books(sources)
+                with localcontext(Context(prec=28)) as context:
+                    context.traps[Inexact] = True
+                    old_totals, new_totals = _native_totals(before), _native_totals(corrected)
+                    delta = [
+                        Posting(
+                            account,
+                            asset,
+                            new_totals.get((account, asset), Decimal("0"))
+                            - old_totals.get((account, asset), Decimal("0")),
+                        )
+                        for account, asset in sorted(old_totals.keys() | new_totals.keys())
+                        if new_totals.get((account, asset), Decimal("0"))
+                        != old_totals.get((account, asset), Decimal("0"))
+                    ]
+            except (ArithmeticError, ValueError):
+                raise ValidationFailure(
+                    "late fill requires chronological ledger replay with valid native sources"
+                ) from None
+            correction = {
+                "schema_version": 1,
+                "projection_version": REPLAY_VERSION,
+                "source_manifest": manifest,
+                "previous_projection_sha256": _projection_sha256(before),
+                "current_projection_sha256": _projection_sha256(corrected),
+                "new_fill_event_id": new["event_id"],
+                "postings": [
+                    {"account": item.account, "asset": item.asset, "amount": canonical_decimal(item.amount)}
+                    for item in delta
+                ],
+            }
+            correction_ref = f"chronological-replay:{new['event_id']}"
+            receipt = {
+                "event_id": str(uuid.uuid4()),
+                "portfolio_id": portfolio_id,
+                "sequence": len(sources) + 1,
+                "kind": REPLAY_KIND,
+                "payload_json": _json(correction),
+                "effective_at": at,
+                "external_ref": correction_ref,
+            }
+            # Verify the exact receipt through the same reader before committing.
+            self._replay_row(before, receipt, sources)
+            for event in (new, receipt):
+                conn.execute("INSERT INTO ledger_events VALUES (?,?,?,?,?,?,?)", tuple(event.values()))
+            if delta:
+                txn = str(uuid.uuid4())
+                conn.execute(
+                    "INSERT INTO journal_transactions VALUES (?,?,?,?,?)",
+                    (txn, portfolio_id, REPLAY_KIND, correction_ref, at),
+                )
+                conn.executemany(
+                    "INSERT INTO journal_postings VALUES (?,?,?,?,?,?)",
+                    [
+                        (str(uuid.uuid4()), txn, portfolio_id, item.account, item.asset, canonical_decimal(item.amount))
+                        for item in delta
+                    ],
+                )
         return lot_id
 
     def add_expense(
@@ -307,6 +482,10 @@ class Ledger:
         elif kind == "internal":
             internal_transfer(books, payload["asset"], Decimal(payload["amount"]), at, ref)
         elif kind == "fill":
+            if payload.get("projection_deferred") is not None:
+                if payload["projection_deferred"] != REPLAY_VERSION:
+                    raise ValidationFailure("unknown chronological projection version")
+                return
             fill = FillRecord.model_validate(payload["fill"])
             apply_fill(
                 books,
@@ -335,19 +514,131 @@ class Ledger:
         else:
             raise ValueError(kind)
 
+    def _chronological_books(self, rows) -> Books:
+        source_rows = [row for row in rows if row["kind"] != REPLAY_KIND]
+
+        def effective(row):
+            payload = json.loads(row["payload_json"])
+            recorded = parse_utc(row["effective_at"])
+            if row["kind"] != "fill":
+                return recorded
+            native = FillRecord.model_validate(payload["fill"]).filled_at_utc
+            if native.tzinfo is None or native > recorded:
+                raise ValidationFailure("chronological replay native fill was not yet available at record time")
+            return native
+
+        ordered = sorted(source_rows, key=lambda row: (effective(row), row["sequence"]))
+        books = Books()
+        with localcontext(Context(prec=28)):
+            for row in ordered:
+                payload = json.loads(row["payload_json"])
+                payload.pop("projection_deferred", None)
+                self._mutate(books, row["kind"], payload, row["effective_at"], row["external_ref"])
+        return books
+
+    def _replay_row(self, books: Books, row, prior_rows) -> None:
+        """Replay one original event or verify a bounded prefix restatement."""
+        payload = json.loads(row["payload_json"])
+        previous_deferred = bool(
+            prior_rows
+            and prior_rows[-1]["kind"] == "fill"
+            and json.loads(prior_rows[-1]["payload_json"]).get("projection_deferred")
+        )
+        if previous_deferred and row["kind"] != REPLAY_KIND:
+            raise ValidationFailure("deferred fill is missing its immediate chronological replay")
+        if row["kind"] != REPLAY_KIND:
+            self._mutate(books, row["kind"], payload, row["effective_at"], row["external_ref"])
+            return
+        expected_keys = {
+            "schema_version",
+            "projection_version",
+            "source_manifest",
+            "previous_projection_sha256",
+            "current_projection_sha256",
+            "new_fill_event_id",
+            "postings",
+        }
+        if (
+            set(payload) != expected_keys
+            or type(payload["schema_version"]) is not int
+            or payload["schema_version"] != 1
+            or payload["projection_version"] != REPLAY_VERSION
+            or payload["source_manifest"] != _source_manifest(prior_rows)
+            or payload["previous_projection_sha256"] != _projection_sha256(books)
+            or not prior_rows
+            or any(
+                source["sequence"] != index + 1
+                or source["portfolio_id"] != row["portfolio_id"]
+                or parse_utc(source["effective_at"]) > parse_utc(row["effective_at"])
+                for index, source in enumerate(prior_rows)
+            )
+            or row["sequence"] != len(prior_rows) + 1
+            or prior_rows[-1]["event_id"] != payload["new_fill_event_id"]
+            or prior_rows[-1]["kind"] != "fill"
+            or json.loads(prior_rows[-1]["payload_json"]).get("projection_deferred") != REPLAY_VERSION
+            or row["effective_at"] != prior_rows[-1]["effective_at"]
+            or row["external_ref"] != f"chronological-replay:{payload['new_fill_event_id']}"
+        ):
+            raise ValidationFailure("chronological replay source or previous projection differs")
+        corrected = self._chronological_books(prior_rows)
+        new_time = FillRecord.model_validate(json.loads(prior_rows[-1]["payload_json"])["fill"]).filled_at_utc
+        if any(
+            source["kind"] == "fill"
+            and FillRecord.model_validate(
+                json.loads(source["payload_json"])["fill"],
+            ).filled_at_utc
+            == new_time
+            for source in prior_rows[:-1]
+        ):
+            raise ValidationFailure("chronological replay requires precise native tie evidence")
+        if payload["current_projection_sha256"] != _projection_sha256(corrected):
+            raise ValidationFailure("chronological replay current projection differs")
+        with localcontext(Context(prec=28)) as context:
+            context.traps[Inexact] = True
+            old, new = _native_totals(books), _native_totals(corrected)
+            delta = [
+                Posting(
+                    account, asset, new.get((account, asset), Decimal("0")) - old.get((account, asset), Decimal("0"))
+                )
+                for account, asset in sorted(old.keys() | new.keys())
+                if new.get((account, asset), Decimal("0")) != old.get((account, asset), Decimal("0"))
+            ]
+            expected = [
+                {"account": item.account, "asset": item.asset, "amount": canonical_decimal(item.amount)}
+                for item in delta
+            ]
+            if payload["postings"] != expected:
+                raise ValidationFailure("chronological replay native adjustment differs")
+            if delta:
+                _apply_group(books, delta)
+        books.cash, books.lots, books.flows, books.expenses = (
+            corrected.cash,
+            corrected.lots,
+            corrected.flows,
+            corrected.expenses,
+        )
+
+    def _replay_rows(self, rows) -> Books:
+        books = Books()
+        prefix = []
+        with localcontext(Context(prec=28)):
+            for row in rows:
+                self._replay_row(books, row, prefix)
+                prefix.append(row)
+        if rows and rows[-1]["kind"] == "fill" and json.loads(rows[-1]["payload_json"]).get("projection_deferred"):
+            raise ValidationFailure("deferred fill is missing its chronological replay receipt")
+        return books
+
     def _books(self, portfolio_id: str, at: str) -> Books:
         return self._books_conn(self.database.connection, portfolio_id, at)
 
     def _books_conn(self, conn, portfolio_id: str, at: str) -> Books:
         rows = conn.execute(
-            """SELECT kind, payload_json, effective_at, external_ref FROM ledger_events
+            """SELECT * FROM ledger_events
             WHERE portfolio_id = ? AND effective_at <= ? ORDER BY sequence""",
             (portfolio_id, at),
         ).fetchall()
-        books = Books()
-        for row in rows:
-            self._mutate(books, row["kind"], json.loads(row["payload_json"]), row["effective_at"], row["external_ref"])
-        return books
+        return self._replay_rows(rows)
 
     def _reporting(self, portfolio_id: str) -> str:
         row = self.database.execute(
@@ -397,13 +688,10 @@ class Ledger:
             for row in rows
         ]
 
-    def _activity(self, portfolio_id: str | None, kind: str, payload: dict,
-                  *, created_at: str | None = None) -> None:
+    def _activity(self, portfolio_id: str | None, kind: str, payload: dict, *, created_at: str | None = None) -> None:
         body = _json(payload)
         with self.database.transaction() as conn:
-            prev = conn.execute(
-                "SELECT hash FROM activity_events ORDER BY rowid DESC LIMIT 1"
-            ).fetchone()
+            prev = conn.execute("SELECT hash FROM activity_events ORDER BY rowid DESC LIMIT 1").fetchone()
             prev_hash = prev["hash"] if prev else ""
             digest = hashlib.sha256((prev_hash + body).encode()).hexdigest()
             conn.execute(
