@@ -153,9 +153,9 @@ def test_interrupted_health_never_reruns_candidate_as_success(tmp_path, environm
     class Crash(BaseException):
         pass
 
-    def crash(snapshot):
+    def crash(snapshot, **kwargs):
         if after_effect:
-            assert render(snapshot)["status"] == "RENDERED"
+            assert render(snapshot, **kwargs)["status"] == "RENDERED"
         raise Crash
 
     monkeypatch.setattr(current.projection, "render", crash)
@@ -340,3 +340,116 @@ def test_expired_finite_health_deadline_restores_code_without_new_candidate_effe
     assert current.projection.status()["active_build"] == current.engineer.policy.baseline_build_sha256
     assert len(current.receipts()) == 1
     loop.close()
+
+
+def takeover(current, arguments):
+    """Finish another protected invocation while the original is paused."""
+    current.clock.advance(121)
+    newer = ApplicationPreparationLoop(current.engineer, current.handler,
+                                       **{**arguments, "owner": "new-process-owner"})
+    try:
+        # Actual paper reconciliation completes without an external await; this
+        # drives another invocation without nesting asyncio.run in its caller.
+        advancing = newer.advance()
+        try:
+            advancing.send(None)
+        except StopIteration as completed:
+            return completed.value
+        raise AssertionError("unexpected suspension during actual paper reconciliation")
+    finally:
+        newer.close()
+
+
+@pytest.mark.parametrize("checkpoint", ["activation_state", "health_intent", "stale_rollback"])
+def test_expired_owner_cannot_overwrite_completed_takeover_or_rollback_its_release(
+    tmp_path, environment_pin, monkeypatch, checkpoint
+):
+    current = flow(tmp_path, environment_pin)
+    old, arguments = prepare(current)
+    completed = []
+
+    if checkpoint == "activation_state":
+        original = old._save_state
+
+        def paused(state):
+            if state["status"] == "ACTIVATING" and not completed:
+                completed.append(takeover(current, arguments))
+            return original(state)
+
+        monkeypatch.setattr(old, "_save_state", paused)
+    elif checkpoint == "health_intent":
+        original = old._save_sample
+
+        def paused(sample):
+            if sample["status"] == "STARTED" and not completed:
+                completed.append(takeover(current, arguments))
+            return original(sample)
+
+        monkeypatch.setattr(old, "_save_sample", paused)
+    else:
+        original = old._samples
+
+        def paused():
+            if old.state()["status"] == "HEALTH" and not completed:
+                completed.append(takeover(current, arguments))
+                raise AuthorityDenied("expired worker observed a health failure")
+            return original()
+
+        monkeypatch.setattr(old, "_samples", paused)
+    state = step(old)
+    assert completed[0]["status"] == state["status"] == "ACTIVE"
+    assert current.projection.status()["generation"] == 2
+    assert len(current.projection.read(version=1)) == 2
+    assert old._samples()[0]["status"] == "COMPLETED"
+    assert len(current.gateway.attempts) == len(current.receipts()) == 1
+    old.close()
+
+
+@pytest.mark.parametrize("checkpoint", ["before_child", "after_child", "after_record"])
+def test_expired_owner_with_started_health_cannot_complete_after_takeover_rollback(
+    tmp_path, environment_pin, monkeypatch, checkpoint
+):
+    current = flow(tmp_path, environment_pin)
+    old, arguments = prepare(current)
+    completed = []
+    evaluated = []
+    evaluate = current.projection._evaluate
+
+    def count_evaluate(*args):
+        result = evaluate(*args)
+        evaluated.append(args[0])
+        return result
+
+    monkeypatch.setattr(current.projection, "_evaluate", count_evaluate)
+    if checkpoint == "after_child":
+        def paused_evaluate(*args):
+            result = count_evaluate(*args)
+            if old.state()["status"] == "HEALTH" and not completed:
+                completed.append(takeover(current, arguments))
+            return result
+
+        monkeypatch.setattr(current.projection, "_evaluate", paused_evaluate)
+    else:
+        render = current.projection.render
+
+        def paused_render(snapshot, **kwargs):
+            if checkpoint == "after_record":
+                result = render(snapshot, **kwargs)
+            if not completed:
+                completed.append(takeover(current, arguments))
+            return result if checkpoint == "after_record" else render(snapshot, **kwargs)
+
+        monkeypatch.setattr(current.projection, "render", paused_render)
+    state = step(old)
+    assert completed[0]["status"] == state["status"] == "ROLLED_BACK"
+    assert state["failure"] == "interrupted_or_rejected_health"
+    assert current.projection.status()["generation"] == 3
+    assert current.projection.status()["active_build"] == current.engineer.policy.baseline_build_sha256
+    assert old._samples()[0]["status"] == "STARTED"
+    assert len(current.projection.read(version=1)) == (2 if checkpoint == "after_record" else 1)
+    # Two finite development validation executions precede health. The expired
+    # pre-child owner adds none; a child already completed is not run again.
+    candidate = state["build_sha256"]
+    assert evaluated.count(candidate) == (2 if checkpoint == "before_child" else 3)
+    assert len(current.gateway.attempts) == len(current.receipts()) == 1
+    old.close()

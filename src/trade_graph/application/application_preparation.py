@@ -11,6 +11,7 @@ import os
 import sqlite3
 import stat
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -25,9 +26,14 @@ from trade_graph.application.application_projection import FLAGS
 from trade_graph.application.change_authority import authorized_change
 from trade_graph.application.execution import Execution
 from trade_graph.application.worker import RoleWorker
+from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError
 
 EXPERIMENT = "offline-application-preparation"
+
+
+class _WorkflowFenceLost(Exception):
+    """A stale invocation must leave newer workflow and projection work alone."""
 
 
 def application_preparation_controller_sha256() -> str:
@@ -79,6 +85,10 @@ class ApplicationPreparationLoop:
         self.engineer, self.handler, self.projection = engineer, handler, engineer.projection
         self.database, self.scheduler, self.store = engineer.database, handler.scheduler, engineer.store
         self.owner, self._key = owner, receipt_key
+        self._lease_expiry = None
+        self._state_receipt = None
+        self._sample_receipts = {}
+        self._initializing = True
         self._policy_bytes = canonical_bytes(policy.model_dump())
         self.policy_pin, self.controller_pin = expected_policy_sha256, expected_controller_sha256
         self._assert_pinned()
@@ -110,6 +120,7 @@ class ApplicationPreparationLoop:
                 raise AuthorityDenied("fixed isolated application workflow schema required")
             self.state()
             self._samples()
+            self._initializing = False
         except BaseException:
             if hasattr(self, "db"):
                 self.db.close()
@@ -205,32 +216,99 @@ class ApplicationPreparationLoop:
         row = self.db.execute("SELECT * FROM workflow_state WHERE id=1").fetchone()
         if row is None:
             raise AuthorityDenied("missing authenticated workflow state")
-        return self._verify(row, "application_workflow_state")
+        state = self._verify(row, "application_workflow_state")
+        self._state_receipt = row["receipt_sha256"]
+        return state
+
+    @contextmanager
+    def _guard(self):
+        # All workflow writers take this parent lock before the sidecar lock.
+        # It serializes lease takeover with short cross-database transitions;
+        # neither model execution nor a confined child runs in this transaction.
+        with self.database.immediate():
+            if not self._initializing:
+                lease = self.database.execute("SELECT owner,expires_at FROM process_leases WHERE lease_name=?",
+                                              ("application-preparation:" + self.policy.worker_task_id,)).fetchone()
+                if (lease is None or lease["owner"] != self.owner or lease["expires_at"] != self._lease_expiry
+                        or lease["expires_at"] <= utc_iso(self.engineer.clock.now())):
+                    raise _WorkflowFenceLost("application process lease changed or expired")
+            row = self.db.execute("SELECT receipt_sha256 FROM workflow_state WHERE id=1").fetchone()
+            if (None if row is None else row[0]) != self._state_receipt:
+                raise _WorkflowFenceLost("application workflow receipt changed")
+            yield
 
     def _save_state(self, state: dict) -> None:
-        receipt = self._receipt("application_workflow_state", {"payload": state})
-        self.db.execute("INSERT INTO workflow_state VALUES(1,?,?) ON CONFLICT(id) DO UPDATE "
-                        "SET payload_json=excluded.payload_json,receipt_sha256=excluded.receipt_sha256",
-                        (canonical_bytes(state).decode(), receipt))
+        with self._guard():
+            receipt = self._receipt("application_workflow_state", {"payload": state})
+            if self._initializing:
+                self.db.execute("INSERT INTO workflow_state VALUES(1,?,?)", (canonical_bytes(state).decode(), receipt))
+            else:
+                changed = self.db.execute("UPDATE workflow_state SET payload_json=?,receipt_sha256=? "
+                                          "WHERE id=1 AND receipt_sha256=?",
+                                          (canonical_bytes(state).decode(), receipt, self._state_receipt))
+                if changed.rowcount != 1:
+                    raise _WorkflowFenceLost("application workflow receipt compare-and-swap failed")
+            self._state_receipt = receipt
 
     def _samples(self) -> list[dict]:
         rows = self.db.execute("SELECT * FROM workflow_samples ORDER BY case_sha256").fetchall()
         if len(rows) > len(self.policy.health_case_sha256s):
             raise AuthorityDenied("application health journal exceeds finite case envelope")
         samples = []
+        self._sample_receipts = {}
         for row in rows:
             sample = self._verify(row, "application_workflow_health")
             if (row["case_sha256"] != sample.get("case_sha256")
                     or row["case_sha256"] not in self.policy.health_case_sha256s):
                 raise AuthorityDenied("application health case identity changed")
             samples.append(sample)
+            self._sample_receipts[row["case_sha256"]] = row["receipt_sha256"]
         return samples
 
     def _save_sample(self, sample: dict) -> None:
-        receipt = self._receipt("application_workflow_health", {"payload": sample})
-        self.db.execute("INSERT INTO workflow_samples VALUES(?,?,?) ON CONFLICT(case_sha256) DO UPDATE "
-                        "SET payload_json=excluded.payload_json,receipt_sha256=excluded.receipt_sha256",
-                        (sample["case_sha256"], canonical_bytes(sample).decode(), receipt))
+        with self._guard():
+            digest = sample["case_sha256"]
+            row = self.db.execute("SELECT * FROM workflow_samples WHERE case_sha256=?", (digest,)).fetchone()
+            expected = self._sample_receipts.get(digest)
+            if (None if row is None else row["receipt_sha256"]) != expected:
+                raise _WorkflowFenceLost("application health receipt changed")
+            if sample["status"] == "STARTED":
+                if row is not None:
+                    raise _WorkflowFenceLost("application health intent already exists")
+                receipt = self._receipt("application_workflow_health", {"payload": sample})
+                self.db.execute("INSERT INTO workflow_samples VALUES(?,?,?)",
+                                (digest, canonical_bytes(sample).decode(), receipt))
+            else:
+                if row is None:
+                    raise _WorkflowFenceLost("application health intent is missing")
+                before = self._verify(row, "application_workflow_health")
+                if (before["status"] != "STARTED" or sample["status"] != "COMPLETED"
+                        or any(sample.get(key) != value for key, value in before.items() if key != "status")):
+                    raise _WorkflowFenceLost("application health completion does not match its intent")
+                receipt = self._receipt("application_workflow_health", {"payload": sample})
+                changed = self.db.execute("UPDATE workflow_samples SET payload_json=?,receipt_sha256=? "
+                                          "WHERE case_sha256=? AND receipt_sha256=?",
+                                          (canonical_bytes(sample).decode(), receipt, digest, expected))
+                if changed.rowcount != 1:
+                    raise _WorkflowFenceLost("application health receipt compare-and-swap failed")
+            self._sample_receipts[digest] = receipt
+
+    @contextmanager
+    def _health_guard(self, state: dict, sample: dict):
+        with self._guard():
+            row = self.db.execute("SELECT * FROM workflow_samples WHERE case_sha256=?",
+                                  (sample["case_sha256"],)).fetchone()
+            if (row is None or row["receipt_sha256"] != self._sample_receipts.get(sample["case_sha256"])
+                    or self._verify(row, "application_workflow_health") != sample):
+                raise _WorkflowFenceLost("application health intent changed before effect")
+            current = self.projection.status()
+            if (current["active_build"], current["generation"], current["status"]) != (
+                    state["build_sha256"], state["generation"], "RUNNING"):
+                raise StaleState("application health generation changed before effect")
+            report = self._candidate(state["candidate_id"], current_authority=True)
+            if report["commission_receipt_sha256"] != state["commission_receipt_sha256"]:
+                raise AuthorityDenied("application health source/cost admission changed")
+            yield
 
     def _candidate(self, candidate_id: str, *, current_authority: bool) -> dict:
         report = self.engineer.verify_candidate(candidate_id)
@@ -245,32 +323,30 @@ class ApplicationPreparationLoop:
         return report
 
     def _rollback(self, state: dict, reason: str) -> dict:
-        recovery = self.projection.rollback(expected_build=state["build_sha256"],
-                                            expected_generation=state["generation"])
-        current = self.projection.status()
-        if (recovery == "NEWER_RELEASE_PRESERVED"
-                and current["active_build"] == self.engineer.policy.baseline_build_sha256
-                and current["generation"] == state["generation"] + 1 and current["status"] == "RUNNING"):
-            recovery = "ROLLED_BACK_ALREADY"
-        status = {"ROLLED_BACK": "ROLLED_BACK", "ROLLED_BACK_ALREADY": "ROLLED_BACK",
-                  "NEWER_RELEASE_PRESERVED": "SUPERSEDED"}.get(recovery, "MANAGE_ONLY")
-        state = {**state, "status": status, "failure": reason, "recovery": recovery}
-        self._save_state(state)
-        return state
+        with self._guard():
+            recovery = self.projection.rollback(expected_build=state["build_sha256"],
+                                                expected_generation=state["generation"])
+            current = self.projection.status()
+            if (recovery == "NEWER_RELEASE_PRESERVED"
+                    and current["active_build"] == self.engineer.policy.baseline_build_sha256
+                    and current["generation"] == state["generation"] + 1 and current["status"] == "RUNNING"):
+                recovery = "ROLLED_BACK_ALREADY"
+            status = {"ROLLED_BACK": "ROLLED_BACK", "ROLLED_BACK_ALREADY": "ROLLED_BACK",
+                      "NEWER_RELEASE_PRESERVED": "SUPERSEDED"}.get(recovery, "MANAGE_ONLY")
+            state = {**state, "status": status, "failure": reason, "recovery": recovery}
+            self._save_state(state)
+            return state
 
     def _run_engineer(self) -> bool:
         policy = self.policy
         # Atomic selection makes the generic role/portfolio claim an exact route.
         # It cannot consume another commissioned Engineer task in this scope.
-        with self.database.immediate():
+        with self._guard():
             if self.database.execute("SELECT 1 FROM tasks WHERE portfolio_id=? AND role='engineer' "
                                      "AND task_id!=? AND status IN('QUEUED','LEASED','RUNNING','WAITING_EXTERNAL') "
                                      "LIMIT 1",
                                      (policy.portfolio_id, policy.worker_task_id)).fetchone():
                 raise AuthorityDenied("separate application scope contains competing Engineer work")
-            if not self.scheduler.acquire_process_lease("application-preparation:" + policy.worker_task_id,
-                                                        self.owner, ttl_seconds=120):
-                return False
             lease = self.scheduler.claim(self.owner, ttl_seconds=120, roles={"engineer"},
                                          portfolio_id=policy.portfolio_id)
             if lease is None:
@@ -280,19 +356,33 @@ class ApplicationPreparationLoop:
         worker = RoleWorker(self.scheduler, owner=self.owner,
                             system_version_id=self.engineer.policy.baseline_artifact_sha256,
                             reconcile=lambda: None)
+        with self._guard():
+            pass
         worker._run_lease(lease, {"engineer": self.handler})
         return True
 
     async def advance(self) -> dict:
         """Bounded trusted step; no model-generated scheduling/activation commands."""
+        try:
+            return await self._advance()
+        except _WorkflowFenceLost:
+            # Observe authenticated newer progress, without treating an expired
+            # invocation as authority to complete a sample or roll back a release.
+            return self.state()
+
+    async def _advance(self) -> dict:
         self._offline()
         # Financial reconciliation remains the existing protected service. It
         # runs before application pin/health admission, including after failure.
         await self.execution.reconcile()
         self._assert_pinned()
-        if not self.scheduler.acquire_process_lease("application-preparation:" + self.policy.worker_task_id,
-                                                    self.owner, ttl_seconds=120):
-            return {"status": "LEASED_ELSEWHERE", **FLAGS}
+        with self.database.immediate():
+            if not self.scheduler.acquire_process_lease("application-preparation:" + self.policy.worker_task_id,
+                                                        self.owner, ttl_seconds=120):
+                return {"status": "LEASED_ELSEWHERE", **FLAGS}
+            lease = self.database.execute("SELECT expires_at FROM process_leases WHERE lease_name=?",
+                                          ("application-preparation:" + self.policy.worker_task_id,)).fetchone()
+            self._lease_expiry = lease[0]
         state = self.state()
         if state["status"] in {"ROLLED_BACK", "SUPERSEDED", "MANAGE_ONLY", "FAILED", "WAITING_EXTERNAL"}:
             return state
@@ -334,13 +424,20 @@ class ApplicationPreparationLoop:
             baseline = self.engineer.policy.baseline_build_sha256
             if before["active_build"] == baseline and before["generation"] == 1:
                 if before["phase"] == "LEGACY":
-                    receipt = self.projection.expand()
-                    state = {**state, "expansion_receipt_sha256": receipt}
-                    self._save_state(state)
+                    with self._guard():
+                        self._candidate(state["candidate_id"], current_authority=True)
+                        current = self.projection.status()
+                        if (current["active_build"], current["generation"]) != (baseline, 1):
+                            raise StaleState("application expansion baseline/generation changed")
+                        receipt = self.projection.expand()
+                        state = {**state, "expansion_receipt_sha256": receipt}
+                        self._save_state(state)
                 if self.projection.status()["phase"] != "EXPANDED":
                     raise AuthorityDenied("compatible fixed expansion required")
-                self.projection.activate(report["evidence"]["validation_receipt_sha256"],
-                                         expected_build=baseline, expected_generation=1)
+                with self._guard():
+                    report = self._candidate(state["candidate_id"], current_authority=True)
+                    self.projection.activate(report["evidence"]["validation_receipt_sha256"],
+                                             expected_build=baseline, expected_generation=1)
             current = self.projection.status()
             if (current["active_build"], current["generation"], current["status"]) != (
                     state["build_sha256"], state["generation"], "RUNNING"):
@@ -375,6 +472,8 @@ class ApplicationPreparationLoop:
                     if len(samples) != len(self.policy.health_case_sha256s):
                         raise AuthorityDenied("active projection lacks complete finite health effects")
                     self.projection.read(version=2)
+                    with self._guard():
+                        pass
                     return state
                 now = time.time_ns()
                 if not state["started_at_ns"] <= now <= (
@@ -390,7 +489,8 @@ class ApplicationPreparationLoop:
                               "commission_receipt_sha256": state["commission_receipt_sha256"]}
                     # Commit the authenticated intent before any candidate effect.
                     self._save_sample(sample)
-                    rendered = self.projection.render(case["snapshot"])
+                    rendered = self.projection.render(case["snapshot"],
+                                                      effect_guard=lambda: self._health_guard(state, sample))
                     matched = rendered["status"] == "RENDERED" and rendered["projection"] == case["expected_v2"]
                     if not matched:
                         self._save_sample({**sample, "status": "COMPLETED", "matched": False})

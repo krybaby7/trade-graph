@@ -15,7 +15,8 @@ import sqlite3
 import stat
 import sys
 import uuid
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 from typing import Literal
 
@@ -792,7 +793,10 @@ class OfflineApplicationProjection:
             self.db.execute("UPDATE projection_state SET generation=generation+1,status='MANAGE_ONLY' WHERE id=1")
             return "MANAGE_ONLY"
 
-    def render(self, snapshot: dict) -> dict:
+    def render(self, snapshot: dict, *, effect_guard: Callable[[], AbstractContextManager] | None = None) -> dict:
+        # The trusted caller may fence a private workflow lease and durable
+        # intent. Hold its writer lock only for admission/commit, never the child.
+        guard = effect_guard or nullcontext
         self._assert_sidecar()
         self._snapshot(snapshot)
         digest = sha256(canonical_bytes(snapshot))
@@ -807,7 +811,10 @@ class OfflineApplicationProjection:
         try:
             if release is None or release["status"] != "VALIDATED":
                 raise AuthorityDenied("active application lacks retained independent evidence")
-            self.verify_validation(release["validation_receipt"], build=state["active_build"])
+            with guard():
+                if self.status() != state:
+                    raise StaleState("application generation changed before confined render")
+                self.verify_validation(release["validation_receipt"], build=state["active_build"])
             projection, diagnostic = self._evaluate(state["active_build"], snapshot)
         except (AuthorityDenied, ValidationFailure, ValueError, OSError, TypeError, RecursionError) as exc:
             receipt = self._receipt(
@@ -820,7 +827,8 @@ class OfflineApplicationProjection:
                     "process": getattr(exc, "process_diagnostic", {}),
                 },
             )
-            recovery = self.rollback(expected_build=state["active_build"], expected_generation=state["generation"])
+            with guard():
+                recovery = self.rollback(expected_build=state["active_build"], expected_generation=state["generation"])
             return {"status": "REJECTED", "recovery": recovery, "receipt_sha256": receipt, **FLAGS}
         manifest, _ = self.load(state["active_build"])
         ids = self._projection(projection, snapshot, int(manifest.contract[-1]))
@@ -843,7 +851,7 @@ class OfflineApplicationProjection:
                 "source_sha256": manifest.source_sha256,
             },
         )
-        with self._transaction():
+        with guard(), self._transaction():
             if self.status() != state:
                 raise StaleState("application generation/schema changed during confined render")
             if len(self._rows()) >= self.policy.maximum_records:

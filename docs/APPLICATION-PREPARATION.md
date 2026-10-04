@@ -45,6 +45,18 @@ code rollback; the candidate is not rerun and the sample cannot become success
 because its result was lost. An effect completed before the crash remains in the
 application sidecar. A fixed maximum deadline bounds the health sequence.
 
+Every invocation retains its exact process owner and lease expiry. Short parent
+database writer transactions serialize lease admission with authenticated
+workflow/sample receipt compare-and-swap updates and projection expansion,
+activation or rollback. STARTED inserts never overwrite existing samples;
+completion can update only its exact retained STARTED receipt. The parent writer
+lock is released before any model or confined child executes. Trusted render
+guards recheck the current lease, intent, source/cost admission and generation
+before child execution and again before application record writes or failure
+rollback. An expired invocation observes current authenticated progress without
+rewriting samples or rolling back a replacement owner's release. A STARTED
+intent interrupted by takeover still causes rollback and is never rerun.
+
 ACTIVE derives from independently matched actual confined effects for the exact
 finite case set. Restart maintenance reauthenticates samples, actual application
 records, source and complete cost facts without repeating completed candidate
