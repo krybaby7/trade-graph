@@ -96,6 +96,50 @@ They are advisory snapshots; they must never be reused as order authorization.
 Protected execution must independently enforce capital, loss, expense, freshness,
 and permission bounds at each effect when a future live lifecycle exists.
 
+## Durable lifecycle preparation
+
+`ProtectedPilotLifecycle` in `live_pilot.py` implements private persisted grant,
+effect and management transitions. It exposes no dashboard/model route, signer,
+provider request or broker transport. A protected service can retain a pinned
+signed authorization as `PENDING`; activation calls the concrete current readiness
+evaluator without an injectable trust callback and remains refused. Staging is
+not approval or a policy change. Existing advisory readiness remains closed.
+
+The controller prepares each prospective increase from the exact stored account,
+instrument, live portfolio, owner policy, graph version, unsent limit-order intent
+and held native execution reservation. Unbounded market buys are refused. The
+future dispatcher must call `reserve_increase` and then `begin_submission` before
+its external effect. Both recheck current pinned evidence/readiness in a writer
+transaction. The one-use effect binds the request digest and grant generation;
+revocation, restart, intent edits and stale source pins cannot reuse it.
+
+The acquisition envelope conservatively assumes every acquired position can lose
+its entire quote cost including reserved fees. Cumulative committed and unresolved
+acquisition costs must fit both the allocation and maximum-loss cap. Profitable
+sales never replenish this envelope. This deliberately bounds a small pilot
+without claiming that a price stop guarantees a loss cap. All actual deployment
+expense reservations, including uncertain usage and work by other roles, consume
+the EUR total/day envelope; synthetic reservations are excluded. Financial
+amounts are bounded before arithmetic and compared with precision 100.
+
+Stop/revocation latch the declared `MANAGE_ONLY` or `FLATTEN` position/order policy
+without weakening an existing owner flatten/stop. They preserve unresolved holds.
+Startup recovery closes the grant and marks prepared/submitting effects unknown;
+the old authorization cannot resume. Effect reconciliation reads durable native
+order/fill state, requires fresh complete account history to release a known
+unfilled terminal order, and retains committed costs permanently. Stop completion
+requires current account history, no unresolved order/effect, and no native
+position. A revoked grant does not permit a replacement while old account
+effects, orders or inventory remain unresolved. Audit events are append-only.
+
+The default runtime and existing live adapter do not adopt this lifecycle. Genuine
+protected dispatch integration, production host isolation/recovery, authenticated
+upstream evidence, measured pilot fills/fees/latency/rejections/paper differences,
+and a signed continuation-or-stop review remain pending. The implementation does
+not provide an activation bypass or treat a stored historical `ACTIVE` row as
+current execution authority. Synthetic lifecycle tests seed such historical rows
+only to test restart/revocation/hold preservation; no production grant is issued.
+
 ## Evidence that remains missing
 
 The optional `LiveUpstreamSources` references are protected runtime configuration,
@@ -176,7 +220,9 @@ evaluation and independently verified complete upstream provenance; T19's select
 venue eligibility, permissions and authenticated conformance; a separately granted
 real allocation/loss/expense envelope; actual intended-host protection, backups,
 alerts and independent recovery; and a protected live grant/stop/revocation lifecycle.
-After that lifecycle is implemented and separately authorized, a pilot must record
+The new controller supplies persisted preparation/management logic; adoption by
+protected live dispatch and intended-host verification remain unaccepted.
+After that lifecycle is integrated and separately authorized, a pilot must record
 real fills, fees, latency, rejections, paper differences, measured loss/spend, and a
 continuation-or-stop review. Venue minimums cannot silently enlarge the allocation.
 
