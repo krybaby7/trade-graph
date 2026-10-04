@@ -25,6 +25,11 @@ from trade_graph.api.security import redact
 from trade_graph.application.activation import VersionController
 from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.budget import OPEN_STATES, BudgetGateway
+from trade_graph.application.incident_resolution import (
+    NativeIncidentResolutionCommand,
+    NativeIncidentRevocationCommand,
+    ProtectedNativeIncidentResolver,
+)
 from trade_graph.application.owner_commands import command_history, record_command_evidence
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.contracts.models import OwnerPolicy
@@ -644,6 +649,48 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
     def leader(request):
         if identity(request) != "leader":
             raise HTTPException(status_code=403, detail="leader role required")
+
+    def incident_resolver() -> ProtectedNativeIncidentResolver:
+        resolver = getattr(runtime, "native_incident_resolver", None)
+        if (type(resolver) is not ProtectedNativeIncidentResolver or resolver.database is not runtime.database
+                or resolver.scope.portfolio_id != runtime.portfolio_id
+                or resolver.scope.deployment_id != _deployment(runtime)):
+            raise HTTPException(status_code=403, detail="protected native incident review is not configured")
+        return resolver
+
+    @app.get("/api/v1/owner/native-incidents")
+    def native_incidents(request: Request) -> dict:
+        owner_write(request)
+        return _domain(lambda: incident_resolver().review_inventory())
+
+    @app.post("/api/v1/owner/resolve-native-incident")
+    async def resolve_native_incident(request: Request) -> dict:
+        owner_write(request)
+        body = await _body(request, NativeIncidentResolutionCommand)
+        resolver = incident_resolver()
+        # There are no external calls. Command, acknowledgement and final owner
+        # receipt share one writer commit; interruption cannot leave a clearance
+        # without its authenticated revision and exact request binding.
+        with runtime.database.immediate():
+            command_id, revision, replay = commands.begin(owner_scope, body, "resolve-native-incident", lambda: None)
+            if replay is not None:
+                return replay
+            result = _domain(lambda: resolver.resolve(body))
+            return commands.finish(command_id, revision, result)
+
+    @app.post("/api/v1/owner/revoke-native-incident-resolution")
+    async def revoke_native_incident_resolution(request: Request) -> dict:
+        owner_write(request)
+        body = await _body(request, NativeIncidentRevocationCommand)
+        resolver = incident_resolver()
+        with runtime.database.immediate():
+            command_id, revision, replay = commands.begin(
+                owner_scope, body, "revoke-native-incident-resolution", lambda: None,
+            )
+            if replay is not None:
+                return replay
+            result = _domain(lambda: resolver.revoke(body))
+            return commands.finish(command_id, revision, result)
 
     @app.get("/api/v1/owner/config")
     def owner_config(request: Request) -> dict:
