@@ -3,8 +3,10 @@
 This is offline T22 preparation. `PluginStageStore` and `PluginReplayValidator`
 are independent trusted-parent tools; the additional
 [executable bundle and shadow APIs](PLUGIN-RUNTIME-SHADOW.md) consume their exact
-sealed bytes and independent receipts. No CLI, Engineer tool, application worker,
-activation or live adapter calls them. `isolation.run_plugin` and
+sealed bytes and independent receipts. The opt-in
+[offline commission handler](PLUGIN-COMMISSIONS.md) now connects these APIs to
+persisted Leader tasks and protected synthetic model billing. Default runtime,
+activation and live adapters do not call them. `isolation.run_plugin` and
 `isolation.promote_staged` remain disabled. Passing replay checks does not grant
 broader Engineer authority, satisfy T18 economics, prove deployment-host
 isolation or complete A41/A42.
@@ -118,10 +120,12 @@ financial-state mutation or production activation occur in this slice.
 
 ## Remaining T22 work
 
+Offline preparation now includes functional shadow, sealed executable bundles,
+exact class-scoped commissions and bounded synthetic model repairs/spending.
 After actual T18/T21 evidence and an explicit owner code-class grant, bind
-admission to verified receipts and compatible baselines using the protected
-controller. Implement shadow evaluation, immutable runtime builds and staging,
-class-scoped Engineer commissioning and repair budgets, compatible application
+production admission to verified receipts and compatible baselines using the
+protected controller. Implement immutable deployment images, intended-host
+staging, funded broader commissioned work, compatible application
 migration rehearsal, automatic health-based activation, and independent
 deterministic rollback that retains all financial events. New budgets, vendors,
 venues, controller/kernel releases and destructive migrations remain separate

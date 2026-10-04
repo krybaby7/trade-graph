@@ -2,8 +2,11 @@
 
 This T22 preparation provides usable offline build, execute, compare and verify
 APIs. It extends [plugin staging](PLUGIN-STAGING.md) without enabling production
-promotion. Neither the default paper runtime nor the deployed Engineer calls
-these APIs. `isolation.run_plugin` and `isolation.promote_staged` remain disabled.
+promotion. The opt-in [offline commission handler](PLUGIN-COMMISSIONS.md) uses
+these APIs for independently verified executable candidates with synthetic
+gateway billing and recovery. The default paper runtime and deployed Engineer
+do not call these APIs. `isolation.run_plugin` and `isolation.promote_staged`
+remain disabled.
 T18 economics, complete T21 extraction/images/host verification and an explicit
 owner class grant remain prerequisites for broader deployed authority.
 
@@ -153,9 +156,11 @@ These APIs stage and evaluate. No example admits or activates production code.
 T21's `departmental_graph/v1` and decision proposal contracts are separate from
 `numeric_features/v1`; there is no implicit bridge into financial/role execution.
 
-Remaining T22 work includes class-scoped Engineer commissioning and bounded
-repair/spend integration, immutable deployment images and verified intended-host
-staging, compatible application migration rehearsal, authoritative dependency
+Offline class-scoped commissioning, bounded synthetic repair/spend integration
+and authenticated candidate recovery are now implemented. Remaining T22 work
+includes funded broader commissioning after admission, immutable deployment
+images and verified intended-host staging, compatible application migration
+rehearsal, authoritative dependency
 and owner-class admission, autonomous controller activation/observation, and
 independent deterministic deployment rollback preserving financial history.
 Stateless feature bundles require no database migrations; unsupported state
