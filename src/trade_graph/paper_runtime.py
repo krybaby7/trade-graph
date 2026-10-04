@@ -68,7 +68,7 @@ def _private_directory(path: Path) -> None:
 
 def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
                            config: PaperRuntimeConfig | None = None, clock=None,
-                           api_keys=None, transport=None):
+                           api_keys=None, transport=None, protected_owner: Path | None = None):
     """Construct paper services, never fund budgets or enable persisted owner permissions."""
     config = config or PaperRuntimeConfig()
     if path.is_symlink() or not path.is_file():
@@ -128,7 +128,7 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
                     budget.seed_card(card)
             policy = execution.authority.active_policy()
             paid = model_config.paid_calls_enabled and policy.paid_calls_enabled
-            if paid:
+            if paid and protected_owner is None:
                 model_handlers = assemble_handlers(
                     office, secretary, engineer, artifact_runtime, model_config,
                     workspace_root=path.parent / "engineering", api_keys=api_keys if api_keys is not None else {
@@ -154,13 +154,26 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             )]
             feed = PublicPaperFeed(execution, maintenance_ids, config.paper_symbols,
                                    interval_seconds=config.public_poll_interval_seconds)
-        return SimpleNamespace(database=database, clock=clock, portfolio_id=pid, ledger=ledger,
+        runtime = SimpleNamespace(database=database, clock=clock, portfolio_id=pid, ledger=ledger,
                                execution=execution, scheduler=scheduler, versions=versions,
                                artifact_runtime=artifact_runtime, budget=budget, secretary=secretary,
                                office=office, engineer=engineer, handlers=handlers, public_feed=feed,
                                model_handlers=model_handlers,
+                               model_config=model_config if paid else None,
+                               prepare_runtime=None, runtime_ready=None,
                                deployment_id=model_config.deployment_id if model_config else "deployment",
                                paid_calls_enabled=paid, live_enabled=False, config=config)
+        if protected_owner is not None:
+            from trade_graph.application.deployment_runtime import ProtectedDeploymentBinding
+
+            protected_keys = api_keys if api_keys is not None else {
+                "openai": os.environ.get("OPENAI_API_KEY", ""),
+                "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
+            }
+            binding = ProtectedDeploymentBinding(runtime, protected_owner, api_keys=protected_keys, transport=transport)
+            runtime.protected_deployment = binding
+            runtime.prepare_runtime, runtime.runtime_ready = binding.prepare, binding.ready
+        return runtime
     except BaseException:
         database.close()
         raise

@@ -62,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--database", default="runtime/trade_graph.sqlite")
     run.add_argument("--portfolio-id")
     run.add_argument("--config")
+    run.add_argument("--protected-owner", help="read-only owner-pinned protected deployment directory")
     run.add_argument("--once", action="store_true", help="perform one service tick, then exit")
     run.add_argument("--max-ticks", type=int, help="stop after a bounded number of ticks")
     run.add_argument("--public-data", action="store_true", help="enable public REST data; uses no exchange key")
@@ -250,15 +251,31 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("max-ticks must be a positive integer")
         if args.command == "run" and args.once and args.max_ticks is not None:
             parser.error("choose --once or --max-ticks")
+        if args.command == "run" and args.protected_owner and args.config:
+            parser.error("protected deployment loads paper-config.json only from its pinned owner directory")
         from trade_graph.application.owner_commands import recover_owner_commands
         from trade_graph.application.paper_service import PaperService
         from trade_graph.paper_runtime import assemble_paper_runtime, load_runtime_config
 
         try:
-            config = load_runtime_config(Path(args.config) if args.config else None)
+            if args.command == "run" and args.protected_owner:
+                from trade_graph.kernel.deployment_image import read_owner_file
+                from trade_graph.paper_runtime import PaperRuntimeConfig
+
+                try:
+                    config_bytes = read_owner_file(Path(args.protected_owner), "paper-config.json", 262144)
+                except FileNotFoundError:
+                    config = PaperRuntimeConfig()
+                else:
+                    config = PaperRuntimeConfig.model_validate_json(config_bytes)
+            else:
+                config = load_runtime_config(Path(args.config) if args.config else None)
             if args.command == "run" and args.public_data:
                 config = config.model_copy(update={"public_data_enabled": True})
-            runtime = assemble_paper_runtime(Path(args.database), portfolio_id=args.portfolio_id, config=config)
+            runtime = assemble_paper_runtime(
+                Path(args.database), portfolio_id=args.portfolio_id, config=config,
+                protected_owner=Path(args.protected_owner) if args.command == "run" and args.protected_owner else None,
+            )
         except (ValueError, LookupError, OSError, TradeGraphError) as exc:
             parser.error(f"paper startup failed ({type(exc).__name__}); "
                          "use doctor to inspect private runtime readiness")
@@ -281,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifact_runtime=runtime.artifact_runtime, public_feed=runtime.public_feed,
                 secretary=runtime.secretary, tick_interval_seconds=config.tick_interval_seconds,
                 recover_commands=lambda: recover_owner_commands(runtime),
+                prepare_runtime=runtime.prepare_runtime, runtime_ready=runtime.runtime_ready,
             )
             outcome = asyncio.run(service.run(max_ticks=1 if args.once else args.max_ticks))
             decisions_created = runtime.database.execute(

@@ -68,6 +68,8 @@ class PaperService:
         tick_interval_seconds: float = 1,
         role_ttl_seconds: int = 30,
         recover_commands: Callable[[], Any] | None = None,
+        prepare_runtime: Callable[[], Mapping[str, Callable]] | None = None,
+        runtime_ready: Callable[[], bool] | None = None,
         system_version_id: str = "paper-runtime",
     ) -> None:
         if execution.mode != "paper" or execution.database is not database:
@@ -93,6 +95,7 @@ class PaperService:
             Scheduler._positive(interval, f"{role} interval")
         self.tick_interval_seconds, self.role_ttl_seconds = tick_interval_seconds, role_ttl_seconds
         self.recover_commands, self.system_version_id = recover_commands, system_version_id
+        self.prepare_runtime, self.runtime_ready = prepare_runtime, runtime_ready
         self.owner = "paper-service-" + uuid.uuid4().hex
         self.worker = RoleWorker(self.scheduler, owner=self.owner, system_version_id=system_version_id,
                                  reconcile=self._reconcile, artifact_runtime=artifact_runtime)
@@ -201,6 +204,8 @@ class PaperService:
                 await self._offload(self.recover_commands)
             # No graph handler may run before uncertainty and owner pauses recover.
             await self._offload(self._management)
+            if self.prepare_runtime:
+                self.handlers = dict(await self._offload(self.prepare_runtime))
             self._ready = True
         except BaseException:
             self._started = False
@@ -279,6 +284,10 @@ class PaperService:
         created = 0
         if self.artifact_runtime:
             self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
+        if self.runtime_ready and not self.runtime_ready():
+            for pid in self.portfolio_ids:
+                self.secretary.process(pid, route=False)
+            return 0
         for pid in self.portfolio_ids:
             profile = self.execution.profile(pid)
             pause = self.execution.pause(pid)
@@ -340,6 +349,8 @@ class PaperService:
 
     def _run_role(self) -> int:
         # One finite task per launch keeps cadence and shutdown under the controller.
+        if self.runtime_ready and not self.runtime_ready():
+            return 0
         lease = self.scheduler.claim(self.owner, ttl_seconds=self.role_ttl_seconds, roles=set(self.handlers))
         if lease is None:
             return 0
