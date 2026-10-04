@@ -14,6 +14,8 @@ from trade_graph.application.operations_evidence import (
     HostObservationCollector,
     VerifiedHostObservation,
 )
+from trade_graph.application.service_binding import ServiceUnitBinding
+from trade_graph.application.service_proof import LocalRestartSource
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,8 @@ def capture_preflight(
     config_path: Path | str | None = None,
     backup_restore: bool = False,
     public_data: bool = False,
+    service_binding: ServiceUnitBinding | None = None,
+    restart_source: LocalRestartSource | None = None,
 ) -> PreflightResult:
     """Retain/verify local facts; this never authorizes model spending or service writes."""
     path, key = Path(evidence_path), Path(key_path)
@@ -131,7 +135,8 @@ def capture_preflight(
         if source is not None:
             _source_path(Path(source))
     os.close(_parent(path, create=True))
-    collector = HostObservationCollector(database_path, signing_key=_key(key, create=True), config_path=config_path)
+    collector = HostObservationCollector(database_path, signing_key=_key(key, create=True), config_path=config_path,
+                                         service_binding=service_binding, restart_source=restart_source)
     retained = collector.capture(path, backup_restore=backup_restore, public_data=public_data)
     return _summary(collector.verify(path, retained.sha256), backup_restore=backup_restore, public_data=public_data)
 
@@ -143,13 +148,16 @@ def verify_preflight(
     expected_sha256: str,
     *,
     config_path: Path | str | None = None,
+    service_binding: ServiceUnitBinding | None = None,
+    restart_source: LocalRestartSource | None = None,
 ) -> PreflightResult:
     for source in (database_path, config_path):
         if source is not None:
             _source_path(Path(source))
     _source_path(Path(evidence_path))
     collector = HostObservationCollector(database_path, signing_key=_key(Path(key_path), create=False),
-                                         config_path=config_path)
+                                         config_path=config_path, service_binding=service_binding,
+                                         restart_source=restart_source)
     observation = collector.verify(evidence_path, expected_sha256)
     checks = observation.document["checks"]
     return _summary(observation, backup_restore=checks["backup_restore"]["status"] != "pending",

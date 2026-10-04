@@ -405,6 +405,65 @@ proxy/network/timeout/HTTP/schema categories and attempt/completion timestamps;
 HTTP failures retain only their numeric status, with no exception text, raw request
 URL, proxy value or credential value in the command summary.
 
+### Exact service binding and actual local restart rehearsal
+
+The trusted `ServiceUnitBinding` API binds the exact installed console-script,
+protected package/interpreter, unit bytes, private configuration bytes, database
+path and working directory. A configuration inspection alone is preparation. An
+observed systemd service requires the fixed unit to be loaded and running with
+the expected fragment, no drop-ins or environment wrappers, the exact command,
+current daemon configuration and the prescribed hardening properties. Its actual
+process must have the expected user, Python interpreter and complete argument
+vector. Unsupported unit hooks, alternate wrappers, substitutions and byte drift
+are refused. The service probe makes no restart or provider call and never retains
+raw configuration, arguments, environment values or credentials. The expected
+hashes are protected release inputs supplied by the operator; model output is
+not their authority. The current workspace has no running systemd installation.
+
+`HostObservationCollector`, `capture_preflight` and `verify_preflight` accept
+optional `service_binding` and `restart_source` keyword arguments for the exact
+trusted objects. The default command does not invent either input. Reuse the
+same expected bindings when verifying the retained observation. The deployed
+collector must run as the service user from the same reviewed wheel installation
+and interpreter as the unit. A source checkout cannot verify the running unit's
+installed package origin. Loader variables such as `PYTHONPATH`, `PYTHONHOME` and
+`LD_PRELOAD` are refused on the observed process; only environment names are
+inspected, and credential/proxy values are never decoded or retained.
+
+The installed `service_proof` module performs a separate, actual local process
+rehearsal in a **new synthetic paper database**, with public data and models
+disabled:
+
+```bash
+umask 077
+uv run python -m trade_graph.application.service_proof capture \
+  --report runtime/service-restart-new.json \
+  --key runtime/operations-observation.key
+uv run python -m trade_graph.application.service_proof verify \
+  --report runtime/service-restart-new.json \
+  --key runtime/operations-observation.key \
+  --sha256 "paste-the-evidence_sha256-returned-by-capture"
+```
+
+A real controller acquires the database flock, submits one simulated order,
+loses its acknowledgement and retains the broker's fill before an abrupt process
+exit. Two normal paper CLI service processes then start, reconcile that unknown
+effect, retain the owner's `MANAGE_ONLY` pause, hold exclusive flock and stop
+through SIGTERM. The producer verifies drained leases, one submission attempt,
+one fill and unchanged complete financial projections across the second boot.
+It retains private crash/recovery/restart snapshots, backup checksums, configuration
+bytes and bounded process logs with authenticated byte hashes. Verification uses
+those retained records and makes no new process or network call. Interrupted
+artifact directories are preserved and cannot be reused for success.
+
+Its `LocalRestartSource` can be attached to a host observation as
+`local_restart_rehearsal`. That fact remains scoped to the fresh synthetic fixture:
+it does not promote the operating database's restart result, systemd deployment,
+owner-designated host, funded soak, invoice, off-host backup, alert delivery or
+live acceptance. Repeat the installed-package rehearsal after a source/interpreter
+change. Complete intended-host acceptance still requires actual observations on
+the designated installation and its actual persistent paper database.
+
 The backup/restore drill creates new private copies beside the report and compares
 their complete financial projections. It does not restore over the operating
 database. Database snapshots/copies are capped at 16 MiB; SQLite queries have a

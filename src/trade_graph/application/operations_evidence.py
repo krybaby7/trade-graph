@@ -26,6 +26,8 @@ from trade_graph.application.operations import (
     offline_restore,
     private_backup,
 )
+from trade_graph.application.service_binding import ServiceUnitBinding, private_source
+from trade_graph.application.service_proof import LocalRestartSource
 from trade_graph.domain.clock import Clock, FrozenClock, SystemClock, parse_utc, utc_iso
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.runtime_manifest import canonical_json, protected_package_sha256
@@ -147,6 +149,8 @@ class HostObservationCollector:
         signing_key: bytes,
         config_path: Path | str | None = None,
         clock: Clock | None = None,
+        service_binding: ServiceUnitBinding | None = None,
+        restart_source: LocalRestartSource | None = None,
     ) -> None:
         if type(signing_key) is not bytes or not 32 <= len(signing_key) <= 64:
             raise ValueError("protected local observation key requires 32..64 bytes")
@@ -154,6 +158,14 @@ class HostObservationCollector:
         self.config_path = None if config_path is None else Path(config_path)
         self.clock = clock or SystemClock()
         self._key = signing_key
+        if service_binding is not None and type(service_binding) is not ServiceUnitBinding:
+            raise ValueError("exact protected service unit binding required")
+        if restart_source is not None and type(restart_source) is not LocalRestartSource:
+            raise ValueError("exact protected restart source required")
+        if service_binding is not None and (self.database_path != service_binding.database_path
+                                           or self.config_path != service_binding.config_path):
+            raise ValueError("service unit and host observation must bind the same database/configuration")
+        self.service_binding, self.restart_source = service_binding, restart_source
 
     def _source_identities(self) -> dict:
         result = {}
@@ -195,10 +207,11 @@ class HostObservationCollector:
         }
         if self.config_path is not None:
             try:
-                from trade_graph.paper_runtime import load_runtime_config
+                from trade_graph.paper_runtime import PaperRuntimeConfig
 
-                scope["config_sha256"] = _sha(_small_file(self.config_path, 262144))
-                load_runtime_config(self.config_path)
+                payload = private_source(self.config_path, 262144)
+                scope["config_sha256"] = _sha(payload)
+                PaperRuntimeConfig.model_validate_json(payload)
             except (OSError, ValueError):
                 checks["funded_setup"] = _fact("refused", reason="protected runtime configuration is invalid")
         if self.database_path is None or not self.database_path.is_file():
@@ -206,6 +219,7 @@ class HostObservationCollector:
         try:
             if self.database_path.is_symlink():
                 raise ValueError("operations database must not be a symlink")
+            private_source(self.database_path, MAX_DATABASE_BYTES, private=False)
             frozen = FrozenClock(self.clock.now())
             with _read_database(self.database_path) as database:
                 deadline = monotonic() + 5
@@ -311,6 +325,11 @@ class HostObservationCollector:
         return scope, checks
 
     def _service(self) -> dict:
+        if self.service_binding is not None:
+            try:
+                return self.service_binding.observe()
+            except (OSError, ValueError, KeyError, UnicodeError) as exc:
+                return _fact("refused", failure_type=type(exc).__name__, unit_configuration_verified=False)
         unit = Path("/run/systemd/system")
         binary = Path("/usr/bin/systemctl")
         if not unit.is_dir() or not binary.is_file():
@@ -342,6 +361,18 @@ class HostObservationCollector:
             )
         except (OSError, ValueError, UnicodeError) as exc:
             return _fact("unavailable", failure_type=type(exc).__name__)
+
+    def _restart_rehearsal(self) -> dict:
+        if self.restart_source is None:
+            return _fact("pending", reason="local subprocess restart rehearsal was not retained")
+        proof = self.restart_source.verify()
+        document = proof.document
+        return _fact("observed", evidence_sha256=proof.sha256,
+                     protected_package_sha256=document["protected_package_sha256"],
+                     config_sha256=document["config_sha256"], scope=document["scope"],
+                     synthetic_lost_ack_reconciled=True, owner_pause_preserved=True,
+                     financial_continuity_verified=True, actual_systemd_verified=False,
+                     operating_database_restart_verified=False, funded_acceptance_verified=False)
 
     def _public(self) -> dict:
         from trade_graph.adapters.market.public import FrankfurterClient, HttpxTextTransport, KrakenPublicRest
@@ -458,6 +489,8 @@ class HostObservationCollector:
         _private_directory(path.parent)
         parent = open_directory(path.parent)
         try:
+            if os.fstat(parent).st_uid != os.geteuid():
+                raise ValueError("host report directory requires the current owner")
             descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
         except BaseException:
             os.close(parent)
@@ -479,6 +512,7 @@ class HostObservationCollector:
                 public_data=self._public() if public_data else _fact("pending", reason="public probe not requested"),
                 immutable_image=_fact("pending"),
                 immutable_mounts=_fact("pending"),
+                local_restart_rehearsal=self._restart_rehearsal(),
             )
             current, current_checks = self._sources()
             consistent = (
@@ -532,9 +566,7 @@ class HostObservationCollector:
 
     def verify(self, evidence_path: Path | str, expected_sha256: str) -> VerifiedHostObservation:
         path = Path(evidence_path)
-        if path.parent.is_symlink() or path.parent.stat().st_mode & 0o077 or path.stat().st_mode & 0o077:
-            raise ValueError("host evidence must stay in private regular storage")
-        payload = _small_file(path, MAX_REPORT_BYTES)
+        payload = private_source(path, MAX_REPORT_BYTES)
         if type(expected_sha256) is not str or not hmac.compare_digest(_sha(payload), expected_sha256):
             raise ValueError("retained host evidence byte digest mismatch")
         try:
@@ -582,6 +614,8 @@ class HostObservationCollector:
                 and document["checks"]["service"] != self._service()
             ):
                 raise ValueError("observed service state changed")
+            if document["checks"].get("local_restart_rehearsal") != self._restart_rehearsal():
+                raise ValueError("local service restart rehearsal source changed")
             drill = document["checks"]["backup_restore"]
             if drill["status"] == "observed":
                 facts = drill["facts"]
@@ -594,9 +628,10 @@ class HostObservationCollector:
                     or directory.stat().st_mode & 0o077
                     or backup.stat().st_mode & 0o077
                     or restored.stat().st_mode & 0o077
-                    or facts["backup_sha256"] != _sha(_small_file(backup, MAX_DATABASE_BYTES))
-                    or facts["restored_sha256"] != _sha(_small_file(restored, MAX_DATABASE_BYTES))
-                    or _small_file(backup.with_suffix(".sqlite.sha256"), 128).strip().decode() != facts["backup_sha256"]
+                    or facts["backup_sha256"] != _sha(private_source(backup, MAX_DATABASE_BYTES))
+                    or facts["restored_sha256"] != _sha(private_source(restored, MAX_DATABASE_BYTES))
+                    or private_source(backup.with_suffix(".sqlite.sha256"), 128).strip().decode()
+                    != facts["backup_sha256"]
                 ):
                     raise ValueError("retained restore drill artifact changed")
                 frozen = FrozenClock(parse_utc(facts["projection_as_of"]))
