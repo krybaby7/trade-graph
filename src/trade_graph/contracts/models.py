@@ -559,10 +559,13 @@ class FillRecord(ContractModel):
             return self.fee_components
         if self.fee_amount == 0:
             return ()
+        import hashlib
+
+        identity = hashlib.sha256(self.trade_id.encode()).hexdigest()
         return (FillFeeRecord(
-            asset=self.fee_asset, amount=self.fee_amount, source_ref=f"{self.trade_id}:fee",
+            asset=self.fee_asset, amount=self.fee_amount, source_ref=f"legacy-fee:{identity}",
             effective_at_utc=self.filled_at_utc, identified_rate=self.fee_identified_rate,
-            rate_source_ref=f"{self.trade_id}:legacy-fee-rate" if self.fee_identified_rate is not None else None,
+            rate_source_ref=f"legacy-fee-rate:{identity}" if self.fee_identified_rate is not None else None,
             provenance_kind="legacy_compatibility",
         ),)
 

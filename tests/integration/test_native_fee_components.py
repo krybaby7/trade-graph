@@ -363,3 +363,65 @@ def test_claimed_secondary_asset_map_without_native_hold_cannot_cover_fee_debit(
     assert payload["unreserved_fee_assets"] == ["ETH"]
     assert ledger.books(portfolio).cash_amount("USD") == Decimal("85.1")
     database.close()
+
+
+@pytest.mark.parametrize("identified_rate", [None, Decimal("1")])
+def test_maximal_native_trade_id_legacy_fee_has_bounded_compatibility_references(identified_rate):
+    fill = _fill(_leg("USD", "0.1", "unused"), trade_id="T" * 128).model_copy(
+        update={
+            "fee_components": None,
+            "fee_amount": Decimal("0.1"),
+            "fee_identified_rate": identified_rate,
+        }
+    )
+    original = fill.model_dump_json()
+    component = fill.fee_legs()[0]
+    assert len(component.source_ref) <= 128
+    assert component.rate_source_ref is None or len(component.rate_source_ref) <= 128
+    assert component.provenance_kind == "legacy_compatibility"
+    assert fill.model_dump_json() == original
+    assert fill.fee_legs() == (component,)
+
+
+def test_maximal_native_trade_id_legacy_fee_posts_and_consumes_original_hold(tmp_path):
+    database, clock, ledger, portfolio, intent = _stack(
+        tmp_path / "max-id.sqlite",
+        quantity=Decimal("1"),
+        limit="11",
+        reservation="20",
+    )
+    execution = _execution(database, clock, ledger, ScriptedRest())
+    fill = _fill(
+        _leg("USD", "0.1", "unused"), trade_id="T" * 128, intent_id=intent.intent_id, quantity="0.5", quote_cost="5"
+    ).model_copy(
+        update={
+            "fee_components": None,
+            "fee_amount": Decimal("0.1"),
+        }
+    )
+    assert execution.record_fill(fill)
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("94.9")
+    assert database.execute("SELECT amount FROM position_reservations").fetchone()[0] == "14.9"
+    assert not execution.record_fill(fill)
+    database.close()
+
+
+def test_maximal_native_trade_id_legacy_fee_dashboard_remains_readable(tmp_path):
+    from tests.integration.test_dashboard_financial import _runtime
+
+    from trade_graph.api import financial
+
+    runtime = _runtime(tmp_path, capital="100", currency="USD")
+    fill = _fill(_leg("USD", "0.1", "unused"), trade_id="T" * 128).model_copy(
+        update={
+            "fee_components": None,
+            "fee_amount": Decimal("0.1"),
+        }
+    )
+    runtime.ledger.apply_fill(runtime.portfolio_id, fill, base_asset="BTC", quote_asset="USD")
+    runtime.ledger.observe_mark(runtime.portfolio_id, "BTC", Decimal("10"), "USD", source="synthetic")
+    fees = financial.overview(runtime)["performance"]["trading_fees"]
+    assert fees["items"][0]["trade_id"] == "T" * 128
+    assert fees["items"][0]["amount"] == "0.1"
+    assert Decimal(fees["reporting_amount"]) == Decimal("0.09")
+    runtime.database.close()

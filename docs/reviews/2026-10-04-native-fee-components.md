@@ -54,3 +54,11 @@ ledger, dashboard, retained runtime evidence, contract and generated conservatio
 checks. Evidence: `/tmp/t19-r4-fees-reviewed.xml`. Targeted Ruff passes. The first
 broader run found one older refusal-message expectation; explicit missing native
 fee effective-time refusal now retains the expected rebate diagnostic.
+
+Independent compatibility review found that adding textual suffixes to a valid
+128-character native trade ID exceeded the new component reference bound. Legacy
+adaptation now uses bounded deterministic digest references labeled
+`legacy_compatibility`; the original serialized fill remains unchanged. Maximal-ID
+single-fee and identified-rate records now pass component derivation, reservation
+consumption and dashboard reads. **125** related tests passed, zero failures/errors/
+skips (`/tmp/t19-r4-legacy-max.xml`), including four maximal-ID regressions.
