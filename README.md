@@ -13,11 +13,14 @@ for recorded evidence and [the operations runbook](docs/operations.md) for setup
 T17's actual current-public-data verification and funded credentialed paper soak remain pending.
 T18 bounded lossless evaluation history, T19 scope-verified native venue evidence, T20 durable
 closed pilot lifecycle, T21 confined six-role service composition and immutable offline image,
-and T22 commissioned offline plugin engineering have tested local slices.
+and T22 commissioned offline plugin engineering, autonomous synthetic plugin
+rollout and a confined Secretary application/migration rehearsal have tested local slices.
 Actual forward economics, authenticated venue conformance and owner-approved intended-host
 deployment remain open. Live trading and broader deployed Engineer authority remain closed.
 See [protected deployment](docs/PROTECTED-DEPLOYMENT.md),
-[plugin commissions](docs/PLUGIN-COMMISSIONS.md) and the current implementation status.
+[plugin commissions](docs/PLUGIN-COMMISSIONS.md),
+[offline plugin rollout](docs/PLUGIN-ROLLOUT.md),
+[application rehearsal](docs/APPLICATION-PROJECTION.md) and the current implementation status.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 

@@ -161,10 +161,13 @@ T21's `departmental_graph/v1` and decision proposal contracts are separate from
 `numeric_features/v1`; there is no implicit bridge into financial/role execution.
 
 Offline class-scoped commissioning, bounded synthetic repair/spend integration
-and authenticated candidate recovery are now implemented. Remaining T22 work
-includes funded broader commissioning after admission, immutable deployment
-images and verified intended-host staging, compatible application migration
-rehearsal, authoritative dependency and owner-class admission, and production
+and authenticated candidate recovery are now implemented. The
+[selected application rehearsal](APPLICATION-PROJECTION.md) separately executes
+confined Secretary projections, compatible sidecar expansion/backfill and a
+disposable contraction clone. An [immutable offline image](PROTECTED-DEPLOYMENT.md)
+is implemented. Remaining T22 work includes funded broader commissioning after
+admission, verified intended-host staging, commissioned selected-application
+routing, authoritative dependency and owner-class admission, and production
 deployment/activation/health/rollback preserving financial history. Offline
 numeric activation and deterministic recovery are implemented independently
 of candidate/model health.

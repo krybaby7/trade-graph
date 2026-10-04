@@ -105,10 +105,11 @@ Financial events remain unchanged.
 All owner policies, observations, credentials and usage here are synthetic.
 
 T22 remains open. Funded broader operation still needs actual T18 economics,
-complete T21 immutable image and intended-host isolation/recovery evidence,
+owner-approved T21 intended-host image/profile and isolation/recovery evidence,
 explicit owner class admission, authoritative dependency verification and
 production autonomous deployment/health/rollback integration. The offline
 numeric rollout prepares that path without production admission. Selected
-application-code and compatible migration rehearsal remain separate;
+application commissioning remains separate from the implemented
+[confined projection and compatible migration rehearsal](APPLICATION-PROJECTION.md);
 stateless numeric features require no migration. No paid call, private venue
 access, real order, production deployment or owner grant ran in this slice.
