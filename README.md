@@ -10,17 +10,24 @@ paper operation requires approved private routing, provider credentials, explici
 permissions, and a separate real operating allowance. Read [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md)
 for recorded evidence and [the operations runbook](docs/operations.md) for setup, funded observation and recovery.
 
-T17's actual current-public-data verification and funded credentialed paper soak remain pending.
-T18 bounded lossless evaluation history, T19 scope-verified native venue evidence, T20 durable
-closed pilot lifecycle, T21 confined six-role service composition and immutable offline image,
-and T22 commissioned offline plugin engineering, autonomous synthetic plugin
-rollout and a confined Secretary application/migration rehearsal have tested local slices.
-Actual forward economics, authenticated venue conformance and owner-approved intended-host
-deployment remain open. Live trading and broader deployed Engineer authority remain closed.
+Local implementation includes exact service binding and actual paper-process restart
+proof, preregistered four-arm paper evidence collection with historical verification,
+signed native fee components/rebates, append-only earlier-fill correction and protected
+paper fee holds. Authenticated owner incident review and paper-to-live scope mapping
+prepare the closed pilot lifecycle. The protected six-role service retains financial
+and provider-budget continuity with a separate restart witness, and has an immutable
+offline image plus a separately prepared provider proxy profile. Commissioned
+offline plugin and Secretary application workflows exercise confined generation,
+compatible sidecar migration, fenced health observation, restart and source rollback.
+Actual current-public-data/funded observation, forward economics, authenticated venue
+conformance and owner-approved intended-host deployment remain open. Live trading
+and broader deployed Engineer authority remain closed.
 See [protected deployment](docs/PROTECTED-DEPLOYMENT.md),
 [plugin commissions](docs/PLUGIN-COMMISSIONS.md),
 [offline plugin rollout](docs/PLUGIN-ROLLOUT.md),
-[application rehearsal](docs/APPLICATION-PROJECTION.md) and the current implementation status.
+[application commissioning](docs/APPLICATION-COMMISSIONS.md),
+[application preparation](docs/APPLICATION-PREPARATION.md),
+[financial continuity](docs/FINANCIAL-CHECKPOINTS.md) and the current implementation status.
 
 **Default paper account: USD10,000. Reporting: EUR. Real AI/operating budget: separate, explicitly configured.** Paper gains are not real earnings or funding for API bills. Source/pricing review: 2026-09-29.
 
