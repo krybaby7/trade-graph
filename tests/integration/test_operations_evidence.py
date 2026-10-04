@@ -5,6 +5,7 @@ import hmac
 import json
 from decimal import Decimal
 
+import httpx
 import pytest
 from tests.integration.test_dashboard_financial import _fill, _receipt, _runtime
 
@@ -189,6 +190,34 @@ def test_public_success_requires_genuine_response_scope_and_date(tmp_path, monke
     assert result["status"] == "unavailable"
     assert all(outcome["status"] == "refused" for outcome in result["facts"]["outcomes"])
     assert result["facts"]["portfolio_observations_created"] is False
+
+
+@pytest.mark.parametrize("exception, category, status", [
+    (httpx.ProxyError("private-proxy-and-key-value"), "proxy_connection_failed", None),
+    (httpx.ReadTimeout("private-proxy-and-key-value"), "network_timeout", None),
+    (httpx.ConnectError("private-proxy-and-key-value"), "network_transport_failed", None),
+    (httpx.HTTPStatusError("private-proxy-and-key-value", request=httpx.Request("GET", "https://secret.invalid"),
+                          response=httpx.Response(403)), "http_status_refused", 403),
+    (ValueError("private-proxy-and-key-value"), "response_validation_refused", None),
+])
+def test_public_failures_retain_safe_category_timestamps_and_status_without_exception_text(
+    monkeypatch, exception, category, status,
+):
+    instance = HostObservationCollector(None, signing_key=KEY)
+
+    def unavailable(*args):
+        raise exception
+
+    monkeypatch.setattr("trade_graph.adapters.market.public.HttpxTextTransport.get_text", unavailable)
+    result = instance._public()
+    assert result["status"] == "unavailable"
+    for outcome in result["facts"]["outcomes"]:
+        assert outcome["failure_category"] == category
+        assert outcome.get("http_status") == status
+        assert outcome["completed_at"] >= outcome["attempted_at"]
+        assert len(outcome["request_url_sha256"]) == 64
+    assert "private-proxy-and-key-value" not in json.dumps(result)
+    assert "secret.invalid" not in json.dumps(result)
 
 
 def test_backup_deadline_aborts_copy_and_keeps_existing_records(tmp_path, monkeypatch):

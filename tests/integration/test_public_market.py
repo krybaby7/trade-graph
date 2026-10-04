@@ -9,6 +9,7 @@ import pytest
 
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.market.normalize import normalize_ticker
+from trade_graph.adapters.market.paper_feed import PublicPaperFeed
 from trade_graph.adapters.market.public import FrankfurterClient, KrakenPublicFeed, KrakenPublicRest, loads
 from trade_graph.adapters.market.replay import PointInTimeMarket, quote_features
 from trade_graph.adapters.persistence.db import Database
@@ -136,6 +137,81 @@ def test_rest_metadata_ticker_and_attributed_fx() -> None:
     assert rate.rate == Decimal("0.90")
     assert rate.source == "frankfurter:ECB:2026-09-29"
     assert rate.provider == "ECB"
+
+
+@pytest.mark.parametrize("result", [
+    {"XETHZUSD": {"a": ["101"], "b": ["100"], "c": ["100"], "v": ["1", "2"]}},
+    {"XXBTZUSD": {}, "XETHZUSD": {}},
+    {"XXBTZUSD": []},
+    {"unknown": {}},
+])
+def test_rest_ticker_cannot_relabel_another_instrument_or_multiple_books(result) -> None:
+    transport = ScriptedTransport({TICKER_URL: json.dumps({"error": [], "result": result})})
+    with pytest.raises(ValidationFailure, match="requested book|requested symbol"):
+        KrakenPublicRest(transport).fetch_ticker("BTC/USD", observation_id="wrong-pair", available_at=NOW)
+
+
+def test_rest_ticker_binds_nondefault_pair_to_scoped_metadata_alias() -> None:
+    assets = "https://api.kraken.com/0/public/AssetPairs?pair=BTCEUR"
+    ticker = "https://api.kraken.com/0/public/Ticker?pair=XBTEUR"
+    metadata = {"wsname": "XBT/EUR", "altname": "XBTEUR", "pair_decimals": 1, "lot_decimals": 8}
+    book = {"a": ["101"], "b": ["100"], "c": ["100"], "v": ["1", "2"]}
+    transport = ScriptedTransport({
+        assets: json.dumps({"error": [], "result": {"XXBTZEUR": metadata}}),
+        ticker: json.dumps({"error": [], "result": {"XXBTZEUR": book}}),
+    })
+    rest = KrakenPublicRest(transport)
+    with pytest.raises(ValidationFailure, match="requested symbol"):
+        rest.fetch_ticker("BTC/EUR", observation_id="before-metadata", available_at=NOW)
+    assert rest.fetch_instruments(["BTCEUR"])[0].symbol == "BTC/EUR"
+    observation = rest.fetch_ticker("BTC/EUR", observation_id="after-metadata", available_at=NOW)
+    assert observation.symbol == "BTC/EUR" and observation.bid == Decimal("100")
+
+
+@pytest.mark.parametrize("result", [
+    {"XETHZUSD": {"wsname": "ETH/USD"}},
+    {"XXBTZUSD": {"wsname": "XBT/USD"}, "XETHZUSD": {"wsname": "ETH/USD"}},
+    {"XXBTZUSD": {"wsname": "XBT/USD"}, "XBTUSD": {"wsname": "XBT/USD"}},
+    {"XETHZUSD": {"wsname": "ETH/USD", "altname": "XBTUSD"}},
+    {"XXBTZUSD": []},
+])
+def test_rest_metadata_refuses_missing_additional_and_duplicate_instrument_scope(result) -> None:
+    transport = ScriptedTransport({ASSET_URL: json.dumps({"error": [], "result": result})})
+    with pytest.raises(ValidationFailure):
+        KrakenPublicRest(transport).fetch_instruments(["XBTUSD"])
+
+
+def test_rest_symbol_metadata_queries_use_native_pair_identifier_and_require_wire_error_status() -> None:
+    transport = ScriptedTransport({ASSET_URL: json.dumps({"result": {"XXBTZUSD": {"wsname": "XBT/USD"}}})})
+    with pytest.raises(ValidationFailure, match="error status"):
+        KrakenPublicRest(transport).fetch_instruments(["BTC/USD"])
+    assert transport.calls == [ASSET_URL]
+
+
+def test_wrong_public_book_cannot_refresh_persisted_observations_or_marks(tmp_path) -> None:
+    clock = FrozenClock(NOW)
+    database = Database(tmp_path / "paper.sqlite")
+    ledger = Ledger(database, clock)
+    portfolio = ledger.create_portfolio(reporting_currency="EUR")
+    execution = Execution(database, ledger, clock, PaperBroker(database, clock))
+    old = normalize_ticker({"symbol": "BTC/USD", "bid": "10", "ask": "12"},
+                           observation_id="prior-valid-public-book", available_at=NOW)
+    execution.save_observation(old)
+    ledger.observe_mark(portfolio, "BTC", Decimal("11"), "USD", source="prior-valid-public-book")
+    transport = ScriptedTransport({
+        ASSET_URL: json.dumps({"error": [], "result": {"XXBTZUSD": {"wsname": "XBT/USD"}}}),
+        TICKER_URL: json.dumps({"error": [], "result": {"XETHZUSD": {"a": ["101"], "b": ["100"]}}}),
+    })
+    feed = PublicPaperFeed(execution, [portfolio], ["BTC/USD"], transport=transport)
+    clock.advance(60)
+    with pytest.raises(ValidationFailure, match="requested symbol"):
+        feed.poll()
+    assert feed.next_poll is None and feed.next_fx is None
+    assert database.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+    assert database.execute("SELECT COUNT(*) FROM valuation_marks").fetchone()[0] == 1
+    assert database.execute("SELECT mark FROM valuation_marks").fetchone()[0] == "11"
+    assert database.execute("SELECT COUNT(*) FROM fx_rates").fetchone()[0] == 0
+    database.close()
 
 
 @pytest.mark.parametrize("change", [

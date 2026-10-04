@@ -94,7 +94,11 @@ Public REST acquisition requests uncompressed data, refuses redirects and encode
 responses, and caps each response at 1 MiB. Network phases have a timeout and
 streamed chunks receive an elapsed-deadline check; a blocked read can last until
 its phase timeout. The transport retains the process's configured HTTP(S) proxy
-policy. A `feed:ProxyError` means the public observation failed; old observations
+policy. Public metadata must cover exactly the requested instruments; ticker
+responses must contain one book whose returned native key identifies that symbol.
+An unrelated book cannot be relabeled with the requested symbol. Nondefault native
+ticker aliases require a prior matching metadata response. A `feed:ProxyError`
+means the public observation failed; old observations
 cannot become fresh evidence. The 2026-10-02 workspace probes received proxy CONNECT
 403 failures for both `api.kraken.com` and `api.frankfurter.dev`. Obtain approved
 HTTPS access to those hosts on the selected deployment host, then repeat the bounded
@@ -352,34 +356,48 @@ owner paid permission, real allowance, current approved role routes, selected
 credential-variable presence and pause/resume prerequisites. Credential and
 proxy values never enter the report. Missing sources remain pending or unavailable.
 
-Run this on the workspace for preparation, and repeat on the owner-designated
-deployment host when it is available. Use fresh private evidence/key names:
+The installed preflight module provides capture and later verification. Run it on
+the workspace for preparation, and repeat on the owner-designated deployment host.
+Use a new report path for each observation. The key is created as a private
+32-byte random file if absent; an existing private key can authenticate further
+records. Keep it outside Git with the private reports:
 
 ```bash
 umask 077
-uv run python - <<'PY'
-import json
-import os
-from pathlib import Path
-from trade_graph.application.operations_evidence import HostObservationCollector
-
-key = os.urandom(32)
-with Path("runtime/operations-observation-new.key").open("xb") as handle:
-    os.fchmod(handle.fileno(), 0o600)
-    handle.write(key)
-collector = HostObservationCollector(
-    "runtime/trade_graph.sqlite", signing_key=key,
-    config_path="runtime/paper-runtime.private.json",
-)
-retained = collector.capture(
-    "runtime/host-observation-new.json", backup_restore=True, public_data=False,
-)
-verified = collector.verify(retained.path, retained.sha256)
-print(json.dumps({"sha256": retained.sha256,
-                  "checks": {name: check["status"]
-                             for name, check in verified.document["checks"].items()}}))
-PY
+uv run python -m trade_graph.application.operations_preflight capture \
+  --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json \
+  --report runtime/host-observation-new.json \
+  --key runtime/operations-observation.key --backup-restore
 ```
+
+Omit `--config` when no protected configuration exists. Omitting `--database`
+records missing setup without initializing a paper account. Add `--public-data`
+only for the bounded unauthenticated official GETs. Capture prints a redacted
+summary with the exact `evidence_sha256` and missing funded-setup prerequisites;
+retain that digest separately. Exit status 3 means required local setup is pending,
+2 means a requested diagnostic is refused/unavailable or capture failed, and 0
+means the required local setup checks were observed. A retained report can have
+`status: recorded` while its diagnostics remain pending or unavailable. No exit
+status certifies funded acceptance, intended-host deployment, billing or economics.
+
+Verify against the digest returned by the original capture, with the same
+database/configuration paths and private key:
+
+```bash
+uv run python -m trade_graph.application.operations_preflight verify \
+  --database runtime/trade_graph.sqlite \
+  --config runtime/paper-runtime.private.json \
+  --report runtime/host-observation-new.json \
+  --key runtime/operations-observation.key \
+  --sha256 "paste-the-evidence_sha256-returned-by-capture"
+```
+
+Verification rechecks retained local sources and does not repeat public GETs.
+Changes to those sources require a new observation. Public failures retain stable
+proxy/network/timeout/HTTP/schema categories and attempt/completion timestamps;
+HTTP failures retain only their numeric status, with no exception text, raw request
+URL, proxy value or credential value in the command summary.
 
 The backup/restore drill creates new private copies beside the report and compares
 their complete financial projections. It does not restore over the operating
@@ -387,7 +405,7 @@ database. Database snapshots/copies are capped at 16 MiB; SQLite queries have a
 five-second progress deadline, backup copy/verification uses a ten-second progress
 deadline, and the fixed systemd status probe has bounded output and a five-second
 process deadline. Filesystem operations and blocked SQLite/network phases can
-extend elapsed collection time. Optional `public_data=True` makes only three
+extend elapsed collection time. Optional `--public-data` makes only three
 bounded official public GETs through the configured proxy and validates their
 actual response pair/date/schema. It creates no portfolio observations and proves
 neither current executable books nor funded-provider availability.

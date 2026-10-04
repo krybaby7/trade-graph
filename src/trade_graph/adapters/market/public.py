@@ -148,31 +148,72 @@ class ReferenceFxRate:
 class KrakenPublicRest:
     def __init__(self, transport: TextTransport) -> None:
         self.transport = transport
+        # The default public pairs can be identified before metadata retrieval.
+        # Other symbols require the exact aliases returned by AssetPairs first.
+        self._pair_symbols = {
+            "XXBTZUSD": "BTC/USD", "XBTUSD": "BTC/USD", "BTCUSD": "BTC/USD",
+            "XETHZUSD": "ETH/USD", "ETHUSD": "ETH/USD",
+        }
 
     def _get(self, url: str) -> dict[str, Any]:
         payload = loads(self.transport.get_text(url))
         if not isinstance(payload, dict):
             raise ValidationFailure("Kraken public response was not an object")
-        errors = payload.get("error") or []
-        if errors:
-            raise ValidationFailure(f"Kraken public error: {errors}")
+        if payload.get("error") != []:
+            raise ValidationFailure("Kraken public response has missing or rejected error status")
         return payload
 
     def fetch_instruments(self, pairs: list[str]) -> list[InstrumentRules]:
-        query = urlencode({"pair": ",".join(pairs)})
+        if not pairs or any(not isinstance(pair, str) for pair in pairs):
+            raise ValidationFailure("Kraken metadata requires explicit pair scope")
+        requested = {_rest_pair(pair) if "/" in pair else pair.replace("BTC", "XBT") for pair in pairs}
+        expected_symbols = {
+            _rest_pair(pair): pair.replace("XBT", "BTC") for pair in pairs if "/" in pair
+        }
+        expected_symbols.update({pair: self._pair_symbols[pair] for pair in requested if pair in self._pair_symbols})
+        if any(re.fullmatch(r"[A-Z0-9]{4,24}", pair) is None for pair in requested):
+            raise ValidationFailure("Kraken metadata requires valid pair identifiers")
+        query = urlencode({"pair": ",".join(_rest_pair(pair) if "/" in pair else pair for pair in pairs)})
         payload = self._get(f"{KRAKEN_REST}/AssetPairs?{query}")
         result = payload.get("result") or {}
         if not isinstance(result, dict) or not result:
             raise ValidationFailure("Kraken AssetPairs returned no instruments")
-        return [normalize_pair(name, info) for name, info in result.items()]
+        instruments, covered, aliases = [], set(), {}
+        for name, info in result.items():
+            if not isinstance(info, dict):
+                raise ValidationFailure("Kraken metadata instrument is not an object")
+            try:
+                instrument = normalize_pair(name, info)
+                names = {name, _rest_pair(instrument.symbol)}
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ValidationFailure("Kraken metadata instrument identity is invalid") from exc
+            if isinstance(info.get("altname"), str):
+                names.add(info["altname"])
+            matches = requested & names
+            if (not matches or instrument.symbol in {item.symbol for item in instruments}
+                    or any(expected_symbols.get(pair, instrument.symbol) != instrument.symbol for pair in matches)):
+                raise ValidationFailure("Kraken metadata differs from the requested pair scope")
+            covered.update(matches)
+            for alias in names:
+                if (alias in aliases and aliases[alias] != instrument.symbol
+                        or alias in self._pair_symbols and self._pair_symbols[alias] != instrument.symbol):
+                    raise ValidationFailure("Kraken metadata aliases are ambiguous")
+                aliases[alias] = instrument.symbol
+            instruments.append(instrument)
+        if covered != requested:
+            raise ValidationFailure("Kraken metadata omitted a requested pair")
+        self._pair_symbols.update(aliases)
+        return instruments
 
     def fetch_ticker(self, symbol: str, *, observation_id: str, available_at: datetime) -> Observation:
         pair = _rest_pair(symbol)
         payload = self._get(f"{KRAKEN_REST}/Ticker?pair={pair}")
         result = payload.get("result") or {}
-        if not isinstance(result, dict) or not result:
-            raise ValidationFailure("Kraken Ticker returned no book")
-        info = next(iter(result.values()))
+        if not isinstance(result, dict) or len(result) != 1:
+            raise ValidationFailure("Kraken Ticker must return exactly one requested book")
+        name, info = next(iter(result.items()))
+        if self._pair_symbols.get(name) != symbol or not isinstance(info, dict):
+            raise ValidationFailure("Kraken ticker identity differs from the requested symbol")
         ask, ask_qty = _level(info.get("a"))
         bid, bid_qty = _level(info.get("b"))
         last = _level(info.get("c"))[0]
@@ -357,6 +398,8 @@ class KrakenPublicFeed:
 
 
 def _rest_pair(symbol: str) -> str:
+    if not isinstance(symbol, str) or re.fullmatch(r"[A-Z0-9]{2,12}/[A-Z0-9]{2,12}", symbol) is None:
+        raise ValidationFailure("Kraken symbol requires a valid base/quote pair")
     base, quote = symbol.split("/")
     if base == "BTC":
         base = "XBT"

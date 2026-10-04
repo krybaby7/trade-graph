@@ -87,6 +87,26 @@ def _fact(status: str, **facts) -> dict:
     return {"status": status, "facts": facts}
 
 
+def _public_failure(exc: Exception) -> dict:
+    """Useful network diagnosis without exception strings, request URLs or proxy values."""
+    import httpx
+
+    facts = {"failure_type": type(exc).__name__}
+    if isinstance(exc, httpx.ProxyError):
+        facts["failure_category"] = "proxy_connection_failed"
+    elif isinstance(exc, httpx.TimeoutException):
+        facts["failure_category"] = "network_timeout"
+    elif isinstance(exc, httpx.HTTPStatusError):
+        facts.update(failure_category="http_status_refused", http_status=exc.response.status_code)
+    elif isinstance(exc, httpx.TransportError):
+        facts["failure_category"] = "network_transport_failed"
+    elif isinstance(exc, (ValueError, TradeGraphError)):
+        facts["failure_category"] = "response_validation_refused"
+    else:
+        facts["failure_category"] = "observation_unavailable"
+    return facts
+
+
 def _no_duplicates(pairs):
     result = {}
     for name, value in pairs:
@@ -336,6 +356,7 @@ class HostObservationCollector:
         outcomes = []
         for name in ("kraken_time", "kraken_metadata", "frankfurter_ecb"):
             transport = RetainingTransport()
+            attempted_at = utc_iso(self.clock.now())
             try:
                 facts = {}
                 if name == "kraken_time":
@@ -369,6 +390,7 @@ class HostObservationCollector:
                         **facts,
                         "decoded_response_sha256": transport.response_sha256,
                         "request_url_sha256": transport.request_sha256,
+                        "attempted_at": attempted_at,
                         "received_at": utc_iso(self.clock.now()),
                         "external_authority_verified": False,
                     }
@@ -378,7 +400,9 @@ class HostObservationCollector:
                     {
                         "endpoint": name,
                         "status": "refused" if isinstance(exc, (ValueError, TradeGraphError)) else "unavailable",
-                        "failure_type": type(exc).__name__,
+                        **_public_failure(exc),
+                        "attempted_at": attempted_at,
+                        "completed_at": utc_iso(self.clock.now()),
                         "request_url_sha256": transport.request_sha256,
                         "decoded_response_sha256": transport.response_sha256,
                     }
