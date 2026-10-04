@@ -24,7 +24,6 @@ from trade_graph.adapters.brokers.kraken_live import KrakenLiveBroker
 from trade_graph.adapters.brokers.kraken_transport import (
     PRIVATE_READ_METHODS,
     PUBLIC_METHODS,
-    KrakenApiError,
     KrakenReadResponse,
     KrakenRestTransport,
     _check_json_depth,
@@ -282,8 +281,24 @@ class VerifiedReadOnlyAccountObservation:
     pending: tuple[str, ...]
 
 
-async def _pipeline(broker: KrakenLiveBroker, grant: ReadOnlyObservationGrant, *, stages=STAGES):
-    summary, completed, pending = {}, [], []
+@dataclass
+class _PipelineProgress:
+    summary: dict = field(default_factory=dict)
+    completed: list[str] = field(default_factory=list)
+    pending: list[str] = field(default_factory=list)
+
+    def result(self):
+        return self.summary, tuple(self.completed), tuple(self.pending)
+
+
+class _MissingRetainedRead(TradeGraphError):
+    """An unsuccessful dispatch has no successful wire response to replay."""
+
+
+async def _pipeline(broker: KrakenLiveBroker, grant: ReadOnlyObservationGrant, *, stages=STAGES,
+                    progress: _PipelineProgress | None = None):
+    progress = progress if progress is not None else _PipelineProgress()
+    summary, completed, pending = progress.summary, progress.completed, progress.pending
     for stage in stages:
         try:
             if stage == "instruments":
@@ -316,10 +331,13 @@ async def _pipeline(broker: KrakenLiveBroker, grant: ReadOnlyObservationGrant, *
                     raise ValueError("normalized history exceeded its page bound")
                 summary[stage] = fills
             completed.append(stage)
+        except _MissingRetainedRead:
+            pending.append("native_stage_transport_evidence_incomplete")
+            break
         except (TradeGraphError, ValueError, TypeError, TimeoutError, OSError) as exc:
             pending.append(stage + "_" + type(exc).__name__)
             break
-    return summary, tuple(completed), tuple(pending)
+    return progress.result()
 
 
 class KrakenReadOnlyConformance:
@@ -344,6 +362,8 @@ class KrakenReadOnlyConformance:
         credential = _hash(self._api_key.encode())
         if credential != grant.credential_binding_sha256:
             raise AuthorityDenied("credential does not match read-only observation authority")
+        sources = _source_digests()
+        deadline = min(grant.expires_at, started + timedelta(seconds=grant.maximum_duration_seconds))
         root = open_directory(output_directory)
         try:
             _private(root)
@@ -359,6 +379,8 @@ class KrakenReadOnlyConformance:
 
         def capture(response: KrakenReadResponse):
             nonlocal total
+            if response.finished_at > deadline:
+                raise TimeoutError("venue response arrived after the read-only observation deadline")
             index = len(receipts) + 1
             record = {
                 "index": index, "method": response.method, "parameters": json.loads(response.parameters),
@@ -389,7 +411,7 @@ class KrakenReadOnlyConformance:
             if method not in PUBLIC_METHODS | PRIVATE_READ_METHODS:
                 raise AuthorityDenied("read-only observation cannot dispatch an order")
             self._authority.load(datetime.now(UTC))
-            if datetime.now(UTC) > grant.expires_at or requests >= grant.maximum_requests:
+            if datetime.now(UTC) >= deadline or requests >= grant.maximum_requests:
                 raise AuthorityDenied("read-only observation authority is exhausted")
             requests += 1
             return await transport(method, parameters)
@@ -397,14 +419,16 @@ class KrakenReadOnlyConformance:
         broker = KrakenLiveBroker(limited, account_id=grant.scope.account_id, clock=clock,
                                   symbols=[grant.scope.symbol], history_start_utc=grant.history_start_utc,
                                   maximum_history_pages=grant.maximum_history_pages)
-        duration = min(grant.maximum_duration_seconds, (grant.expires_at - datetime.now(UTC)).total_seconds())
+        duration = (deadline - datetime.now(UTC)).total_seconds()
+        progress = _PipelineProgress()
         try:
             if duration <= 0:
                 raise AuthorityDenied("read-only observation authority expired before dispatch")
             async with asyncio.timeout(duration):
-                summary, completed, problems = await _pipeline(broker, grant)
+                summary, completed, problems = await _pipeline(broker, grant, progress=progress)
         except TimeoutError:
-            summary, completed, problems = {}, (), ("observation_deadline_exceeded",)
+            progress.pending.append("observation_deadline_exceeded")
+            summary, completed, problems = progress.result()
         finally:
             await transport.aclose()
         finished = datetime.now(UTC)
@@ -412,9 +436,11 @@ class KrakenReadOnlyConformance:
         if len(summary_raw) > MAX_CAPTURE_BYTES:
             raise ValueError("native observation summary exceeds its bound")
         _write(directory, "native-summary.json", summary_raw)
-        collector, adapter, wire = _source_digests()
+        collector, adapter, wire = sources
         basis = transport.observation_basis
         pending = [*_PERMANENT_PENDING, *problems]
+        if _source_digests() != sources:
+            pending.append("collector_or_adapter_source_changed_during_observation")
         if basis != "owned_https":
             pending.append("injected_transport_is_not_authenticated_venue_evidence")
         if grant.history_start_utc is not None:
@@ -470,6 +496,8 @@ class PinnedVenueObservation:
                                   for stage in STAGES}:
             raise ValueError("native checks do not match retained observation stages")
         captures, authenticated, total = [], [], 0
+        previous_finished = observation.started_at
+        deadline = min(grant.expires_at, observation.started_at + timedelta(seconds=grant.maximum_duration_seconds))
         for index, reference in enumerate(observation.receipts, start=1):
             wire_raw = _read(self.path.parent / reference.filename, MAX_CAPTURE_BYTES)
             total += len(wire_raw)
@@ -499,9 +527,10 @@ class PinnedVenueObservation:
             if (expected != reference or record["index"] != index
                     or record["method"] not in PUBLIC_METHODS | PRIVATE_READ_METHODS
                     or reference.transport_basis != observation.transport_basis
-                    or not observation.started_at <= reference.started_at <= reference.finished_at
-                    <= observation.finished_at):
+                    or not previous_finished <= reference.started_at <= reference.finished_at
+                    <= min(observation.finished_at, deadline)):
                 raise ValueError("venue wire identity, scope or window is inconsistent")
+            previous_finished = reference.finished_at
             _check_json_depth(bytearray(response))
             decoded = json.loads(response, parse_float=Decimal, object_pairs_hook=_unique_fields,
                                  parse_constant=_finite_constant)
@@ -519,7 +548,7 @@ class PinnedVenueObservation:
         async def replay(method, parameters):
             nonlocal offset
             if offset >= len(captures):
-                raise KrakenApiError("malformed")
+                raise _MissingRetainedRead("native response was not retained")
             record, decoded = captures[offset]
             if record["method"] != method or _canonical(record["parameters"]) != _canonical(parameters):
                 raise ValueError("native replay does not match retained request order")
@@ -535,9 +564,15 @@ class PinnedVenueObservation:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            summary, completed, problems = asyncio.run(_pipeline(broker, grant, stages=observation.completed_stages))
+            # A malformed response from the next stage is successful transport
+            # evidence too. Re-normalize it instead of trusting a signed pending
+            # label, and refuse any unconsumed/unrelated retained responses.
+            replay_stages = STAGES[:min(len(observation.completed_stages) + 1, len(STAGES))]
+            summary, completed, problems = asyncio.run(_pipeline(broker, grant, stages=replay_stages))
         else:
             raise ValueError("verify must run outside an active async event loop")
+        if offset != len(captures):
+            raise ValueError("venue observation contains unconsumed native responses")
         if completed != observation.completed_stages or _canonical(summary) != summary_raw:
             raise ValueError("native facts do not match current retained-source normalization")
         current = _source_digests()

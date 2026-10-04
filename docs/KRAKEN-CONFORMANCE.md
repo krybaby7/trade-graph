@@ -55,6 +55,15 @@ balances, open orders, requested order lookups and globally ordered frozen nativ
 history. A malformed or unsupported stage retains prior facts and reports a pending
 stage. It does not invent a complete account reconciliation. The collector neither
 writes the financial journal nor resolves ownership from amount/price coincidences.
+The selected instrument response must contain exactly the normalized requested
+pairs. An unrelated or incomplete response, conflicting native aliases or one
+unsupported fee tier cannot establish instrument readiness. Metadata refresh
+publishes the asset/pair/rule/fee registry together after validation.
+
+The duration starts at the beginning of collection and includes setup. No response
+received after the grant's duration or expiry is admitted as a successful capture.
+An asynchronous deadline preserves the completed stage prefix and its retained
+sources; the interrupted stage stays pending.
 
 The stable proof interface is:
 
@@ -72,6 +81,12 @@ scope/window/key binding, request order/native IDs and receipt times, then repla
 normalization against the current adapter. It independently recomputes collector,
 adapter and wire-contract source digests and compares the native summary. Changed
 code adds a pending source reason; changed or inconsistent retained data is refused.
+Receipt times must follow the serialized request order and remain inside the
+grant's duration. Replay includes successful captures from an incomplete native
+stage, independently recovering normalization failures even if a signed report
+omits their label. Every retained capture must be consumed by that replay; extra
+or unrelated responses are refused. Missing successful transport evidence remains
+pending. Source digests are pinned before collection and checked again at its end.
 
 `VerifiedReadOnlyAccountObservation` contains `observation`, `source_sha256`,
 `authenticated_reads`, `source_current` and `pending`. `authenticated_reads` is
@@ -131,3 +146,8 @@ synthetic classification, false report labels/check flags, scope/key/authority
 mismatch, request bounds, partial native refusal, changed sources, expiry, private
 file requirements and cold SQLite FILLED/CANCELLED recovery. Ruff and diff checks
 passed. The generated private-free JUnit evidence is `/tmp/t19-r2-focused.xml`.
+
+The [2026-10-04 integrity continuation](reviews/2026-10-04-kraken-conformance-integrity.md)
+passes **289 focused tests**, including 20 new scope, native-fee, retained-replay
+and deadline regressions. Its account/transport data remain synthetic. This
+verification does not complete the pending actual-account gates above.

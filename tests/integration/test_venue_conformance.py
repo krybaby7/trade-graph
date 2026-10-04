@@ -90,6 +90,26 @@ def _replace_report(capture, key, change):
     return PinnedVenueObservation(capture.path, hashlib.sha256(raw).hexdigest(), key)
 
 
+def _replace_wire(capture, key, index, change):
+    path = capture.path.parent / f"wire-{index:04d}.json"
+    document = json.loads(path.read_bytes())
+    change(document["payload"])
+    document["signature"] = _mac(key, "wire", document["payload"])
+    raw = _canonical(document)
+    path.chmod(0o600)
+    path.write_bytes(raw)
+    path.chmod(0o400)
+
+    def reference(payload):
+        item = payload["receipts"][index - 1]
+        item.update(sha256=hashlib.sha256(raw).hexdigest(),
+                    parameters_sha256=hashlib.sha256(_canonical(document["payload"]["parameters"])).hexdigest())
+        for field in ("method", "request_sha256", "response_sha256", "started_at", "finished_at", "transport_basis"):
+            item[field] = document["payload"][field]
+
+    return _replace_report(capture, key, reference)
+
+
 def test_retained_injected_sources_normalize_current_facts_but_never_authenticate_account(tmp_path):
     fixture = Fixture(tmp_path)
     capture = asyncio.run(fixture.collect())
@@ -244,6 +264,123 @@ def test_native_margin_refusal_preserves_wire_but_cannot_claim_normalized_balanc
     assert "balances_ValidationFailure" in proof.pending
     assert any(receipt.method == "BalanceEx" for receipt in proof.observation.receipts)
     assert proof.observation.checks["balances"] == "pending"
+
+
+def test_failed_native_stage_is_replayed_even_when_signed_report_omits_its_reason(tmp_path):
+    fixture = Fixture(tmp_path)
+    fixture.rest.results["BalanceEx"]["ZUSD"]["credit_used"] = "1"
+    capture = asyncio.run(fixture.collect())
+    changed = _replace_report(capture, fixture.collector_key, lambda payload: payload.update(pending=[]))
+    assert "balances_ValidationFailure" in _verify(changed).pending
+
+
+def test_unrelated_instrument_response_cannot_complete_the_owner_selected_stage(tmp_path):
+    fixture = Fixture(tmp_path)
+    pair = fixture.rest.results["AssetPairs"].pop("XXBTZUSD")
+    pair.update(base="ETH", altname="ETHUSD", wsname="ETH/USD")
+    fixture.rest.results["AssetPairs"]["ETHUSD"] = pair
+    capture = asyncio.run(fixture.collect())
+    proof = _verify(capture)
+    assert proof.observation.completed_stages == ()
+    assert proof.observation.checks["instruments"] == "pending"
+    assert "instruments_ValidationFailure" in proof.pending
+    assert [method for method, _ in fixture.rest.calls] == ["Assets", "AssetPairs"]
+
+
+def test_failed_stage_cannot_hide_a_retained_read_with_unrequested_native_parameters(tmp_path):
+    fixture = Fixture(tmp_path)
+    fixture.rest.results["BalanceEx"]["ZUSD"]["credit_used"] = "1"
+    capture = asyncio.run(fixture.collect())
+    changed = _replace_wire(capture, fixture.collector_key, 4,
+                            lambda record: record.update(parameters={"extra": "unrequested"}))
+    with pytest.raises(ValueError, match="unconsumed"):
+        _verify(changed)
+
+
+def test_signed_duplicate_native_capture_cannot_be_ignored_after_a_complete_replay(tmp_path):
+    fixture = Fixture(tmp_path)
+    capture = asyncio.run(fixture.collect())
+    report = json.loads(capture.path.read_bytes())["payload"]
+    last = report["receipts"][-1]
+    document = json.loads((capture.path.parent / last["filename"]).read_bytes())
+    index = len(report["receipts"]) + 1
+    document["payload"]["index"] = index
+    document["signature"] = _mac(fixture.collector_key, "wire", document["payload"])
+    raw = _canonical(document)
+    filename = f"wire-{index:04d}.json"
+    capture.path.parent.chmod(0o700)
+    path = capture.path.parent / filename
+    path.write_bytes(raw)
+    path.chmod(0o400)
+    capture.path.parent.chmod(0o500)
+
+    def append(payload):
+        payload["receipts"].append(dict(last, index=index, filename=filename, sha256=hashlib.sha256(raw).hexdigest()))
+
+    changed = _replace_report(capture, fixture.collector_key, append)
+    # Equal endpoints keep the appended capture chronologically coherent. Its
+    # native request must still be refused because the pipeline did not issue it.
+    changed = _replace_wire(changed, fixture.collector_key, index,
+                            lambda record: record.update(started_at=last["finished_at"]))
+    with pytest.raises(ValueError, match="unconsumed"):
+        _verify(changed)
+
+
+def test_signed_receipt_times_must_follow_serialized_native_request_order(tmp_path):
+    fixture = Fixture(tmp_path)
+    capture = asyncio.run(fixture.collect())
+    report = json.loads(capture.path.read_bytes())["payload"]
+    changed = _replace_wire(capture, fixture.collector_key, 1,
+                            lambda record: record.update(finished_at=report["receipts"][-1]["finished_at"]))
+    with pytest.raises(ValueError, match="inconsistent"):
+        _verify(changed)
+
+
+def test_signed_native_receipt_cannot_extend_the_owner_granted_duration(tmp_path):
+    fixture = Fixture(tmp_path, maximum_duration_seconds=1)
+    capture = asyncio.run(fixture.collect())
+    report = json.loads(capture.path.read_bytes())["payload"]
+    late = datetime.fromisoformat(report["started_at"].replace("Z", "+00:00")) + timedelta(seconds=2)
+    changed = _replace_wire(capture, fixture.collector_key, len(report["receipts"]),
+                            lambda record: record.update(finished_at=late.isoformat()))
+    changed = _replace_report(changed, fixture.collector_key,
+                              lambda payload: payload.update(finished_at=late.isoformat()))
+    with pytest.raises(ValueError, match="inconsistent"):
+        changed.verify(now=late + timedelta(seconds=1))
+
+
+def test_actual_async_deadline_preserves_prior_normalized_facts_and_retained_sources(tmp_path):
+    fixture = Fixture(tmp_path, maximum_duration_seconds=1)
+
+    async def run():
+        async def respond(request):
+            method = request.url.path.rsplit("/", 1)[-1]
+            if method == "BalanceEx":
+                await asyncio.Event().wait()
+            if request.method == "POST":
+                values = parse_qs(request.content.decode())
+                values.pop("nonce")
+                parameters = {key: value[0] for key, value in values.items()}
+            else:
+                parameters = dict(request.url.params)
+            return httpx.Response(200, json=fixture.rest(method, parameters))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            collector = KrakenReadOnlyConformance(
+                fixture.authority, collector_key=fixture.collector_key, api_key=fixture.api_key,
+                api_secret=base64.b64encode(b"synthetic credential only").decode(), client=client,
+            )
+            return await collector.collect(fixture.private)
+
+    capture = asyncio.run(run())
+    proof = _verify(capture)
+    assert proof.observation.completed_stages == ("instruments", "account_fees")
+    assert "observation_deadline_exceeded" in proof.pending
+    assert "native_stage_transport_evidence_incomplete" in proof.pending
+    assert [receipt.method for receipt in proof.observation.receipts] == ["Assets", "AssetPairs", "TradeVolume"]
+    summary = json.loads((capture.path.parent / "native-summary.json").read_bytes())
+    assert set(summary) == {"instruments", "account_fees"}
+    assert proof.authenticated_reads == ()
 
 
 def test_expired_future_and_naive_verification_times_fail_closed(tmp_path):

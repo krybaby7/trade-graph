@@ -120,6 +120,20 @@ def _identifier(value: object) -> str:
     return value
 
 
+def _conservative_fee(tiers: object) -> Decimal:
+    if not isinstance(tiers, list) or not tiers:
+        raise ValidationFailure("Kraken public fee tiers are incomplete")
+    rates = []
+    for tier in tiers:
+        if not isinstance(tier, list) or len(tier) != 2:
+            raise ValidationFailure("Kraken public fee tier is malformed")
+        threshold, rate = _decimal(tier[0]), _decimal(tier[1])
+        if min(threshold, rate) < 0:
+            raise ValidationFailure("negative Kraken fee tiers require separate conformance")
+        rates.append(rate / 100)
+    return max(rates)
+
+
 class KrakenLiveBroker:
     def __init__(
         self,
@@ -193,14 +207,15 @@ class KrakenLiveBroker:
             withdrawals=False,
         )
 
-    def _asset(self, value: str) -> str:
+    def _asset(self, value: str, *, aliases: dict[str, str] | None = None) -> str:
         if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9.]{2,32}", value):
             raise ValidationFailure("Kraken asset code could not be normalized safely")
-        if value in self._assets:
-            return self._assets[value]
+        registry = self._assets if aliases is None else aliases
+        if value in registry:
+            return registry[value]
         if "." in value:
             base, suffix = value.split(".", 1)
-            return self._asset(base) + "." + suffix.upper()
+            return self._asset(base, aliases=registry) + "." + suffix.upper()
         return {"XBT": "BTC", "XXBT": "BTC", "XETH": "ETH", "ZUSD": "USD", "ZEUR": "EUR"}.get(
             value.upper(),
             value.upper(),
@@ -225,18 +240,28 @@ class KrakenLiveBroker:
                 raise ValidationFailure("Kraken asset metadata is incomplete")
             alt = value["altname"]
             canonical = "BTC" if alt == "XBT" else alt.upper()
-            aliases[name] = canonical
-            aliases[alt] = canonical
-        self._assets = aliases
+            for alias in (name, alt):
+                self._asset(alias, aliases={})
+                if alias in aliases and aliases[alias] != canonical:
+                    raise ValidationFailure("Kraken asset aliases are ambiguous")
+                aliases[alias] = canonical
         params = {}
+        requested = None
         if self.symbols:
+            requested = set()
+            for symbol in self.symbols:
+                if not isinstance(symbol, str) or symbol.count("/") != 1:
+                    raise ValidationFailure("Kraken instrument selection requires native asset pairs")
+                base, quote = symbol.split("/")
+                requested.add(self._asset(base, aliases=aliases) + "/" + self._asset(quote, aliases=aliases))
             params["pair"] = ",".join(symbol.replace("BTC", "XBT").replace("/", "") for symbol in self.symbols)
         pairs = await self._request("AssetPairs", params)
         rules, names, wire, statuses, fees = {}, {}, {}, {}, {}
         for name, info in pairs.items():
             if not isinstance(info, dict):
                 raise ValidationFailure("Kraken pair metadata is malformed")
-            base, quote = self._asset(info["base"]), self._asset(info["quote"])
+            base = self._asset(info["base"], aliases=aliases)
+            quote = self._asset(info["quote"], aliases=aliases)
             symbol = base + "/" + quote
             if symbol in rules:
                 raise ValidationFailure("Kraken metadata contains ambiguous normalized pairs")
@@ -265,14 +290,16 @@ class KrakenLiveBroker:
             )
             for alias in (name, info.get("altname"), info.get("wsname"), symbol):
                 if alias:
+                    if not isinstance(alias, str) or len(alias) > 128:
+                        raise ValidationFailure("Kraken pair alias is malformed")
+                    if alias in names and names[alias] != symbol:
+                        raise ValidationFailure("Kraken pair aliases are ambiguous")
                     names[alias] = symbol
             wire[symbol] = name
             statuses[symbol] = info.get("status")
             if info.get("fees"):
-                taker = max(_decimal(tier[1]) for tier in info["fees"]) / 100
-                maker = max(_decimal(tier[1]) for tier in info.get("fees_maker", info["fees"])) / 100
-                if min(taker, maker) < 0:
-                    raise ValidationFailure("negative Kraken fee tiers require separate conformance")
+                taker = _conservative_fee(info["fees"])
+                maker = _conservative_fee(info.get("fees_maker", info["fees"]))
                 fees[symbol] = {
                     "maker": maker,
                     "taker": taker,
@@ -281,6 +308,11 @@ class KrakenLiveBroker:
                 }
         if not rules:
             raise ValidationFailure("Kraken returned no instrument metadata")
+        if requested is not None and set(rules) != requested:
+            raise ValidationFailure("Kraken metadata does not match the selected instrument scope")
+        # A failed refresh cannot mix a new asset registry with old pair/rule
+        # readiness. Publish the complete validated snapshot together.
+        self._assets = aliases
         self._rules, self._pairs, self._wire_pairs = rules, names, wire
         self.instrument_statuses, self._fees = statuses, fees
         self._metadata_at = self.clock.now()

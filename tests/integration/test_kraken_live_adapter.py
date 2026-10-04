@@ -177,6 +177,52 @@ def test_metadata_normalizes_aliases_precision_minimums_and_conservative_fees():
     assert not hasattr(broker, "withdraw")
 
 
+@pytest.mark.parametrize("selection", [["ETH/USD"], ["BTC/USD", "ETH/USD"], ["BTCUSD"]])
+def test_selected_instrument_readiness_requires_the_exact_native_response(selection):
+    rest = ScriptedRest()
+    broker = _broker(rest, symbols=selection)
+    with pytest.raises(ValidationFailure, match="selection|scope"):
+        asyncio.run(broker.instruments())
+    assert broker.fee_reserve_rate is None
+    assert broker._rules == {}
+    assert broker._assets == {}
+
+
+def test_selected_instrument_alias_normalizes_without_expanding_scope():
+    rest = ScriptedRest()
+    broker = _broker(rest, symbols=["XBT/USD"])
+    assert [item.symbol for item in asyncio.run(broker.instruments())] == ["BTC/USD"]
+    assert rest.calls[-1] == ("AssetPairs", {"pair": "XBTUSD"})
+
+
+@pytest.mark.parametrize("problem", ["asset_alias", "pair_alias", "wrong_scope"])
+def test_failed_metadata_refresh_preserves_one_coherent_prior_registry(problem):
+    rest = ScriptedRest()
+    broker = _broker(rest, symbols=["BTC/USD"])
+    asyncio.run(broker.instruments())
+    original = deepcopy((broker._assets, broker._pairs, broker._rules, broker._fees, broker._metadata_at))
+    rest.results["Assets"]["ZUSD"]["altname"] = "EUR"
+    if problem == "asset_alias":
+        rest.results["Assets"]["EUR"] = {"altname": "USD"}
+    elif problem == "pair_alias":
+        rest.results["AssetPairs"]["ETHUSD"] = dict(rest.results["AssetPairs"]["XXBTZUSD"], base="ETH")
+    with pytest.raises(ValidationFailure, match="ambiguous|scope"):
+        asyncio.run(broker.instruments())
+    assert (broker._assets, broker._pairs, broker._rules, broker._fees, broker._metadata_at) == original
+    assert asyncio.run(broker.balances()).amounts["USD"] == "100"
+
+
+@pytest.mark.parametrize("field", ["fees", "fees_maker"])
+@pytest.mark.parametrize("tier", [["50000", "-0.1"], ["-1", "0.2"], ["50000", "0.2", "ignored"]])
+def test_one_unsupported_native_fee_tier_cannot_hide_behind_a_larger_valid_rate(field, tier):
+    rest = ScriptedRest()
+    rest.results["AssetPairs"]["XXBTZUSD"][field].append(tier)
+    broker = _broker(rest)
+    with pytest.raises(ValidationFailure, match="fee tier"):
+        asyncio.run(broker.instruments())
+    assert broker.fee_reserve_rate is None
+
+
 def test_total_balances_include_held_spot_funds_and_preserve_earn_suffix_assets():
     broker = _broker()
     balance = asyncio.run(broker.balances())
