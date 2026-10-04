@@ -85,8 +85,10 @@ def collected(fixture):
                  sealed_inventory_sha256=capture.evaluation_snapshot.inventory_sha256,
                  registry_snapshot_sha256=capture.evaluation_snapshot_sha256,
                  economic_verdict=json.loads(capture.evaluation_snapshot.report_json)["verdict"])
-    fixture.db.execute("UPDATE activity_events SET created_at=? WHERE kind='execution_reconciliation_health'",
-                       (utc_iso(fixture.clock.now()),))
+    fixture.db.execute("UPDATE activity_events SET created_at=?, "
+                       "payload_json=json_set(payload_json, '$.observed_at', ?) "
+                       "WHERE kind='execution_reconciliation_health'",
+                       (utc_iso(fixture.clock.now()), utc_iso(fixture.clock.now())))
     source = EconomicUpstreamSource(collector, capture, paper_id, document_hash(capture.model_dump_json()))
     yield SimpleNamespace(database=database, ledger=ledger, registry=registry, collector=collector,
                           capture=capture, source=source, declared=declared)
@@ -172,8 +174,10 @@ def venue_source(fixture, tmp_path):
     for entry in [fixture.document["owner_authorization"], *fixture.document["evidence"]]:
         entry["payload"]["verified_at"] = fixture.clock.now().isoformat()
         entry["payload"]["expires_at"] = (fixture.clock.now() + timedelta(days=1)).isoformat()
-    fixture.db.execute("UPDATE activity_events SET created_at=? WHERE kind='execution_reconciliation_health'",
-                       (utc_iso(fixture.clock.now()),))
+    fixture.db.execute("UPDATE activity_events SET created_at=?, "
+                       "payload_json=json_set(payload_json, '$.observed_at', ?) "
+                       "WHERE kind='execution_reconciliation_health'",
+                       (utc_iso(fixture.clock.now()), utc_iso(fixture.clock.now())))
     for kind in ("funding", "key_permissions", "venue_metadata_fees", "read_only_reconciliation", "broker_conformance"):
         fixture.evidence(kind)["source_sha256"] = [
             retained.observation_sha256, observation.collector_sha256, observation.adapter_sha256,

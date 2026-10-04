@@ -430,8 +430,11 @@ def _evaluate_live_readiness(
                 "AND json_extract(payload_json, '$.mode') = 'live' ORDER BY rowid DESC LIMIT 1",
                 (scope.venue, scope.account_id),
             ).fetchone()
-            check("current_complete_account_history", bool(health
-                  and json.loads(health["payload_json"])["state"] == "complete"
+            history = json.loads(health["payload_json"]) if health else {}
+            check("current_complete_owned_intent_history", bool(health
+                  and history.get("state") == "complete"
+                  and history.get("observation_scope") in {"owned_intent_fill_history", "complete_account"}
+                  and history.get("observed_at") == health["created_at"]
                   and timedelta(0) <= now - parse_utc(health["created_at"]) <= timedelta(seconds=60)))
             pending = database.execute(
                 "SELECT COUNT(*) FROM dashboard_commands WHERE scope = ? AND status = 'PROCESSING'",

@@ -86,7 +86,9 @@ class Fixture:
                         "(event_id, portfolio_id, kind, payload_json, created_at, hash) "
                         "VALUES ('reconciled', ?, 'execution_reconciliation_health', ?, ?, 'fixture-hash')",
                         (self.pid, json.dumps({"venue": "kraken", "account_id": self.scope.account_id,
-                                             "mode": "live", "state": "complete"}), utc_iso(self.clock.now())))
+                                             "mode": "live", "state": "complete",
+                                             "observation_scope": "owned_intent_fill_history",
+                                             "observed_at": utc_iso(self.clock.now())}), utc_iso(self.clock.now())))
         now = self.clock.now()
         self.document = {
             "schema_version": 1,
@@ -291,8 +293,28 @@ def test_tiny_funding_input_cannot_expand_before_signature_validation(fixture, a
 def test_current_scoped_reconciliation_proof_is_required(fixture):
     fixture.db.execute("DELETE FROM activity_events WHERE kind = 'execution_reconciliation_health'")
     result = fixture.projection()
-    assert "current_complete_account_history" in result["reasons"]
+    assert "current_complete_owned_intent_history" in result["reasons"]
     assert result["recorded_checks_passed"] is False
+
+
+@pytest.mark.parametrize("patch", [
+    {"observation_scope": None},
+    {"observation_scope": "balances_only"},
+    {"observed_at": None},
+    {"observed_at": "2026-10-02T11:59:59+00:00"},
+])
+def test_complete_label_cannot_replace_scoped_observation_time(fixture, patch):
+    row = fixture.db.execute(
+        "SELECT payload_json FROM activity_events WHERE event_id='reconciled'",
+    ).fetchone()
+    payload = json.loads(row["payload_json"])
+    payload.update(patch)
+    fixture.db.execute("UPDATE activity_events SET payload_json=? WHERE event_id='reconciled'",
+                       (json.dumps(payload),))
+    result = fixture.projection()
+    assert "current_complete_owned_intent_history" in result["reasons"]
+    assert result["recorded_checks_passed"] is False
+    assert result["ready"] is False and result["enabled"] is False
 
 
 def add_usage(fixture, amount, state="COMMITTED", *, synthetic=0):
@@ -405,7 +427,7 @@ def test_actual_usage_holds_pause_unknown_orders_and_account_health_override_sig
     result = fixture.projection()
     assert "persisted_running_profile" in result["reasons"]
     assert "no_unknown_orders" in result["reasons"]
-    assert "current_complete_account_history" in result["reasons"]
+    assert "current_complete_owned_intent_history" in result["reasons"]
 
 
 def test_pending_owner_command_and_invoice_discrepancy_are_not_green(fixture):
