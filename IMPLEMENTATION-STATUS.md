@@ -1,128 +1,98 @@
-# Implementation status — integrated takeover checkpoint
+# Implementation status — round 4 local checkpoint
 
-Updated: 2026-10-04.
+Updated: 2026-10-04. All six T17–T22 implementation/review streams are integrated;
+local verification is complete. **Actual acceptance gates remain open.** T00–T16
+retain their recorded completion scopes: 17 of 23 tasks are complete. No funded
+soak, authenticated venue collection, live pilot or production rollout is running.
 
-Continuation: a new authorized implementation round is active from `1cb4e5a`.
-Six isolated streams are implementing the remaining accounting, producer, service,
-deployment and selected-application commissioning contracts. The results below
-remain the verified previous checkpoint until the new integration is tested.
-Acceptance and spending/live authority are unchanged.
-
-The previous six T17–T22 continuation workstreams are integrated and
-their local implementation/review work is complete. **Their real acceptance
-gates remain open.** T00–T16 retain their recorded completion scopes; 17 of 23
-plan tasks are complete. No funded soak, authenticated venue collection, live
-pilot or production rollout is running.
-
-Verified source: `959d2cd67dffa4d30cc840916b83f507c7212780`.
-Verified tree: `78756537f3ce158488123ccc9efd62f911499165`.
-Integration branch: `codex/orchestrator-takeover-2026-10-04`, continued from
-published `264e7b0` without resetting previous branches or worktrees.
-This checkpoint is local; no push, merge or new CI result is claimed. The final
-status/progress documentation follows the verified source without package changes.
-Default: USD10,000 virtual capital, EUR reporting, paid calls and live disabled.
+Verified source: `153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c`.
+Tree: `f00d10dc928a60fb6617279f1707ad1aa5301995`.
+Branch: `codex/orchestrator-takeover-2026-10-04`; continuation from `1cb4e5a`.
+Previous checkpoints, branches and worktrees remain preserved. Final documentation
+follows verified source without package/README/image-input changes. This checkpoint
+is local; no push, merge or new CI outcome is claimed.
+Default: USD10,000 virtual capital, EUR reporting; real operating budget separate;
+paid calls and live trading disabled.
 
 ## Working implementation
 
-The installed paper CLI/service, six durable model handlers, R1 artifact Engineer,
+The installed paper service, six durable handlers, R1 artifact Engineer,
 authenticated dashboard, deterministic accounting, management, backup/offline
 restore and reconciliation remain available. See [operations](docs/operations.md).
-Funded operation requires explicit owner/runtime paid permissions, private
-credentialed routing and a real operating allowance separate from paper capital.
 
-This continuation adds:
+This round adds exact service binding and actual process restart proof;
+preregistered four-arm paper producers and immutable historical verification;
+signed native asset fees/rebates, append-only earlier-fill correction and protected
+paper auxiliary fee holds; authenticated owner incident review and exact paper/live
+scope mapping; complete bounded financial/cost checkpoints with a separate local
+rollback witness and provider reservation/settlement publication; strict optional
+provider proxy preparation; and commissioned synthetic Secretary application
+generation, compatible sidecar activation, fenced health recovery and source rollback.
 
-- Exact public native instrument identity and an installed, private authenticated
-  operations preflight with protected file handling.
-- Prospective bounded lossless runtime evidence retention, atomic snapshots and
-  complete historical cost/trial checks. External provenance remains unverified.
-- Scope-verified native venue replay and separately retained rounded native quote
-  principal used by cash, FIFO and reservations. Exact arithmetic refuses unsafe
-  facts; executed over-limit facts persist with a sticky incident.
-- A durable closed pilot lifecycle and concrete live Execution gate before
-  financial writes and dispatch. Commitments survive uncertainty; fresh owned
-  history is distinct from full-account evidence. Enablement remains false.
-- Owner-pinned protected service bootstrap, six confined departmental stages and
-  a complete immutable offline image. Its fixed default paper entrypoint checks
-  the owner distribution, service ownership and current pins before admission.
-- Offline commissioned plugin generation/repair, sealed replay/build/shadow and
-  autonomous synthetic activation, health observation and deterministic rollback.
-  A separate confined Secretary projection rehearses durable application effects,
-  compatible sidecar expansion/backfill, restart, code rollback and contraction
-  on a disposable clone. It is parent-staged, not a model-commissioned production
-  application route.
-
-See [deployment](docs/PROTECTED-DEPLOYMENT.md),
-[venue conformance](docs/KRAKEN-CONFORMANCE.md),
-[pilot lifecycle](docs/LIVE-PILOT-LIFECYCLE-REVIEW.md),
-[plugin rollout](docs/PLUGIN-ROLLOUT.md) and
-[application rehearsal](docs/APPLICATION-PROJECTION.md).
+See [the round 4 review](docs/reviews/2026-10-04-next-contracts.md),
+[financial continuity](docs/FINANCIAL-CHECKPOINTS.md),
+[provider profile](docs/FUNDED-PAPER-PROFILE.md),
+[application commissions](docs/APPLICATION-COMMISSIONS.md) and
+[application preparation](docs/APPLICATION-PREPARATION.md).
 
 ## Verified results
 
-- **2,057 full tests passed**, zero failures/errors/skips; independent
-  JUnit count. Baseline: 1,721 passed on recovered published source.
-- **464 mapped tests passed; all 40 applicable A01–A38/A43–A44 cases accepted**
-  with identical clean before/after source identity. A39–A42 production/intended-host
-  acceptance remains pending; the local Docker rehearsal is separate evidence.
-- Ruff for source/tests and the four verification/image scripts, ten planning
-  tests, DAG/reference checks and tracked/staged/exact-artifact hygiene passed.
-- A fresh exact-commit archive installed frozen runtime dependencies, then built
-  and installed its wheel offline. Isolated imports outside the checkout came
-  from private site-packages. Migrations 0001–0013, all 14 demo checks, four retained
-  fills, zero restart submissions/provider calls, three maintenance ticks, actual
-  consistent backup/offline restore and source-preserving preflight passed.
-  Four actual validation children and five synthetic projection effects exercised
-  expansion/backfill, dual readers, restart, code rollback and disposable
-  contraction without financial-table changes. Unfunded soak was refused before
-  producing a report; offline application network attempts were zero.
-- The final whole-source image passed four actual container inspections, 30
-  malicious child attempts, five owner-loader attacks and the child memory bound.
-  Real synthetic paper lost-ack reconciliation retained one fill/one attempt;
-  eight management calls continued during failure, executable rollback preserved
-  finance and restart submitted nothing. The default protected service booted
-  and stopped cleanly. All 133 installed protected source/artifact files matched
-  the frozen root source; root independently checked all 149 build-context source
-  files and the exported archive hash.
-- Current public probes still fail through the configured proxy; no current
-  external observation, paid provider, private venue or intended-host success
-  is claimed. No production or broader deployed Engineer grant was exercised.
+- **2,544 full tests passed**, zero failures/errors/skips; independent JUnit count.
+- **464 mapped tests and all 40 applicable A01–A38/A43–A44 cases passed**, with
+  identical clean source before/after. A39–A42 production/intended-host acceptance
+  remains pending.
+- Ruff for source/tests/four verification scripts, ten planning tests, 23-task
+  DAG/reference validation, diff checks and tracked/staged/exact-artifact hygiene passed.
+- A fresh exact-commit archive built/installed its wheel offline after frozen
+  dependency acquisition. Isolated installed imports, migrations 0001–0016, all
+  14 demo checks/four fills, zero restart submissions/provider calls, maintenance,
+  actual backup/offline restore, preflight and unfunded-soak refusal passed.
+  Installed fee/replay/cold restart and actual two-process lost-ack service proof
+  passed. Actual commissioned application generation/activation/health/restart/
+  rollback retained all financial, expense and application facts without repeated work.
+- A fresh whole-source immutable image passed four actual inspected containers,
+  30 child OS attacks, five owner-loader attacks, the memory bound, lost-ack
+  reconciliation, management during failure, finance-preserving rollback, zero
+  restart dispatch and default service boot/clean stop. Root checked all 150
+  protected installed source/artifact hashes and 166 build-context source files.
+- No new public GET probe, funded provider, private venue or intended-host success
+  is claimed. Historical public probes failed through the configured proxy.
 
-Python: 3.12.14. Lock SHA256:
+Python 3.12.14; unchanged lock SHA256:
 `1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39`.
-Full JUnit: `/tmp/trade-graph-takeover-final.xml`.
-Source-bound gate: `/tmp/trade-graph-takeover-final-acceptance.json`.
-Installed proof: `/tmp/trade-graph-takeover-installed-dnfyc7dj/installed-work/installed-proof.json`.
-Image pin: `/tmp/trade-graph-final-image-20261004-959d2cd/image-pin.json`.
-Image proof: `/tmp/trade-graph-final-image-proof-20261004-959d2cd/proof.json`.
-Image ID: `sha256:af4e55b39b365de186ee1de09c88680749ee3aabfedd96a5fea6bb7c9578a6ee`.
-Archive SHA256: `83703804372b9b1b9472d0d7d660a16e7e719e20a0dcc33380b4b25b7b5a3b06`.
-These private machine artifacts are outside Git and may be transient.
-See [the takeover review](docs/reviews/2026-10-04-orchestrator-takeover.md);
-[the previous checkpoint](docs/reviews/2026-10-02-remaining-gates.md) remains historical evidence.
+Full JUnit `/tmp/trade-graph-r4-final.xml`;
+mapped gate `/tmp/trade-graph-r4-final-acceptance.json`;
+installed evidence `/tmp/trade-graph-r4-installed-9z4c__6j/installation.json`;
+image pin `/tmp/trade-graph-r4-image-153c6a5/image-pin.json`;
+image proof `/tmp/trade-graph-r4-image-proof-153c6a5/proof.json`.
+Image ID `sha256:8466abac94a81d2c88c13a81afb619d0ab47d0dd29971a4035da15263072b8d5`.
+Private machine artifacts remain outside Git and may be transient. Exact hashes,
+review findings and limits are recorded in [the review](docs/reviews/2026-10-04-next-contracts.md).
+The [previous takeover review](docs/reviews/2026-10-04-orchestrator-takeover.md)
+remains historical evidence.
 
-## Remaining acceptance and implementation work
+## Remaining acceptance and implementation
 
 | Task | Remaining work |
-|---|---|
-| T17 — in progress | Exact service-unit/configuration binding and restart-reconciliation proof recording; approved public connectivity, current model routes/prices, separate funded credential/paid setup and actual paper soak/receipts/invoices; intended-host service/restart, encrypted off-host restore and delivered alerts. |
-| T18 — in progress | Actual four-arm collection and authenticated market/billing/baseline/dependence/regime producers; preregistered untouched future blocks, complete failed/shared costs and uncertainty/sensitivity assessment; exact paper-to-live scope mapping. Archive retention is implemented; protected source/incremental history beyond the current 8 MiB/20,000-row inventory needs design when required by the horizon. |
-| T19 — in progress | Eligible owner-selected venue/account and authorized least-privilege native conformance. Native multiasset fees/rebates, append-only earlier-fill correction, factual partial-fill/reserve bounds, protected discrepancy resolution and full-account permission/protection proofs remain software/contract gaps. |
-| T20 — blocked | Genuine T18/T19 evidence, authenticated producers/live scope mapping, intended host, explicit capital/loss/all-role expense limits and protected live-service commissioning; then separately authorized measured pilot/protection/stop evidence. Readiness and enablement stay false. |
-| T21 — in progress | Owner-approved intended host/image/distribution/mounts and repeated adversarial/recovery proof there; separately reviewed funded credential/network profile and production admission; protected incremental financial-history/checkpoint design beyond current 8 MiB/10,000-row bounds. The verified offline image denies networking. |
-| T22 — blocked | T18/T21 prerequisites and explicit broader class grants; production scheduling/routing/admission for commissioned plugins, selected-application Engineer/gateway commissioning and broader compatible migration/deployment integration. Offline rollout and the selected sidecar rehearsal are implemented. |
+| --- | --- |
+| T17 — in progress | Owner-designated installation, approved public connectivity/current model routes/prices, separate funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Local restart proof is implemented. |
+| T18 — in progress | Untouched actual future four-arm blocks, authenticated market/billing provenance, complete failed/shared costs, actual baseline execution and dependence/regime/useful-decision assessment. Historical producers and exact paper/live mapping are implemented; larger economic-source history needs design. |
+| T19 — in progress | Eligible least-privilege actual native account/venue conformance; complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Larger replay, finer execution ties and late fee-only amendments remain contract work. |
+| T20 — blocked | Genuine T17/T18/T19/T21 evidence, full external account history, explicit owner capital/loss/all-role expense permissions and protected live commissioning; then separately authorized measured pilot/protection/stop evidence. Mapping and incident review never grant/resume live authority. |
+| T21 — in progress | Actual intended-host/image/distribution admission and adversarial/recovery evidence there; externally protected rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transition procedures. Provider profile needs separately reviewed public market/FX routing plus actual owner setup before funded soak. |
+| T22 — blocked | Genuine T18/T21 evidence, broader owner class grants, production scheduling/routing/admission, funded commissioning and broader compatible migration/deployment proof. The commissioned Secretary route is implemented in explicit synthetic preparation. |
 
-Live writes stale a current economic capture when they share its source database.
-Writes to a separate live database do not inherently stale frozen paper evidence.
-Both arrangements still require authenticated economics and exact live scope
-mapping. Historical economics and current operational state need a reviewed
-production integration; per-order resealing is not an implemented solution.
+Bounds are distinct: complete economic source 8 MiB/20,000 rows; native initial
+audit/new correction 4,096 rows/8 MiB; complete financial checkpoint scans
+1,000,000 processed rows/512 MiB/five seconds. Scans and long normal Ledger/FIFO
+projections are not incremental. The local witness cannot defeat restoring the
+whole host/database/witness. The provider profile refuses public-data routing;
+adding credentials alone will not close these technical gaps.
 
-Next, close T17's approved connectivity/funded/intended-host setup. Genuine T18
-forward collection and separately authorized T19 conformance can then proceed
-in parallel; intended-host T21 proof can advance independently. T20/T22 remain
-prerequisite and owner-authority gated. Remaining software contracts require
-implementation and review; adding credentials alone will not close them.
+Next, prepare the owner-designated host and reviewed provider/public-data routes,
+then perform authorized funded paper observation. Genuine T18 forward collection
+and separately authorized T19 conformance can proceed in parallel when their
+inputs are available. T20/T22 remain prerequisite and owner-authority gated.
 
 ## Working commands
 
@@ -136,7 +106,6 @@ python3 scripts/test_planning.py
 uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
 ```
 
-Use fresh artifact paths. The ordinary paper service is available; protected
-composition requires the explicit owner-pinned deployment described in the runbook.
-Offline plugin and projection APIs have synthetic scopes and no default production
-scheduling or grants. Live readiness remains advisory and closed.
+Use fresh artifact paths. Protected composition requires explicit owner pins.
+Offline plugin/application preparation does not install default production routes
+or broader class grants. Live readiness remains closed.
