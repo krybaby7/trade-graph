@@ -259,10 +259,13 @@ attacks, management during timeout, newer activation and cancellation. Credentia
 and capital in these tests are synthetic; they do not certify a production host,
 funded observation, private venue access or broader deployed Engineer authority.
 
-To finish the deployment gate for T21, pin immutable deployment/dependency images
-and owner mounts outside candidate mutation, and verify independent recovery/rollback
-on the intended deployment host. Installed-source/interpreter fingerprints and local
-synthetic integration tests do not satisfy those deployment requirements.
+The [immutable offline image workflow](PROTECTED-DEPLOYMENT.md) now pins a complete
+OS/dependency image and archive, verifies exact owner mounts and Docker configuration,
+and exercises independent recovery/rollback in actual local Docker containers.
+Its fixed entrypoint boots the protected paper service. The image and root-owned
+distribution still require owner approval and independent verification on the
+intended deployment host. Installed-source/interpreter fingerprints and local
+synthetic image tests do not satisfy that intended-host gate.
 Repeat capability, resource, egress and host-mount attacks on the intended
 deployment platform. T22 additionally requires T18 economic evidence, an explicit
 owner class grant, pure-plugin determinism/replay tests, immutable staging and
