@@ -52,3 +52,14 @@ legacy ledger/adapter/conformance/dashboard and retained runtime evidence tests.
 Evidence: `/tmp/t19-r4-replay-reviewed.xml`. Scoped Ruff and staged repository hygiene
 pass. Failure injection aborts the real SQLite journal write and verifies that both
 new original and correction roll back. No financial event is rewritten to pass it.
+
+Independent boundary review found two gaps in the initial checkpoint: it reconstructed
+history before checking source bounds, and a correction at an existing record time
+could alter an already read `books(at=...)` reference. The continuation preflights
+SQLite row count and aggregate payload bytes plus the new original before fetching
+or reconstructing, fetches with an explicit row limit, and requires the correction's
+record time to strictly follow every retained source. The reader independently checks
+that ordering. Tests instrument zero reconstruction on row/byte overbounds and retain
+an unchanged earlier as-of view when a frozen clock produces an equal timestamp.
+The expanded related suite passes **380 tests**, zero failures/errors/skips, including
+**21** dedicated replay cases (`/tmp/t19-r4-replay-boundary-final.xml`).

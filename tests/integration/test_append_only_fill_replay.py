@@ -130,6 +130,7 @@ def test_late_sell_refuses_impossible_native_cashflow_inventory_chronology_atomi
 def test_late_native_tie_refuses_without_finer_order_evidence(tmp_path):
     database, clock, ledger, portfolio = _base(tmp_path / "tie.sqlite")
     before = ledger.books(portfolio)
+    clock.advance(1)
     with pytest.raises(ValidationFailure, match="precise tie"):
         ledger.apply_late_fill(portfolio, _fill("tied", minute=2), base_asset="BTC", quote_asset="USD")
     assert ledger.books(portfolio) == before
@@ -295,8 +296,40 @@ def test_late_future_fill_and_regressed_record_clock_refuse_before_financial_mut
     with pytest.raises(ValidationFailure, match="bounded native time"):
         ledger.apply_late_fill(portfolio, _fill("future", minute=5), base_asset="BTC", quote_asset="USD")
     clock.advance(-60)
-    with pytest.raises(ValidationFailure, match="record time precedes"):
+    with pytest.raises(ValidationFailure, match="strictly follow"):
         ledger.apply_late_fill(portfolio, _fill("late", minute=1), base_asset="BTC", quote_asset="USD")
     clock.advance(60)
     assert ledger.books(portfolio) == before
+    database.close()
+
+
+def test_equal_record_time_refuses_and_preserves_previous_asof_reference(tmp_path):
+    database, clock, ledger, portfolio = _base(tmp_path / "equal.sqlite")
+    reference_at = utc_iso(clock.now())
+    original = ledger.books(portfolio, reference_at)
+    with pytest.raises(ValidationFailure, match="strictly follow"):
+        ledger.apply_late_fill(portfolio, _fill("late", minute=1), base_asset="BTC", quote_asset="USD")
+    assert ledger.books(portfolio, reference_at) == original
+    assert database.execute("SELECT count(*) FROM ledger_events").fetchone()[0] == 3
+    database.close()
+
+
+@pytest.mark.parametrize("bound", ["rows", "bytes"])
+def test_overbound_source_refuses_before_any_full_fetch_or_reconstruction(tmp_path, monkeypatch, bound):
+    import trade_graph.application.ledger as module
+
+    database, clock, ledger, portfolio = _base(tmp_path / "preflight.sqlite")
+    clock.advance(1)
+    if bound == "rows":
+        monkeypatch.setattr(module, "MAX_REPLAY_ROWS", 3)
+    else:
+        monkeypatch.setattr(module, "MAX_REPLAY_SOURCE_BYTES", 1)
+
+    def refuse_reconstruction(*_args):
+        raise AssertionError("oversized source must be refused before replay")
+
+    monkeypatch.setattr(ledger, "_replay_rows", refuse_reconstruction)
+    with pytest.raises(ValidationFailure, match="protected source bounds"):
+        ledger.apply_late_fill(portfolio, _fill("late", minute=1), base_asset="BTC", quote_asset="USD")
+    assert database.execute("SELECT count(*) FROM ledger_events").fetchone()[0] == 3
     database.close()

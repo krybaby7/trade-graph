@@ -176,17 +176,30 @@ class Ledger:
             "projection_deferred": REPLAY_VERSION,
         }
         with self.database.immediate() as conn:
+            budget = conn.execute(
+                """SELECT count(*) AS n,COALESCE(sum(length(CAST(payload_json AS BLOB))),0) AS bytes,
+                max(effective_at) AS latest FROM ledger_events WHERE portfolio_id=?""",
+                (portfolio_id,),
+            ).fetchone()
+            if (
+                budget["n"] + 1 > MAX_REPLAY_ROWS
+                or budget["bytes"] + len(_json(payload).encode()) > MAX_REPLAY_SOURCE_BYTES
+            ):
+                raise ValidationFailure("chronological replay exceeds protected source bounds")
+            if budget["latest"] is not None and parse_utc(budget["latest"]) >= parse_utc(at):
+                raise ValidationFailure(
+                    "late fill requires chronological ledger replay: "
+                    "record time must strictly follow known native sources"
+                )
             rows = [
                 dict(row)
                 for row in conn.execute(
-                    "SELECT * FROM ledger_events WHERE portfolio_id=? ORDER BY sequence",
-                    (portfolio_id,),
+                    "SELECT * FROM ledger_events WHERE portfolio_id=? ORDER BY sequence LIMIT ?",
+                    (portfolio_id, MAX_REPLAY_ROWS),
                 )
             ]
             if any(row["external_ref"] == ref for row in rows):
                 raise DuplicateRecord(ref)
-            if any(parse_utc(row["effective_at"]) > parse_utc(at) for row in rows):
-                raise ValidationFailure("chronological replay record time precedes known native sources")
             before = self._replay_rows(rows)
             new = {
                 "event_id": str(uuid.uuid4()),
@@ -569,9 +582,11 @@ class Ledger:
             or any(
                 source["sequence"] != index + 1
                 or source["portfolio_id"] != row["portfolio_id"]
-                or parse_utc(source["effective_at"]) > parse_utc(row["effective_at"])
-                for index, source in enumerate(prior_rows)
+                or parse_utc(source["effective_at"]) >= parse_utc(row["effective_at"])
+                for index, source in enumerate(prior_rows[:-1])
             )
+            or prior_rows[-1]["sequence"] != len(prior_rows)
+            or prior_rows[-1]["portfolio_id"] != row["portfolio_id"]
             or row["sequence"] != len(prior_rows) + 1
             or prior_rows[-1]["event_id"] != payload["new_fill_event_id"]
             or prior_rows[-1]["kind"] != "fill"
