@@ -89,6 +89,8 @@ class ProtectedDepartmentGateway:
         instance = self.financial._instance(self.controller.instance_id)
         if instance["status"] != "RUNNING":
             raise AuthorityDenied("protected departmental graph is management-only")
+        if not self.financial.history.ready(billing["portfolio_id"]):
+            raise StaleState("protected departmental financial history lacks its independent witness")
         release = self.financial._release(instance)
         task = self.database.execute("SELECT * FROM tasks WHERE task_id=?", (request.task_id,)).fetchone()
         if (task is None or task["role"] != request.role or task["root_task_id"] != request.root_task_id

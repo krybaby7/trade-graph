@@ -40,12 +40,49 @@ class ProtectedDeploymentBinding:
         source_id = hashlib.sha256(self.source.encode()).hexdigest()[:16]
         self.release_id = "owner-" + self.manifest.sha256[:16] + "-" + source_id
         self.api_keys, self.transport = api_keys, transport
+        self.funded_profile = self._funded_bundle()
+        if self.funded_profile is not None:
+            from trade_graph.adapters.models.transport import HttpxProviderHttp
+            from trade_graph.kernel.funded_profile import load_funded_credentials
+
+            if api_keys or transport is not None:
+                raise AuthorityDenied("funded-paper deployment rejects injected credentials or transport")
+            self.api_keys = load_funded_credentials(self.directory, self.funded_profile)
+            self.transport = HttpxProviderHttp(proxy=self.funded_profile.proxy_url, trust_env=False,
+                                               allowed_urls=self.funded_profile.endpoints)
         self.protected = None
+
+    def _funded_bundle(self):
+        from trade_graph.kernel.deployment_image import read_owner_file
+        from trade_graph.kernel.funded_profile import load_funded_profile
+        from trade_graph.paper_runtime import PaperRuntimeConfig
+
+        try:
+            (self.directory / "funded-paper-profile.json").lstat()
+        except FileNotFoundError:
+            return None
+        profile = load_funded_profile(self.directory)
+        raw = read_owner_file(self.directory, "paper-config.json", 262144)
+        configured = PaperRuntimeConfig.model_validate_json(raw)
+        if (profile.manifest_sha256 != self.manifest.sha256
+                or profile.deployment_id != self.runtime.deployment_id
+                or hashlib.sha256(raw).hexdigest() != profile.paper_config_sha256
+                or configured != self.runtime.config or configured.public_data_enabled):
+            raise AuthorityDenied("funded-paper runtime/configuration differs from owner profile")
+        return profile
 
     def _unchanged(self) -> bool:
         manifest, source, key = _owner_bundle(self.directory)
-        return (manifest == self.manifest and source == self.source
-                and hashlib.sha256(key).digest() == hashlib.sha256(self._key).digest())
+        if (manifest != self.manifest or source != self.source
+                or hashlib.sha256(key).digest() != hashlib.sha256(self._key).digest()
+                or self._funded_bundle() != self.funded_profile):
+            return False
+        if self.funded_profile is not None:
+            from trade_graph.kernel.funded_profile import load_funded_credentials
+
+            if load_funded_credentials(self.directory, self.funded_profile) != self.api_keys:
+                return False
+        return True
 
     def prepare(self) -> dict:
         """Admit once; restarting a failed release cannot lift management-only recovery."""
@@ -88,6 +125,9 @@ class ProtectedDeploymentBinding:
             if status["status"] != "RUNNING":
                 return False
             self.protected.financial._release(status)
+            portfolios = self.runtime.database.execute("SELECT portfolio_id FROM portfolios WHERE mode='paper'")
+            if not all(self.protected.financial.history.ready(row["portfolio_id"]) for row in portfolios):
+                return False
             return True
         except (OSError, ValueError, PermissionError, TradeGraphError):
             return False

@@ -266,6 +266,12 @@ class ModelGateway:
                                             self.transport, synthetic)
         except BudgetExhausted as exc:
             return ModelResult(ok=False, failure="validation", message=str(exc))
+        # The opt-in concrete protected budget independently witnesses the
+        # committed original hold before any provider effect. Ordinary budgets
+        # retain their existing behavior and do not acquire protected authority.
+        protected_dispatch = getattr(self.budget, "protect_dispatch", None)
+        if protected_dispatch is not None:
+            protected_dispatch(reservation)
         self.attempts.append(reservation)
         try:
             if request.provider == "scripted":
@@ -318,7 +324,10 @@ class ModelGateway:
             if invocation_id:
                 journal.save(invocation_id, result, state)
                 # Return exactly the bounded payload retained for recovery.
-                return journal.recover(invocation_id, binding)
+                result = journal.recover(invocation_id, binding)
+        protected_settlement = getattr(self.budget, "protect_settlement", None)
+        if protected_settlement is not None:
+            protected_settlement(reservation)
         return result
 
     def _usage_is_priced(self, request: ModelRequest, result: ModelResult) -> bool:

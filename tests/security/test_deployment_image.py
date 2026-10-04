@@ -40,6 +40,7 @@ def inspected(spec):
               "Env": ["PATH=/usr/local/bin:/usr/bin:/bin"]}
     image = {"Id": spec.image.image_id, "Os": "linux", "Architecture": "amd64", "Config": deepcopy(config)}
     container = {"Image": spec.image.image_id, "State": {"Status": "created", "Running": False},
+        "NetworkSettings": {"Networks": {"none": {"NetworkID": ""}}},
         "Config": {**config, "Image": spec.image.image_id,
                    "Env": [*config["Env"], *(name + "=" for name in PROXY_VARIABLES)]}, "HostConfig": {
             "ReadonlyRootfs": True, "Privileged": False, "NetworkMode": "none", "CapDrop": ["ALL"],
@@ -128,6 +129,23 @@ def test_missing_seccomp_and_image_platform_change_fail_closed():
     image["Architecture"] = "arm64"
     with pytest.raises(PermissionError):
         verify_image_inspection(spec.image, image)
+
+
+@pytest.mark.parametrize("attack", ["extra_network", "static_ipam", "gateway", "network_id"])
+def test_created_container_cannot_hide_additional_or_changed_network_attachments(attack):
+    spec = deployment()
+    image, container = inspected(spec)
+    attached = container["NetworkSettings"]["Networks"]
+    if attack == "extra_network":
+        attached["bridge"] = {"NetworkID": "f" * 64}
+    elif attack == "static_ipam":
+        attached["none"]["IPAMConfig"] = {"IPv4Address": "172.20.0.3"}
+    elif attack == "gateway":
+        attached["none"]["Gateway"] = "172.20.0.1"
+    else:
+        attached["none"]["NetworkID"] = "f" * 64
+    with pytest.raises(PermissionError):
+        verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"])
 
 
 def test_owner_state_overlap_and_candidate_defined_commands_fail_closed():

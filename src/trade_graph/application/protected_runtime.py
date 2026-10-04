@@ -84,7 +84,8 @@ class ProtectedPaperRuntime:
         """Management runs independently, before mutable work and before effects."""
         dispatched = await self._manage(portfolio_id)
         status = self.controller.status()
-        if status["status"] != "RUNNING" or self.financial.execution.profile(portfolio_id) != "RUNNING":
+        if (status["status"] != "RUNNING" or self.financial.execution.profile(portfolio_id) != "RUNNING"
+                or not self.financial.history.ready(portfolio_id)):
             return {"status": "MANAGE_ONLY", "dispatched": dispatched,
                     "live_authorization": False, "paid_authorization": False}
         cancelled = threading.Event()

@@ -96,13 +96,25 @@ class ScriptedProviderHttp:
 class HttpxProviderHttp:
     """Real provider POST. Do not construct this without an owner-funded key and paid calls enabled."""
 
-    def __init__(self, timeout: float = 30, *, maximum_response_bytes: int = MAXIMUM_PROVIDER_BYTES) -> None:
+    def __init__(self, timeout: float = 30, *, maximum_response_bytes: int = MAXIMUM_PROVIDER_BYTES,
+                 proxy: str | None = None, trust_env: bool = True,
+                 allowed_urls: tuple[str, ...] | None = None) -> None:
         if isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("positive finite provider timeout required")
         self.timeout = timeout
         if type(maximum_response_bytes) is not int or not 1 <= maximum_response_bytes <= MAXIMUM_PROVIDER_BYTES:
             raise ValueError("provider response byte bound must be between 1 and 1048576")
         self.maximum_response_bytes = maximum_response_bytes
+        if type(trust_env) is not bool or proxy is not None and type(proxy) is not str:
+            raise ValueError("explicit trusted provider proxy/environment policy required")
+        if allowed_urls is not None and (
+            type(allowed_urls) is not tuple or not 1 <= len(allowed_urls) <= 2
+            or len(set(allowed_urls)) != len(allowed_urls)
+            or any(url not in {"https://api.openai.com/v1/responses", "https://api.anthropic.com/v1/messages"}
+                   for url in allowed_urls)
+        ):
+            raise ValueError("fixed official provider endpoints required")
+        self.proxy, self.trust_env, self.allowed_urls = proxy, trust_env, allowed_urls
 
     def post_json(
         self, url: str, body: dict[str, Any], headers: Mapping[str, str], *, timeout_seconds: float | None = None,
@@ -110,6 +122,8 @@ class HttpxProviderHttp:
     ) -> dict[str, Any]:
         import httpx
 
+        if self.allowed_urls is not None and url not in self.allowed_urls:
+            raise ValueError("provider destination is outside the owner-pinned funded-paper profile")
         if timeout_seconds is not None and (
             isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0
         ):
@@ -130,7 +144,7 @@ class HttpxProviderHttp:
                             if name.lower() not in {"content-type", "accept-encoding"}}
             with httpx.stream("POST", url, content=raw,
                 headers={**wire_headers, "content-type": "application/json", "accept-encoding": "identity"},
-                timeout=timeout, follow_redirects=False) as response:
+                timeout=timeout, follow_redirects=False, proxy=self.proxy, trust_env=self.trust_env) as response:
                 status = response.status_code
                 if 300 <= status < 400:
                     raise ValueError("provider redirect refused")

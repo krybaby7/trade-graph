@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from trade_graph.application.runtime_models import RuntimeHandlers, assemble_handlers
 from trade_graph.kernel.department_gateway import ProtectedDepartmentGateway
+from trade_graph.kernel.protected_budget import ProtectedBudgetGateway
 
 
 def assemble_protected_handlers(office, secretary, engineer, artifact_runtime, config, *,
                                 protected_runtime, workspace_root, api_keys=None, transport=None) -> RuntimeHandlers:
     base = assemble_handlers(office, secretary, engineer, artifact_runtime, config,
                              workspace_root=workspace_root, api_keys=api_keys, transport=transport)
+    base.gateway.budget = ProtectedBudgetGateway(base.gateway.budget, protected_runtime)
     gateway = ProtectedDepartmentGateway(base.gateway, protected_runtime)
     gateway.secretary = secretary
     for routed in base.handlers.values():

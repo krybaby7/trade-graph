@@ -65,6 +65,18 @@ class ProtectedRuntimeController:
                 conn.execute("""INSERT INTO protected_mutable_releases
                     (release_id,manifest_sha256,source_sha256,source_text,build_digest,admitted_by,created_at)
                     VALUES (?,?,?,?,?,?,?)""", (*document.values(), utc_iso(self.clock.now())))
+        # Exact owner-pinned admission is the deliberate initial financial
+        # preparation operation. A later release admission never reconstructs
+        # a missing witness or reseals restored financial history.
+        instance = self.financial._instance(self.instance_id)
+        if instance["generation"] == 0 and instance["active_release_id"] is None:
+            portfolios = self.database.execute(
+                "SELECT portfolio_id FROM portfolios WHERE mode='paper' ORDER BY portfolio_id",
+            ).fetchall()
+            if len(portfolios) > 128:
+                raise StaleState("protected owner preparation exceeds portfolio bound")
+            for portfolio in portfolios:
+                self.financial.prepare_history(portfolio["portfolio_id"], instance_id=self.instance_id)
         return {key: value for key, value in document.items() if key != "source_text"}
 
     def _has_success(self, release_id: str | None) -> bool:

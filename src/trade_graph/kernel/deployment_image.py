@@ -17,6 +17,7 @@ import stat
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from trade_graph.kernel.funded_profile import PreparedFundedPaperProfile
 from trade_graph.kernel.runtime_manifest import (
     ProtectedRuntimeManifest,
     canonical_json,
@@ -172,6 +173,7 @@ class ProtectedDeploymentSpec:
     runtime_manifest: ProtectedRuntimeManifest
     owner_directory: Path
     state_directory: Path
+    funded_profile: PreparedFundedPaperProfile | None = None
 
     def __post_init__(self):
         if (not isinstance(self.image, DeploymentImagePin)
@@ -182,6 +184,13 @@ class ProtectedDeploymentSpec:
                 or self.owner_directory in self.state_directory.parents
                 or self.state_directory in self.owner_directory.parents):
             raise ValueError("separate owner mounts and image-bound runtime manifest required")
+        if self.funded_profile is not None and (
+            type(self.funded_profile) is not PreparedFundedPaperProfile
+            or self.funded_profile.image_id != self.image.image_id
+            or self.funded_profile.manifest_sha256 != self.runtime_manifest.sha256
+            or self.funded_profile.deployment_id != self.runtime_manifest.deployment_id
+        ):
+            raise ValueError("funded-paper profile requires exact image/runtime/deployment pins")
 
     def verify_host_paths(self) -> None:
         _owner_path(self.owner_directory, directory=True)
@@ -195,18 +204,31 @@ class ProtectedDeploymentSpec:
         installed = load_owner_runtime_manifest_document(self.owner_directory / "runtime-manifest.json")
         if installed != asdict(self.runtime_manifest):
             raise PermissionError("distributed owner manifest does not match approved release")
+        if self.funded_profile is not None:
+            from trade_graph.kernel.funded_profile import load_funded_credentials, load_funded_profile
+
+            if load_funded_profile(self.owner_directory) != self.funded_profile:
+                raise PermissionError("distributed funded-paper profile differs from owner pin")
+            raw = read_owner_file(self.owner_directory, "paper-config.json", 262144)
+            if hashlib.sha256(raw).hexdigest() != self.funded_profile.paper_config_sha256:
+                raise PermissionError("distributed funded-paper configuration differs from owner pin")
+            load_funded_credentials(self.owner_directory, self.funded_profile)
 
     def create_arguments(self, *, name: str, action: str = "boot") -> list[str]:
         if type(name) is not str or not re.fullmatch(r"trade-graph-[a-z0-9-]{1,64}", name):
             raise ValueError("bounded deployment container name required")
-        if action not in {"boot", "probe", "check-boot"}:
+        if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded"}:
             raise ValueError("deployment command must be a fixed protected entrypoint")
+        funded = action in {"boot-funded", "check-funded"}
+        if funded != (self.funded_profile is not None):
+            raise ValueError("funded-paper launch requires an explicit separately pinned profile")
         for path in (self.owner_directory, self.state_directory):
             if not path.is_absolute() or ".." in path.parts or "," in str(path) or "\n" in str(path):
                 raise ValueError("unambiguous absolute mount paths required")
         environment = [argument for name in PROXY_VARIABLES for argument in ("--env", name + "=")]
+        network = self.funded_profile.network_id if funded else "none"
         return ["docker", "create", "--name", name, "--platform", PLATFORM, *environment,
-                "--user", f"{UID}:{GID}", "--read-only", "--network", "none", "--cap-drop", "ALL",
+                "--user", f"{UID}:{GID}", "--read-only", "--network", network, "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "512m",
                 "--memory-swap", "512m", "--cpus", "1", "--ulimit", "core=0:0", "--init",
                 "--tmpfs", f"/tmp:{TMPFS}", "--mount",
@@ -231,13 +253,38 @@ def load_owner_runtime_manifest_document(path: Path) -> dict:
 
 
 def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, container: dict,
-                                daemon_security_options: list[str], *, action: str = "boot") -> None:
+                                daemon_security_options: list[str], *, action: str = "boot",
+                                network: dict | None = None, proxy: dict | None = None) -> None:
     """Independently inspect the CREATED container before allowing it to start."""
     verify_image_inspection(spec.image, image)
     host, config = container.get("HostConfig", {}), container.get("Config", {})
+    funded = action in {"boot-funded", "check-funded"}
+    if funded != (spec.funded_profile is not None):
+        raise PermissionError("funded-paper container requires exact separate profile")
+    expected_network = spec.funded_profile.network_id if funded else "none"
+    if funded:
+        from trade_graph.kernel.funded_profile import verify_funded_network
+
+        if network is None or proxy is None:
+            raise PermissionError("funded-paper launch requires independently inspected network/proxy")
+        verify_funded_network(spec.funded_profile, network, proxy, daemon_security_options=daemon_security_options)
+    attached = container.get("NetworkSettings", {}).get("Networks")
+    network_name = network.get("Name") if funded else "none"
+    if (type(network_name) is not str or not network_name or type(attached) is not dict
+            or set(attached) != {network_name}):
+        raise PermissionError("protected container has an extra or substituted network attachment")
+    attachment = attached[network_name]
+    if (type(attachment) is not dict or attachment.get("NetworkID") not in {"", expected_network}
+            or attachment.get("IPAMConfig") or attachment.get("Links") or attachment.get("Aliases")
+            or attachment.get("DriverOpts") or attachment.get("GwPriority", 0) != 0
+            or attachment.get("IPAddress") or attachment.get("Gateway") or attachment.get("MacAddress")
+            or attachment.get("EndpointID") or attachment.get("GlobalIPv6Address")
+            or attachment.get("IPv6Gateway")):
+        raise PermissionError("created protected container network configuration is not the exact approved profile")
     expected_environment = {**_environment(image["Config"].get("Env")),
                             **{name: "" for name in PROXY_VARIABLES}}
-    if (action not in {"boot", "probe", "check-boot"} or container.get("Image") != spec.image.image_id
+    if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded"}
+            or container.get("Image") != spec.image.image_id
             or container.get("State", {}).get("Running") is not False
             or container.get("State", {}).get("Status") != "created"
             or config.get("Image") != spec.image.image_id or config.get("User") != f"{UID}:{GID}"
@@ -246,7 +293,7 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
             or config.get("WorkingDir") != STATE_MOUNT
             or config.get("Healthcheck") != image["Config"].get("Healthcheck")
             or host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False
-            or host.get("NetworkMode") != "none" or host.get("CapDrop") != ["ALL"] or host.get("CapAdd")
+            or host.get("NetworkMode") != expected_network or host.get("CapDrop") != ["ALL"] or host.get("CapAdd")
             or host.get("SecurityOpt") != ["no-new-privileges"]
             or not any(item.startswith("name=seccomp,profile=builtin") for item in daemon_security_options)
             or host.get("PidMode") or host.get("IpcMode") not in {"private", ""} or host.get("UTSMode")
@@ -320,7 +367,7 @@ def assert_boot_environment(*, mountinfo: Path = Path("/proc/self/mountinfo")) -
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe"))
+    parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded"))
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -330,6 +377,30 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(canonical_json(build_seal(json.loads(args.inputs.read_bytes()))) + "\n")
         return 0
     manifest = assert_boot_environment()
+    if args.action in {"boot-funded", "check-funded"}:
+        from trade_graph.kernel.funded_profile import load_funded_credentials, load_funded_profile
+        from trade_graph.paper_runtime import PaperRuntimeConfig
+
+        profile = load_funded_profile(Path(OWNER_MOUNT))
+        config = read_owner_file(Path(OWNER_MOUNT), "paper-config.json", 262144)
+        configured = PaperRuntimeConfig.model_validate_json(config)
+        if (profile.manifest_sha256 != manifest.sha256 or profile.deployment_id != manifest.deployment_id
+                or hashlib.sha256(config).hexdigest() != profile.paper_config_sha256
+                or configured.public_data_enabled):
+            raise PermissionError("protected funded-paper configuration/profile mismatch")
+        load_funded_credentials(Path(OWNER_MOUNT), profile)
+        if args.action == "check-funded":
+            print(canonical_json({"status": "funded_paper_profile_prepared", "profile_sha256": profile.sha256,
+                                  "intended_host_verified": False, "live_authorization": False,
+                                  "paid_authorization": False, "public_feed_profile_supported": False}))
+            return 0
+    else:
+        try:
+            read_owner_file(Path(OWNER_MOUNT), "funded-paper-profile.json", 32768)
+        except FileNotFoundError:
+            pass
+        else:
+            raise PermissionError("funded-paper owner bundle requires its separate launch profile")
     if args.action == "check-boot":
         print(canonical_json({"status": "protected_boot_verified", "manifest_sha256": manifest.sha256,
                               "live_authorization": False, "paid_authorization": False}))

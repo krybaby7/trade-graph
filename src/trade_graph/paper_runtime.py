@@ -166,10 +166,10 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
         if protected_owner is not None:
             from trade_graph.application.deployment_runtime import ProtectedDeploymentBinding
 
-            protected_keys = api_keys if api_keys is not None else {
-                "openai": os.environ.get("OPENAI_API_KEY", ""),
-                "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
-            }
+            # Installed protected deployments obtain credentials from exact
+            # owner-pinned readonly files. Ambient shell credentials cannot
+            # expand the protected image's offline profile.
+            protected_keys = api_keys if api_keys is not None else {}
             binding = ProtectedDeploymentBinding(runtime, protected_owner, api_keys=protected_keys, transport=transport)
             runtime.protected_deployment = binding
             runtime.prepare_runtime, runtime.runtime_ready = binding.prepare, binding.ready
