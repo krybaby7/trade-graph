@@ -26,6 +26,11 @@ from trade_graph.domain.money import parse_decimal
 KRAKEN_REST = "https://api.kraken.com/0/public"
 KRAKEN_WS = "wss://ws.kraken.com/v2"
 FRANKFURTER = "https://api.frankfurter.dev/v2"
+_NATIVE_ASSETS = {
+    "BTC": ("BTC", "XBT", "XXBT"), "ETH": ("ETH", "XETH"),
+    "USD": ("USD", "ZUSD"), "EUR": ("EUR", "ZEUR"),
+}
+_ASSET_SYMBOLS = {alias: symbol for symbol, aliases in _NATIVE_ASSETS.items() for alias in aliases}
 
 
 class TextTransport(Protocol):
@@ -185,6 +190,21 @@ class KrakenPublicRest:
             try:
                 instrument = normalize_pair(name, info)
                 names = {name, _rest_pair(instrument.symbol)}
+                base, quote = instrument.base_asset, instrument.quote_asset
+                native_names = {
+                    native_base + native_quote
+                    for native_base in _NATIVE_ASSETS.get(base, (base,))
+                    for native_quote in _NATIVE_ASSETS.get(quote, (quote,))
+                }
+                if "base" in info or "quote" in info:
+                    native_base, native_quote = info["base"], info["quote"]
+                    if (not isinstance(native_base, str) or not isinstance(native_quote, str)
+                            or _ASSET_SYMBOLS.get(native_base, native_base) != base
+                            or _ASSET_SYMBOLS.get(native_quote, native_quote) != quote):
+                        raise ValidationFailure("Kraken metadata native assets differ from its symbol")
+                    native_names.add(native_base + native_quote)
+                if name not in native_names:
+                    raise ValidationFailure("Kraken metadata native pair identity differs from its symbol")
             except (ValueError, KeyError, TypeError) as exc:
                 raise ValidationFailure("Kraken metadata instrument identity is invalid") from exc
             if isinstance(info.get("altname"), str):
@@ -403,6 +423,8 @@ def _rest_pair(symbol: str) -> str:
     base, quote = symbol.split("/")
     if base == "BTC":
         base = "XBT"
+    if quote == "BTC":
+        quote = "XBT"
     return f"{base}{quote}"
 
 

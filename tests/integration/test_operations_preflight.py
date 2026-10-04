@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,7 @@ def test_retained_key_can_verify_multiple_records_and_no_record_is_overwritten(t
     assert not (folder / "unused.key").exists()
 
 
-@pytest.mark.parametrize("problem", ["symlink", "public", "short", "oversize", "directory"])
+@pytest.mark.parametrize("problem", ["symlink", "public", "short", "oversize", "directory", "hardlink"])
 def test_insecure_or_invalid_key_refuses_capture_without_record(tmp_path, monkeypatch, problem):
     _without_probes(monkeypatch)
     folder = tmp_path / "private"
@@ -64,6 +65,8 @@ def test_insecure_or_invalid_key_refuses_capture_without_record(tmp_path, monkey
     else:
         key.write_bytes(b"a" * (1 if problem == "short" else 65 if problem == "oversize" else 32))
         key.chmod(0o644 if problem == "public" else 0o600)
+        if problem == "hardlink":
+            os.link(key, folder / "second-key-name")
     with pytest.raises((OSError, ValueError)):
         capture_preflight(None, folder / "report.json", key)
     assert not (folder / "report.json").exists()
@@ -76,6 +79,37 @@ def test_source_and_output_path_collision_refuses_before_key_or_evidence_creatio
     with pytest.raises(ValueError, match="separate new paths"):
         capture_preflight(same, tmp_path / "report.json", same)
     assert not same.parent.exists()
+
+
+@pytest.mark.parametrize("component", ["report", "key", "database", "config"])
+def test_ancestor_symlink_cannot_redirect_preflight_sources_or_outputs(tmp_path, monkeypatch, component):
+    _without_probes(monkeypatch)
+    actual = tmp_path / "actual"
+    actual.mkdir(mode=0o700)
+    (actual / "inner").mkdir(mode=0o700)
+    alias = tmp_path / "alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    target = alias / "inner" / component
+    report, key = tmp_path / "private" / "report.json", tmp_path / "private" / "key"
+    arguments = {"database_path": None, "evidence_path": report, "key_path": key}
+    field = {"report": "evidence_path", "key": "key_path", "database": "database_path", "config": "config_path"}
+    arguments[field[component]] = target
+    with pytest.raises((OSError, ValueError)):
+        capture_preflight(**arguments)
+    assert not target.exists()
+    assert not report.exists()
+
+
+def test_hardlinked_source_alias_is_refused_before_key_creation(tmp_path, monkeypatch):
+    _without_probes(monkeypatch)
+    source = tmp_path / "source"
+    source.write_bytes(b"a" * 32)
+    source.chmod(0o600)
+    os.link(source, tmp_path / "other-source-name")
+    key = tmp_path / "private" / "key"
+    with pytest.raises(ValueError, match="single-link"):
+        capture_preflight(source, tmp_path / "private" / "report.json", key)
+    assert not key.exists()
 
 
 def test_command_outputs_only_redacted_summary_and_verification_does_not_create_missing_key(

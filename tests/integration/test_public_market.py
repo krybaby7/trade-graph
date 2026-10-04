@@ -173,6 +173,10 @@ def test_rest_ticker_binds_nondefault_pair_to_scoped_metadata_alias() -> None:
     {"XXBTZUSD": {"wsname": "XBT/USD"}, "XETHZUSD": {"wsname": "ETH/USD"}},
     {"XXBTZUSD": {"wsname": "XBT/USD"}, "XBTUSD": {"wsname": "XBT/USD"}},
     {"XETHZUSD": {"wsname": "ETH/USD", "altname": "XBTUSD"}},
+    {"XXBTZEUR": {"wsname": "XBT/USD", "altname": "XBTUSD", "base": "XXBT", "quote": "ZEUR"}},
+    {"XXBTZEUR": {"wsname": "XBT/USD", "altname": "XBTUSD"}},
+    {"XXBTZUSD": {"wsname": "XBT/USD", "altname": "XBTUSD", "base": "XETH", "quote": "ZUSD"}},
+    {"XXBTZUSD": {"wsname": "XBT/USD", "altname": "XBTUSD", "base": "XXBT"}},
     {"XXBTZUSD": []},
 ])
 def test_rest_metadata_refuses_missing_additional_and_duplicate_instrument_scope(result) -> None:
@@ -186,6 +190,20 @@ def test_rest_symbol_metadata_queries_use_native_pair_identifier_and_require_wir
     with pytest.raises(ValidationFailure, match="error status"):
         KrakenPublicRest(transport).fetch_instruments(["BTC/USD"])
     assert transport.calls == [ASSET_URL]
+
+
+def test_failed_native_asset_identity_cannot_register_a_wrong_currency_ticker_alias() -> None:
+    transport = ScriptedTransport({
+        ASSET_URL: json.dumps({"error": [], "result": {"XXBTZEUR": {
+            "wsname": "XBT/USD", "altname": "XBTUSD", "base": "XXBT", "quote": "ZEUR",
+        }}}),
+        TICKER_URL: json.dumps({"error": [], "result": {"XXBTZEUR": {"a": ["101"], "b": ["100"]}}}),
+    })
+    rest = KrakenPublicRest(transport)
+    with pytest.raises(ValidationFailure, match="native assets"):
+        rest.fetch_instruments(["BTC/USD"])
+    with pytest.raises(ValidationFailure, match="requested symbol"):
+        rest.fetch_ticker("BTC/USD", observation_id="wrong-native-currency", available_at=NOW)
 
 
 def test_wrong_public_book_cannot_refresh_persisted_observations_or_marks(tmp_path) -> None:

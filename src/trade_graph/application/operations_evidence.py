@@ -12,12 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
+from trade_graph.adapters.engineering.artifact_files import ensure_directory, open_directory
 from trade_graph.adapters.engineering.process import run_bounded
 from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.operations import (
     _configuration,
-    _fsync_directory,
     _private_directory,
     _read_database,
     _runtime,
@@ -45,28 +45,32 @@ _SCOPE_FIELDS = (
 
 
 def _small_file(path: Path, limit: int) -> bytes:
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+    parent = open_directory(path.parent)
     try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-            raise ValueError("bounded regular evidence source required")
-        chunks, total = [], 0
-        while chunk := os.read(descriptor, min(65536, limit + 1 - total)):
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > limit:
-                raise ValueError("evidence source exceeded byte bound")
-        current = path.stat(follow_symlinks=False)
-        if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns) != (
-            current.st_dev,
-            current.st_ino,
-            current.st_size,
-            current.st_mtime_ns,
-        ):
-            raise ValueError("evidence source changed during read")
-        return b"".join(chunks)
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                raise ValueError("bounded regular evidence source required")
+            chunks, total = [], 0
+            while chunk := os.read(descriptor, min(65536, limit + 1 - total)):
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > limit:
+                    raise ValueError("evidence source exceeded byte bound")
+            current = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns) != (
+                current.st_dev,
+                current.st_ino,
+                current.st_size,
+                current.st_mtime_ns,
+            ):
+                raise ValueError("evidence source changed during read")
+            return b"".join(chunks)
+        finally:
+            os.close(descriptor)
     finally:
-        os.close(descriptor)
+        os.close(parent)
 
 
 def _sha(payload: bytes) -> str:
@@ -450,8 +454,14 @@ class HostObservationCollector:
         if type(backup_restore) is not bool or type(public_data) is not bool:
             raise ValueError("explicit boolean local operations opt-ins required")
         path = Path(evidence_path)
+        ensure_directory(path.parent)
         _private_directory(path.parent)
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        parent = open_directory(path.parent)
+        try:
+            descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+        except BaseException:
+            os.close(parent)
+            raise
         try:
             started = utc_iso(self.clock.now())
             package = protected_package_sha256()
@@ -513,11 +523,12 @@ class HostObservationCollector:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
-            _fsync_directory(path.parent)
+            os.fsync(parent)
             return RetainedHostObservation(path, _sha(payload))
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
+            os.close(parent)
 
     def verify(self, evidence_path: Path | str, expected_sha256: str) -> VerifiedHostObservation:
         path = Path(evidence_path)

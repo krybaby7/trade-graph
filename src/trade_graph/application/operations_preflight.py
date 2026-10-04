@@ -9,11 +9,10 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-from trade_graph.application.operations import _fsync_directory, _private_directory
+from trade_graph.adapters.engineering.artifact_files import ensure_directory, open_directory
 from trade_graph.application.operations_evidence import (
     HostObservationCollector,
     VerifiedHostObservation,
-    _small_file,
 )
 
 
@@ -23,30 +22,68 @@ class PreflightResult:
     summary: dict
 
 
-def _key(path: Path, *, create: bool) -> bytes:
+def _parent(path: Path, *, create: bool, private: bool = True) -> int:
     if create:
-        _private_directory(path.parent)
+        ensure_directory(path.parent)
+    parent = open_directory(path.parent)
+    info = os.fstat(parent)
+    if private and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
+        os.close(parent)
+        raise ValueError("preflight output requires owner-private directory storage")
+    return parent
+
+
+def _source_path(path: Path) -> None:
+    try:
+        parent = _parent(path, create=False, private=False)
+    except FileNotFoundError:
+        return
+    try:
         try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(os.urandom(32))
-                handle.flush()
-                os.fsync(handle.fileno())
-            _fsync_directory(path.parent)
-    if path.parent.is_symlink() or path.parent.stat().st_mode & 0o077:
-        raise ValueError("observation key requires private directory storage")
-    info = path.stat(follow_symlinks=False)
-    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
-        raise ValueError("observation key requires a private regular file")
-    payload = _small_file(path, 64)
-    if path.stat(follow_symlinks=False) != info:
-        raise ValueError("observation key changed during read")
-    if not 32 <= len(payload) <= 64:
-        raise ValueError("observation key requires 32..64 bytes")
-    return payload
+            info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1:
+            raise ValueError("preflight source requires an owner-only single-link regular file")
+    finally:
+        os.close(parent)
+
+
+def _key(path: Path, *, create: bool) -> bytes:
+    parent = _parent(path, create=create)
+    try:
+        if create:
+            try:
+                descriptor = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                     0o600, dir_fd=parent)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(os.urandom(32))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.fsync(parent)
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1
+                    or info.st_mode & 0o077 or not 32 <= info.st_size <= 64):
+                raise ValueError("observation key requires an owner-private single-link 32..64-byte regular file")
+            payload = os.read(descriptor, 65)
+            def identity(value):
+                return (value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_nlink,
+                        value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+            if (identity(os.fstat(descriptor)) != identity(info)
+                    or identity(os.stat(path.name, dir_fd=parent, follow_symlinks=False)) != identity(info)
+                    or len(payload) != info.st_size):
+                raise ValueError("observation key changed during read")
+            return payload
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
 
 
 def _summary(observation: VerifiedHostObservation, *, backup_restore: bool, public_data: bool) -> PreflightResult:
@@ -90,6 +127,10 @@ def capture_preflight(
         raise ValueError("evidence and observation key must use separate new paths")
     if path.exists() or path.is_symlink():
         raise ValueError("operations evidence already exists; use a new path")
+    for source in (database_path, config_path):
+        if source is not None:
+            _source_path(Path(source))
+    os.close(_parent(path, create=True))
     collector = HostObservationCollector(database_path, signing_key=_key(key, create=True), config_path=config_path)
     retained = collector.capture(path, backup_restore=backup_restore, public_data=public_data)
     return _summary(collector.verify(path, retained.sha256), backup_restore=backup_restore, public_data=public_data)
@@ -103,6 +144,10 @@ def verify_preflight(
     *,
     config_path: Path | str | None = None,
 ) -> PreflightResult:
+    for source in (database_path, config_path):
+        if source is not None:
+            _source_path(Path(source))
+    _source_path(Path(evidence_path))
     collector = HostObservationCollector(database_path, signing_key=_key(Path(key_path), create=False),
                                          config_path=config_path)
     observation = collector.verify(evidence_path, expected_sha256)

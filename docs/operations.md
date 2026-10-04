@@ -97,7 +97,9 @@ its phase timeout. The transport retains the process's configured HTTP(S) proxy
 policy. Public metadata must cover exactly the requested instruments; ticker
 responses must contain one book whose returned native key identifies that symbol.
 An unrelated book cannot be relabeled with the requested symbol. Nondefault native
-ticker aliases require a prior matching metadata response. A `feed:ProxyError`
+ticker aliases require a prior matching metadata response. Native pair keys and
+provided base/quote fields must independently agree with the normalized symbol.
+A `feed:ProxyError`
 means the public observation failed; old observations
 cannot become fresh evidence. The 2026-10-02 workspace probes received proxy CONNECT
 403 failures for both `api.kraken.com` and `api.frankfurter.dev`. Obtain approved
@@ -360,7 +362,9 @@ The installed preflight module provides capture and later verification. Run it o
 the workspace for preparation, and repeat on the owner-designated deployment host.
 Use a new report path for each observation. The key is created as a private
 32-byte random file if absent; an existing private key can authenticate further
-records. Keep it outside Git with the private reports:
+records. Keys must be owned by the current user and have a single file link.
+Ancestor symlinks and hardlinked source aliases are refused. Keep the key outside
+Git with the private reports:
 
 ```bash
 umask 077

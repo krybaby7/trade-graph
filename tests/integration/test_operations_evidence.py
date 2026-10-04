@@ -53,6 +53,18 @@ def test_missing_setup_is_retained_private_pending_without_network_or_database_c
         instance.capture(capture.path)
 
 
+def test_direct_collector_report_cannot_follow_an_ancestor_symlink(tmp_path):
+    actual = tmp_path / "actual"
+    actual.mkdir(mode=0o700)
+    (actual / "inner").mkdir(mode=0o700)
+    alias = tmp_path / "alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    instance = HostObservationCollector(None, signing_key=KEY)
+    with pytest.raises(OSError):
+        instance.capture(alias / "inner" / "report.json")
+    assert not (actual / "inner" / "report.json").exists()
+
+
 def test_actual_backup_restore_retains_complete_money_and_exact_owner_policy_bytes(tmp_path, monkeypatch):
     runtime, instance = collector(tmp_path, monkeypatch, financial=True)
     retained = instance.capture(tmp_path / "host.json", backup_restore=True)
