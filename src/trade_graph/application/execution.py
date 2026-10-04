@@ -1273,11 +1273,18 @@ class Execution:
     def _set_reconciliation_health(self, *, incomplete: bool, reason: str) -> None:
         state = "incomplete" if incomplete else "complete"
         health = self._reconciliation_health()
-        if health is None and not incomplete:
+        # Every actually completed live history scan retains a fresh observation.
+        # A prior complete label cannot resolve a subsequently changed order.
+        # This covers owned intents/fill history, not account balances, key
+        # permissions, owner eligibility or authority to dispatch a live order.
+        fresh_live_scan = self.mode == "live" and not incomplete
+        if health is None and not incomplete and not fresh_live_scan:
             return
-        if health is not None and health["state"] == state and health["reason"] == reason:
+        if (not fresh_live_scan and health is not None
+                and health["state"] == state and health["reason"] == reason):
             return
         self._incident("execution_reconciliation_health", {
             "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
             "state": state, "reason": reason,
+            "observed_at": self.now(), "observation_scope": "owned_intent_fill_history",
         })

@@ -102,6 +102,30 @@ def _fill(clock, intent, trade_id, *, minute=1, quantity="1", price="100", **upd
     return FillRecord(**body)
 
 
+def test_first_clean_live_scan_and_later_unchanged_scan_each_retain_fresh_observation(tmp_path):
+    database, clock, _ledger, _portfolio, broker, execution = _stack(
+        tmp_path, account="synthetic-live-account", venue="kraken", mode="live",
+    )
+    asyncio.run(execution.reconcile())
+    first = database.execute(
+        "SELECT payload_json,created_at FROM activity_events WHERE kind='execution_reconciliation_health'",
+    ).fetchone()
+    assert first is not None
+    assert json.loads(first["payload_json"])["observation_scope"] == "owned_intent_fill_history"
+    assert json.loads(first["payload_json"])["state"] == "complete"
+    assert broker.calls == [("fills", None)]
+    clock.advance(2)
+    asyncio.run(execution.reconcile())
+    observations = database.execute(
+        "SELECT payload_json,created_at FROM activity_events "
+        "WHERE kind='execution_reconciliation_health' ORDER BY rowid",
+    ).fetchall()
+    assert len(observations) == 2
+    assert observations[1]["created_at"] > first["created_at"]
+    assert json.loads(observations[1]["payload_json"])["observed_at"] == utc_iso(clock.now())
+    assert not any(kind == "submit" for kind, _ in broker.calls)
+
+
 def test_reconciliation_books_interleaved_intents_in_global_fifo_order_and_survives_restart(tmp_path, monkeypatch):
     database, clock, ledger, portfolio, broker, execution = _stack(tmp_path)
     # Restored durable intents are deliberately in a different order from fills.
