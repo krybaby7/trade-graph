@@ -126,6 +126,25 @@ def test_first_clean_live_scan_and_later_unchanged_scan_each_retain_fresh_observ
     assert not any(kind == "submit" for kind, _ in broker.calls)
 
 
+def test_observation_and_durable_event_share_one_timestamp_with_advancing_clock(tmp_path):
+    database, clock, ledger, _portfolio, _broker, execution = _stack(
+        tmp_path, account="synthetic-live-account", venue="kraken", mode="live",
+    )
+
+    class AdvancingClock:
+        def now(self):
+            clock.advance(0.001)
+            return clock.now()
+
+    execution.clock = ledger.clock = AdvancingClock()
+    asyncio.run(execution.reconcile())
+    row = database.execute(
+        "SELECT payload_json,created_at FROM activity_events WHERE kind='execution_reconciliation_health'",
+    ).fetchone()
+    assert json.loads(row["payload_json"])["observed_at"] == row["created_at"]
+    assert ledger.activity_intact()
+
+
 def test_reconciliation_books_interleaved_intents_in_global_fifo_order_and_survives_restart(tmp_path, monkeypatch):
     database, clock, ledger, portfolio, broker, execution = _stack(tmp_path)
     # Restored durable intents are deliberately in a different order from fills.

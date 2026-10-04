@@ -397,7 +397,8 @@ class Ledger:
             for row in rows
         ]
 
-    def _activity(self, portfolio_id: str | None, kind: str, payload: dict) -> None:
+    def _activity(self, portfolio_id: str | None, kind: str, payload: dict,
+                  *, created_at: str | None = None) -> None:
         body = _json(payload)
         with self.database.transaction() as conn:
             prev = conn.execute(
@@ -409,7 +410,7 @@ class Ledger:
                 """INSERT INTO activity_events
                 (event_id, portfolio_id, kind, payload_json, created_at, hash, prev_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (str(uuid.uuid4()), portfolio_id, kind, body, self.now(), digest, prev_hash or None),
+                (str(uuid.uuid4()), portfolio_id, kind, body, created_at or self.now(), digest, prev_hash or None),
             )
 
     def activity_intact(self) -> bool:

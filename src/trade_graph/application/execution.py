@@ -1245,8 +1245,8 @@ class Execution:
         ).fetchall()
         return sum((FillRecord.model_validate_json(row["document_json"]).quantity for row in rows), Decimal("0"))
 
-    def _incident(self, kind: str, payload: dict) -> None:
-        self.ledger._activity(None, kind, payload)
+    def _incident(self, kind: str, payload: dict, *, created_at: str | None = None) -> None:
+        self.ledger._activity(None, kind, payload, created_at=created_at)
 
     def _assert_current_scope(self, intent_id: str) -> dict:
         payload = self._payload(intent_id)
@@ -1283,8 +1283,9 @@ class Execution:
         if (not fresh_live_scan and health is not None
                 and health["state"] == state and health["reason"] == reason):
             return
+        observed_at = self.now()
         self._incident("execution_reconciliation_health", {
             "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
             "state": state, "reason": reason,
-            "observed_at": self.now(), "observation_scope": "owned_intent_fill_history",
-        })
+            "observed_at": observed_at, "observation_scope": "owned_intent_fill_history",
+        }, created_at=observed_at)
