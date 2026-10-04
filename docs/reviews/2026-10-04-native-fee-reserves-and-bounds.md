@@ -67,3 +67,15 @@ Actual native fee permission/semantics and individual third-asset valuation sour
 future partial-fill granularity/count bounds, funded paper observations, eligibility,
 no-withdraw permissions, host identity and pilot authorization remain open. Earlier
 bounded replay also retains its explicit source-size/tie/late-fee limitations.
+
+Independent auxiliary review found two additional bypasses in the initial slice.
+The original-bound audit skipped legacy single-fee fills without explicit native
+principal/vector fields; it now audits every nonzero legacy fee and any existing
+auxiliary allocation. A legacy third-asset charge exceeding or lacking an original
+hold retains its exact financial facts and the sticky incident. The controller also
+pins the original concrete Ledger object and revalidates its identity/database/clock
+on every reserve, so a replacement or mutated Ledger cannot supply inventory from
+another database. Five new regressions cover both shapes and object/DB/clock drift.
+The expanded author suite passes **556 tests**, zero failures/errors/skips, including
+**37** auxiliary hold cases (`/tmp/t19-r4-final-reviewed.xml`). The original independent
+reproductions are to be rerun against this final frozen continuation.

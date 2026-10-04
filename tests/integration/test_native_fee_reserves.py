@@ -343,3 +343,103 @@ def test_model_construct_cannot_bypass_positive_paper_reserve_amount_validation(
         PaperNativeFeeReserveController(execution).reserve(plan)
     assert execution.database.execute("SELECT count(*) FROM native_fee_reservations").fetchone()[0] == 0
     execution.database.close()
+
+
+def test_legacy_third_asset_fee_without_native_cost_keeps_over_original_sticky_incident(tmp_path):
+    clock, ledger, execution, _broker, portfolio, intent = _setup(tmp_path)
+    PaperNativeFeeReserveController(execution).reserve(_plan(portfolio, intent))
+    legacy = FillRecord(
+        venue="paper",
+        account_id="paper",
+        trade_id="legacy-third-over-original",
+        intent_id=intent,
+        symbol="BTC/USD",
+        side="buy",
+        quantity="0.004",
+        price="100",
+        fee_amount="0.7",
+        fee_asset="ETH",
+        fee_identified_rate="10",
+        liquidity="taker",
+        filled_at_utc=clock.now(),
+        heuristic=True,
+    )
+    assert legacy.quote_cost is None and legacy.fee_components is None
+    assert execution.record_fill(legacy)
+    assert execution.owned_quantity(portfolio, "ETH") == Decimal("0.3")
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("9989.6")
+    payload = json.loads(
+        execution.database.execute(
+            "SELECT payload_json FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'",
+        ).fetchone()[0]
+    )
+    assert payload["reservation_excess"] == [{"asset": "ETH", "used": "0.7", "original": "0.6"}]
+    assert payload["financial_facts_preserved"] is True
+    assert execution._native_cost_limits_blocked()
+    assert not execution.record_fill(legacy)
+    assert (
+        execution.database.execute(
+            "SELECT count(*) FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'",
+        ).fetchone()[0]
+        == 1
+    )
+    assert ledger.journal_balanced(portfolio)
+    execution.database.close()
+
+
+def test_unreserved_legacy_third_fee_without_native_cost_keeps_financial_fact_and_blocks_increases(tmp_path):
+    clock, ledger, execution, _broker, portfolio, intent = _setup(tmp_path)
+    legacy = FillRecord(
+        venue="paper",
+        account_id="paper",
+        trade_id="legacy-unreserved-third",
+        intent_id=intent,
+        symbol="BTC/USD",
+        side="buy",
+        quantity="0.004",
+        price="100",
+        fee_amount="0.1",
+        fee_asset="ETH",
+        fee_identified_rate="10",
+        liquidity="taker",
+        filled_at_utc=clock.now(),
+        heuristic=True,
+    )
+    assert execution.record_fill(legacy)
+    assert execution.owned_quantity(portfolio, "ETH") == Decimal("0.9")
+    assert ledger.books(portfolio).cash_amount("USD") == Decimal("9989.6")
+    payload = json.loads(
+        execution.database.execute(
+            "SELECT payload_json FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'",
+        ).fetchone()[0]
+    )
+    assert payload["unreserved_fee_assets"] == ["ETH"]
+    assert execution._native_cost_limits_blocked()
+    assert ledger.journal_balanced(portfolio)
+    execution.database.close()
+
+
+@pytest.mark.parametrize("drift", ["different_ledger_object", "same_object_database", "same_object_clock"])
+def test_controller_refuses_ledger_binding_drift_after_construction_before_funds_check(tmp_path, drift):
+    from trade_graph.adapters.persistence.db import Database
+    from trade_graph.application.ledger import Ledger
+    from trade_graph.domain.clock import FrozenClock
+
+    clock, ledger, execution, _broker, portfolio, intent = _setup(tmp_path, quantity="0.1")
+    controller = PaperNativeFeeReserveController(execution)
+    other_database = Database(tmp_path / "inflated-ledger.sqlite")
+    other_ledger = Ledger(other_database, clock)
+    other_ledger.create_portfolio(reporting_currency="USD", portfolio_id=portfolio)
+    other_ledger.deposit(portfolio, "USD", Decimal("1000"), "synthetic-other-opening")
+    _seed_asset(clock, other_ledger, portfolio, quantity="1")
+    if drift == "different_ledger_object":
+        execution.ledger = other_ledger
+    elif drift == "same_object_database":
+        ledger.database = other_database
+    else:
+        ledger.clock = FrozenClock(clock.now())
+    with pytest.raises(AuthorityDenied, match="protected ledger binding changed"):
+        controller.reserve(_plan(portfolio, intent))
+    assert execution.database.execute("SELECT count(*) FROM native_fee_reservations").fetchone()[0] == 0
+    execution.database.close()
+    other_database.close()

@@ -99,6 +99,7 @@ class PaperNativeFeeReserveController:
         ):
             raise TypeError("paper fee reservation requires the concrete protected Execution")
         self.execution = execution
+        self.ledger = execution.ledger
         self.database = execution.database
         self.clock = execution.clock
 
@@ -115,9 +116,17 @@ class PaperNativeFeeReserveController:
         plan = PaperNativeFeeReservePlan.model_validate(plan.model_dump(mode="json"))
         execution = self.execution
         from trade_graph.adapters.brokers.paper import DropAckBroker, PaperBroker
+        from trade_graph.application.ledger import Ledger
 
         if (execution.venue, execution.account_id, execution.mode) != ("paper", "paper", "paper"):
             raise AuthorityDenied("native fee reserve fixture is restricted to the exact paper execution")
+        if (
+            execution.ledger is not self.ledger
+            or type(execution.ledger) is not Ledger
+            or self.ledger.database is not self.database
+            or self.ledger.clock is not self.clock
+        ):
+            raise AuthorityDenied("fee reserve protected ledger binding changed")
         broker = execution.broker
         inner = broker.inner if type(broker) is DropAckBroker else broker
         if (

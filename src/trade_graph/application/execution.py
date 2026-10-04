@@ -1436,7 +1436,12 @@ class Execution:
         )
 
     def _record_native_cost_limits(self, fill: FillRecord) -> None:
-        if (fill.quote_cost is None and fill.fee_components is None) or fill.intent_id is None:
+        if fill.intent_id is None:
+            return
+        if (fill.quote_cost is None and fill.fee_components is None and fill.fee_amount == 0
+                and self.database.execute(
+                    "SELECT 1 FROM native_fee_reservations WHERE intent_id=? LIMIT 1", (fill.intent_id,),
+                ).fetchone() is None):
             return
         payload = self._payload(fill.intent_id)
         reasons = []
