@@ -78,9 +78,11 @@ source = PinnedVenueObservation(
 proof = source.verify(now=current_utc_time, maximum_age_seconds=60)
 ```
 
-`verify` runs synchronously outside an active event loop; async protected callers
-can use `await asyncio.to_thread(source.verify, now=current_utc_time)`. Verification
-does no network work. It checks exact private retained bytes and MACs, the grant's
+`verify` runs synchronously both outside and inside an active event loop, including
+protected execution writer transactions. The same trusted retained-only normalization
+coroutine is driven once to completion and always closed. Its broker awaits resolve
+through exact in-memory retained captures; any suspension fails closed without a
+thread, nested event loop or network fallback. It checks exact private retained bytes and MACs, the grant's
 scope/window/key binding, request order/native IDs and receipt times, then replays
 normalization against the current adapter. It independently recomputes collector,
 adapter and wire-contract source digests and compares the native summary. Changed

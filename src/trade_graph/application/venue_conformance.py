@@ -565,18 +565,21 @@ class PinnedVenueObservation:
         broker = KrakenLiveBroker(replay, account_id=grant.scope.account_id, clock=clock,
                                   symbols=[grant.scope.symbol], history_start_utc=grant.history_start_utc,
                                   maximum_history_pages=grant.maximum_history_pages)
-        # The verifier is synchronous to make it usable by protected advisory
-        # gates. Never start a nested event loop or perform network during verify.
+        # Every broker await resolves through the retained-only replay closure
+        # above; trusted normalization needs no suspension, scheduler or network.
+        # Drive it once so the same synchronous gate works within an async writer.
+        # Any newly introduced suspension is a contract change and fails closed.
+        replay_stages = STAGES[:min(len(observation.completed_stages) + 1, len(STAGES))]
+        normalization = _pipeline(broker, grant, stages=replay_stages)
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # A malformed response from the next stage is successful transport
-            # evidence too. Re-normalize it instead of trusting a signed pending
-            # label, and refuse any unconsumed/unrelated retained responses.
-            replay_stages = STAGES[:min(len(observation.completed_stages) + 1, len(STAGES))]
-            summary, completed, problems = asyncio.run(_pipeline(broker, grant, stages=replay_stages))
-        else:
-            raise ValueError("verify must run outside an active async event loop")
+            try:
+                normalization.send(None)
+            except StopIteration as finished:
+                summary, completed, problems = finished.value
+            else:
+                raise ValueError("retained native normalization must complete without suspension")
+        finally:
+            normalization.close()
         if offset != len(captures):
             raise ValueError("venue observation contains unconsumed native responses")
         if completed != observation.completed_stages or _canonical(summary) != summary_raw:

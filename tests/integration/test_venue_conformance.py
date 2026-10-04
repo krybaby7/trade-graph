@@ -429,15 +429,93 @@ def test_source_files_must_remain_private_single_link_regular_objects(tmp_path, 
         _verify(capture)
 
 
-def test_verify_does_not_start_nested_event_loop_or_network(tmp_path):
+@pytest.mark.parametrize("source_changed", [False, True])
+def test_retained_verification_is_identical_inside_and_outside_async_loop_without_effects(
+    tmp_path, monkeypatch, source_changed,
+):
+    from trade_graph.application import venue_conformance as module
+
     fixture = Fixture(tmp_path)
     capture = asyncio.run(fixture.collect())
+    calls = list(fixture.rest.calls)
+    original_run = asyncio.run
+    now = datetime.now(UTC)
+    if source_changed:
+        monkeypatch.setattr(module, "_source_digests", lambda: ("0" * 64,) * 3)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("retained verification must not schedule a loop or create a transport")
+
+    monkeypatch.setattr(asyncio, "run", forbidden)
+    monkeypatch.setattr(module, "KrakenRestTransport", forbidden)
+    outside = capture.verify(now=now)
 
     async def inside_loop():
-        with pytest.raises(ValueError, match="active async"):
-            _verify(capture)
+        assert capture.verify(now=now) == outside
 
-    asyncio.run(inside_loop())
+    original_run(inside_loop())
+    assert outside.source_current is not source_changed
+    assert ("collector_or_adapter_source_changed" in outside.pending) is source_changed
+    assert outside.authenticated_reads == ()
+    assert "key_permission_inventory_unverified" in outside.pending
+    assert fixture.rest.calls == calls
+
+
+@pytest.mark.parametrize("active_loop", [False, True])
+def test_tampered_retained_requests_refuse_in_any_async_context_without_network(tmp_path, active_loop):
+    fixture = Fixture(tmp_path)
+    capture = asyncio.run(fixture.collect())
+    changed = _replace_wire(capture, fixture.collector_key, 1,
+                            lambda payload: payload["parameters"].update(unrequested="native-scope-mismatch"))
+    calls = list(fixture.rest.calls)
+
+    def check():
+        with pytest.raises(ValueError, match="unconsumed native responses"):
+            _verify(changed)
+
+    async def inside_loop():
+        check()
+
+    if active_loop:
+        asyncio.run(inside_loop())
+    else:
+        check()
+    assert fixture.rest.calls == calls
+
+
+@pytest.mark.parametrize("active_loop", [False, True])
+def test_retained_pipeline_suspension_refuses_and_closes_without_network(tmp_path, monkeypatch, active_loop):
+    from trade_graph.application import venue_conformance as module
+
+    fixture = Fixture(tmp_path)
+    capture = asyncio.run(fixture.collect())
+    calls = list(fixture.rest.calls)
+    closed = []
+
+    async def suspension(*args, **kwargs):
+        try:
+            await asyncio.sleep(0)
+            raise AssertionError("yielded normalization must never resume")
+        finally:
+            closed.append(True)
+
+    monkeypatch.setattr(module, "_pipeline", suspension)
+
+    def check():
+        with pytest.raises(ValueError, match="without suspension"):
+            _verify(capture)
+        assert closed == [True]
+
+    async def inside_loop():
+        tasks = asyncio.all_tasks()
+        check()
+        assert asyncio.all_tasks() == tasks
+
+    if active_loop:
+        asyncio.run(inside_loop())
+    else:
+        check()
+    assert fixture.rest.calls == calls
 
 
 def test_collector_is_single_use_and_receipts_keep_account_scopes_distinct(tmp_path):
