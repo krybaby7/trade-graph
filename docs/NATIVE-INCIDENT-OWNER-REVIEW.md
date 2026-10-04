@@ -10,6 +10,15 @@ exact `LivePilotScope`, `PinnedVenueObservation` and a separate protected receip
 key. The default application does not configure it. Models, department RPCs and
 Engineer artifacts have no resolution capability.
 
+An explicitly assembled live `Execution` may receive the same concrete resolver
+through `native_incident_resolver`. Its database, clock, venue/account and optional
+pilot scope must match and are rechecked when reading the latch. The owner API
+uses that service's resolver; no default resolver or verification callback is
+created. A missing resolver keeps the original sticky latch. An unavailable
+review source keeps it blocked while already executed native facts remain stored.
+Clearing this latch never overrides a pause, incomplete reconciliation, pilot
+permission or any other execution gate.
+
 The existing owner HTTP session, role and CSRF checks protect three routes:
 
 - `GET /api/v1/owner/native-incidents` provides incident and financial CAS pins.

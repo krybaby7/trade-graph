@@ -653,6 +653,7 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
     def incident_resolver() -> ProtectedNativeIncidentResolver:
         resolver = getattr(runtime, "native_incident_resolver", None)
         if (type(resolver) is not ProtectedNativeIncidentResolver or resolver.database is not runtime.database
+                or resolver.clock is not runtime.clock
                 or resolver.scope.portfolio_id != runtime.portfolio_id
                 or resolver.scope.deployment_id != _deployment(runtime)):
             raise HTTPException(status_code=403, detail="protected native incident review is not configured")

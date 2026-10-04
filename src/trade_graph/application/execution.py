@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from collections.abc import Callable
 from decimal import ROUND_CEILING, Context, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.authority import AuthorityRecord
+from trade_graph.application.incident_resolution import ProtectedNativeIncidentResolver
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import (
     AuthorizedOrderIntent,
@@ -28,6 +30,7 @@ from trade_graph.domain.errors import (
     AuthorityDenied,
     DuplicateRecord,
     StaleState,
+    TradeGraphError,
     UncertainExternal,
     ValidationFailure,
 )
@@ -71,6 +74,7 @@ class Execution:
         fee_reserve_rate: Decimal = TAKER,
         pilot_lifecycle: ProtectedPilotLifecycle | None = None,
         pilot_authorization_id: str | None = None,
+        native_incident_resolver: ProtectedNativeIncidentResolver | None = None,
     ) -> None:
         self.database = database
         self.ledger = ledger
@@ -89,6 +93,9 @@ class Execution:
         ):
             raise ValueError("exact protected pilot execution binding required")
         self._pilot_lifecycle, self._pilot_authorization_id = pilot_lifecycle, pilot_authorization_id
+        self._native_incident_resolver = native_incident_resolver
+        if native_incident_resolver is not None and not self._incident_resolver_bound():
+            raise ValueError("exact protected native incident execution binding required")
         self.blocks_increase = blocks_increase
         self.fee_reserve_rate = parse_decimal(fee_reserve_rate)
         if self.fee_reserve_rate < 0:
@@ -1403,11 +1410,30 @@ class Execution:
         return (health is not None and health["state"] == "incomplete") or self._native_cost_limits_blocked()
 
     def _native_cost_limits_blocked(self) -> bool:
+        if self._native_incident_resolver is not None:
+            if not self._incident_resolver_bound():
+                return True
+            try:
+                return self._native_incident_resolver.blocked()
+            except (TradeGraphError, ValueError, TypeError, KeyError, ArithmeticError, sqlite3.DatabaseError):
+                # Failed review cannot lose an already executed native fact when
+                # reconciliation updates its sticky health record.
+                return True
         return bool(self.database.execute(
             """SELECT 1 FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'
             AND json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=?
             AND json_extract(payload_json,'$.mode')=? LIMIT 1""", (self.venue, self.account_id, self.mode),
         ).fetchone())
+
+    def _incident_resolver_bound(self) -> bool:
+        resolver = self._native_incident_resolver
+        return (
+            type(resolver) is ProtectedNativeIncidentResolver
+            and resolver.database is self.database and resolver.clock is self.clock
+            and self.mode == "live" and resolver.scope.venue == self.venue
+            and resolver.scope.account_id == self.account_id
+            and (self._pilot_lifecycle is None or resolver.scope == self._pilot_lifecycle.scope)
+        )
 
     def _record_native_cost_limits(self, fill: FillRecord) -> None:
         if (fill.quote_cost is None and fill.fee_components is None) or fill.intent_id is None:
