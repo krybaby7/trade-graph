@@ -7,6 +7,9 @@ preparation APIs, absent from runtime assembly. Default owner policy continues
 to exclude `pure_feature_plugin`. The handler rejects funded providers pending
 independent T18/T21 evidence and explicit owner admission. No production pointer,
 financial state, deployed class permission or live permission changes here.
+The separate [offline rollout controller](PLUGIN-ROLLOUT.md) now provides
+automatic functional activation, independent health and durable code rollback
+inside an explicitly fenced synthetic experiment.
 
 An independently selected `PluginCommissionPolicy` pins one capability class,
 one source path, the `numeric_features/v1` interface, `stateless/v1`, exact
@@ -104,7 +107,8 @@ All owner policies, observations, credentials and usage here are synthetic.
 T22 remains open. Funded broader operation still needs actual T18 economics,
 complete T21 immutable image and intended-host isolation/recovery evidence,
 explicit owner class admission, authoritative dependency verification and
-independent autonomous deployment/health/rollback integration. Selected
-application-code and compatible migration rehearsal remain unimplemented;
+production autonomous deployment/health/rollback integration. The offline
+numeric rollout prepares that path without production admission. Selected
+application-code and compatible migration rehearsal remain separate;
 stateless numeric features require no migration. No paid call, private venue
 access, real order, production deployment or owner grant ran in this slice.

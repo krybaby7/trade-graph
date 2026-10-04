@@ -49,7 +49,8 @@ def patch(source=IMPROVED, path=SOURCE_PATH):
     return {"files": [{"path": path, "content": source}], "summary": "Implement bounded synthetic numeric features."}
 
 
-def flow(tmp_path, *, owner_grant=True, max_steps=3, max_spend="1", source=IMPROVED, maximum_recoveries=3):
+def flow(tmp_path, *, owner_grant=True, max_steps=3, max_spend="1", source=IMPROVED, maximum_recoveries=3,
+         initialize_baseline=None):
     clock, db, pid, original_source, original_engineer, versions = _stack(tmp_path)
     store, replay, protected, corpus = prepared(tmp_path)
     builder = PluginRuntimeBuilder(store, replay_validator=replay, expected_builder_sha256=runtime_builder_sha256(),
@@ -71,6 +72,8 @@ def flow(tmp_path, *, owner_grant=True, max_steps=3, max_spend="1", source=IMPRO
     engineer = OfflinePluginEngineer(db, clock, original_engineer.ledger, shadow, policy=policy,
                                      expected_policy_sha256=policy.sha256,
                                      expected_controller_sha256=plugin_controller_sha256(), receipt_key=KEY)
+    if initialize_baseline:
+        initialize_baseline(engineer, pid)
     versions.ensure(pid, "baseline-1", baseline_hash)
     # This explicit synthetic policy is never installed by runtime assembly.
     authority = seed_paper_authority(db, clock, pid)

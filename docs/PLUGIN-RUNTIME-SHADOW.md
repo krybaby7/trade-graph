@@ -152,7 +152,11 @@ if build_report["status"] == "built":
     )
 ```
 
-These APIs stage and evaluate. No example admits or activates production code.
+These APIs stage and evaluate. The
+[offline rollout controller](PLUGIN-ROLLOUT.md) additionally activates exact
+commissioned numeric candidates, observes independent actual functional health
+and restores validated previous bytes inside a fenced synthetic experiment.
+No example admits or activates production code.
 T21's `departmental_graph/v1` and decision proposal contracts are separate from
 `numeric_features/v1`; there is no implicit bridge into financial/role execution.
 
@@ -160,9 +164,10 @@ Offline class-scoped commissioning, bounded synthetic repair/spend integration
 and authenticated candidate recovery are now implemented. Remaining T22 work
 includes funded broader commissioning after admission, immutable deployment
 images and verified intended-host staging, compatible application migration
-rehearsal, authoritative dependency
-and owner-class admission, autonomous controller activation/observation, and
-independent deterministic deployment rollback preserving financial history.
+rehearsal, authoritative dependency and owner-class admission, and production
+deployment/activation/health/rollback preserving financial history. Offline
+numeric activation and deterministic recovery are implemented independently
+of candidate/model health.
 Stateless feature bundles require no database migrations; unsupported state
 schema expectations fail compatibility rather than invoke candidate migration
 hooks. Selected application-code authority remains closed.
