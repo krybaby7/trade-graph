@@ -507,6 +507,8 @@ def decision(runtime, decision_id: str) -> dict:
                     "heuristic",
                     "reference_mid",
                     "fee_identified_rate",
+                    "quote_cost",
+                    "fee_components",
                 ),
             )
             card.update(_pick(dict(fill), ("fill_id", "intent_id", "created_at")))

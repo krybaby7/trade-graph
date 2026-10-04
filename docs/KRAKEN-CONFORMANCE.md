@@ -133,9 +133,13 @@ A rounded already executed fill is retained even
 if its cost violates the original limit/reservation; a durable incident blocks new
 increases and requires a separately implemented protected owner resolution.
 
-Multiple native fee assets, rebates and late earlier fill history continue to fail
-closed. The fee vector, rebate cash/inventory semantics and append-only chronological
-financial correction contracts remain unimplemented; see
+The additive signed fee vector and atomic cash/inventory/FIFO semantics are now
+implemented; see [fee component review](reviews/2026-10-04-native-fee-components.md).
+Kraken retains separately attributed base/quote components only with exact native
+ledger effective times and matching aggregate quote valuation. Multiple third-asset
+fees still require individual identified rate sources and remain refused. Synthetic
+rebate fixtures do not establish actual venue support. Late earlier fills and late
+fee adjustments still require append-only chronological correction contracts; see
 [native principal review](reviews/2026-10-04-kraken-native-principal.md).
 This collector does not rewrite ledger events or cached portfolio state. Native stops
 remain untested and disabled. T19 needs T17 delivery and actual separately authorized

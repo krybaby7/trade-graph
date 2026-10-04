@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from trade_graph.api.security import redact
 from trade_graph.application.budget import BudgetGateway
+from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import FxRate, Mark, mark_equity
@@ -751,35 +752,30 @@ def overview(runtime) -> dict:
         fee_items = []
         for event in fill_events:
             fill = event["fill"]
-            fee = Decimal(fill["fee_amount"])
-            fee_native[fill["fee_asset"]] += fee
-            quote = event["quote_asset"]
-            if fill["fee_asset"] == quote:
-                quote_value = fee
-            elif fill["fee_asset"] == event["base_asset"]:
-                quote_value = fee * Decimal(fill["price"])
-            else:
-                quote_value = (
-                    None if fill.get("fee_identified_rate") is None else fee * Decimal(fill["fee_identified_rate"])
+            for component in FillRecord.model_validate(fill).fee_legs():
+                fee = component.amount
+                fee_native[component.asset] += fee
+                quote = event["quote_asset"]
+                if component.asset == quote:
+                    quote_value = fee
+                elif component.asset == event["base_asset"]:
+                    quote_value = fee * Decimal(fill["price"])
+                else:
+                    quote_value = None if component.identified_rate is None else fee * component.identified_rate
+                value, bad, fx = (
+                    (None, True, None) if quote_value is None
+                    else _convert(runtime, quote_value, quote, reporting, event["filled_at"])
                 )
-            value, bad, fx = (
-                (None, True, None)
-                if quote_value is None
-                else _convert(runtime, quote_value, quote, reporting, event["filled_at"])
-            )
-            fee_reporting.append(value)
-            provisional = provisional or bad
-            fee_items.append(
-                {
-                    "trade_id": fill["trade_id"],
-                    "asset": fill["fee_asset"],
-                    "amount": _amount(fee),
-                    "reporting_amount": _amount(value),
-                    "at": event["filled_at"],
-                    "recorded_at": event["at"],
-                    "fx": fx,
+                fee_reporting.append(value)
+                provisional = provisional or bad
+                item = {
+                    "trade_id": fill["trade_id"], "asset": component.asset, "amount": _amount(fee),
+                    "reporting_amount": _amount(value), "at": event["filled_at"],
+                    "recorded_at": event["at"], "fx": fx,
                 }
-            )
+                if fill.get("fee_components") is not None:
+                    item.update(source_ref=component.source_ref, rate_source_ref=component.rate_source_ref)
+                fee_items.append(item)
         benchmark_values = [
             _convert(runtime, amount, asset, reporting, at)[0] for asset, amount in baseline_native.items()
         ]
@@ -1072,6 +1068,8 @@ def orders(runtime, limit: int = 50, offset: int = 0) -> dict:
                     "heuristic",
                     "reference_mid",
                     "fee_identified_rate",
+                    "quote_cost",
+                    "fee_components",
                 }
                 document = {key: value for key, value in source.items() if key in public_fields}
                 reference = document.get("reference_mid")

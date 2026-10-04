@@ -24,6 +24,7 @@ from trade_graph.contracts.models import (
     BrokerCapabilities,
     CancelRequest,
     CancelResult,
+    FillFeeRecord,
     FillPage,
     FillRecord,
     InstrumentRules,
@@ -577,6 +578,7 @@ class KrakenLiveBroker:
         if not self.history_start <= at <= end:
             raise ValidationFailure("Kraken trade falls outside the requested point-in-time history")
         fees = {}
+        components = []
         legs = {}
         for ledger_id in value["ledgers"]:
             ledger = ledgers.get(ledger_id)
@@ -584,23 +586,26 @@ class KrakenLiveBroker:
                 raise ValidationFailure("Kraken native ledger attribution is incomplete")
             amount, asset = _decimal(ledger["fee"]), self._asset(ledger["asset"])
             movement = _decimal(ledger["amount"])
-            if amount < 0:
-                raise ValidationFailure("Kraken fee rebates require separate ledger conformance")
             if asset not in {base, quote} and movement:
                 raise ValidationFailure("additional Kraken native trade legs require an extended financial contract")
             legs[asset] = legs.get(asset, Decimal("0")) + movement
             if amount:
                 fees[asset] = fees.get(asset, Decimal("0")) + amount
+                components.append((ledger_id, asset, amount))
         sign = Decimal("1") if value["type"] == "buy" else Decimal("-1")
         if legs.get(base) != sign * quantity or legs.get(quote) != -sign * native_cost:
             raise ValidationFailure("Kraken native trade legs disagree with the shared fill contract")
-        if len(fees) > 1:
-            raise ValidationFailure("multi-asset Kraken fill fees require an extended financial contract")
+        vector = len(components) > 1 or any(amount < 0 for _, _, amount in components)
+        if vector and any("time" not in ledgers[ledger_id]
+                          or _decimal(ledgers[ledger_id]["time"]) != at for ledger_id, _, _ in components):
+            raise ValidationFailure("native fee vectors and rebates require each ledger's exact trade effective time")
+        if vector and any(asset not in {base, quote} for _, asset, _ in components):
+            raise ValidationFailure("multi-asset native fees require individual third-asset valuation sources")
         asset, fee = next(iter(fees.items())) if fees else (quote, Decimal("0"))
-        if fee < 0:
-            raise ValidationFailure("Kraken fee rebates require separate ledger conformance")
         nominal = _decimal(value["fee"])
-        if asset == quote and nominal != fee:
+        vector_nominal = sum((amount if asset == quote else amount * price
+                              for _, asset, amount in components), Decimal("0")) if vector else None
+        if (vector and nominal != vector_nominal) or (not vector and asset == quote and nominal != fee):
             raise ValidationFailure("Kraken trade and native ledger fees disagree")
         if type(value.get("maker")) is not bool:
             raise ValidationFailure("Kraken fill liquidity attribution is missing")
@@ -613,10 +618,15 @@ class KrakenLiveBroker:
             with localcontext() as context:
                 context.prec = CORE_LEDGER_PRECISION
                 context.traps[Inexact] = True
-                for number in (quantity, price, native_cost, nominal, fee):
+                for number in (quantity, price, native_cost, nominal, fee, *(item[2] for item in components)):
                     context.plus(number)
                 notional = native_cost if rounded else price * quantity
-                if asset == quote:
+                if vector:
+                    quote_fee = sum((amount for _, asset, amount in components if asset == quote), Decimal("0"))
+                    base_fee = sum((amount for _, asset, amount in components if asset == base), Decimal("0"))
+                    notional + quote_fee if value["type"] == "buy" else notional - quote_fee
+                    quantity - base_fee if value["type"] == "buy" else quantity + base_fee
+                elif asset == quote:
                     notional + fee if value["type"] == "buy" else notional - fee
                 elif asset == base:
                     quantity - fee if value["type"] == "buy" else quantity + fee
@@ -639,12 +649,16 @@ class KrakenLiveBroker:
             quantity=quantity,
             price=price,
             quote_cost=native_cost if rounded else None,
-            fee_amount=fee,
-            fee_asset=asset,
+            fee_amount=Decimal("0") if vector else fee,
+            fee_asset=quote if vector else asset,
             liquidity="maker" if value["maker"] else "taker",
             filled_at_utc=EPOCH + timedelta(microseconds=int(at * 1_000_000)),
             heuristic=False,
             fee_identified_rate=identified_rate,
+            fee_components=tuple(FillFeeRecord(
+                asset=asset, amount=amount, source_ref=ledger_id,
+                effective_at_utc=EPOCH + timedelta(microseconds=int(at * 1_000_000)),
+            ) for ledger_id, asset, amount in components) if vector else None,
         )
 
     @_safe_read

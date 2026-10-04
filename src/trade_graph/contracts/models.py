@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from trade_graph.domain.money import Money, Quantity, parse_decimal
 
@@ -478,6 +478,48 @@ class OrderSnapshot(ContractModel):
         return canonical_decimal(value)
 
 
+class FillFeeRecord(ContractModel):
+    """One native fee debit (positive) or rebate credit (negative), never netted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    asset: str
+    amount: Decimal
+    source_ref: str = Field(min_length=1, max_length=128)
+    provenance_kind: Literal["native_source", "legacy_compatibility"] = "native_source"
+    effective_at_utc: datetime
+    identified_rate: Decimal | None = None
+    rate_source_ref: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @field_validator("amount", "identified_rate", mode="before")
+    @classmethod
+    def _numbers(cls, value: Any) -> Decimal | None:
+        return None if value is None else _dec(value)
+
+    @field_validator("asset")
+    @classmethod
+    def _asset(cls, value: str) -> str:
+        if not value.isupper() or not value.isalnum() or not 2 <= len(value) <= 16:
+            raise ValueError("native fee asset must be uppercase alphanumeric")
+        return value
+
+    @model_validator(mode="after")
+    def _provenance(self) -> FillFeeRecord:
+        if self.amount == 0:
+            raise ValueError("fee vectors retain nonzero native legs")
+        if self.effective_at_utc.tzinfo is None:
+            raise ValueError("native fee effective time requires a timezone")
+        if ((self.identified_rate is None) != (self.rate_source_ref is None)
+                or (self.identified_rate is not None and self.identified_rate <= 0)):
+            raise ValueError("identified fee valuation requires a positive rate and its source")
+        return self
+
+    @field_serializer("amount", "identified_rate")
+    def _serialize(self, value: Decimal | None) -> str | None:
+        from trade_graph.domain.money import canonical_decimal
+
+        return None if value is None else canonical_decimal(value)
+
+
 class FillRecord(ContractModel):
     venue: str
     account_id: str
@@ -497,6 +539,32 @@ class FillRecord(ContractModel):
     heuristic: bool = False
     reference_mid: Decimal | None = None
     fee_identified_rate: Decimal | None = None
+    fee_components: tuple[FillFeeRecord, ...] | None = Field(
+        default=None, min_length=1, max_length=20, exclude_if=lambda value: value is None,
+    )
+
+    @model_validator(mode="after")
+    def _fee_vector(self) -> FillRecord:
+        if self.fee_components is not None:
+            if self.fee_amount != 0 or self.fee_identified_rate is not None:
+                raise ValueError("fee vector cannot also charge the legacy fee")
+            if len({item.source_ref for item in self.fee_components}) != len(self.fee_components):
+                raise ValueError("native fee source references must be unique")
+            if any(item.effective_at_utc != self.filled_at_utc for item in self.fee_components):
+                raise ValueError("late fee adjustments require a separate correction contract")
+        return self
+
+    def fee_legs(self) -> tuple[FillFeeRecord, ...]:
+        if self.fee_components is not None:
+            return self.fee_components
+        if self.fee_amount == 0:
+            return ()
+        return (FillFeeRecord(
+            asset=self.fee_asset, amount=self.fee_amount, source_ref=f"{self.trade_id}:fee",
+            effective_at_utc=self.filled_at_utc, identified_rate=self.fee_identified_rate,
+            rate_source_ref=f"{self.trade_id}:legacy-fee-rate" if self.fee_identified_rate is not None else None,
+            provenance_kind="legacy_compatibility",
+        ),)
 
     @field_validator(
         "quantity",

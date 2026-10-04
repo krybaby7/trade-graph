@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
-from decimal import ROUND_CEILING, Decimal, localcontext
+from decimal import ROUND_CEILING, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.authority import AuthorityRecord
@@ -1303,25 +1303,27 @@ class Execution:
         asset = payload.get("reserve_asset")
         if asset is None:
             return
-        if fill.side == "buy":
-            used = fill.quote_principal
-        else:
-            used = fill.quantity
-        if fill.fee_asset == asset:
-            used += fill.fee_amount
-        row = self.database.execute(
-            "SELECT reservation_id, amount FROM position_reservations WHERE intent_id = ? AND state = 'held'",
+        rows = self.database.execute(
+            "SELECT reservation_id, asset, amount FROM position_reservations WHERE intent_id = ? AND state = 'held'",
             (fill.intent_id,),
-        ).fetchone()
-        if row is None:
-            return
-        remaining = Decimal(row["amount"]) - used
-        state = "released" if remaining <= 0 else "held"
-        with self.database.immediate() as conn:
-            conn.execute(
-                "UPDATE position_reservations SET amount = ?, state = ? WHERE reservation_id = ?",
-                (canonical_decimal(max(remaining, Decimal("0"))), state, row["reservation_id"]),
-            )
+        ).fetchall()
+        with localcontext() as context:
+            context.prec = 28
+            context.traps[Inexact] = True
+            updates = []
+            for row in rows:
+                used = fill.quote_principal if fill.side == "buy" and row["asset"] == asset else Decimal("0")
+                if fill.side == "sell" and row["asset"] == asset:
+                    used = fill.quantity
+                used += sum((max(Decimal("0"), fee.amount) for fee in fill.fee_legs()
+                             if fee.asset == row["asset"]), Decimal("0"))
+                remaining = Decimal(row["amount"]) - used
+                updates.append((canonical_decimal(max(remaining, Decimal("0"))),
+                                "released" if remaining <= 0 else "held", row["reservation_id"]))
+            with self.database.immediate() as conn:
+                conn.executemany(
+                    "UPDATE position_reservations SET amount = ?, state = ? WHERE reservation_id = ?", updates,
+                )
 
     def _refresh_order_state(self, intent_id: str) -> None:
         payload = self._payload(intent_id)
@@ -1372,7 +1374,7 @@ class Execution:
         ).fetchone())
 
     def _record_native_cost_limits(self, fill: FillRecord) -> None:
-        if fill.quote_cost is None or fill.intent_id is None:
+        if (fill.quote_cost is None and fill.fee_components is None) or fill.intent_id is None:
             return
         payload = self._payload(fill.intent_id)
         reasons = []
@@ -1380,8 +1382,8 @@ class Execution:
             with localcontext() as context:
                 context.prec = 128
                 limit = Decimal(payload["limit_price"]) * fill.quantity
-                if ((fill.side == "buy" and fill.quote_cost > limit)
-                        or (fill.side == "sell" and fill.quote_cost < limit)):
+                if ((fill.side == "buy" and fill.quote_principal > limit)
+                        or (fill.side == "sell" and fill.quote_principal < limit)):
                     reasons.append("native_principal_exceeds_limit")
         asset = payload.get("reserve_asset")
         if asset is not None and payload.get("reserve_amount") is not None:
@@ -1392,10 +1394,18 @@ class Execution:
                 for row in rows:
                     recorded = FillRecord.model_validate_json(row["document_json"])
                     used += recorded.quote_principal if recorded.side == "buy" else recorded.quantity
-                    if recorded.fee_asset == asset:
-                        used += recorded.fee_amount
+                    used += sum((max(Decimal("0"), fee.amount) for fee in recorded.fee_legs()
+                                 if fee.asset == asset), Decimal("0"))
                 if used > Decimal(payload["reserve_amount"]):
                     reasons.append("native_fills_exceed_original_reservation")
+        unreserved_fee_assets = sorted({fee.asset for fee in fill.fee_legs()
+                                       if fee.amount > 0 and fee.asset not in fill.symbol.split("/")
+                                       and self.database.execute(
+                                           "SELECT 1 FROM position_reservations WHERE intent_id=? AND asset=?",
+                                           (fill.intent_id, fee.asset),
+                                       ).fetchone() is None})
+        if unreserved_fee_assets:
+            reasons.append("native_fee_asset_has_no_original_reservation")
         if not reasons or self.database.execute(
             """SELECT 1 FROM activity_events WHERE kind='native_fill_execution_limit_discrepancy'
             AND json_extract(payload_json,'$.intent_id')=? AND json_extract(payload_json,'$.trade_id')=? LIMIT 1""",
@@ -1405,7 +1415,8 @@ class Execution:
         self._incident("native_fill_execution_limit_discrepancy", {
             "venue": self.venue, "account_id": self.account_id, "mode": self.mode,
             "intent_id": fill.intent_id, "trade_id": fill.trade_id,
-            "quote_principal": canonical_decimal(fill.quote_cost), "reasons": reasons,
+            "quote_principal": canonical_decimal(fill.quote_principal), "reasons": reasons,
+            "unreserved_fee_assets": unreserved_fee_assets,
             "financial_facts_preserved": True, "owner_review_required": True,
         })
         self._set_reconciliation_health(incomplete=True, reason="native fill execution limits require review")

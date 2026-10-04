@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
-from decimal import Decimal, Inexact, localcontext
+from decimal import ROUND_HALF_EVEN, Decimal, Inexact, localcontext
 
 from trade_graph.contracts.models import FillRecord
 
@@ -220,6 +221,9 @@ def apply_fill(
     lot_id: str,
     at: str,
 ) -> None:
+    if fill.fee_components is not None:
+        _apply_vector_fill(books, fill, base_asset=base_asset, quote_asset=quote_asset, lot_id=lot_id, at=at)
+        return
     if fill.quote_cost is None:
         _apply_fill(books, fill, base_asset=base_asset, quote_asset=quote_asset, lot_id=lot_id, at=at)
         return
@@ -248,6 +252,88 @@ def apply_fill(
             raise BooksError("native fill principal cannot be posted without rounding") from None
         context.traps[Inexact] = False
         _apply_fill(books, fill, base_asset=base_asset, quote_asset=quote_asset, lot_id=lot_id, at=at)
+
+
+def _apply_vector_fill(
+    books: Books, fill: FillRecord, *, base_asset: str, quote_asset: str, lot_id: str, at: str,
+) -> None:
+    """Post individually identified fee legs; failed FIFO/precision leaves no mutation."""
+    candidate = deepcopy(books)
+    with localcontext() as context:
+        context.prec = 28
+        context.rounding = ROUND_HALF_EVEN
+        context.traps[Inexact] = True
+        try:
+            for number in (fill.quantity, fill.price):
+                context.plus(number)
+            principal = fill.quote_principal
+            context.plus(principal)
+            quote_fee = base_fee = third_value = Decimal("0")
+            base_charge = base_credit = Decimal("0")
+            for fee in fill.fee_components:
+                context.plus(fee.amount)
+                if fee.asset == quote_asset:
+                    quote_fee += fee.amount
+                elif fee.asset == base_asset:
+                    base_fee += fee.amount
+                    if fee.amount > 0:
+                        base_charge += fee.amount
+                    else:
+                        base_credit -= fee.amount
+                else:
+                    if fee.identified_rate is None:
+                        raise BooksError("third-asset fee requires an individually identified rate")
+                    context.plus(fee.identified_rate)
+                    third_value += fee.amount * fee.identified_rate
+            cash_delta = -principal - quote_fee if fill.side == "buy" else principal - quote_fee
+            candidate.cash_amount(quote_asset) + cash_delta
+            if candidate.cash_amount(quote_asset) + cash_delta < 0:
+                raise BooksError("insufficient cash")
+            net_quantity = fill.quantity - base_fee if fill.side == "buy" else fill.quantity + base_charge
+            basis = (principal + quote_fee + third_value if fill.side == "buy"
+                     else principal - quote_fee - third_value + base_credit * fill.price)
+            if net_quantity <= 0 or (fill.side == "buy" and basis < 0):
+                raise BooksError("fee vector consumes native fill quantity or acquisition basis")
+            # Resulting inventory amounts are native facts as well.
+            for asset in {base_asset, *(item.asset for item in fill.fee_components if item.asset != quote_asset)}:
+                owned = sum((lot.open_quantity() for lot in candidate.lots if lot.asset == asset), Decimal("0"))
+                movement = fill.quantity if asset == base_asset and fill.side == "buy" else Decimal("0")
+                if asset == base_asset and fill.side == "sell":
+                    movement -= fill.quantity
+                movement -= sum((fee.amount for fee in fill.fee_components if fee.asset == asset), Decimal("0"))
+                owned + movement
+        except ArithmeticError:
+            raise BooksError("native fee vector cannot be posted without rounding") from None
+        context.traps[Inexact] = False
+        group: list[Posting] = []
+        _post(group, "cash", quote_asset, -principal if fill.side == "buy" else principal)
+        _post(group, "clearing", quote_asset, principal if fill.side == "buy" else -principal)
+        _post(group, "inventory", base_asset, fill.quantity if fill.side == "buy" else -fill.quantity)
+        _post(group, "clearing", base_asset, -fill.quantity if fill.side == "buy" else fill.quantity)
+        if fill.side == "sell":
+            _fifo_consume(candidate, base_asset, net_quantity, basis, quote_asset, at, fill.trade_id)
+        for index, fee in enumerate(fill.fee_components):
+            account = "cash" if fee.asset == quote_asset else "inventory"
+            _post(group, account, fee.asset, -fee.amount)
+            _post(group, "clearing", fee.asset, fee.amount)
+            ref = f"{fill.trade_id}:fee:{index}"
+            if fee.asset not in {base_asset, quote_asset}:
+                identified = fee.amount * fee.identified_rate
+                if fee.amount > 0:
+                    _fifo_consume(candidate, fee.asset, fee.amount, identified, quote_asset, at, ref)
+                else:
+                    candidate.lots.append(Lot(
+                        f"{lot_id}:rebate:{index}", fee.asset, -fee.amount, -identified, quote_asset, at, ref,
+                    ))
+            elif fee.asset == base_asset and fill.side == "sell" and fee.amount < 0:
+                candidate.lots.append(Lot(
+                    f"{lot_id}:rebate:{index}", base_asset, -fee.amount, -fee.amount * fill.price,
+                    quote_asset, at, ref,
+                ))
+        _apply_group(candidate, group)
+        if fill.side == "buy":
+            candidate.lots.append(Lot(lot_id, base_asset, net_quantity, basis, quote_asset, at, fill.trade_id))
+    books.cash, books.lots, books.groups = candidate.cash, candidate.lots, candidate.groups
 
 
 def _apply_fill(
