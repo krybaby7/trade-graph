@@ -189,6 +189,44 @@ Historical revalidation streams captures after SQLite preflights refuse more
 than 256 bindings/captures, 128 MiB total retained bytes, or 48 MiB for one record.
 Exceeding these protected limits refuses capture/verification without truncation.
 
+For a new deployment registry, `RuntimeEvidenceCollector(...,
+history_storage="lossless_zlib")` retains every capture in a lossless private
+archive. Choose this before the first `bind`. The collector appends an immutable
+`runtime_history_policy` source record with deployment and database identity,
+collection time, storage format and exact count/stored/expanded byte ceilings.
+Every later trial and collector reopening must use that same policy. Existing
+inline bindings retain their original allowance; another trial cannot raise it,
+switch storage or prune retained costs. Preserve one operator-owned deployment
+registry: the collector cannot discover earlier histories in unrelated registries.
+
+The archive allows at most 4,096 bindings/captures, 128 MiB of stored binding and
+capture documents plus compressed objects, 2 GiB of aggregate expanded historical
+documents, and 48 MiB for one expanded document. These are complete-history
+bounds, not pagination limits. The current complete source inventory remains
+limited to 8 MiB and 20,000 rows; archiving captures does not permit discarding
+native financial records or referenced observations to fit that limit. Longer
+or larger deployments still need a further protected source-retention design.
+
+Public `RuntimeEvidenceCapture` documents and their exact source/evaluation
+digests are unchanged. A private `runtime_capture` storage row instead contains
+a small content-addressed manifest binding the full capture hash, exact expanded
+document byte hash/length, and compressed object hash/length. Append-only
+`runtime_capture_blobs` in the same registry database holds zlib-compressed
+document bytes, so consistent backups retain both records and objects. Restoring
+or reopening revalidates both. No old capture, initial binding, failed candidate,
+negative trial or expense is deleted. The history policy remains in evaluation
+snapshot source manifests; capture manifests remain excluded to avoid recursive
+hashing.
+
+SQLite preflights count records/objects and sum stored and expanded byte lengths
+before reading compressed payloads. History is decompressed one record at a
+time with a hard output bound; false expansion metadata, changed/missing blobs,
+truncated or trailing streams and digest mismatches refuse verification. Every
+expanded history still contributes its immutable native/paid facts to global
+continuity checks. The latest report snapshot is fetched by its exact immutable
+key under a 16 MiB per-snapshot bound, without loading previous report bodies.
+Compression establishes no external source authenticity or economic result.
+
 Invoice checks derive EUR arithmetic and collection availability, then compare
 historical recorded totals to the receipts available at the invoice cutoff.
 Later receipts cannot inflate an earlier invoice's recorded total. Equal-time

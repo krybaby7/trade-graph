@@ -28,6 +28,8 @@ from trade_graph.evaluation_contracts import (
     ForwardProtocol,
 )
 
+MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
+
 
 def document_hash(document: str) -> str:
     canonical = json.dumps(json.loads(document), sort_keys=True, separators=(",", ":"))
@@ -275,7 +277,7 @@ class TrialRegistry:
         rows = self.connection.execute(
             "SELECT * FROM evaluation_records WHERE kind NOT IN ('snapshot', 'runtime_capture') "
             "ORDER BY kind, record_key",
-        ).fetchall()
+        )
         bindings = []
         for row in rows:
             if document_hash(row["document_json"]) != row["document_sha256"]:
@@ -285,6 +287,24 @@ class TrialRegistry:
                 "retained_document_sha256": hashlib.sha256(row["document_json"].encode()).hexdigest(),
             }))
         return tuple(bindings)
+
+    def _retained_snapshot(self, key: str, trial_id: str):
+        # Historical reports remain retained, but the current handoff needs one
+        # exact record rather than all previous multi-megabyte report bodies.
+        size = self.connection.execute(
+            "SELECT length(CAST(document_json AS BLOB)) FROM evaluation_records "
+            "WHERE kind='snapshot' AND record_key=? AND trial_id=?", (key, trial_id),
+        ).fetchone()
+        if size is None:
+            return None
+        if size[0] > MAX_SNAPSHOT_BYTES:
+            raise ValueError("evaluation snapshot exceeds retained byte bounds")
+        row = self.connection.execute(
+            "SELECT * FROM evaluation_records WHERE kind='snapshot' AND record_key=? AND trial_id=?", (key, trial_id),
+        ).fetchone()
+        if document_hash(row["document_json"]) != row["document_sha256"] or row["document_sha256"] != key:
+            raise ValueError("evaluation evidence digest mismatch")
+        return row
 
     def snapshot(self, trial_id: str) -> EvaluationSnapshot:
         """Persist an immutable report with every source binding in one transaction.
@@ -314,7 +334,9 @@ class TrialRegistry:
             key = document_hash(snapshot.model_dump_json())
             # Emitting the same frozen-clock snapshot is idempotent. Existing
             # snapshots do not recursively become report sources.
-            if not any(row["record_key"] == key for row in self._rows("snapshot", trial_id)):
+            if len(snapshot.model_dump_json().encode()) > MAX_SNAPSHOT_BYTES:
+                raise ValueError("evaluation snapshot exceeds retained byte bounds")
+            if self._retained_snapshot(key, trial_id) is None:
                 self._append("snapshot", key, trial_id, snapshot)
             return snapshot
 
@@ -329,8 +351,8 @@ class TrialRegistry:
         snapshot = EvaluationSnapshot.model_validate(snapshot.model_dump())
         with self._atomic():
             key = document_hash(snapshot.model_dump_json())
-            retained = {row["record_key"]: row for row in self._rows("snapshot", snapshot.trial_id)}
-            if key not in retained or retained[key]["document_sha256"] != key:
+            retained = self._retained_snapshot(key, snapshot.trial_id)
+            if retained is None or retained["document_sha256"] != key:
                 raise ValueError("evaluation snapshot is not retained in this registry")
             if snapshot.collected_as_of > self.clock.now():
                 raise ValueError("evaluation snapshot is not available yet")

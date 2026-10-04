@@ -42,6 +42,12 @@ from trade_graph.evaluation_contracts import (
 from trade_graph.evaluation_registry import TrialRegistry, document_hash
 from trade_graph.kernel.books import Books
 from trade_graph.kernel.pricing import usage_cost
+from trade_graph.runtime_evidence_archive import (
+    ArchivedRuntimeCapture,
+    RuntimeHistoryPolicy,
+    archive_capture,
+    expand_capture,
+)
 
 MAX_ROWS = 10000
 MAX_TOTAL_ROWS = 20000
@@ -50,6 +56,11 @@ MAX_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_CAPTURE_BYTES = 48 * 1024 * 1024
 MAX_HISTORY_RECORDS = 256
 MAX_HISTORY_BYTES = 128 * 1024 * 1024
+MAX_ARCHIVED_HISTORY_RECORDS = 4096
+MAX_ARCHIVED_HISTORY_BYTES = 128 * 1024 * 1024
+MAX_EXPANDED_HISTORY_BYTES = 2 * 1024 * 1024 * 1024
+MAX_HISTORY_POLICY_BYTES = 4096
+MAX_ARCHIVE_MANIFEST_BYTES = 4096
 TABLES = (
     "schema_migrations", "portfolios", "ledger_events", "journal_transactions", "journal_postings",
     "fx_rates", "valuation_marks", "instruments", "observations", "decisions", "snapshots",
@@ -178,9 +189,24 @@ class RuntimeEvidenceCollector:
     mutable snapshots. Binding must precede collection, not be added retrospectively.
     """
 
-    def __init__(self, database: Database, registry: TrialRegistry, clock: Clock, *, deployment_id: str):
+    def __init__(self, database: Database, registry: TrialRegistry, clock: Clock, *, deployment_id: str,
+                 history_storage: Literal["inline", "lossless_zlib"] = "inline"):
+        if history_storage not in {"inline", "lossless_zlib"}:
+            raise ValueError("unsupported runtime history storage")
         self.database, self.registry, self.clock = database, registry, clock
         self.deployment_id = deployment_id
+        self.history_storage = history_storage
+        # This is registry-private evidence storage, not an application migration.
+        self.registry.connection.execute("""CREATE TABLE IF NOT EXISTS runtime_capture_blobs (
+                compressed_sha256 TEXT PRIMARY KEY,
+                compressed_data BLOB NOT NULL
+            )""")
+        self.registry.connection.execute("""CREATE TRIGGER IF NOT EXISTS runtime_capture_blob_no_update
+            BEFORE UPDATE ON runtime_capture_blobs
+            BEGIN SELECT RAISE(ABORT, 'runtime capture archive is append-only'); END""")
+        self.registry.connection.execute("""CREATE TRIGGER IF NOT EXISTS runtime_capture_blob_no_delete
+            BEFORE DELETE ON runtime_capture_blobs
+            BEGIN SELECT RAISE(ABORT, 'runtime capture archive is append-only'); END""")
 
     def _identity(self) -> tuple[int, int]:
         metadata = self.database.path.lstat()
@@ -242,8 +268,10 @@ class RuntimeEvidenceCollector:
         protocol = self.registry.protocol(trial_id)
         registered_at = parse_utc(self.registry._rows("protocol", trial_id)[0]["collected_at"])
         collected_at = parse_utc(rows[0]["collected_at"])
+        policy = self._policy()
         if (binding.deployment_id != self.deployment_id or binding.database_identity != self._identity()
                 or binding.protocol_sha256 != document_hash(protocol.model_dump_json())
+                or (policy is not None and policy.declared_at > binding.bound_at)
                 or not registered_at <= binding.bound_at <= collected_at < protocol.forward_blocks[0].start):
             raise ValueError("runtime collection binding no longer matches its source")
         row = self.database.execute("SELECT mode, status FROM portfolios WHERE portfolio_id = ?",
@@ -251,6 +279,97 @@ class RuntimeEvidenceCollector:
         if row is None or row["mode"] != "paper" or row["status"] != "open":
             raise ValueError("runtime collection requires its open paper portfolio")
         return binding
+
+    def _policy(self) -> RuntimeHistoryPolicy | None:
+        sizes = self.registry.connection.execute(
+            "SELECT COUNT(*),COALESCE(MAX(length(CAST(document_json AS BLOB))),0) "
+            "FROM (SELECT document_json FROM evaluation_records WHERE kind='runtime_history_policy' LIMIT 2)",
+        ).fetchone()
+        if sizes[0] > 1 or sizes[1] > MAX_HISTORY_POLICY_BYTES:
+            raise ValueError("runtime history policy exceeds protected verification bounds")
+        rows = self.registry._rows("runtime_history_policy")
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ValueError("runtime history policy must cover one deployment registry")
+        row = rows[0]
+        policy = RuntimeHistoryPolicy.model_validate_json(row["document_json"])
+        if (row["record_key"] != self.deployment_id or row["trial_id"] is not None
+                or policy.deployment_id != self.deployment_id or policy.database_identity != self._identity()
+                or policy.storage != self.history_storage
+                or not policy.declared_at <= parse_utc(row["collected_at"]) <= self.clock.now()):
+            raise ValueError("runtime history policy binding scope, storage or chronology changed")
+        first_binding = self.registry.connection.execute(
+            "SELECT collected_at FROM evaluation_records WHERE kind='runtime_binding' "
+            "ORDER BY collected_at LIMIT 1",
+        ).fetchone()
+        if (first_binding is not None
+                and parse_utc(row["collected_at"]) > parse_utc(first_binding["collected_at"])):
+            raise ValueError("runtime history policy must precede all forward bindings")
+        maximum_records, maximum_stored, maximum_expanded = self._history_limits()
+        if (policy.maximum_records > maximum_records or policy.maximum_stored_bytes > maximum_stored
+                or policy.maximum_expanded_bytes > maximum_expanded
+                or policy.maximum_record_bytes > MAX_CAPTURE_BYTES):
+            raise ValueError("runtime history policy exceeds protected verification bounds")
+        return policy
+
+    def _history_limits(self):
+        if self.history_storage == "lossless_zlib":
+            return MAX_ARCHIVED_HISTORY_RECORDS, MAX_ARCHIVED_HISTORY_BYTES, MAX_EXPANDED_HISTORY_BYTES
+        return MAX_HISTORY_RECORDS, MAX_HISTORY_BYTES, MAX_HISTORY_BYTES
+
+    def _ensure_policy(self):
+        policy = self._policy()
+        if policy is not None:
+            return
+        # A pre-existing inline deployment is supported without rewriting its
+        # bindings. It cannot acquire a larger retention allowance retroactively.
+        existing = self.registry.connection.execute(
+            "SELECT 1 FROM evaluation_records WHERE kind IN ('runtime_binding','runtime_capture') LIMIT 1",
+        ).fetchone()
+        if existing:
+            if self.history_storage != "inline":
+                raise ValueError("runtime history policy must precede all forward bindings")
+            return
+        maximum_records, maximum_stored, maximum_expanded = self._history_limits()
+        policy = RuntimeHistoryPolicy(
+            deployment_id=self.deployment_id, database_identity=self._identity(), declared_at=self.clock.now(),
+            storage=self.history_storage, maximum_records=maximum_records,
+            maximum_stored_bytes=maximum_stored, maximum_expanded_bytes=maximum_expanded,
+            maximum_record_bytes=MAX_CAPTURE_BYTES,
+        )
+        self.registry._append("runtime_history_policy", self.deployment_id, None, policy)
+
+    def _capture_document(self, row):
+        raw = row["document_json"]
+        if document_hash(raw) != row["document_sha256"]:
+            raise ValueError("retained runtime capture bytes changed")
+        document = json.loads(raw)
+        if document.get("storage") != "lossless_zlib":
+            if self.history_storage != "inline":
+                raise ValueError("runtime capture storage disagrees with its preregistered policy")
+            return raw
+        if self.history_storage != "lossless_zlib" or self._policy() is None:
+            raise ValueError("runtime archived capture has no matching preregistered policy")
+        manifest = ArchivedRuntimeCapture.model_validate(document)
+        if row["record_key"] != manifest.capture_sha256:
+            raise ValueError("retained runtime capture archive identity changed")
+        size = self.registry.connection.execute(
+            "SELECT length(compressed_data) FROM runtime_capture_blobs WHERE compressed_sha256=?",
+            (manifest.compressed_sha256,),
+        ).fetchone()
+        policy = self._policy()
+        if (size is None or size[0] != manifest.compressed_bytes
+                or size[0] > policy.maximum_record_bytes or manifest.expanded_bytes > policy.maximum_record_bytes):
+            raise ValueError("runtime archived capture storage exceeds verification byte bounds or is missing")
+        compressed = self.registry.connection.execute(
+            "SELECT compressed_data FROM runtime_capture_blobs WHERE compressed_sha256=?",
+            (manifest.compressed_sha256,),
+        ).fetchone()[0]
+        raw = expand_capture(manifest, compressed, maximum_bytes=policy.maximum_record_bytes)
+        if document_hash(raw) != manifest.capture_sha256:
+            raise ValueError("retained runtime capture archive document digest changed")
+        return raw
 
     def _retained_capture(self, key: str, trial_id: str):
         # Read only this capture, never all historical multi-megabyte snapshots.
@@ -261,28 +380,67 @@ class RuntimeEvidenceCollector:
         if size is not None and size[0] > MAX_CAPTURE_BYTES:
             raise ValueError("retained runtime capture exceeds verification byte bounds")
         row = self.registry.connection.execute(
-            "SELECT document_json,document_sha256,collected_at FROM evaluation_records "
+            "SELECT record_key,document_json,document_sha256,collected_at FROM evaluation_records "
             "WHERE kind='runtime_capture' AND record_key=? AND trial_id=?", (key, trial_id),
         ).fetchone()
-        if row is not None and document_hash(row["document_json"]) != row["document_sha256"]:
-            raise ValueError("retained runtime capture bytes changed")
-        return row
+        if row is None:
+            return None
+        raw = self._capture_document(row)
+        return {**dict(row), "document_json": raw, "document_sha256": document_hash(raw)}
 
-    def _history_bounds(self, *, extra_bytes: int = 0, extra_count: int = 0):
+    def _history_bounds(self, *, extra_bytes: int = 0, extra_count: int = 0, extra_expanded_bytes: int | None = None):
+        policy = self._policy()
+        maximum_records, maximum_stored, maximum_expanded = self._history_limits()
+        if policy is not None:
+            maximum_records, maximum_stored, maximum_expanded = (
+                policy.maximum_records, policy.maximum_stored_bytes, policy.maximum_expanded_bytes,
+            )
+        elif self.history_storage != "inline":
+            raise ValueError("runtime archive policy must be retained before collection")
         count = self.registry.connection.execute(
             "SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records "
-            "WHERE kind IN ('runtime_capture','runtime_binding') LIMIT ?)", (MAX_HISTORY_RECORDS + 1,),
+            "WHERE kind IN ('runtime_capture','runtime_binding') LIMIT ?)", (maximum_records + 1,),
         ).fetchone()[0]
-        if count + extra_count > MAX_HISTORY_RECORDS:
+        if count + extra_count > maximum_records:
             raise ValueError("runtime retained capture history exceeds verification bounds")
         sizes = self.registry.connection.execute(
             "SELECT COALESCE(SUM(length(CAST(document_json AS BLOB))),0),"
             "COALESCE(MAX(length(CAST(document_json AS BLOB))),0) FROM evaluation_records "
             "WHERE kind IN ('runtime_capture','runtime_binding')",
         ).fetchone()
-        if (sizes[0] + extra_bytes > MAX_HISTORY_BYTES or sizes[1] > MAX_CAPTURE_BYTES
+        if (sizes[0] + extra_bytes > maximum_stored or sizes[1] > MAX_CAPTURE_BYTES
                 or extra_bytes > MAX_CAPTURE_BYTES):
             raise ValueError("runtime retained capture history exceeds verification byte bounds")
+        if self.history_storage == "lossless_zlib":
+            blob_count = self.registry.connection.execute(
+                "SELECT COUNT(*) FROM (SELECT 1 FROM runtime_capture_blobs LIMIT ?)", (maximum_records + 1,),
+            ).fetchone()[0]
+            if blob_count > maximum_records:
+                raise ValueError("runtime archived capture object history exceeds verification bounds")
+            blobs = self.registry.connection.execute(
+                "SELECT COALESCE(SUM(length(compressed_data)),0),COALESCE(MAX(length(compressed_data)),0) "
+                "FROM runtime_capture_blobs",
+            ).fetchone()
+            # Validate metadata types before SQL arithmetic; no payload is loaded.
+            if self.registry.connection.execute(
+                "SELECT 1 FROM evaluation_records WHERE kind='runtime_capture' AND "
+                "(length(CAST(document_json AS BLOB)) > ? OR "
+                "json_extract(document_json,'$.storage') IS NOT 'lossless_zlib' OR "
+                "json_type(document_json,'$.expanded_bytes') IS NOT 'integer' OR "
+                "json_extract(document_json,'$.expanded_bytes') <= 0 OR "
+                "json_extract(document_json,'$.expanded_bytes') > ?) LIMIT 1",
+                (MAX_ARCHIVE_MANIFEST_BYTES, MAX_CAPTURE_BYTES),
+            ).fetchone():
+                raise ValueError("runtime archived history metadata exceeds verification bounds")
+            expanded = self.registry.connection.execute(
+                "SELECT COALESCE(SUM(CASE WHEN kind='runtime_capture' THEN "
+                "json_extract(document_json,'$.expanded_bytes') ELSE length(CAST(document_json AS BLOB)) END),0) "
+                "FROM evaluation_records WHERE kind IN ('runtime_capture','runtime_binding')",
+            ).fetchone()[0]
+            if (sizes[0] + blobs[0] + extra_bytes > maximum_stored or blobs[1] > MAX_CAPTURE_BYTES
+                    or expanded + (extra_expanded_bytes if extra_expanded_bytes is not None else extra_bytes)
+                    > maximum_expanded):
+                raise ValueError("runtime archived capture history exceeds verification byte bounds")
 
     @staticmethod
     def _source_facts(data):
@@ -334,9 +492,11 @@ class RuntimeEvidenceCollector:
                 raise ValueError("retained runtime capture history bytes changed")
             if row["kind"] == "runtime_binding":
                 previous_binding = RuntimeCollectionBinding.model_validate_json(raw)
+                policy = self._policy()
                 if (row["record_key"] != previous_binding.trial_id
                         or previous_binding.deployment_id != binding.deployment_id
                         or previous_binding.database_identity != binding.database_identity
+                        or (policy is not None and policy.declared_at > previous_binding.bound_at)
                         or not previous_binding.bound_at <= parse_utc(row["collected_at"]) <= self.clock.now()):
                     raise ValueError("retained runtime binding history scope or chronology changed")
                 previous_data = json.loads(previous_binding.initial_source_json)
@@ -346,6 +506,7 @@ class RuntimeEvidenceCollector:
                 if any(current.get(key) != value for key, value in historical.items()):
                     reasons.append("invalid:captured_runtime_history_changed")
                 continue
+            raw = self._capture_document(row)
             if row["record_key"] != document_hash(raw):
                 raise ValueError("retained runtime capture history bytes changed")
             previous = RuntimeEvidenceCapture.model_validate_json(raw)
@@ -401,6 +562,7 @@ class RuntimeEvidenceCollector:
 
     def bind(self, trial_id: str) -> RuntimeCollectionBinding:
         with self.registry._atomic(), self.database.snapshot():
+            self._ensure_policy()
             self._history_bounds()
             if self.registry._rows("runtime_binding", trial_id):
                 return self._binding(trial_id)
@@ -446,8 +608,32 @@ class RuntimeEvidenceCollector:
             if retained is not None and retained["document_json"] != capture.model_dump_json():
                 raise ValueError("retained runtime capture bytes changed")
             if retained is None:
-                self._history_bounds(extra_bytes=len(capture.model_dump_json().encode()), extra_count=1)
-                self.registry._append("runtime_capture", key, trial_id, capture)
+                raw_capture = capture.model_dump_json()
+                if self.history_storage == "lossless_zlib":
+                    policy = self._policy()
+                    manifest, compressed = archive_capture(raw_capture, key, maximum_bytes=policy.maximum_record_bytes)
+                    exists = self.registry.connection.execute(
+                        "SELECT 1 FROM runtime_capture_blobs WHERE compressed_sha256=?",
+                        (manifest.compressed_sha256,),
+                    ).fetchone()
+                    extra_bytes = len(manifest.model_dump_json().encode()) + (0 if exists else len(compressed))
+                    self._history_bounds(extra_bytes=extra_bytes, extra_count=1,
+                                         extra_expanded_bytes=len(raw_capture.encode()))
+                    if exists:
+                        # Verify the existing content-addressed object before reuse.
+                        old = self.registry.connection.execute(
+                            "SELECT compressed_data FROM runtime_capture_blobs WHERE compressed_sha256=?",
+                            (manifest.compressed_sha256,),
+                        ).fetchone()[0]
+                        if old != compressed:
+                            raise ValueError("retained runtime archive bytes changed")
+                    else:
+                        self.registry.connection.execute("INSERT INTO runtime_capture_blobs VALUES (?,?)",
+                                                         (manifest.compressed_sha256, compressed))
+                    self.registry._append("runtime_capture", key, trial_id, manifest)
+                else:
+                    self._history_bounds(extra_bytes=len(raw_capture.encode()), extra_count=1)
+                    self.registry._append("runtime_capture", key, trial_id, capture)
             return capture
 
     def verify(self, capture: RuntimeEvidenceCapture) -> RuntimeVerification:
