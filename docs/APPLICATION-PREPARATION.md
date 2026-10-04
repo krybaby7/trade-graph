@@ -44,6 +44,11 @@ commission/cost receipt. After a crash, an unfinished sample causes deterministi
 code rollback; the candidate is not rerun and the sample cannot become success
 because its result was lost. An effect completed before the crash remains in the
 application sidecar. A fixed maximum deadline bounds the health sequence.
+Completion receipts include the trusted journal checkpoint time. Restart
+promotes an exactly complete verified set of on-time samples to ACTIVE even if
+the final ACTIVE checkpoint was interrupted and recovery occurs after the
+deadline. Late completions or samples without authenticated completion time
+cause rollback; no restart timestamp is substituted for missing evidence.
 
 Every invocation retains its exact process owner and lease expiry. Short parent
 database writer transactions serialize lease admission with authenticated

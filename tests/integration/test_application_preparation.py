@@ -453,3 +453,96 @@ def test_expired_owner_with_started_health_cannot_complete_after_takeover_rollba
     assert evaluated.count(candidate) == (2 if checkpoint == "before_child" else 3)
     assert len(current.gateway.attempts) == len(current.receipts()) == 1
     old.close()
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_final_completed_health_checkpoint_recovers_only_authenticated_on_time_success(
+    tmp_path, environment_pin, monkeypatch, late
+):
+    current = flow(tmp_path, environment_pin)
+    old, arguments = prepare(current)
+    save_state, save_sample = old._save_state, old._save_sample
+
+    class Crash(BaseException):
+        pass
+
+    def checkpoint(state):
+        if state["status"] == "ACTIVE":
+            raise Crash
+        save_state(state)
+
+    def completed(sample):
+        if sample["status"] == "COMPLETED" and late:
+            started = old.state()["started_at_ns"]
+            monkeypatch.setattr(application_preparation.time, "time_ns", lambda: started + 121_000_000_000)
+            save_sample(sample)
+            raise Crash
+        save_sample(sample)
+
+    monkeypatch.setattr(old, "_save_state", checkpoint)
+    monkeypatch.setattr(old, "_save_sample", completed)
+    with pytest.raises(Crash):
+        step(old)
+    retained = old._samples()[0]
+    assert old.state()["status"] == "HEALTH" and retained["status"] == "COMPLETED"
+    assert type(retained["completed_at_ns"]) is int
+    assert len(current.projection.read(version=1)) == 2
+    # Recovery is later than the health deadline in both cases. Completion's
+    # actual authenticated time, not the recovery clock, determines admission.
+    started = old.state()["started_at_ns"]
+    monkeypatch.setattr(application_preparation.time, "time_ns", lambda: started + 121_000_000_000)
+    restored = reopen(current, old, arguments)
+    monkeypatch.setattr(current.projection, "_evaluate", lambda *a: pytest.fail("repeated completed health child"))
+    monkeypatch.setattr(current.gateway.scripted, "complete", lambda *a: pytest.fail("repeated completed model call"))
+    state = step(restored)
+    assert state["status"] == ("ROLLED_BACK" if late else "ACTIVE")
+    if late:
+        assert state["failure"] == "finite_health_deadline_exhausted"
+    assert len(current.projection.read(version=1)) == 2 and len(current.receipts()) == 1
+    restored.close()
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_changed_allocation_at_final_active_checkpoint_blocks_success_without_refund_or_repeat(
+    tmp_path, environment_pin, monkeypatch, recover
+):
+    current = flow(tmp_path, environment_pin)
+    old, arguments = prepare(current)
+    save = old._save_state
+
+    class Crash(BaseException):
+        pass
+
+    def crash(state):
+        if state["status"] == "ACTIVE":
+            raise Crash
+        save(state)
+
+    if recover:
+        monkeypatch.setattr(old, "_save_state", crash)
+        with pytest.raises(Crash):
+            step(old)
+        loop = reopen(current, old, arguments)
+    else:
+        loop = old
+    save = loop._save_state
+
+    def change_at_checkpoint(state):
+        if state["status"] == "ACTIVE":
+            current.db.execute("UPDATE cost_allocations SET amount='0' WHERE receipt_id IN("
+                               "SELECT receipt_id FROM usage_receipts WHERE reservation_id=("
+                               "SELECT reservation_id FROM model_invocations WHERE task_id=?))", (current.tid,))
+        save(state)
+
+    monkeypatch.setattr(loop, "_save_state", change_at_checkpoint)
+    if recover:
+        monkeypatch.setattr(current.projection, "_evaluate", lambda *a: pytest.fail("repeated completed child"))
+    state = step(loop)
+    assert state["status"] == "ROLLED_BACK"
+    assert current.projection.status()["active_build"] == current.engineer.policy.baseline_build_sha256
+    assert len(current.projection.read(version=1)) == 2
+    assert len(current.gateway.attempts) == len(current.receipts()) == 1
+    receipt = current.receipts()[0]
+    assert current.db.execute("SELECT state FROM budget_reservations WHERE reservation_id=?",
+                              (receipt["reservation_id"],)).fetchone()[0] == "COMMITTED"
+    loop.close()

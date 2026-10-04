@@ -239,6 +239,13 @@ class ApplicationPreparationLoop:
 
     def _save_state(self, state: dict) -> None:
         with self._guard():
+            if state["status"] == "ACTIVE":
+                report = self._candidate(state["candidate_id"], current_authority=True)
+                current = self.projection.status()
+                if (report["commission_receipt_sha256"] != state["commission_receipt_sha256"]
+                        or (current["active_build"], current["generation"], current["status"]) != (
+                            state["build_sha256"], state["generation"], "RUNNING")):
+                    raise AuthorityDenied("application completion source/cost/generation admission changed")
             receipt = self._receipt("application_workflow_state", {"payload": state})
             if self._initializing:
                 self.db.execute("INSERT INTO workflow_state VALUES(1,?,?)", (canonical_bytes(state).decode(), receipt))
@@ -285,6 +292,9 @@ class ApplicationPreparationLoop:
                 if (before["status"] != "STARTED" or sample["status"] != "COMPLETED"
                         or any(sample.get(key) != value for key, value in before.items() if key != "status")):
                     raise _WorkflowFenceLost("application health completion does not match its intent")
+                # Trusted completion checkpoint time is authenticated with the
+                # actual effect. Never infer it from the later restart clock.
+                sample = {**sample, "completed_at_ns": time.time_ns()}
                 receipt = self._receipt("application_workflow_health", {"payload": sample})
                 changed = self.db.execute("UPDATE workflow_samples SET payload_json=?,receipt_sha256=? "
                                           "WHERE case_sha256=? AND receipt_sha256=?",
@@ -459,6 +469,12 @@ class ApplicationPreparationLoop:
                         raise AuthorityDenied("application health sample generation changed")
                     if sample["status"] != "COMPLETED" or sample.get("matched") is not True:
                         return self._rollback(state, "interrupted_or_rejected_health")
+                    completed_at = sample.get("completed_at_ns")
+                    if type(completed_at) is not int:
+                        return self._rollback(state, "unproven_health_completion_time")
+                    if not state["started_at_ns"] <= completed_at <= (
+                            state["started_at_ns"] + self.policy.health_deadline_seconds * 1_000_000_000):
+                        return self._rollback(state, "finite_health_deadline_exhausted")
                     effect = self.projection.verify_render(sample["render_receipt_sha256"],
                                                            record_id=sample["record_id"])
                     case = next(case for case in self._health_corpus()["cases"]
@@ -475,11 +491,17 @@ class ApplicationPreparationLoop:
                     with self._guard():
                         pass
                     return state
+                completed = {sample["case_sha256"] for sample in samples}
+                if completed == set(self.policy.health_case_sha256s):
+                    # Recover a crash between the final durable on-time effect
+                    # and its ACTIVE checkpoint, even after the deadline passes.
+                    state = {**state, "status": "ACTIVE"}
+                    self._save_state(state)
+                    return state
                 now = time.time_ns()
                 if not state["started_at_ns"] <= now <= (
                         state["started_at_ns"] + self.policy.health_deadline_seconds * 1_000_000_000):
                     return self._rollback(state, "finite_health_deadline_exhausted")
-                completed = {sample["case_sha256"] for sample in samples}
                 pending = next((digest for digest in self.policy.health_case_sha256s if digest not in completed), None)
                 if pending is not None:
                     case = next(case for case in self._health_corpus()["cases"]
