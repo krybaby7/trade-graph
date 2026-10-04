@@ -181,7 +181,7 @@ def test_expired_authorization_cannot_activate_but_can_revoke(fixture):
 
 def test_source_pin_drift_blocks_activation_and_does_not_block_stop(fixture):
     fixture.source_pin.path.write_bytes(b"{}")
-    with pytest.raises(ValueError, match="pin"):
+    with pytest.raises(AuthorityDenied, match="source"):
         fixture.lifecycle.activate(fixture.authorization_id)
     fixture.lifecycle.stop(fixture.authorization_id, reason="synthetic source invalidation")
     assert fixture.db.execute("SELECT profile FROM pause_states").fetchone()[0] == "MANAGE_ONLY"

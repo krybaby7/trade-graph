@@ -35,6 +35,7 @@ from trade_graph.domain.money import canonical_decimal, parse_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
 from trade_graph.domain.protocols import Broker
 from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
+from trade_graph.live_pilot import ProtectedPilotLifecycle
 
 TAKER = Decimal("0.008")
 
@@ -52,6 +53,8 @@ class Execution:
         mode: Mode = "paper",
         blocks_increase: Callable[[str], bool] | None = None,
         fee_reserve_rate: Decimal = TAKER,
+        pilot_lifecycle: ProtectedPilotLifecycle | None = None,
+        pilot_authorization_id: str | None = None,
     ) -> None:
         self.database = database
         self.ledger = ledger
@@ -60,6 +63,16 @@ class Execution:
         self.venue = venue
         self.account_id = account_id
         self.mode = mode
+        if (pilot_lifecycle is None) != (pilot_authorization_id is None):
+            raise ValueError("pilot lifecycle and immutable authorization must be supplied together")
+        if pilot_lifecycle is not None and (
+            type(pilot_lifecycle) is not ProtectedPilotLifecycle or mode != "live"
+            or pilot_lifecycle.database is not database or pilot_lifecycle.clock is not clock
+            or pilot_lifecycle.scope.venue != venue or pilot_lifecycle.scope.account_id != account_id
+            or type(pilot_authorization_id) is not str or not 1 <= len(pilot_authorization_id) <= 128
+        ):
+            raise ValueError("exact protected pilot execution binding required")
+        self._pilot_lifecycle, self._pilot_authorization_id = pilot_lifecycle, pilot_authorization_id
         self.blocks_increase = blocks_increase
         self.fee_reserve_rate = parse_decimal(fee_reserve_rate)
         if self.fee_reserve_rate < 0:
@@ -71,6 +84,39 @@ class Execution:
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
+
+    def _assert_pilot_increase(self, portfolio_id: str, symbol: str | None) -> None:
+        if self.mode != "live":
+            return
+        pilot = self._pilot_lifecycle
+        if (type(pilot) is not ProtectedPilotLifecycle or pilot.database is not self.database
+                or pilot.clock is not self.clock or pilot.scope.venue != self.venue
+                or pilot.scope.account_id != self.account_id or self._pilot_authorization_id is None):
+            raise AuthorityDenied("live increases require a concrete protected pilot lifecycle")
+        pilot.assert_increase_authority(self._pilot_authorization_id, portfolio_id=portfolio_id, symbol=symbol)
+
+    def _sync_pilot_effect(self, intent_id: str) -> None:
+        if self.mode != "live" or self._pilot_lifecycle is None:
+            return
+        effect = self.database.execute("SELECT effect_id FROM live_pilot_effects "
+                                       "WHERE authorization_id=? AND intent_id=?",
+                                       (self._pilot_authorization_id, intent_id)).fetchone()
+        if effect is not None:
+            try:
+                self._pilot_lifecycle.reconcile_effect(effect["effect_id"])
+            except StaleState:
+                # A terminal label is insufficient to release the pilot hold.
+                # Keep it until a real later scoped history observation exists.
+                pass
+            except AuthorityDenied:
+                self._pilot_management_incident("reconcile_effect")
+
+    def _pilot_management_incident(self, operation: str) -> None:
+        # Fixed codes retain the failed authority boundary without exposing
+        # signed documents, private source paths or exception text.
+        self._incident("pilot_management_authority_unavailable", {
+            "operation": operation, "reason": "pilot_authority_invalid", "mode": "live",
+        })
 
     def register_instrument(self, rules: InstrumentRules) -> None:
         with self.database.immediate() as conn:
@@ -178,6 +224,8 @@ class Execution:
             raise ValidationFailure("authorize requires enter/exit; resize and adjustment need explicit semantics")
         if decision.action == "enter" and self._reconciliation_blocked():
             raise StaleState("incomplete account reconciliation blocks new exposure")
+        if decision.action == "enter":
+            self._assert_pilot_increase(portfolio_id, decision.symbol)
         portfolio = self.database.execute(
             "SELECT mode FROM portfolios WHERE portfolio_id = ?", (portfolio_id,)
         ).fetchone()
@@ -323,10 +371,13 @@ class Execution:
                     decision.task_id,
                 ),
             )
+            if self.mode == "live" and increase:
+                # Join the native intent/reservation/outbox transaction. Failure
+                # to reserve pilot authority rolls every prospective effect back.
+                self._pilot_lifecycle.reserve_increase(self._pilot_authorization_id, intent_id)
         return intent_id
 
     async def dispatch(self) -> int:
-        capabilities = await self._require_broker_binding()
         rows = self.database.execute(
             """SELECT o.payload_ref FROM outbox o JOIN order_intents i ON i.intent_id = o.payload_ref
             WHERE o.kind = 'submit' AND o.status = 'pending'
@@ -335,6 +386,22 @@ class Execution:
             AND json_extract(i.payload_json, '$.mode') = ?""",
             (self.venue, self.account_id, self.mode),
         ).fetchall()
+        if self.mode == "live":
+            eligible = []
+            for row in rows:
+                intent = self._intent_model(row["payload_ref"])
+                if intent.side == "buy":
+                    try:
+                        self._assert_pilot_increase(intent.portfolio_id, intent.symbol)
+                    except (AuthorityDenied, ValueError, TypeError, OSError, ArithmeticError):
+                        # Unseen requests stay pending; refusal does not imply
+                        # an exchange rejection or resolve an unknown effect.
+                        continue
+                eligible.append(row)
+            rows = eligible
+            if not rows:
+                return 0
+        capabilities = await self._require_broker_binding()
         sent = 0
         for row in rows:
             intent_id = row["payload_ref"]
@@ -358,13 +425,21 @@ class Execution:
                     continue
                 if block == "hold":
                     continue
-            if not self._mark_submitting(intent_id):
+            try:
+                started = self._mark_submitting(intent_id)
+            except AuthorityDenied:
+                if self.mode != "live" or intent.side != "buy":
+                    raise
+                self._pilot_management_incident("begin_submission")
+                continue
+            if not started:
                 continue
             intent = self._intent_model(intent_id)
             try:
                 result = await self.broker.submit(intent)
             except UncertainExternal:
                 self._complete_submission(intent_id, "UNKNOWN", {"error": "timeout"})
+                self._sync_pilot_effect(intent_id)
                 continue
             if result.status == "acknowledged":
                 self._complete_submission(intent_id, "OPEN", {"venue_order_id": result.venue_order_id})
@@ -374,6 +449,7 @@ class Execution:
                 self._complete_submission(
                     intent_id, "REJECTED", {"error": result.error, "message": result.message}, release=True,
                 )
+            self._sync_pilot_effect(intent_id)
             sent += 1
         return sent
 
@@ -590,8 +666,15 @@ class Execution:
                 reason=("conflicting submission order identity" if conflicting_identity else
                         "terminal order missing fills" if missing_terminal_fills else "resolved full broker history"),
             )
+        for row in rows:
+            self._sync_pilot_effect(row["intent_id"])
 
     async def startup(self) -> None:
+        if self.mode == "live" and self._pilot_lifecycle is not None:
+            try:
+                self._pilot_lifecycle.recover(self._pilot_authorization_id)
+            except AuthorityDenied:
+                self._pilot_management_incident("recover")
         await self.reconcile()
         await self.dispatch()
 
@@ -1061,6 +1144,7 @@ class Execution:
 
     @atomic
     def _mark_submitting(self, intent_id: str) -> bool:
+        self._assert_current_scope(intent_id)
         intent = self._intent_model(intent_id)
         profile = self.profile(intent.portfolio_id)
         allowed = pause_allows_reduction(profile) if intent.side == "sell" else pause_allows_increase(profile)
@@ -1068,6 +1152,10 @@ class Execution:
             return False
         now = self.now()
         with self.database.immediate() as conn:
+            pilot_effect = None
+            if self.mode == "live" and intent.side == "buy":
+                self._assert_pilot_increase(intent.portfolio_id, intent.symbol)
+                pilot_effect = self._pilot_lifecycle.begin_intent_submission(self._pilot_authorization_id, intent_id)
             cursor = conn.execute(
                 """UPDATE order_intents SET state = 'SUBMITTING', updated_at = ?
                 WHERE intent_id = ? AND state = 'SUBMISSION_PENDING'""",
@@ -1079,11 +1167,14 @@ class Execution:
                 """UPDATE outbox SET status = 'started' WHERE kind = 'submit' AND payload_ref = ?""",
                 (intent_id,),
             )
+            attempt_id = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO order_attempts (attempt_id, intent_id, kind, created_at, result_json)
                 VALUES (?, ?, 'submit', ?, '{}')""",
-                (str(uuid.uuid4()), intent_id, now),
+                (attempt_id, intent_id, now),
             )
+            if pilot_effect is not None:
+                self._pilot_lifecycle.record_submission_attempt(pilot_effect, attempt_id)
         return True
 
     @atomic

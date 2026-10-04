@@ -14,6 +14,8 @@ import uuid
 from datetime import datetime, timedelta
 from decimal import Context, Decimal, localcontext
 
+from pydantic import ValidationError
+
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import InstrumentRules
@@ -93,8 +95,8 @@ class ProtectedPilotLifecycle:
     """Private lifecycle service; no HTTP/model interface or injectable verifier.
 
     Startup must call recover for a previously running grant before dispatch.
-    This code is preparation until an independently authorized protected broker
-    adopts its prepare/begin/reconcile protocol. Current readiness stays closed.
+    Execution adopts its reserve/begin/reconcile protocol for every live increase.
+    Current readiness stays closed; no protected live service is commissioned.
     """
 
     def __init__(self, database: Database, clock: Clock, *, scope: LivePilotScope,
@@ -117,7 +119,10 @@ class ProtectedPilotLifecycle:
                                     (authorization_id,)).fetchone()
         if row is None:
             raise AuthorityDenied("unknown protected pilot authorization")
-        grant = OwnerPilotAuthorization.model_validate_json(row["authorization_json"])
+        try:
+            grant = OwnerPilotAuthorization.model_validate_json(row["authorization_json"])
+        except ValidationError as exc:
+            raise AuthorityDenied("persisted pilot authorization is malformed") from exc
         if (grant.scope != self.scope or grant.authorization_id != authorization_id
                 or _digest(grant.model_dump(mode="json")) != row["authorization_sha256"]
                 or grant.scope.model_dump_json() != row["scope_json"]
@@ -127,7 +132,10 @@ class ProtectedPilotLifecycle:
         return row, grant
 
     def _current_bundle(self, row, grant: OwnerPilotAuthorization) -> None:
-        bundle = self.source.load()
+        try:
+            bundle = self.source.load()
+        except (ValueError, TypeError, OSError) as exc:
+            raise AuthorityDenied("protected pilot source is unavailable") from exc
         if (row["bundle_sha256"] != self.source.bundle_sha256
                 or bundle.owner_authorization.payload != grant
                 or not grant.verified_at <= self.clock.now() < grant.expires_at):
@@ -139,6 +147,15 @@ class ProtectedPilotLifecycle:
                                         source=self.source, upstream=self.upstream)
         return (result.get("ready") is True
                 and result.get("upstream_verification", {}).get("authoritative_external_verification") is True)
+
+    def assert_increase_authority(self, authorization_id: str, *, portfolio_id: str, symbol: str | None) -> None:
+        """Execution checks the concrete owner scope before any new intent exists."""
+        with self.database.immediate():
+            row, grant = self._grant(authorization_id)
+            if portfolio_id != self.scope.portfolio_id or symbol != self.scope.symbol:
+                raise AuthorityDenied("pilot decision portfolio or instrument binding mismatch")
+            if row["state"] != "ACTIVE" or not self._ready(row, grant):
+                raise AuthorityDenied("active independently verified pilot authority required")
 
     def prepare(self) -> str:
         """Retain a signed owner's envelope as PENDING; this grants no effects."""
@@ -337,6 +354,42 @@ class ProtectedPilotLifecycle:
             self.database.execute("UPDATE live_pilot_effects SET state='SUBMITTING',updated_at=? WHERE effect_id=?",
                                   (self._now(), effect_id))
             self._event(row["authorization_id"], row["generation"], "effect_submitting", {"effect_id": effect_id})
+
+    def begin_intent_submission(self, authorization_id: str, intent_id: str) -> str:
+        """Execution resolves its prepared effect itself; no model chooses it."""
+        with self.database.immediate():
+            effect = self.database.execute("SELECT effect_id FROM live_pilot_effects "
+                                           "WHERE authorization_id=? AND intent_id=?",
+                                           (authorization_id, intent_id)).fetchone()
+            if effect is None:
+                raise AuthorityDenied("pilot order has no reserved one-use effect")
+            self.begin_submission(effect["effect_id"])
+            return effect["effect_id"]
+
+    def record_submission_attempt(self, effect_id: str, attempt_id: str) -> None:
+        """Bind the actual persisted attempt before dispatch; never create one."""
+        with self.database.immediate():
+            effect = self.database.execute("SELECT * FROM live_pilot_effects WHERE effect_id=?",
+                                           (effect_id,)).fetchone()
+            attempt = self.database.execute("SELECT * FROM order_attempts WHERE attempt_id=?",
+                                            (attempt_id,)).fetchone()
+            if (effect is None or attempt is None or effect["state"] != "SUBMITTING"
+                    or attempt["intent_id"] != effect["intent_id"] or attempt["kind"] != "submit"):
+                raise AuthorityDenied("pilot submission requires its actual persisted attempt")
+            row, _ = self._grant(effect["authorization_id"])
+            if row["state"] != "ACTIVE" or effect["generation"] != row["generation"]:
+                raise AuthorityDenied("pilot attempt generation is revoked or stale")
+            prior = self.database.execute(
+                "SELECT payload_json FROM live_pilot_events WHERE authorization_id=? AND kind='attempt_bound' "
+                "AND json_extract(payload_json,'$.effect_id')=?",
+                (effect["authorization_id"], effect_id),
+            ).fetchall()
+            if prior:
+                if len(prior) != 1 or json.loads(prior[0]["payload_json"]).get("attempt_id") != attempt_id:
+                    raise AuthorityDenied("pilot effect cannot bind a replacement attempt")
+                return
+            self._event(row["authorization_id"], row["generation"], "attempt_bound",
+                        {"effect_id": effect_id, "intent_id": effect["intent_id"], "attempt_id": attempt_id})
 
     def _management_latch(self, grant: OwnerPilotAuthorization, reason: str) -> None:
         pause = self.database.execute("SELECT * FROM pause_states WHERE portfolio_id=?",

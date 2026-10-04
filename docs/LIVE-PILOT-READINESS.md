@@ -108,10 +108,16 @@ not approval or a policy change. Existing advisory readiness remains closed.
 The controller prepares each prospective increase from the exact stored account,
 instrument, live portfolio, owner policy, graph version, unsent limit-order intent
 and held native execution reservation. Unbounded market buys are refused. The
-future dispatcher must call `reserve_increase` and then `begin_submission` before
-its external effect. Both recheck current pinned evidence/readiness in a writer
-transaction. The one-use effect binds the request digest and grant generation;
-revocation, restart, intent edits and stale source pins cannot reuse it.
+`Execution` accepts only the exact lifecycle implementation, database, clock,
+venue/account and immutable authorization ID. Every live increase checks the
+concrete current grant before creating its native intent, reservation or outbox.
+`reserve_increase` joins that writer transaction. Dispatch checks again before
+broker capabilities, then calls `begin_intent_submission` before the native
+submission transition. The pilot effect and persisted native submit attempt are
+linked in the same writer transaction before broker submission. These checks use
+current pinned evidence directly, without an injectable readiness callback or
+cached acceptance. The one-use effect binds the request digest and grant
+generation; revocation, restart, intent edits and stale source pins cannot reuse it.
 
 The acquisition envelope conservatively assumes every acquired position can lose
 its entire quote cost including reserved fees. Cumulative committed and unresolved
@@ -139,13 +145,30 @@ collector leaves protected account-ledger reconciliation pending, so account-lev
 completion remains refused. A revoked grant does not permit a replacement while old account
 effects, orders or inventory remain unresolved. Audit events are append-only.
 
-The default runtime and existing live adapter do not adopt this lifecycle. Genuine
-protected dispatch integration, production host isolation/recovery, authenticated
-upstream evidence, measured pilot fills/fees/latency/rejections/paper differences,
-and a signed continuation-or-stop review remain pending. The implementation does
-not provide an activation bypass or treat a stored historical `ACTIVE` row as
-current execution authority. Synthetic lifecycle tests seed such historical rows
-only to test restart/revocation/hold preservation; no production grant is issued.
+Execution startup recovers the pilot before reconciliation. Missing or malformed
+pilot authority records retain fixed-code incidents and refuse increases while
+native reconciliation, existing cancellation and owned reductions continue.
+Database/ledger failures still propagate rather than masquerading as successful
+management. Unsent increases held by the gate stay pending; no external rejection
+or release is fabricated. Native outcomes synchronize conservatively to the pilot
+hold, and terminal release still requires a real later scoped history observation.
+
+The default service remains paper. Commissioning an actual protected live service,
+production host isolation/recovery, authenticated upstream evidence, measured
+pilot fills/fees/latency/rejections/paper differences, and a signed
+continuation-or-stop review remain pending. The implementation provides no
+activation bypass and does not treat a stored historical `ACTIVE` row as current
+execution authority. Synthetic tests seed such historical rows only to test
+closed-gate dispatch, restart/revocation and hold preservation; no production grant
+is issued.
+
+The current forward producer revalidates an exact runtime-state capture. Required
+new live intent/reservation/attempt facts change that captured state. A genuine
+authenticated producer must preserve sealed historical forward economics while
+separately proving the current account/instrument/policy and operational scope;
+rewriting the sealed forward inventory for each order cannot provide that proof.
+This source architecture remains a prerequisite for eventual activation, alongside
+the producer's current literal external-provenance refusal.
 
 ## Evidence that remains missing
 
@@ -227,9 +250,9 @@ evaluation and independently verified complete upstream provenance; T19's select
 venue eligibility, permissions and authenticated conformance; a separately granted
 real allocation/loss/expense envelope; actual intended-host protection, backups,
 alerts and independent recovery; and a protected live grant/stop/revocation lifecycle.
-The new controller supplies persisted preparation/management logic; adoption by
-protected live dispatch and intended-host verification remain unaccepted.
-After that lifecycle is integrated and separately authorized, a pilot must record
+The controller and execution boundary supply persisted preparation/management and
+closed-gate dispatch enforcement; actual protected live service commissioning and
+intended-host verification remain unaccepted. Once separately authorized, a pilot must record
 real fills, fees, latency, rejections, paper differences, measured loss/spend, and a
 continuation-or-stop review. Venue minimums cannot silently enlarge the allocation.
 

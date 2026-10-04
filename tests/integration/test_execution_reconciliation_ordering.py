@@ -436,9 +436,13 @@ def test_live_dispatch_rechecks_missing_or_increased_fee_bound_before_any_order_
                      status="SUBMISSION_PENDING", side=side)
     broker.fee_reserve_rate = bound
     assert asyncio.run(execution.dispatch()) == 0
-    assert execution.intent_state(intent.intent_id) == "REJECTED"
+    # An unauthorized increase is held before even the capabilities request;
+    # there is no observed venue rejection and its reservation stays durable.
+    assert execution.intent_state(intent.intent_id) == ("SUBMISSION_PENDING" if side == "buy" else "REJECTED")
     assert database.execute("SELECT count(*) FROM order_attempts").fetchone()[0] == 0
-    assert database.execute("SELECT count(*) FROM position_reservations WHERE state='held'").fetchone()[0] == 0
+    assert database.execute("SELECT count(*) FROM position_reservations WHERE state='held'").fetchone()[0] == (
+        1 if side == "buy" else 0
+    )
     assert broker.calls == []
 
 
