@@ -78,12 +78,15 @@ Own-effect history also requires observed_at to equal the durable event timestam
 republishing an older observation under a later event cannot release an effect.
 
 T18 independently read the closed-gate execution adoption and found no concrete
-dispatch flaw. The review identified a future source prerequisite: exact current
-runtime captures become stale when required live intent/reservation/attempt facts
-are written. Authenticated producers must separate immutable historical forward
-economics from independently verified current live operational/account scope;
-sealed forward inventory cannot be rewritten per order. Current literal external
-provenance refusal continues to keep the route closed.
+dispatch flaw. The review identified a future source prerequisite for a collocated
+paper/live database: exact current runtime captures become stale when required
+live intent/reservation/attempt facts are written to the captured source. A
+separate frozen paper database does not inherently stale on live-database writes.
+A shared-database design must separate immutable historical forward economics
+from independently verified current live operational/account scope; sealed forward
+inventory cannot be rewritten per order. Genuine authenticated economics and live
+scope mapping remain missing globally. Current literal external provenance
+refusal continues to keep the route closed.
 
 Outstanding prerequisites are T17's funded operation/host evidence, T18's future
 actual authenticated complete economics and exact paper/live account/instrument/

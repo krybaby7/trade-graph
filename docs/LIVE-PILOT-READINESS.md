@@ -162,13 +162,16 @@ execution authority. Synthetic tests seed such historical rows only to test
 closed-gate dispatch, restart/revocation and hold preservation; no production grant
 is issued.
 
-The current forward producer revalidates an exact runtime-state capture. Required
-new live intent/reservation/attempt facts change that captured state. A genuine
-authenticated producer must preserve sealed historical forward economics while
-separately proving the current account/instrument/policy and operational scope;
-rewriting the sealed forward inventory for each order cannot provide that proof.
-This source architecture remains a prerequisite for eventual activation, alongside
-the producer's current literal external-provenance refusal.
+The current forward producer revalidates an exact runtime-state capture. In a
+shared paper/live runtime database, required new live intent/reservation/attempt
+facts change that captured state. A separately frozen paper source does not
+inherently stale on writes to another live database. Any shared-database production
+design must preserve sealed historical forward economics while separately proving
+the current account/instrument/policy and operational scope; rewriting the sealed
+forward inventory for each order cannot supply that proof. Genuine authenticated
+economics and exact current live scope mapping remain missing in every currently
+available configuration, alongside the producer's literal external-provenance
+refusal.
 
 ## Evidence that remains missing
 
