@@ -261,6 +261,30 @@ class ProtectedNativeIncidentResolver:
         )
         if any(row["state"] == "held" and parse_decimal(row["amount"]) != 0 for row in reservations):
             raise StaleState("unknown native financial holds cannot be acknowledged away")
+        fee_reservations = self._rows(
+            "SELECT r.* FROM native_fee_reservations r LEFT JOIN order_intents i USING(intent_id) "
+            "WHERE r.portfolio_id=? OR (json_extract(i.payload_json,'$.venue')=? "
+            "AND json_extract(i.payload_json,'$.account_id')=? AND json_extract(i.payload_json,'$.mode')='live') "
+            "ORDER BY r.reservation_id",
+            params,
+        )
+        for reservation in fee_reservations:
+            original = parse_decimal(reservation["original_amount"])
+            current = parse_decimal(reservation["current_amount"])
+            if (
+                reservation["portfolio_id"] != scope.portfolio_id
+                or reservation["intent_id"] not in intent_ids
+                or original < 0
+                or current < 0
+                or current > original
+                or type(reservation["asset"]) is not str
+                or not 1 <= len(reservation["asset"]) <= 128
+                or len(reservation["plan_sha256"]) != 64
+                or any(char not in "0123456789abcdef" for char in reservation["plan_sha256"])
+                or reservation["state"] not in {"held", "released"}
+                or (reservation["state"] == "held" and current != 0)
+            ):
+                raise StaleState("secondary native fee holds or their protected identity require management")
         pilot_effects = self._rows(
             "SELECT e.* FROM live_pilot_effects e JOIN live_pilot_grants g USING(authorization_id) "
             "WHERE g.portfolio_id=? ORDER BY effect_id",
@@ -280,6 +304,7 @@ class ProtectedNativeIncidentResolver:
             "transactions": transactions,
             "postings": postings,
             "reservations": reservations,
+            "fee_reservations": fee_reservations,
             "pilot_effects": pilot_effects,
         }
         return _sha(facts), {"amounts": amounts, "fills": local_fills, "instrument": dict(instrument)}, cutoff

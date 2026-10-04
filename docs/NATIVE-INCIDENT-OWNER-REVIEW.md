@@ -71,3 +71,19 @@ middleware, actual retained synthetic native normalization, and subprocess
 death before/after commit. Historical authenticated clearance rows are explicitly
 seeded mechanical test fixtures, not successful private venue observations.
 Evidence is `/tmp/trade-graph-t20-next-controls.xml` on the implementation host.
+
+The follow-up also binds every `native_fee_reservations` row, including original
+allocation and plan identity, current amount and released history. A nonzero
+held secondary fee amount, invalid bounds or scope/plan mismatch prevents review;
+an added released row invalidates an earlier clearance digest. These checks do
+not release any fee reservation.
+
+After integrating the signed fee contract, append-only chronological fill replay
+and schema 0015, 405 related cases passed with zero failures, errors or skips
+(`/tmp/trade-graph-t20-next-fees-replay.xml`). The 35 incident cases include a
+complete actual synthetic broker-history reconciliation that discovers an older
+fill, appends its deferred source and replay receipt, preserves original journal
+groups, records the balanced delta and verifies a fresh retained native capture.
+The actual owner HTTP review remains `PENDING_NATIVE_PROOF` with the incident
+blocked. The exact journal comparison was retained without relaxing it to a
+simple zero-sum check.

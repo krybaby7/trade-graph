@@ -26,6 +26,7 @@ from trade_graph.api.app import create_app
 from trade_graph.api.auth import issue_session
 from trade_graph.api.controls import _Commands
 from trade_graph.application.authority import AuthorityRecord, paper_owner_policy
+from trade_graph.application.broker_identity import DurableBrokerIdentity
 from trade_graph.application.execution import Execution
 from trade_graph.application.incident_resolution import (
     NativeIncidentResolutionCommand,
@@ -96,6 +97,7 @@ def fixture(tmp_path):
         "eligible_after_utc": utc_iso(clock.now()),
         "reserve_asset": "USD",
         "reserve_amount": "10.08",
+        "venue_order_id": "order-1",
     }
     db.execute(
         "INSERT INTO order_intents VALUES (?,?,?,?,?,?,?,?)",
@@ -103,7 +105,7 @@ def fixture(tmp_path):
             "synthetic-intent",
             portfolio,
             "client-1",
-            "UNKNOWN",
+            "CANCELLED",
             "BTC/USD",
             json.dumps(intent),
             utc_iso(clock.now()),
@@ -122,6 +124,7 @@ def fixture(tmp_path):
             utc_iso(clock.now()),
         ),
     )
+    clock.advance(1)
     trade = _trade(1, time=str(clock.now().timestamp()))
     trade["price"] = "99.99"
     venue.rest.results["TradesHistory"] = {"trades": {"trade-1": trade}, "count": 1}
@@ -547,3 +550,123 @@ def test_real_process_death_cannot_separate_owner_receipt_from_pending_acknowled
     assert response.status_code == 200, response.text
     assert fixture.db.execute("SELECT COUNT(*) FROM native_incident_resolutions").fetchone()[0] == 1
     assert fixture.db.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 1
+
+
+def add_fee_reservation(fixture, *, state="released", current="0", original="0.08", plan="a" * 64):
+    fixture.db.execute(
+        "INSERT INTO native_fee_reservations VALUES (?,?,?,?,?,?,?,?,?)",
+        (
+            "synthetic-secondary-fee",
+            fixture.runtime.portfolio_id,
+            "synthetic-intent",
+            "USD",
+            original,
+            current,
+            state,
+            plan,
+            utc_iso(fixture.clock.now()),
+        ),
+    )
+
+
+@pytest.mark.parametrize("mutation", ["new_released", "held", "negative", "excess", "plan"])
+def test_secondary_fee_authority_history_is_bound_and_cannot_be_ignored(fixture, mutation):
+    seed_receipt(fixture)
+    if mutation == "new_released":
+        add_fee_reservation(fixture)
+        assert fixture.resolver.current_financial_sha256()
+    elif mutation == "held":
+        add_fee_reservation(fixture, state="held", current="0.01")
+    elif mutation == "negative":
+        add_fee_reservation(fixture, current="-0.01")
+    elif mutation == "excess":
+        add_fee_reservation(fixture, current="0.09")
+    else:
+        add_fee_reservation(fixture, plan="not-a-protected-plan")
+    assert fixture.resolver.blocked()
+    assert fixture.db.execute("SELECT COUNT(*) FROM native_incident_resolutions").fetchone()[0] == 1
+
+
+def test_chronological_fill_restatement_retains_exact_journal_groups_and_owner_pending_review(fixture):
+    db, clock, execution, venue = fixture.db, fixture.clock, fixture.execution, fixture.venue
+    previous_event = json.loads(db.execute("SELECT payload_json FROM ledger_events WHERE kind='fill'").fetchone()[0])
+    previous_fill = previous_event["fill"]
+    native_at = datetime.fromisoformat(previous_fill["filled_at_utc"].replace("Z", "+00:00")) - timedelta(seconds=0.5)
+    # A real later recording time; the source read below must strictly postdate it.
+    target = datetime.now(UTC) - timedelta(seconds=1)
+    clock.advance((target - clock.now()).total_seconds())
+    old_events = [dict(row) for row in db.execute("SELECT * FROM ledger_events ORDER BY sequence")]
+    old_postings = [dict(row) for row in db.execute("SELECT * FROM journal_postings ORDER BY rowid")]
+    old_groups = fixture.ledger.books(fixture.runtime.portfolio_id).groups
+    payload = json.loads(db.execute("SELECT payload_json FROM order_intents").fetchone()[0])
+    payload.update(
+        intent_id="synthetic-late",
+        client_order_id="client-2",
+        limit_price="50.1",
+        reserve_amount="5.04",
+        venue_order_id="order-2",
+    )
+    db.execute(
+        "INSERT INTO order_intents VALUES (?,?,?,?,?,?,?,?)",
+        (
+            "synthetic-late",
+            fixture.runtime.portfolio_id,
+            "client-2",
+            "UNKNOWN",
+            "BTC/USD",
+            json.dumps(payload),
+            utc_iso(clock.now()),
+            utc_iso(clock.now()),
+        ),
+    )
+    db.execute(
+        "INSERT INTO position_reservations VALUES (?,?,?,?,?,?,?)",
+        (
+            "synthetic-late-hold",
+            fixture.runtime.portfolio_id,
+            "synthetic-late",
+            "USD",
+            "5.04",
+            "held",
+            utc_iso(clock.now()),
+        ),
+    )
+    trade = _trade(2, time=str(native_at.timestamp()), fee="0.04")
+    trade.update(price="50", cost="5")
+    venue.rest.results["TradesHistory"]["trades"]["trade-2"] = trade
+    venue.rest.results["TradesHistory"]["count"] = 2
+    legs = _ledgers(2, fee="0.04")
+    legs["quote-2"]["amount"] = "-5"
+    venue.rest.results["QueryLedgers"].update(legs)
+    execution.broker.intent_resolver = DurableBrokerIdentity(
+        db, venue="kraken", account_id=fixture.resolver.scope.account_id, mode="live"
+    )
+    asyncio.run(execution.reconcile())
+    events = [dict(row) for row in db.execute("SELECT * FROM ledger_events ORDER BY sequence")]
+    assert events[: len(old_events)] == old_events
+    assert [row["kind"] for row in events[-2:]] == ["fill", "fill_chronological_replay"]
+    assert [dict(row) for row in db.execute("SELECT * FROM journal_postings ORDER BY rowid")][
+        : len(old_postings)
+    ] == old_postings
+    assert fixture.ledger.books(fixture.runtime.portfolio_id).groups[: len(old_groups)] == old_groups
+    venue.rest.results["BalanceEx"] = {
+        "ZUSD": {"balance": "84.88", "hold_trade": "0"},
+        "XXBT": {"balance": "0.2", "hold_trade": "0"},
+    }
+    source = asyncio.run(venue.collect())
+    clock.advance((datetime.now(UTC) - clock.now()).total_seconds() + 0.1)
+    fixture.resolver.source = source
+    verification = fixture.resolver.verify_current_projection()
+    assert verification.local_projection_consistent
+    assert verification.native_transport_authenticated is False
+    api, token, _, _ = client(fixture)
+    result = api.post(
+        "/api/v1/owner/resolve-native-incident",
+        headers={"Authorization": f"Bearer {token}"},
+        json=body(fixture).model_dump(mode="json"),
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["clearance"] == "PENDING_NATIVE_PROOF"
+    assert result.json()["incident_cleared"] is False
+    assert fixture.resolver.blocked()
+    assert fixture.ledger.books(fixture.runtime.portfolio_id).cash_amount("USD") == Decimal("84.88")
