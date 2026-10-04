@@ -38,7 +38,7 @@ exposure held in another portfolio on the same account.
 
 Validation uses `/workspace/trade-graph/.venv/bin/python` with this worktree's
 `src` first in PYTHONPATH. The combined lifecycle/readiness/upstream/API suite
-passed 159 tests, including 70 lifecycle cases. These exercise real SQLite
+passed 160 tests, including 71 lifecycle cases. These exercise real SQLite
 migration/state/reopen, exact Decimal edges, scope/version/reservation drift,
 source/expiry refusal, stop/revocation/recovery, terminal account-history release,
 late-fill handling, flat-state verification, expense separation, retained quota
@@ -49,7 +49,9 @@ Root and T18 independent review found and corrected three management issues:
 remember acknowledged monetary commitment through uncertain native order states;
 preserve every current owner pause; and require post-effect scoped reconciliation
 with concrete account evidence for full-account completion. The review added
-regressions for these boundaries. T18 independently reran the 70 lifecycle cases.
+regressions for these boundaries. T18 independently reran 70 lifecycle cases before the final observation timestamp binding test.
+Own-effect history also requires observed_at to equal the durable event timestamp;
+republishing an older observation under a later event cannot release an effect.
 
 Outstanding prerequisites are T17's funded operation/host evidence, T18's future
 actual authenticated complete economics and exact paper/live account/instrument/

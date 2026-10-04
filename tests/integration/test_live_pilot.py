@@ -32,6 +32,7 @@ def fixture(tmp_path):
     health = json.loads(value.db.execute("SELECT payload_json FROM activity_events "
                                         "WHERE kind='execution_reconciliation_health'").fetchone()[0])
     health["observation_scope"] = "owned_intent_fill_history"
+    health["observed_at"] = utc_iso(value.clock.now())
     value.db.execute("UPDATE activity_events SET payload_json=? WHERE kind='execution_reconciliation_health'",
                      (json.dumps(health),))
     value.source_pin = value.source()
@@ -82,8 +83,12 @@ def seed_effect(fixture, *, effect_state="PREPARED", order_state="SUBMISSION_PEN
 def synthetic_later_account_history(fixture):
     """A synthetic post-effect fact for mechanical release tests, never authority."""
     fixture.clock.advance(1)
-    fixture.db.execute("UPDATE activity_events SET created_at=? WHERE kind='execution_reconciliation_health'",
-                       (utc_iso(fixture.clock.now()),))
+    health = json.loads(fixture.db.execute("SELECT payload_json FROM activity_events "
+                                          "WHERE kind='execution_reconciliation_health'").fetchone()[0])
+    health["observed_at"] = utc_iso(fixture.clock.now())
+    fixture.db.execute("UPDATE activity_events SET created_at=?,payload_json=? "
+                       "WHERE kind='execution_reconciliation_health'",
+                       (utc_iso(fixture.clock.now()), json.dumps(health)))
 
 
 def envelope(fixture, *, held=(), proposed="1", expenses=(), now=None):
@@ -489,3 +494,14 @@ def test_arbitrary_external_verifier_callback_is_never_account_authority(fixture
                                         upstream=LiveUpstreamSources(venue=source))
     assert controller._verified_account_state() is False
     assert invoked == []
+
+
+def test_later_event_timestamp_cannot_republish_an_older_native_observation(fixture):
+    effect = seed_effect(fixture, effect_state="UNKNOWN", order_state="CANCELLED")
+    fixture.clock.advance(1)
+    fixture.db.execute("UPDATE activity_events SET created_at=? WHERE kind='execution_reconciliation_health'",
+                       (utc_iso(fixture.clock.now()),))
+    with pytest.raises(StaleState, match="fresh account"):
+        fixture.lifecycle.reconcile_effect(effect)
+    synthetic_later_account_history(fixture)
+    assert fixture.lifecycle.reconcile_effect(effect) == "RELEASED"

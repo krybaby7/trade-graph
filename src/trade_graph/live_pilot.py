@@ -403,6 +403,7 @@ class ProtectedPilotLifecycle:
         coverage = {"complete_account"} if full_account else {"owned_intent_fill_history", "complete_account"}
         return bool(row and document.get("state") == "complete"
                     and document.get("observation_scope") in coverage
+                    and document.get("observed_at") == row["created_at"]
                     and timedelta(0) <= self.clock.now() - parse_utc(row["created_at"]) <= timedelta(seconds=60)
                     and (after is None or parse_utc(row["created_at"]) > after))
 
