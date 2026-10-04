@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timedelta
 from decimal import Context, Decimal, localcontext
@@ -17,7 +18,7 @@ from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.ledger import Ledger
 from trade_graph.contracts.models import InstrumentRules
 from trade_graph.domain.clock import Clock, parse_utc, utc_iso
-from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError, ValidationFailure
 from trade_graph.domain.money import Money, canonical_decimal, parse_decimal
 from trade_graph.live_evidence import LiveUpstreamSources
 from trade_graph.live_gate import (
@@ -177,8 +178,6 @@ class ProtectedPilotLifecycle:
             ).fetchmany(10001)
             if len(siblings) > 10000:
                 raise StaleState("pilot account history exceeds bounded window")
-            if siblings and not self._complete_account_history():
-                raise StaleState("fresh complete account history required for a replacement pilot grant")
             for sibling in siblings:
                 unresolved = self.database.execute(
                     "SELECT 1 FROM live_pilot_effects WHERE authorization_id=? "
@@ -190,6 +189,8 @@ class ProtectedPilotLifecycle:
                                     if asset != grant.allocation.currency))
                 if sibling["state"] not in {"STOPPED", "REVOKED"} or unresolved is not None or inventory:
                     raise AuthorityDenied("prior pilot account exposure still requires management")
+            if siblings and not self._verified_account_state(after=self._native_account_cutoff()):
+                raise StaleState("authenticated complete account state required for a replacement pilot grant")
             existing_orders = self.database.execute(
                 "SELECT state FROM order_intents WHERE portfolio_id=? OR "
                 "(json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=? "
@@ -340,17 +341,17 @@ class ProtectedPilotLifecycle:
     def _management_latch(self, grant: OwnerPilotAuthorization, reason: str) -> None:
         pause = self.database.execute("SELECT * FROM pause_states WHERE portfolio_id=?",
                                       (self.scope.portfolio_id,)).fetchone()
-        # A grant may not weaken an already stronger explicit owner halt.
-        profile = grant.stop_profile
-        if pause is not None and pause["originator"] == "owner" and pause["profile"] in {"FLATTEN", "STOPPED"}:
-            profile = pause["profile"]
+        # An older grant cannot replace current owner management semantics,
+        # including cancel-all or a pause that forbids new protective orders.
+        if pause is not None and pause["originator"] == "owner" and pause["profile"] != "RUNNING":
+            return
         self.database.execute(
             """INSERT INTO pause_states
             (portfolio_id,profile,originator,reason,scope,requested_at,achieved,details_json)
             VALUES (?,?,'owner',?,'portfolio',?,'requested','{}')
             ON CONFLICT(portfolio_id) DO UPDATE SET profile=excluded.profile,originator='owner',
             reason=excluded.reason,requested_at=excluded.requested_at,achieved='requested'""",
-            (self.scope.portfolio_id, profile, reason, self._now()),
+            (self.scope.portfolio_id, grant.stop_profile, reason, self._now()),
         )
 
     def _halt(self, authorization_id: str, state: str, reason: str) -> None:
@@ -391,15 +392,71 @@ class ProtectedPilotLifecycle:
             self._management_latch(grant, "pilot restart requires reconciliation and a new owner authorization")
             self._event(authorization_id, row["generation"] + 1, "recovered_closed", {})
 
-    def _complete_account_history(self) -> bool:
+    def _complete_account_history(self, *, after: datetime | None = None, full_account: bool = False) -> bool:
         row = self.database.execute(
             "SELECT payload_json,created_at FROM activity_events WHERE kind='execution_reconciliation_health' "
             "AND json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=? "
             "AND json_extract(payload_json,'$.mode')='live' ORDER BY rowid DESC LIMIT 1",
             (self.scope.venue, self.scope.account_id),
         ).fetchone()
-        return bool(row and json.loads(row["payload_json"]).get("state") == "complete"
-                    and timedelta(0) <= self.clock.now() - parse_utc(row["created_at"]) <= timedelta(seconds=60))
+        document = json.loads(row["payload_json"]) if row else {}
+        coverage = {"complete_account"} if full_account else {"owned_intent_fill_history", "complete_account"}
+        return bool(row and document.get("state") == "complete"
+                    and document.get("observation_scope") in coverage
+                    and timedelta(0) <= self.clock.now() - parse_utc(row["created_at"]) <= timedelta(seconds=60)
+                    and (after is None or parse_utc(row["created_at"]) > after))
+
+    def _verified_account_state(self, *, after: datetime | None = None) -> bool:
+        """Account completion requires retained concrete external/ledger proof.
+
+        The current venue collector always leaves protected account-ledger
+        reconciliation pending. Neither an owned-history scan nor a caller's
+        complete-account label can replace it, so this currently returns false.
+        """
+        if (not self._complete_account_history(after=after, full_account=True)
+                or type(self.upstream) is not LiveUpstreamSources):
+            return False
+        from trade_graph.application.venue_conformance import PinnedVenueObservation
+
+        source = self.upstream.venue
+        if type(source) is not PinnedVenueObservation:
+            return False
+        try:
+            proof = source.verify(now=self.clock.now(), maximum_age_seconds=60)
+            scope = proof.observation.scope.model_dump(mode="json")
+            mode = scope.pop("mode")
+            return (mode == "live" and scope == self.scope.model_dump(mode="json")
+                    and proof.source_current
+                    and {"BalanceEx", "OpenOrders", "TradesHistory"} <= set(proof.authenticated_reads)
+                    and {"balances", "open_orders", "native_history"} <= set(proof.observation.completed_stages)
+                    and "protected_account_ledger_reconciliation_unverified" not in proof.pending
+                    and not proof.pending
+                    and (after is None or proof.observation.started_at > after))
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, ArithmeticError,
+                RecursionError, sqlite3.DatabaseError, TradeGraphError):
+            return False
+
+    def _native_account_cutoff(self) -> datetime | None:
+        """Latest retained native change that an account proof must postdate."""
+        queries = (
+            ("SELECT MAX(updated_at) FROM order_intents WHERE portfolio_id=? OR "
+             "(json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=? "
+             "AND json_extract(payload_json,'$.mode')='live')",
+             (self.scope.portfolio_id, self.scope.venue, self.scope.account_id)),
+            ("SELECT MAX(created_at) FROM order_attempts WHERE intent_id IN "
+             "(SELECT intent_id FROM order_intents WHERE portfolio_id=? OR "
+             "(json_extract(payload_json,'$.venue')=? AND json_extract(payload_json,'$.account_id')=? "
+             "AND json_extract(payload_json,'$.mode')='live'))",
+             (self.scope.portfolio_id, self.scope.venue, self.scope.account_id)),
+            ("SELECT MAX(created_at) FROM fills WHERE venue=? AND account_id=?",
+             (self.scope.venue, self.scope.account_id)),
+            ("SELECT MAX(effective_at) FROM ledger_events WHERE portfolio_id=? OR portfolio_id IN "
+             "(SELECT portfolio_id FROM live_pilot_grants WHERE json_extract(scope_json,'$.venue')=? "
+             "AND json_extract(scope_json,'$.account_id')=?)",
+             (self.scope.portfolio_id, self.scope.venue, self.scope.account_id)),
+        )
+        dates = [self.database.execute(query, params).fetchone()[0] for query, params in queries]
+        return max((parse_utc(value) for value in dates if value is not None), default=None)
 
     def reconcile_effect(self, effect_id: str) -> str:
         """Resolve from durable native order/fill state; never accept an outcome flag."""
@@ -424,15 +481,23 @@ class ProtectedPilotLifecycle:
                                           (effect["intent_id"],)).fetchone()
             state = effect["state"]
             if intent["state"] in {"SUBMITTING", "UNKNOWN", "CANCEL_PENDING"}:
-                state = "UNKNOWN"
+                # Acknowledged gross acquisition remains permanently charged.
+                # Native order uncertainty still blocks stop completion through
+                # its order row; it cannot erase prior acknowledged exposure.
+                state = "COMMITTED" if effect["state"] == "COMMITTED" else "UNKNOWN"
             elif fills is not None or intent["state"] in {"OPEN", "PARTIALLY_FILLED", "FILLED"}:
                 state = "COMMITTED"
             elif intent["state"] in {"REJECTED", "CANCELLED"}:
-                if not self._complete_account_history():
-                    raise StaleState("complete fresh account history required to release a pilot hold")
                 # Once external exposure was acknowledged, conservatively retain
                 # its full-loss commitment even if a later order label changes.
-                state = "COMMITTED" if effect["state"] == "COMMITTED" else "RELEASED"
+                if effect["state"] == "COMMITTED":
+                    state = "COMMITTED"
+                else:
+                    cutoff = max(parse_utc(effect["updated_at"]), self._native_account_cutoff()
+                                 or parse_utc(effect["updated_at"]))
+                    if not self._complete_account_history(after=cutoff):
+                        raise StaleState("complete fresh account history required to release a pilot hold")
+                    state = "RELEASED"
             self.database.execute("UPDATE live_pilot_effects SET state=?,updated_at=? WHERE effect_id=?",
                                   (state, self._now(), effect_id))
             self._event(row["authorization_id"], row["generation"], "effect_reconciled",
@@ -466,7 +531,7 @@ class ProtectedPilotLifecycle:
             inventory = (any(lot.open_quantity() != 0 for lot in books.lots)
                          or any(amount != 0 for asset, amount in books.cash.items() if asset != rules.quote_asset))
             if (unresolved is not None or len(intents) > 10000 or any(item["state"] in _OPEN_ORDERS for item in intents)
-                    or inventory or not self._complete_account_history()):
+                    or inventory or not self._verified_account_state(after=self._native_account_cutoff())):
                 raise StaleState("pilot stop is incomplete until reconciled orders and positions are flat")
             self.database.execute("UPDATE live_pilot_grants SET state='STOPPED',generation=generation+1,updated_at=? "
                                   "WHERE authorization_id=?", (self._now(), authorization_id))

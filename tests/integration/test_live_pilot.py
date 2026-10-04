@@ -10,6 +10,7 @@ import json
 import sqlite3
 from datetime import timedelta
 from decimal import Decimal, localcontext
+from types import SimpleNamespace
 
 import pytest
 from tests.integration.test_live_readiness import Fixture
@@ -20,6 +21,7 @@ from trade_graph.contracts.models import InstrumentRules
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.domain.money import Money
+from trade_graph.live_evidence import LiveUpstreamSources
 from trade_graph.live_gate import evaluate_live_readiness
 from trade_graph.live_pilot import ProtectedPilotLifecycle, validate_pilot_envelope
 
@@ -27,6 +29,11 @@ from trade_graph.live_pilot import ProtectedPilotLifecycle, validate_pilot_envel
 @pytest.fixture
 def fixture(tmp_path):
     value = Fixture(tmp_path)
+    health = json.loads(value.db.execute("SELECT payload_json FROM activity_events "
+                                        "WHERE kind='execution_reconciliation_health'").fetchone()[0])
+    health["observation_scope"] = "owned_intent_fill_history"
+    value.db.execute("UPDATE activity_events SET payload_json=? WHERE kind='execution_reconciliation_health'",
+                     (json.dumps(health),))
     value.source_pin = value.source()
     value.lifecycle = ProtectedPilotLifecycle(value.db, value.clock, scope=value.scope, source=value.source_pin)
     value.authorization_id = value.lifecycle.prepare()
@@ -70,6 +77,13 @@ def seed_effect(fixture, *, effect_state="PREPARED", order_state="SUBMISSION_PEN
                        ("synthetic-effect", fixture.authorization_id, "synthetic-intent", 1, "0" * 64,
                         "USD", cost, effect_state, now, now))
     return "synthetic-effect"
+
+
+def synthetic_later_account_history(fixture):
+    """A synthetic post-effect fact for mechanical release tests, never authority."""
+    fixture.clock.advance(1)
+    fixture.db.execute("UPDATE activity_events SET created_at=? WHERE kind='execution_reconciliation_health'",
+                       (utc_iso(fixture.clock.now()),))
 
 
 def envelope(fixture, *, held=(), proposed="1", expenses=(), now=None):
@@ -218,6 +232,8 @@ def test_management_cannot_weaken_owner_flatten(fixture):
                                                   ("REJECTED", "RELEASED"), ("CANCELLED", "RELEASED")])
 def test_effect_reconciliation_uses_durable_order_state(fixture, order_state, expected):
     effect = seed_effect(fixture, effect_state="UNKNOWN", order_state=order_state)
+    if expected == "RELEASED":
+        synthetic_later_account_history(fixture)
     assert fixture.lifecycle.reconcile_effect(effect) == expected
 
 
@@ -249,19 +265,25 @@ def test_stop_completion_requires_no_unknown_order_or_inventory(fixture):
     with pytest.raises(StaleState, match="flat"):
         fixture.lifecycle.complete_stop(fixture.authorization_id)
     fixture.db.execute("UPDATE order_intents SET state='CANCELLED'")
+    synthetic_later_account_history(fixture)
     fixture.lifecycle.reconcile_effect(effect)
     Ledger(fixture.db, fixture.clock).deposit(fixture.pid, "BTC", Decimal("0.01"), "synthetic-position")
     with pytest.raises(StaleState, match="flat"):
         fixture.lifecycle.complete_stop(fixture.authorization_id)
     Ledger(fixture.db, fixture.clock).withdraw(fixture.pid, "BTC", Decimal("0.01"), "synthetic-position-close")
-    fixture.lifecycle.complete_stop(fixture.authorization_id)
-    assert fixture.db.execute("SELECT state FROM live_pilot_grants").fetchone()[0] == "STOPPED"
+    synthetic_later_account_history(fixture)
+    # A flat local book and a complete owned-history scan do not establish the
+    # whole venue account. The concrete current collector lacks that proof.
+    with pytest.raises(StaleState, match="flat"):
+        fixture.lifecycle.complete_stop(fixture.authorization_id)
+    assert fixture.db.execute("SELECT state FROM live_pilot_grants").fetchone()[0] == "STOPPING"
     assert fixture.db.execute("SELECT profile FROM pause_states").fetchone()[0] == "MANAGE_ONLY"
 
 
 def test_revocation_does_not_allow_replacement_with_unresolved_effects(fixture):
     seed_effect(fixture, effect_state="UNKNOWN", order_state="UNKNOWN")
     fixture.lifecycle.revoke(fixture.authorization_id, reason="synthetic revocation")
+    synthetic_later_account_history(fixture)
     fixture.document["owner_authorization"]["payload"]["authorization_id"] = "synthetic-replacement"
     source = fixture.source()
     replacement = ProtectedPilotLifecycle(fixture.db, fixture.clock, scope=fixture.scope, source=source)
@@ -359,7 +381,7 @@ def test_revoked_flat_grant_cannot_be_replaced_using_stale_account_history(fixtu
     fixture.document["owner_authorization"]["payload"]["authorization_id"] = "synthetic-replacement"
     source = fixture.source()
     replacement = ProtectedPilotLifecycle(fixture.db, fixture.clock, scope=fixture.scope, source=source)
-    with pytest.raises(StaleState, match="fresh complete account"):
+    with pytest.raises(StaleState, match="authenticated complete account"):
         replacement.prepare()
 
 
@@ -376,3 +398,94 @@ def test_reconciliation_cannot_release_a_different_account_effect(fixture):
 def test_history_bound_refuses_incomplete_envelope(fixture):
     with pytest.raises(ValidationFailure, match="bounded window"):
         envelope(fixture, held=("0",) * 10001)
+
+
+def test_acknowledged_commitment_survives_unknown_then_terminal_cancel(fixture):
+    effect = seed_effect(fixture, effect_state="UNKNOWN", order_state="OPEN", cost="4")
+    assert fixture.lifecycle.reconcile_effect(effect) == "COMMITTED"
+    fixture.db.execute("UPDATE order_intents SET state='UNKNOWN'")
+    assert fixture.lifecycle.reconcile_effect(effect) == "COMMITTED"
+    fixture.db.execute("UPDATE order_intents SET state='CANCELLED'")
+    assert fixture.lifecycle.reconcile_effect(effect) == "COMMITTED"
+    with pytest.raises(AuthorityDenied, match="full-loss"):
+        fixture.lifecycle._envelope(fixture.authorization_id, fixture.grant, Money(amount="1.01", currency="USD"))
+
+
+@pytest.mark.parametrize("profile", ["PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN",
+                                     "STOPPED"])
+@pytest.mark.parametrize("operation", ["stop", "revoke", "recover"])
+def test_older_grant_preserves_every_current_owner_pause_semantic(fixture, profile, operation):
+    seed_effect(fixture, order_state="UNKNOWN")
+    fixture.db.execute("UPDATE pause_states SET profile=?,originator='owner',reason='newer synthetic owner action',"
+                       "achieved='existing owner achieved state',details_json='{}'", (profile,))
+    before = tuple(fixture.db.execute("SELECT * FROM pause_states").fetchone())
+    if operation == "recover":
+        fixture.lifecycle.recover(fixture.authorization_id)
+    else:
+        getattr(fixture.lifecycle, operation)(fixture.authorization_id, reason="older synthetic grant stop policy")
+    assert tuple(fixture.db.execute("SELECT * FROM pause_states").fetchone()) == before
+
+
+def test_fresh_history_before_or_simultaneous_with_effect_cannot_release_it(fixture):
+    effect = seed_effect(fixture, effect_state="UNKNOWN", order_state="CANCELLED")
+    # The initial fixture health and new effect share a timestamp. That equality
+    # does not prove the account scan happened after the possibly unknown effect.
+    with pytest.raises(StaleState, match="fresh account"):
+        fixture.lifecycle.reconcile_effect(effect)
+    fixture.clock.advance(1)
+    fixture.db.execute("UPDATE order_intents SET updated_at=?", (utc_iso(fixture.clock.now()),))
+    with pytest.raises(StaleState, match="fresh account"):
+        fixture.lifecycle.reconcile_effect(effect)
+    synthetic_later_account_history(fixture)
+    assert fixture.lifecycle.reconcile_effect(effect) == "RELEASED"
+
+
+def test_later_native_attempt_invalidates_an_earlier_still_fresh_account_scan(fixture):
+    effect = seed_effect(fixture, effect_state="UNKNOWN", order_state="CANCELLED")
+    synthetic_later_account_history(fixture)
+    fixture.clock.advance(1)
+    fixture.db.execute("INSERT INTO order_attempts VALUES ('synthetic-attempt','synthetic-intent','cancel',?,'{}')",
+                       (utc_iso(fixture.clock.now()),))
+    with pytest.raises(StaleState, match="fresh account"):
+        fixture.lifecycle.reconcile_effect(effect)
+    synthetic_later_account_history(fixture)
+    assert fixture.lifecycle.reconcile_effect(effect) == "RELEASED"
+
+
+def test_a_legacy_bare_complete_label_is_not_owned_history_proof(fixture):
+    effect = seed_effect(fixture, effect_state="UNKNOWN", order_state="CANCELLED")
+    synthetic_later_account_history(fixture)
+    health = json.loads(fixture.db.execute("SELECT payload_json FROM activity_events "
+                                          "WHERE kind='execution_reconciliation_health'").fetchone()[0])
+    health.pop("observation_scope")
+    fixture.db.execute("UPDATE activity_events SET payload_json=? WHERE kind='execution_reconciliation_health'",
+                       (json.dumps(health),))
+    with pytest.raises(StaleState, match="fresh account"):
+        fixture.lifecycle.reconcile_effect(effect)
+
+
+def test_a_full_account_label_alone_cannot_finish_a_flat_pilot(fixture):
+    rules(fixture)
+    fixture.lifecycle.stop(fixture.authorization_id, reason="synthetic flat local stop")
+    health = json.loads(fixture.db.execute("SELECT payload_json FROM activity_events "
+                                          "WHERE kind='execution_reconciliation_health'").fetchone()[0])
+    health["observation_scope"] = "complete_account"
+    fixture.db.execute("UPDATE activity_events SET payload_json=? WHERE kind='execution_reconciliation_health'",
+                       (json.dumps(health),))
+    with pytest.raises(StaleState, match="flat"):
+        fixture.lifecycle.complete_stop(fixture.authorization_id)
+    assert fixture.db.execute("SELECT state FROM live_pilot_grants").fetchone()[0] == "STOPPING"
+
+
+def test_arbitrary_external_verifier_callback_is_never_account_authority(fixture):
+    invoked = []
+    health = json.loads(fixture.db.execute("SELECT payload_json FROM activity_events "
+                                          "WHERE kind='execution_reconciliation_health'").fetchone()[0])
+    health["observation_scope"] = "complete_account"
+    fixture.db.execute("UPDATE activity_events SET payload_json=? WHERE kind='execution_reconciliation_health'",
+                       (json.dumps(health),))
+    source = SimpleNamespace(verify=lambda **kwargs: invoked.append(kwargs))
+    controller = ProtectedPilotLifecycle(fixture.db, fixture.clock, scope=fixture.scope, source=fixture.source_pin,
+                                        upstream=LiveUpstreamSources(venue=source))
+    assert controller._verified_account_state() is False
+    assert invoked == []

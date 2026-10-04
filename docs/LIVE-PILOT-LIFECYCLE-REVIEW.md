@@ -21,23 +21,35 @@ expenses from every role and unresolved usage remain charged; synthetic costs do
 not consume the owner's operating allowance.
 
 Stop/revocation persist owner management latches while preserving every effect
-hold. Recovery survives database reopen, closes increase authority and leaves
+hold and every existing non-running owner pause's current semantics. Recovery
+survives database reopen, closes increase authority and leaves
 unknown outcomes reserved. Reconciliation uses durable native order/fill state,
 not caller outcome flags. A rejected/cancelled unfilled order releases only with
-fresh complete account history. A committed acquisition retains its full-loss
-charge permanently. A late fill cannot remain released. Stop completion refuses
-nonflat books, unknown effects or outstanding orders. Replacement grants cannot
+an explicitly scoped owned-history observation strictly after the latest native
+effect/order/attempt/fill/ledger change. Same-clock or bare complete labels are
+refused. A committed acquisition retains its full-loss charge permanently, even
+through later uncertainty and cancellation. A late fill cannot remain released.
+Stop completion refuses nonflat books, unknown effects or outstanding orders, and
+requires actual retained authenticated whole-account/protected-ledger evidence.
+The current venue collector lacks that proof, so flat local books and a caller's
+full-account label do not complete a stop. Replacement grants cannot
 reclassify unresolved revoked-account exposure as a fresh allocation, including
 exposure held in another portfolio on the same account.
 
 Validation uses `/workspace/trade-graph/.venv/bin/python` with this worktree's
 `src` first in PYTHONPATH. The combined lifecycle/readiness/upstream/API suite
-passed 135 tests, including 46 lifecycle cases. These exercise real SQLite
+passed 159 tests, including 70 lifecycle cases. These exercise real SQLite
 migration/state/reopen, exact Decimal edges, scope/version/reservation drift,
 source/expiry refusal, stop/revocation/recovery, terminal account-history release,
 late-fill handling, flat-state verification, expense separation, retained quota
 and append-only audit. ACTIVE test rows are explicitly synthetic retained states;
 activation remains false. No venue/provider request or production grant occurred.
+
+Root and T18 independent review found and corrected three management issues:
+remember acknowledged monetary commitment through uncertain native order states;
+preserve every current owner pause; and require post-effect scoped reconciliation
+with concrete account evidence for full-account completion. The review added
+regressions for these boundaries. T18 independently reran the 70 lifecycle cases.
 
 Outstanding prerequisites are T17's funded operation/host evidence, T18's future
 actual authenticated complete economics and exact paper/live account/instrument/

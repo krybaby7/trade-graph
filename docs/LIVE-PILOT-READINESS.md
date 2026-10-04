@@ -123,13 +123,20 @@ the EUR total/day envelope; synthetic reservations are excluded. Financial
 amounts are bounded before arithmetic and compared with precision 100.
 
 Stop/revocation latch the declared `MANAGE_ONLY` or `FLATTEN` position/order policy
-without weakening an existing owner flatten/stop. They preserve unresolved holds.
+while preserving every existing non-running owner pause and its current management
+semantics. They preserve unresolved holds.
 Startup recovery closes the grant and marks prepared/submitting effects unknown;
 the old authorization cannot resume. Effect reconciliation reads durable native
 order/fill state, requires fresh complete account history to release a known
-unfilled terminal order, and retains committed costs permanently. Stop completion
-requires current account history, no unresolved order/effect, and no native
-position. A revoked grant does not permit a replacement while old account
+unfilled terminal order, and retains committed costs permanently, including through
+later uncertainty and cancellation. Own-effect release requires an explicit
+`owned_intent_fill_history` observation strictly after the effect and latest native
+order/attempt/fill/ledger changes; a same-clock or bare complete label is refused.
+Stop completion requires retained authenticated full venue-account and protected
+ledger proof, no unresolved order/effect, and no native position. A local flat book
+or owned-history observation does not supply full-account proof. The current venue
+collector leaves protected account-ledger reconciliation pending, so account-level
+completion remains refused. A revoked grant does not permit a replacement while old account
 effects, orders or inventory remain unresolved. Audit events are append-only.
 
 The default runtime and existing live adapter do not adopt this lifecycle. Genuine
