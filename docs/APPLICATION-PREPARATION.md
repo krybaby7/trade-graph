@@ -118,3 +118,12 @@ nor rolled back by the old owner, and that takeover of a retained STARTED intent
 rolls back without rerunning the candidate or accepting a late result. Actual
 effects finished before interruption remain retained. The independent review's
 original stale-owner reproducer supplied the regression scenario.
+
+After the final completion-checkpoint correction, the frozen source passed all
+65 combined cases in 497.772 seconds, with zero failures, errors or skips.
+Four added cases exercise on-time completion recovery after the deadline, a
+late completion checkpoint interrupted before rollback, and changed cost
+allocation exactly at the normal/recovered ACTIVE checkpoint. Current source,
+full cost binding and generation are re-admitted inside the fenced ACTIVE
+writer transaction. Independent review separately passed 13 targeted cases in
+180.329 seconds, including both originally reproduced crash/takeover gaps.
