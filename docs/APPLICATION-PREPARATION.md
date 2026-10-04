@@ -103,3 +103,13 @@ commission tests and 16 preparation tests. The additional preparation cases ran
 two independently selected finite inputs one per step, preserved completed health
 without repetition, and refused a new health effect after its deadline while
 retaining the generated source cost and restoring the effect-backed baseline.
+
+The subsequent lease-takeover correction passed all 61 combined cases in
+425.259 seconds with zero failures, errors or skips. Six added regressions pause
+an expired owner before its activation checkpoint, health intent, attempted
+rollback, child execution, application-record commit, or health completion.
+They verify that a replacement's completed ACTIVE release is neither repeated
+nor rolled back by the old owner, and that takeover of a retained STARTED intent
+rolls back without rerunning the candidate or accepting a late result. Actual
+effects finished before interruption remain retained. The independent review's
+original stale-owner reproducer supplied the regression scenario.
