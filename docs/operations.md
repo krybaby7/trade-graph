@@ -289,7 +289,7 @@ replace missing accounting with zero spend. Preserve that report and the databas
 for local recovery before another funded observation.
 
 T17's actual current-public-data verification and funded credentialed soak are
-still pending. The [T17 continuation review](reviews/2026-10-02-t17-operations.md)
+still pending. The [T17 continuation review](reviews/2026-10-04-t17-takeover.md)
 records the bounded network failures, local recovery drill and remaining owner/host
 setup. T18's [forward-evaluation machinery](FORWARD-EVALUATION.md) is
 partial preparation: preregister untouched fixed forward blocks and baselines,
@@ -303,11 +303,13 @@ sensitivities are declared scenarios. Neither uncertainty bounds nor positive
 paper P&L authorize live trading.
 
 T19 adapter preparation still needs owner-selected eligibility, permitted
-authenticated reconciliation/conformance and protection evidence. The T21
-[host-tested process scaffold](PROCESS-BOUNDARY.md) still needs production kernel
-extraction, authenticated scoped RPC, independently pinned deployment/controller
-artifacts and validation on the intended deployment host. T20 live enablement
-and T22 broader deployed Engineer authority remain closed.
+authenticated reconciliation/conformance and protection evidence. T21 now has
+[confined six-role composition](PROCESS-BOUNDARY.md), authenticated scoped RPC
+and a complete [immutable offline paper image](PROTECTED-DEPLOYMENT.md). The image's
+fixed boot uses the owner-pinned protected service. Owner-approved distribution
+and repeated isolation/recovery proof on the intended host remain pending;
+funded connectivity requires a separately reviewed credential/network profile.
+T20 live enablement and T22 broader deployed Engineer authority remain closed.
 
 ## Pause and stop
 
