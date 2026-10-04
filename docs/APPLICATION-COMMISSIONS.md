@@ -41,7 +41,9 @@ refuses this distinct executable controller. The financial active version,
 financial schema and durable ledger remain unchanged.
 
 The selected projection's [compatible sidecar migration and code rollback](APPLICATION-PROJECTION.md)
-remain owned by the trusted parent. This preparation is synthetic development
+remain owned by the trusted parent. The explicit [bounded preparation loop](APPLICATION-PREPARATION.md)
+now routes that exact Engineer job, activates its compatible sidecar and records
+actual confined functional health with durable source-only recovery. This preparation is synthetic development
 work; it provides no real model credential route, production scheduler admission,
 untouched forward economics or intended-host deployment approval.
 

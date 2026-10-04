@@ -93,6 +93,7 @@ def flow(tmp_path, environment_pin, *, source=V2, max_steps=3, max_spend="1", ow
     current = Flow(clock, db, pid, None, engineer, versions, artifact, office, secretary, gateway,
                    proposal.record_id, tid, root, workspace, handler, worker)
     current.projection, current.projection_arguments, current.snapshot = projection, arguments, snapshot
+    current.execution, current.runtime = financial[3], financial[6]
     return current
 
 

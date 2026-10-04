@@ -2,8 +2,11 @@
 
 `application.application_projection.OfflineApplicationProjection` prepares the
 selected `secretary_digest_projection` class without granting it to the deployed
-Engineer. It is absent from default runtime assembly, the CLI, model tools and
-financial RPC. Paid/live/production authorization remains false. This implements
+Engineer. The separate [commissioned gateway route](APPLICATION-COMMISSIONS.md)
+and [trusted bounded scheduling loop](APPLICATION-PREPARATION.md) now prepare
+generated source through actual synthetic usage journals and durable functional
+health. All remain absent from default runtime assembly, the CLI, model tools
+and financial RPC. Paid/live/production authorization remains false. This implements
 local synthetic preparation for T22; it does not complete A42, T18 economics,
 intended-host verification, immutable deployment or an owner Class C grant.
 
