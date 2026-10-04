@@ -1,9 +1,12 @@
-# Implementation status — remaining gates round 2
+# Implementation status — orchestrator takeover
 
-Updated: 2026-10-02. T00–T16 remain complete at their recorded scopes. **T17–T22
-have reviewed implementation checkpoints; remaining acceptance gates are open.**
-All six task agents are idle. `in_progress` means unfinished acceptance;
-`execution_state=idle` records that no task agent is currently running.
+Updated: 2026-10-04. T00–T16 remain complete at their recorded scopes. **T17–T22
+acceptance remains open; six isolated continuation workstreams are running.**
+Root integrates on `codex/orchestrator-takeover-2026-10-04`, recovered from published
+`264e7b0`. Owner host, funded model setup and venue preferences are pending. Current
+public probes still fail through the configured proxy. No funded/private/live
+operation or production deployment is running. The following verified results
+belong to the preserved 2026-10-02 checkpoint until integration is tested.
 
 Verified source: `d0e63aa07f2c4d00b48816a0c9bd62f08e13da90`; tree `3fa27a5d7127fcecc9caa1fcc8cdc4ab62003b39`.
 Integration branch: `codex/orchestrator-continuation`.
