@@ -349,8 +349,20 @@ def test_signed_native_receipt_cannot_extend_the_owner_granted_duration(tmp_path
         changed.verify(now=late + timedelta(seconds=1))
 
 
-def test_actual_async_deadline_preserves_prior_normalized_facts_and_retained_sources(tmp_path):
+@pytest.mark.parametrize("boundary", ["duration", "expiry"])
+def test_actual_async_deadline_preserves_prior_normalized_facts_and_retained_sources(tmp_path, boundary):
     fixture = Fixture(tmp_path, maximum_duration_seconds=1)
+    if boundary == "expiry":
+        document = json.loads(fixture.authority.path.read_bytes())
+        document["payload"]["expires_at"] = (datetime.now(UTC) + timedelta(seconds=0.4)).isoformat()
+        document["payload"] = ReadOnlyObservationGrant.model_validate(document["payload"]).model_dump(mode="json")
+        document["signature"] = _mac(fixture.owner_key, "owner-grant", document["payload"])
+        raw = _canonical(document)
+        fixture.authority.path.chmod(0o600)
+        fixture.authority.path.write_bytes(raw)
+        fixture.authority.path.chmod(0o400)
+        fixture.authority = PinnedReadOnlyAuthority(fixture.authority.path, hashlib.sha256(raw).hexdigest(),
+                                                   fixture.owner_key)
 
     async def run():
         async def respond(request):
@@ -378,6 +390,9 @@ def test_actual_async_deadline_preserves_prior_normalized_facts_and_retained_sou
     assert "observation_deadline_exceeded" in proof.pending
     assert "native_stage_transport_evidence_incomplete" in proof.pending
     assert [receipt.method for receipt in proof.observation.receipts] == ["Assets", "AssetPairs", "TradeVolume"]
+    assert proof.observation.finished_at == proof.observation.receipts[-1].finished_at
+    if boundary == "expiry":
+        assert proof.observation.finished_at < datetime.fromisoformat(document["payload"]["expires_at"])
     summary = json.loads((capture.path.parent / "native-summary.json").read_bytes())
     assert set(summary) == {"instruments", "account_fees"}
     assert proof.authenticated_reads == ()

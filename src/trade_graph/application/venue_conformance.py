@@ -431,7 +431,11 @@ class KrakenReadOnlyConformance:
             summary, completed, problems = progress.result()
         finally:
             await transport.aclose()
-        finished = datetime.now(UTC)
+        # Evidence freshness ends with the last retained venue response. Local
+        # cancellation/transport cleanup and report sealing can finish after an
+        # expiry-limited deadline without extending the owner's read authority
+        # or making earlier native facts appear newly observed.
+        finished = receipts[-1].finished_at if receipts else started
         summary_raw = _canonical(summary)
         if len(summary_raw) > MAX_CAPTURE_BYTES:
             raise ValueError("native observation summary exceeds its bound")

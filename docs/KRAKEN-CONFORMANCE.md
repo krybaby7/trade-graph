@@ -64,6 +64,10 @@ The duration starts at the beginning of collection and includes setup. No respon
 received after the grant's duration or expiry is admitted as a successful capture.
 An asynchronous deadline preserves the completed stage prefix and its retained
 sources; the interrupted stage stays pending.
+The observation's `finished_at` is the last retained native response time, or
+`started_at` when no response was retained. Local cleanup and report sealing
+cannot extend authority or refresh facts. This keeps an expiry-limited timeout
+verifiable when cleanup finishes just after the grant expires.
 
 The stable proof interface is:
 
@@ -148,6 +152,6 @@ file requirements and cold SQLite FILLED/CANCELLED recovery. Ruff and diff check
 passed. The generated private-free JUnit evidence is `/tmp/t19-r2-focused.xml`.
 
 The [2026-10-04 integrity continuation](reviews/2026-10-04-kraken-conformance-integrity.md)
-passes **289 focused tests**, including 20 new scope, native-fee, retained-replay
+passes **290 focused tests**, including 21 new scope, native-fee, retained-replay
 and deadline regressions. Its account/transport data remain synthetic. This
 verification does not complete the pending actual-account gates above.

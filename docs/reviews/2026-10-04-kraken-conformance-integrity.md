@@ -17,6 +17,9 @@ Read-only collection starts its duration before setup, checks response times
 against that duration and the grant expiry, and retains previously completed
 facts when an actual asynchronous deadline interrupts a later stage. Source
 digests are pinned before requests and compared again after collection.
+The fact window ends at the last retained native response. Local cancellation,
+transport cleanup and sealing do not refresh earlier facts or extend the grant;
+an expiry-limited timeout remains verifiable after cleanup crosses its deadline.
 
 Verification independently replays successful native captures from the first
 incomplete stage. A signed pending-label omission cannot hide a malformed balance
@@ -29,7 +32,7 @@ additive.
 
 ## Verification
 
-The isolated worktree import path was asserted. The focused command passed **289
+The isolated worktree import path was asserted. The focused command passed **290
 tests**, with zero failures, errors or skips, using the existing frozen dependency
 environment and an isolated temporary directory:
 
@@ -50,11 +53,11 @@ PYTHONPATH=/workspace/trade-graph-t19-takeover/src \
   tests/unit/test_protocols.py tests/e2e/test_offline.py
 ```
 
-Twenty new regressions exercise exact scope and alias handling, coherent failed
+Twenty-one new regressions exercise exact scope and alias handling, coherent failed
 refresh, individual unsupported fee tiers, independent failed-stage replay,
 unconsumed or unrequested native captures, serial receipt time checks, granted
-duration and a real one-second asyncio deadline with synthetic transport. The
-adapter/collector subset passed 135 tests. Targeted Ruff and `git diff --check`
+duration and real asyncio deadlines at both duration and grant expiry with
+synthetic transport. The adapter/collector subset passed 136 tests. Targeted Ruff and `git diff --check`
 passed. Evidence files are private-free temporary JUnit reports, not account
 observations.
 
