@@ -35,6 +35,7 @@ from trade_graph.evaluation_contracts import (
     EvaluationContract,
     EvaluationSnapshot,
     ExpenseEvidence,
+    ExpenseResolution,
     Fingerprint,
     Reference,
     fixed_decimal,
@@ -61,7 +62,7 @@ MAX_ARCHIVED_HISTORY_RECORDS = 4096
 MAX_ARCHIVED_HISTORY_BYTES = 128 * 1024 * 1024
 MAX_EXPANDED_HISTORY_BYTES = 2 * 1024 * 1024 * 1024
 MAX_HISTORY_POLICY_BYTES = 4096
-TABLES = (
+SCHEMA_V1_TABLES = (
     "schema_migrations", "portfolios", "ledger_events", "journal_transactions", "journal_postings",
     "fx_rates", "valuation_marks", "instruments", "observations", "decisions", "snapshots",
     "order_intents", "order_attempts", "fills", "position_reservations", "deployment_budget",
@@ -74,6 +75,12 @@ TABLES = (
     "version_events", "artifact_bundles", "version_rollouts", "consumer_loads", "version_observations",
     "dashboard_commands", "dashboard_command_evidence", "dashboard_control_state",
 )
+TABLES = SCHEMA_V1_TABLES + (
+    "live_pilot_grants", "live_pilot_effects", "live_pilot_events",
+    "native_incident_resolutions", "native_incident_resolution_revocations", "protected_financial_checkpoints",
+    "native_fee_reservations",
+    "protected_financial_budget_origins",
+)
 IMMUTABLE_IDENTITIES = {
     "ledger_events": ("event_id",), "journal_transactions": ("transaction_id",),
     "journal_postings": ("posting_id",), "observations": ("observation_id",),
@@ -82,6 +89,10 @@ IMMUTABLE_IDENTITIES = {
     "valuation_marks": ("mark_id",), "fx_rates": ("rate_id",),
     "invoice_reconciliations": ("reconciliation_id",), "cost_allocations": ("receipt_id", "portfolio_id"),
     "version_history": ("portfolio_id", "version_id"), "activity_events": ("event_id",),
+    "live_pilot_events": ("event_id",), "native_incident_resolutions": ("resolution_id",),
+    "native_incident_resolution_revocations": ("revocation_id",),
+    "protected_financial_checkpoints": ("checkpoint_id",),
+    "protected_financial_budget_origins": ("origin_id",),
 }
 
 
@@ -99,7 +110,7 @@ def _card_time(value: str) -> datetime:
 
 
 class RuntimeCollectionBinding(EvaluationContract):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     trial_id: Reference
     deployment_id: Reference
     portfolio_id: Reference
@@ -123,14 +134,15 @@ class RuntimeCollectionBinding(EvaluationContract):
                 or document_hash(self.initial_source_json) != self.initial_source_sha256):
             raise ValueError("runtime initial inventory digest mismatch")
         initial = json.loads(self.initial_source_json)
-        if (not isinstance(initial, dict) or set(initial) != set(TABLES)
+        tables = SCHEMA_V1_TABLES if self.schema_version == 1 else TABLES
+        if (not isinstance(initial, dict) or set(initial) != set(tables)
                 or _canonical(initial) != self.initial_source_json):
             raise ValueError("runtime initial inventory must retain every required table canonically")
         return self
 
 
 class RuntimeEvidenceCapture(EvaluationContract):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     binding: RuntimeCollectionBinding
     captured_at: datetime
     source_sha256: Fingerprint
@@ -152,7 +164,8 @@ class RuntimeEvidenceCapture(EvaluationContract):
         source = json.loads(self.source_json)
         if _canonical(source) != self.source_json or document_hash(self.source_json) != self.source_sha256:
             raise ValueError("runtime source inventory digest mismatch")
-        if not isinstance(source, dict) or set(source) != set(TABLES):
+        tables = SCHEMA_V1_TABLES if self.schema_version == 1 else TABLES
+        if not isinstance(source, dict) or set(source) != set(tables):
             raise ValueError("runtime source inventory must retain every required table")
         snapshot = self.evaluation_snapshot
         if (snapshot.trial_id, snapshot.portfolio_id, snapshot.market_stream_id, snapshot.protocol_sha256) != (
@@ -175,6 +188,27 @@ class RuntimeVerification(EvaluationContract):
     inventory_sha256: Fingerprint | None
     source_manifest_sha256: Fingerprint
     database_consistent: bool = Field(strict=True)
+    actual_external_provenance_verified: Literal[False] = False
+    reasons: tuple[Reference, ...]
+    receipt_ids: tuple[Reference, ...]
+    synthetic_receipt_ids: tuple[Reference, ...]
+    unresolved_reservation_ids: tuple[Reference, ...]
+
+
+class RuntimeHistoricalVerification(EvaluationContract):
+    """Historical integrity, expressly separate from current economic readiness."""
+
+    verification_basis: Literal["retained_history"] = "retained_history"
+    runtime_source_sha256: Fingerprint
+    evaluation_snapshot_sha256: Fingerprint
+    protocol_sha256: Fingerprint
+    report_sha256: Fingerprint
+    inventory_sha256: Fingerprint | None
+    source_manifest_sha256: Fingerprint
+    current_source_sha256: Fingerprint
+    current_registry_source_manifest_sha256: Fingerprint
+    retained_history_consistent: bool = Field(strict=True)
+    is_current_capture: bool = Field(strict=True)
     actual_external_provenance_verified: Literal[False] = False
     reasons: tuple[Reference, ...]
     receipt_ids: tuple[Reference, ...]
@@ -259,7 +293,7 @@ class RuntimeEvidenceCollector:
             raise ValueError("runtime source exceeds complete byte collection bounds")
         return raw
 
-    def _binding(self, trial_id: str) -> RuntimeCollectionBinding:
+    def _binding(self, trial_id: str, *, require_open: bool = True) -> RuntimeCollectionBinding:
         self._history_bounds()
         rows = self.registry._rows("runtime_binding", trial_id)
         if len(rows) != 1:
@@ -276,7 +310,7 @@ class RuntimeEvidenceCollector:
             raise ValueError("runtime collection binding no longer matches its source")
         row = self.database.execute("SELECT mode, status FROM portfolios WHERE portfolio_id = ?",
                                     (binding.portfolio_id,)).fetchone()
-        if row is None or row["mode"] != "paper" or row["status"] != "open":
+        if row is None or row["mode"] != "paper" or (require_open and row["status"] != "open"):
             raise ValueError("runtime collection requires its open paper portfolio")
         return binding
 
@@ -430,16 +464,17 @@ class RuntimeEvidenceCollector:
             facts[key] = value
 
         for table, columns in IMMUTABLE_IDENTITIES.items():
-            for row in data[table]:
+            for row in data.get(table, []):
                 retain(table, [row[column] for column in columns], row)
         for table, identity, mutable in (
+            ("native_fee_reservations", "reservation_id", {"current_amount", "state"}),
             ("budget_reservations", "reservation_id", {"amount", "state", "updated_at"}),
             ("model_invocations", "invocation_id", {"state", "result_json", "updated_at"}),
             ("provider_transport_attempts", "attempt_id", {
                 "outcome", "response_sha256", "status_code", "response_bytes", "error_category", "finished_at",
             }),
         ):
-            for row in data[table]:
+            for row in data.get(table, []):
                 retain(table + "_identity", [row[identity]], {key: value for key, value in row.items()
                                                            if key not in mutable})
                 if table == "provider_transport_attempts" and row["outcome"] == "HTTP_RESPONSE":
@@ -510,9 +545,15 @@ class RuntimeEvidenceCollector:
             "invoice_reconciliations": ("created_at",), "activity_events": ("created_at",),
             "valuation_marks": ("observed_at",), "fx_rates": ("observed_at", "valid_as_of", "retrieved_at"),
             "price_cards": ("created_at",),
+            "live_pilot_grants": ("created_at", "updated_at"), "live_pilot_effects": ("created_at", "updated_at"),
+            "live_pilot_events": ("created_at",), "native_incident_resolutions": ("created_at",),
+            "native_incident_resolution_revocations": ("created_at",),
+            "protected_financial_checkpoints": ("created_at",),
+            "native_fee_reservations": ("created_at",),
+            "protected_financial_budget_origins": ("created_at",),
         }
         for table, columns in timestamps.items():
-            for row in data[table]:
+            for row in data.get(table, []):
                 if any(row[column] is not None and parse_utc(row[column]) > at for column in columns):
                     return False
         for row in data["decisions"]:
@@ -570,6 +611,8 @@ class RuntimeEvidenceCollector:
         # oversized source or history leaves no partial new report/blob behind.
         with self.registry._atomic(), self.database.snapshot():
             binding = self._binding(trial_id)
+            if binding.schema_version != 2:
+                raise ValueError("legacy runtime binding requires a new preregistered authority inventory")
             snapshot = self.registry._snapshot(trial_id)
             if snapshot.source_records != self.registry._source_bindings():
                 raise ValueError("evaluation source changed during runtime capture")
@@ -645,6 +688,83 @@ class RuntimeEvidenceCollector:
                 synthetic_receipt_ids=tuple(sorted(synthetic)), unresolved_reservation_ids=tuple(sorted(unresolved)),
             )
 
+    def verify_historical(self, capture: RuntimeEvidenceCapture) -> RuntimeHistoricalVerification:
+        """Authenticate retained history while allowing subsequent legitimate writes.
+
+        Frozen mutable order/task state is a historical observation, not a
+        requirement that production stop writing. Immutable ledger, receipt,
+        input, price and completed provider facts must survive unchanged. Later
+        costs and outcomes never make this old report a current eligibility proof.
+        """
+        capture = RuntimeEvidenceCapture.model_validate(capture.model_dump())
+        with self.registry._atomic():
+            self._history_bounds()
+        self.registry.verify_historical_snapshot(capture.evaluation_snapshot)
+        with self.registry._atomic(), self.database.snapshot(), localcontext(Context(prec=100)):
+            binding = self._binding(capture.binding.trial_id, require_open=False)
+            if binding != capture.binding or capture.captured_at > self.clock.now():
+                raise ValueError("historical runtime capture scope or availability changed")
+            key = document_hash(capture.model_dump_json())
+            retained = self._retained_capture(key, binding.trial_id)
+            if (retained is None or retained["document_json"] != capture.model_dump_json()
+                    or not capture.captured_at <= parse_utc(retained["collected_at"]) <= self.clock.now()):
+                raise ValueError("historical runtime capture is not retained by this collector")
+            raw = self._read()
+            data = json.loads(raw)
+            reasons, receipts, synthetic, unresolved = self._audit(data, binding)
+            original = self._source_facts(json.loads(capture.source_json))
+            current = self._source_facts(data)
+            if any(current.get(key) != value for key, value in original.items()):
+                reasons.append("invalid:captured_runtime_history_changed")
+            derived = {item.receipt_id: item for item in self._derived_expenses(json.loads(capture.source_json))}
+            imported, resolutions = {}, {}
+            for source in capture.evaluation_snapshot.source_records:
+                if source.kind not in {"expense", "expense_resolution"}:
+                    continue
+                row = self.registry.connection.execute(
+                    "SELECT document_json FROM evaluation_records WHERE kind=? AND record_key=?",
+                    (source.kind, source.record_key),
+                ).fetchone()
+                if (row is None or document_hash(row[0]) != source.document_sha256
+                        or sha256(row[0].encode()).hexdigest() != source.retained_document_sha256):
+                    raise ValueError("historical runtime expense source bytes changed")
+                if source.kind == "expense":
+                    expense = ExpenseEvidence.model_validate_json(row[0])
+                    imported[expense.receipt_id] = expense
+                else:
+                    resolution = ExpenseResolution.model_validate_json(row[0])
+                    resolutions[resolution.receipt_id] = resolution
+            for receipt_id, expense in imported.items():
+                if receipt_id in resolutions:
+                    resolution = resolutions[receipt_id]
+                    expense = ExpenseEvidence.model_validate({
+                        **expense.model_dump(), "amount_eur": resolution.amount_eur,
+                        "outcome": resolution.outcome, "source_ref": resolution.source_ref,
+                        "conversion_ref": resolution.conversion_ref,
+                    })
+                if receipt_id in derived and expense != derived[receipt_id]:
+                    reasons.append("invalid:runtime_registry_expense_link")
+            sources = self.registry._source_bindings()
+            manifest = _canonical([item.model_dump(mode="json") for item in sources])
+            snapshot = capture.evaluation_snapshot
+            is_current = raw == capture.source_json and sources == snapshot.source_records
+            if raw != capture.source_json:
+                reasons.append("later_runtime_evidence_present")
+            if sources != snapshot.source_records:
+                reasons.append("later_registry_evidence_requires_current_economic_report")
+            return RuntimeHistoricalVerification(
+                runtime_source_sha256=capture.source_sha256,
+                evaluation_snapshot_sha256=capture.evaluation_snapshot_sha256,
+                protocol_sha256=snapshot.protocol_sha256, report_sha256=snapshot.report_sha256,
+                inventory_sha256=snapshot.inventory_sha256, source_manifest_sha256=snapshot.source_manifest_sha256,
+                current_source_sha256=document_hash(raw),
+                current_registry_source_manifest_sha256=document_hash(manifest),
+                retained_history_consistent=not any(item.startswith("invalid:") for item in reasons),
+                is_current_capture=is_current, reasons=tuple(sorted(set(reasons))),
+                receipt_ids=tuple(sorted(receipts)), synthetic_receipt_ids=tuple(sorted(synthetic)),
+                unresolved_reservation_ids=tuple(sorted(unresolved)),
+            )
+
     def _audit(self, data: dict, binding: RuntimeCollectionBinding):
         reasons = ["external_transport_provenance_missing", "complete_provider_invoice_export_missing",
                    "baseline_runtime_collection_missing", "independence_and_regime_source_verification_pending"]
@@ -653,6 +773,42 @@ class RuntimeEvidenceCollector:
         if not self._initial_chronology(initial, binding.bound_at):
             reasons.append("invalid:future_native_facts_at_preregistration")
         self._history_consistency(data, binding, reasons)
+        events_by_id = {row["event_id"]: row for row in data["activity_events"]}
+        commands_by_id = {row["command_id"]: row for row in data["dashboard_commands"]}
+        resolutions = {row["resolution_id"]: row for row in data.get("native_incident_resolutions", [])}
+        for row in resolutions.values():
+            if row["incident_id"] not in events_by_id or row["command_id"] not in commands_by_id:
+                reasons.append("invalid:native_incident_resolution_source_link")
+            reasons.append("native_incident_resolution_authentication_requires_independent_verifier")
+        for row in data.get("native_incident_resolution_revocations", []):
+            if row["resolution_id"] not in resolutions or row["command_id"] not in commands_by_id:
+                reasons.append("invalid:native_incident_revocation_source_link")
+        checkpoint_generations = defaultdict(list)
+        for row in data.get("protected_financial_checkpoints", []):
+            checkpoint_generations[(row["manifest_sha256"], row["portfolio_id"])].append(row["generation"])
+            reasons.append("protected_financial_checkpoint_authentication_requires_independent_verifier")
+        if any(sorted(values) != list(range(1, len(values) + 1)) for values in checkpoint_generations.values()):
+            reasons.append("invalid:protected_financial_checkpoint_generation_history")
+        reservations_by_id = {row["reservation_id"]: row for row in data["budget_reservations"]}
+        budget_origins = data.get("protected_financial_budget_origins", [])
+        origin_pairs = {(row["reservation_id"], row["event_kind"]): row for row in budget_origins}
+        for row in budget_origins:
+            reservation = reservations_by_id.get(row["reservation_id"])
+            if (reservation is None or reservation["deployment_id"] != row["deployment_id"]
+                    or row["event_kind"] not in {"ORIGIN", "RECEIPT"}
+                    or (row["event_kind"] == "RECEIPT" and (row["reservation_id"], "ORIGIN") not in origin_pairs)):
+                reasons.append("invalid:protected_budget_origin_source_link")
+            reasons.append("protected_budget_origin_authentication_requires_independent_verifier")
+        intents_by_id = {row["intent_id"]: row for row in data["order_intents"]}
+        for row in data.get("native_fee_reservations", []):
+            intent = intents_by_id.get(row["intent_id"])
+            original, current = Decimal(row["original_amount"]), Decimal(row["current_amount"])
+            if (intent is None or intent["portfolio_id"] != row["portfolio_id"]
+                    or not original.is_finite() or not current.is_finite() or not 0 <= current <= original
+                    or row["state"] not in {"held", "released"} or (row["state"] == "released" and current != 0)
+                    or len(row["plan_sha256"]) != 64
+                    or any(character not in "0123456789abcdef" for character in row["plan_sha256"])):
+                reasons.append("invalid:native_fee_reservation_scope_or_amount")
         for table in ("ledger_events", "journal_transactions", "journal_postings", "observations",
                       "decisions", "snapshots", "fills", "usage_receipts", "price_cards", "valuation_marks"):
             if data[table][:len(initial[table])] != initial[table]:
@@ -696,14 +852,19 @@ class RuntimeEvidenceCollector:
                 reasons.append("invalid:native_event_sequence")
             books = Books()
             with localcontext(Context(prec=28)):
-                for row in rows:
+                for index, row in enumerate(rows):
                     before = len(books.groups)
-                    ledger._mutate(books, row["kind"], json.loads(row["payload_json"]),
-                                   row["effective_at"], row["external_ref"])
+                    if hasattr(ledger, "_replay_row"):
+                        ledger._replay_row(books, row, rows[:index])
+                    else:
+                        ledger._mutate(books, row["kind"], json.loads(row["payload_json"]),
+                                       row["effective_at"], row["external_ref"])
                     derived = [sorted((item.account, item.asset, item.amount) for item in group)
                                for group in books.groups[before:]]
                     if event_transactions[(identity, row["external_ref"])] != derived:
                         reasons.append("invalid:native_journal_does_not_match_event_replay")
+                if hasattr(ledger, "_replay_rows"):
+                    ledger._replay_rows(rows)
         if any(parse_utc(row["effective_at"]) > self.clock.now() for row in data["ledger_events"]):
             reasons.append("invalid:future_native_ledger_event")
         fills = {(row["venue"], row["account_id"], row["trade_id"]): row for row in data["fills"]}

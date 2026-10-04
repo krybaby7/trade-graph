@@ -194,6 +194,9 @@ class ArmPerformance(EvaluationContract):
     embedded_operating_expenses_eur: Amount = Field(ge=0)
     # Fees/slippage are already in execution-based equity; these are diagnostics.
     trading_fees_eur: Amount = Field(ge=0)
+    # Gross charges and gross rebates are diagnostics already in native equity.
+    # Stress fees without assuming that greater fees produce larger rebates.
+    trading_rebates_eur: Amount = Field(default=Decimal("0"), ge=0, exclude_if=lambda value: value == 0)
     measured_slippage_eur: Amount = Field(ge=0)
     turnover_eur: Amount = Field(ge=0)
     maximum_drawdown_fraction: Amount = Field(ge=0, le=1)

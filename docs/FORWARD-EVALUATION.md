@@ -232,11 +232,21 @@ budget. A runtime capture retains its report snapshot, archive manifest and blob
 in one registry transaction; exceeding any bound rolls back all new records
 without pruning earlier evidence.
 
-The paper collector's schema-1 source footprint ends at the protected tables
-available in application migration 0012. Migration 0013's live-pilot lifecycle
-grants, effects and events remain outside this paper source footprint. T20's
-protected lifecycle separately validates current owner scope and readiness;
-paper capture verification cannot certify that live financial authority.
+New bindings and captures use schema 2. Their complete current footprint includes
+migration 0013's live-pilot grants, effects and immutable events and migration
+0014's native incident review/revocation receipts and protected financial history
+checkpoints, plus migration 0015's original native fee allocations and current
+holds. Immutable original fee plan/scope amounts survive legitimate release or
+partial-consumption state changes. Their immutable facts enter deployment-wide continuity checks.
+Migration 0016's immutable pre-dispatch budget origins and settlement commitments
+also enter that footprint, with reservation/deployment/origin pairing checked.
+Their private authentication requires the independent protected financial verifier.
+The collector verifies structural ownership, receipt links and checkpoint
+generation continuity; independent protected signature/policy verification is
+still required. Merely inventorying a checkpoint or incident receipt cannot
+establish its authority. Schema 1 retains its original table contract for
+historical verification. It cannot be silently resealed as a schema-2 binding;
+new collection needs another protocol preregistered before its future horizon.
 
 Invoice checks derive EUR arithmetic and collection availability, then compare
 historical recorded totals to the receipts available at the invoice cutoff.
@@ -265,9 +275,11 @@ is always false: protected HTTP observations, request IDs, source labels, suppli
 keys and synthetic flags do not independently corroborate a real provider bill or
 venue observation. Missing external transport provenance, complete provider
 invoices, baseline runtime collection and independence/regime source verification
-remain explicit reasons. The collector emits source/expense evidence, and cannot
-invent four-arm performance, measured risk, independent regimes or a completed
-future horizon from missing records. Arbitrary observation imports retain
+remain explicit reasons. The collector emits source/expense evidence and cannot
+invent independent regimes or a completed future horizon from missing records.
+The four-arm producer below derives performance and sampled risk from retained
+actual paper services; this still does not establish external authentication.
+Arbitrary observation imports retain
 `verification_basis="unverified_imports"`; no method grants live authority.
 
 For an operator-selected future trial, the protected composition uses:
@@ -282,8 +294,108 @@ capture = collector.capture(existing_trial_id)  # binds the changed registry
 
 The example neither supplies an owner deployment nor starts a real forward trial.
 
+## Retained history and current readiness
+
+`TrialRegistry.verify_historical_snapshot(snapshot)` verifies the original
+retained report against its exact frozen deployment-wide source inventory. It
+reconstructs that report in a read-only in-memory registry after checking every
+original document byte, identity and collection timestamp. Failed candidates,
+negative outcomes and allocated expenses remain in the original report. Later
+family trials, receipts or invoice resolutions are allowed without changing its
+bytes; they still require a new current economic report. Reconstruction is
+bounded to 20,000 records, 16 MiB per record and 128 MiB in total, with preflights
+before reading payloads.
+
+`RuntimeEvidenceCollector.verify_historical(capture)` verifies that handoff,
+the retained capture and immutable financial/input/paid facts against the actual
+current database. Legitimate later order, task, pause and portfolio-close state
+does not pretend to be unchanged historical state. It returns the original
+report/source/inventory digests, current runtime and registry manifest digests,
+an `is_current_capture` result and current receipt/unresolved-cost inventories.
+Later registry evidence is explicitly reported as requiring current economic
+review. Native journal corruption, changed immutable receipts or missing frozen
+sources still invalidate historical consistency. Ordinary `verify` remains a
+strict current-source check; historical verification grants no external trust
+or live authority.
+
+## Persisted four-arm paper producer
+
+`trade_graph.paper_forward_producer.PaperForwardProducer` provides a bounded
+operator-controlled producer interface over actual persisted paper services.
+It makes no model calls, broker dispatches or financial writes. Before the
+forward horizon, `bind(trial_id, portfolio_ids)` fixes exactly four distinct open
+EUR paper portfolios in `agent`, `cash`, `buy_and_hold`, `deterministic` order,
+their actual active version/artifact identities, initial equal capital,
+deployment/database inode, protocol/data/friction/regime hashes, market stream,
+instrument symbols, controller hash and the complete initial source inventory.
+It refuses reset portfolios and artifacts different from the protocol. A
+private authentication key seals source-derived receipts; controller drift,
+key replacement and changed mappings refuse reopening or collection. Key
+custody and the intended host boundary still require independent deployment
+approval; a constructed collector and a self-selected hash are no owner grant.
+
+`PaperProducerPolicy` preregisters a fixed sampling grid including every block
+boundary, a maximum collection lateness of five seconds and quote freshness.
+It permits at most eight instruments and 256 samples. `checkpoint(trial_id)`
+collects the next due sample from one complete actual SQLite snapshot. Early,
+late, skipped, partial or corrupt samples cannot become a complete block. It
+replays actual ledger books and point-in-time FX, validates held-asset midpoint
+marks against retained paper quotes, and records all four native equity and
+exposure values. Actual baseline resets, mode/currency changes and selected
+artifact drift refuse collection. Cash cannot contain trading fills;
+buy-and-hold permits one actual acquisition intent and no sales, with partial
+fills retained separately. Completed sources are immutable and losslessly
+compressed; a later trial cannot erase earlier negative work or costs.
+
+`collect_block(trial_id, index)` derives opening/closing equity, capital flows,
+embedded operating expenses, gross native fee charges, separate rebates,
+turnover, adverse midpoint slippage and operational errors from retained
+financial records. It imports actual point-in-time agent decisions only with
+registered versions and complete in-block outcome horizons. Opportunities use
+the declared count of retained quote updates. Internal drawdown and mean
+exposure use the complete declared sample grid. Drawdown is rounded upward and
+mean exposure to half-even at 18 decimal places, fixed by policy; monetary amounts
+are not rounded to fit the export contract. The signed native fee total is
+retained alongside gross charges and rebates. Compatibility fee labels and
+source strings cannot establish official rate or invoice origin.
+Operational error counts cover retained rejected/unknown order intents; other
+service/provider error assessment remains explicitly pending.
+
+The producer records usefulness, regime and independence as unassessed, with no
+credentialed-soak or authenticated-venue assertion. Baseline artifact attribution
+is verified, but an authenticated baseline execution policy review is still
+required. Its actual paper arithmetic therefore cannot turn synthetic tests
+into supported economic evidence. `publish(receipt)` imports only an
+independently recomputed exact retained block. Source receipt retention precedes
+observation import: a crash after the registry append recovers by exact equality,
+without rerunning a provider, candidate or trade. `block_receipt` and `verify`
+reopen and independently reconstruct all sample and block metrics; arbitrary
+caller amounts or trust flags are not accepted.
+
+The separate producer sidecar uses an owner-private nonsymlink directory,
+single-link private files, no-follow descriptor-anchored SQLite storage and
+append-only records/objects. It retains at most 512 binding/checkpoint/block
+records, 128 MiB of total stored bytes, 256 MiB of expanded bytes and 512 KiB per
+receipt. Every complete source still obeys the runtime collector's existing
+8 MiB/20,000-row bound. Exceeding any whole-history bound rolls back the complete
+new record/object transaction; there is no truncated export or evidence pruning.
+This bounded producer does not solve arbitrarily long source tables.
+
+The protected `EconomicUpstreamSource` may additionally carry an exact producer
+and `PinnedPaperLiveMapping`. The independently owner-signed mapping binds the
+whole live scope, all four actual paper identities/version artifacts, trial,
+protocol, controller, database inode, market stream and instruments. It is an
+identity declaration, not proof of an account, economic source authenticity or
+live permission. The mapped route verifies every published historical block,
+retained financial history and a current registry/cost inventory separately.
+Later operational writes can preserve historical economics; later omitted
+costs, changed registry evidence, account/policy aliases or altered artifacts
+still refuse current eligibility. Without both exact protected references,
+the earlier strict current-capture path remains in effect. Every route retains
+`actual_external_provenance_verified=false` and live authorization remains false.
+
 Trading-only P&L is closing equity minus opening equity and external flows, with
-embedded operating expenses added back. Fill fees and measured slippage already
+embedded operating expenses added back. Fill fees, rebates and measured slippage already
 affect equity and appear as diagnostics; they are not deducted again. Actual
 recurring expenses and all-in recurring plus setup/engineering expenses are
 distinct. Synthetic modeled receipts appear separately and prevent an actual
@@ -339,7 +451,8 @@ return `insufficient_evidence`. Even a supported imported result is conditional
 on the declared population/independence assumptions and upstream verification;
 it is not a promise of profitability or permission to allocate real capital.
 
-Sensitivity cases predeclare higher fees, additional spread/slippage per
+Sensitivity cases stress gross positive fee charges without increasing rebates,
+and predeclare additional spread/slippage per
 turnover, higher operating costs/additional model calls and missed profitable
 block P&L penalties. These are transparent penalty envelopes, not new observed
 fills or a counterfactual execution replay. Additional stressed friction is
@@ -370,12 +483,13 @@ preregistration, real source provenance or uncertainty.
   readiness and a deliberate owner enablement record. USD10,000 paper capital
   cannot establish live allocation. Caller-supplied booleans in a fixture gate
   are not verified prerequisite evidence.
-- T21 is dependency-ready after T14/T16. Its new
+- T21 has a locally exercised immutable image, protected kernel/controller and
+  its
   [owner-pinned process scaffold](PROCESS-BOUNDARY.md) confines arbitrary Python
   before parsing candidate input and has actual-host synthetic adversarial
-  evidence. The production financial kernel, gateway and controller still need
-  extraction, authenticated durable business RPC, immutable owner-pinned images
-  and deployment-host protection/recovery tests before claiming A39/A40.
+  evidence. Intended-host designation and deployment-host financial protection,
+  authenticated business RPC/recovery and operational reviews remain required
+  before claiming production A39/A40 authority.
 - T22 requires T18 and demonstrated T21 plus an owner-granted broader class,
   then pure-plugin capability/determinism checks, immutable staging/build
   artifacts, compatible migrations and controller-driven rollout/rollback.

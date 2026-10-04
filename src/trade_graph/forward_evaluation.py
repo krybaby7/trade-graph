@@ -271,6 +271,9 @@ def _build(protocol, as_of, registration, observations, expenses, allocations,
                 if slices else None,
             "operational_errors": sum(item.operational_errors for item in slices),
         }
+        rebates = _sum(item.trading_rebates_eur for item in slices)
+        if rebates:
+            metrics[arm]["rebates_already_in_equity_eur"] = rebates
 
     comparisons = {}
     dated_costs = _dated_costs(protocol, observations, receipts, allocations)

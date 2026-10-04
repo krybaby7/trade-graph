@@ -30,6 +30,8 @@ from trade_graph.evaluation_contracts import (
 from trade_graph.runtime_evidence_archive import RuntimeHistoryPolicy, check_archived_history
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
+MAX_HISTORICAL_SOURCE_RECORDS = 20000
+MAX_HISTORICAL_SOURCE_BYTES = 128 * 1024 * 1024
 
 
 def document_hash(document: str) -> str:
@@ -275,6 +277,19 @@ class TrialRegistry:
     def _source_bindings(self) -> tuple[EvidenceRecordBinding, ...]:
         # Bind the whole deployment registry: new family variants and shared-cost
         # allocations can change interpretation even without changing this trial.
+        count = self.connection.execute(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM evaluation_records "
+            "WHERE kind NOT IN ('snapshot','runtime_capture') LIMIT ?)",
+            (MAX_HISTORICAL_SOURCE_RECORDS + 1,),
+        ).fetchone()[0]
+        sizes = self.connection.execute(
+            "SELECT COALESCE(MAX(length(CAST(document_json AS BLOB))),0),"
+            "COALESCE(SUM(length(CAST(document_json AS BLOB))),0) FROM evaluation_records "
+            "WHERE kind NOT IN ('snapshot','runtime_capture')",
+        ).fetchone()
+        if (count > MAX_HISTORICAL_SOURCE_RECORDS or sizes[0] > MAX_SNAPSHOT_BYTES
+                or sizes[1] > MAX_HISTORICAL_SOURCE_BYTES):
+            raise ValueError("complete evaluation source inventory exceeds verification bounds")
         rows = self.connection.execute(
             "SELECT * FROM evaluation_records WHERE kind NOT IN ('snapshot', 'runtime_capture') "
             "ORDER BY kind, record_key",
@@ -385,3 +400,61 @@ class TrialRegistry:
             raw = json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False)
             if raw != snapshot.report_json:
                 raise ValueError("evaluation snapshot report does not match its retained source records")
+
+    def verify_historical_snapshot(self, snapshot: EvaluationSnapshot) -> None:
+        """Verify a retained report against its frozen source set, permitting later facts.
+
+        This does not make an old report current. Later invoice reconciliations,
+        costs and failed trials remain relevant to a new report and authorization.
+        Every original source byte and collection timestamp must still exist.
+        """
+        snapshot = EvaluationSnapshot.model_validate(snapshot.model_dump())
+        if len(snapshot.source_records) > MAX_HISTORICAL_SOURCE_RECORDS:
+            raise ValueError("historical evaluation source count exceeds verification bounds")
+        with self._atomic():
+            self._snapshot_budget()
+            key = document_hash(snapshot.model_dump_json())
+            retained = self._retained_snapshot(key, snapshot.trial_id)
+            if retained is None or retained["document_json"] != snapshot.model_dump_json():
+                raise ValueError("historical evaluation snapshot is not retained in this registry")
+            if snapshot.collected_as_of > self.clock.now():
+                raise ValueError("historical evaluation snapshot is not available yet")
+            # The report calculator sees exactly the immutable original imports,
+            # including the deployment-wide trial/cost inventory at that time.
+            frozen = sqlite3.connect(":memory:", isolation_level=None)
+            frozen.row_factory = sqlite3.Row
+            try:
+                frozen.execute("CREATE TABLE evaluation_records (kind,record_key,trial_id,"
+                               "document_json,document_sha256,collected_at)")
+                total = 0
+                for binding in snapshot.source_records:
+                    size = self.connection.execute(
+                        "SELECT length(CAST(document_json AS BLOB)) FROM evaluation_records "
+                        "WHERE kind=? AND record_key=?", (binding.kind, binding.record_key),
+                    ).fetchone()
+                    if size is None or size[0] > MAX_SNAPSHOT_BYTES:
+                        raise ValueError("historical evaluation source is missing or oversized")
+                    total += size[0]
+                    if total > MAX_HISTORICAL_SOURCE_BYTES:
+                        raise ValueError("historical evaluation source bytes exceed verification bounds")
+                    row = self.connection.execute(
+                        "SELECT * FROM evaluation_records WHERE kind=? AND record_key=?",
+                        (binding.kind, binding.record_key),
+                    ).fetchone()
+                    if (row["trial_id"] != binding.trial_id
+                            or row["document_sha256"] != binding.document_sha256
+                            or document_hash(row["document_json"]) != binding.document_sha256
+                            or hashlib.sha256(row["document_json"].encode()).hexdigest()
+                            != binding.retained_document_sha256
+                            or datetime.fromisoformat(row["collected_at"]) != binding.collected_at):
+                        raise ValueError("historical evaluation source bytes or metadata changed")
+                    frozen.execute("INSERT INTO evaluation_records VALUES (?,?,?,?,?,?)", tuple(row))
+                view = object.__new__(TrialRegistry)
+                view.connection, view.clock = frozen, self.clock
+                frozen.execute("PRAGMA query_only=ON")
+                report = view._report(snapshot.trial_id, snapshot.collected_as_of)
+                raw = json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                if raw != snapshot.report_json:
+                    raise ValueError("historical evaluation report does not match its frozen sources")
+            finally:
+                frozen.close()

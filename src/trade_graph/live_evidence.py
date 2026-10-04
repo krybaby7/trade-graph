@@ -26,6 +26,9 @@ _PUBLIC_RUNTIME_GAPS = frozenset({
     "synthetic_or_paper_market_reference", "synthetic_price_source", "provider_transport_attempt_missing",
     "provider_transport_outcome_unresolved", "unverified_or_synthetic_provider_transport",
     "decision_market_reference_missing", "provider_invocation_version_link_missing",
+    "native_incident_resolution_authentication_requires_independent_verifier",
+    "protected_financial_checkpoint_authentication_requires_independent_verifier",
+    "protected_budget_origin_authentication_requires_independent_verifier",
 })
 _PUBLIC_VENUE_GAPS = frozenset({
     "owner_eligibility_unverified", "native_account_owner_identity_unverified",
@@ -44,6 +47,8 @@ if TYPE_CHECKING:
     from trade_graph.application.venue_conformance import PinnedVenueObservation
     from trade_graph.domain.clock import Clock
     from trade_graph.live_gate import LivePilotScope, ReadinessBundle
+    from trade_graph.live_mapping import PinnedPaperLiveMapping
+    from trade_graph.paper_forward_producer import PaperForwardProducer
     from trade_graph.runtime_evidence import RuntimeEvidenceCapture, RuntimeEvidenceCollector
 
 
@@ -55,6 +60,8 @@ class EconomicUpstreamSource:
     capture: RuntimeEvidenceCapture = field(repr=False)
     paper_portfolio_id: str = field(repr=False)
     capture_sha256: str
+    paper_producer: PaperForwardProducer | None = field(default=None, repr=False)
+    paper_live_mapping: PinnedPaperLiveMapping | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -131,8 +138,36 @@ def verify_live_upstream(
             check("issuer_bound_economic_verdict", bool(proof
                   and proof.economic_verdict == json.loads(snapshot.report_json)["verdict"]))
             check("issuer_observed_after_capture", bool(proof and proof.verified_at >= capture.captured_at))
-            verification = economic_source.collector.verify(capture)
-            check("current_runtime_and_registry_sources", verification.database_consistent)
+            mapped_history = False
+            if economic_source.paper_producer is not None or economic_source.paper_live_mapping is not None:
+                from trade_graph.live_mapping import PinnedPaperLiveMapping
+                from trade_graph.paper_forward_producer import PaperForwardProducer
+
+                if (type(economic_source.paper_producer) is not PaperForwardProducer
+                        or type(economic_source.paper_live_mapping) is not PinnedPaperLiveMapping
+                        or economic_source.paper_producer.collector is not economic_source.collector):
+                    raise ValueError("exact independently protected producer and owner mapping required")
+                binding = economic_source.paper_producer.binding(capture.binding.trial_id)
+                economic_source.paper_live_mapping.verify_binding(binding, scope=scope, now=clock.now())
+                check("economic_owner_paper_live_mapping", True)
+                protocol = economic_source.collector.registry.protocol(binding.trial_id)
+                observed = economic_source.collector.registry.observations(binding.trial_id)
+                complete = len(observed) == len(protocol.forward_blocks)
+                if complete:
+                    for index, observation in enumerate(observed):
+                        receipt = economic_source.paper_producer.block_receipt(binding.trial_id, index)
+                        if receipt.observation != observation:
+                            raise ValueError("protected four-arm block differs from historical economics")
+                    pending("forward_runtime", "baseline_policy_execution_review_pending")
+                check("complete_protected_four_arm_collection", complete)
+                verification = economic_source.collector.verify_historical(capture)
+                check("retained_runtime_history_consistent", verification.retained_history_consistent)
+                check("current_economic_registry_sources", verification.current_registry_source_manifest_sha256
+                      == verification.source_manifest_sha256)
+                mapped_history = True
+            else:
+                verification = economic_source.collector.verify(capture)
+                check("current_runtime_and_registry_sources", verification.database_consistent)
             check("verified_snapshot_identity", verification.evaluation_snapshot_sha256
                   == capture.evaluation_snapshot_sha256)
             inventories = json.loads(snapshot.report_json)["cost_inventory"]["imports"]
@@ -152,13 +187,17 @@ def verify_live_upstream(
                 # input values interpolated into an upstream diagnostic.
                 pending("forward_runtime", "runtime_inventory_or_provenance_incomplete",
                         count=len(verification.reasons))
-                for code in sorted(set(verification.reasons) & _PUBLIC_RUNTIME_GAPS):
+                public_reasons = set(verification.reasons) & _PUBLIC_RUNTIME_GAPS
+                if mapped_history and complete:
+                    public_reasons.discard("baseline_runtime_collection_missing")
+                for code in sorted(public_reasons):
                     pending("forward_runtime", code)
             if not verification.actual_external_provenance_verified:
                 pending("forward_runtime", "authenticated_complete_external_provenance_missing")
             # Current preregistration binds market-stream/version, but has no
             # authenticated mapping to the live account/instrument/owner policy.
-            pending("forward_runtime", "economic_live_account_instrument_policy_binding_missing")
+            if not mapped_history:
+                pending("forward_runtime", "economic_live_account_instrument_policy_binding_missing")
         except ImportError:
             pending("forward_runtime", "protected_runtime_collector_unavailable")
         except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError, OSError, RecursionError,
