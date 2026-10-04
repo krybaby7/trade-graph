@@ -7,7 +7,7 @@ not production kernel extraction, an immutable host image or an owner class gran
 import hashlib
 import json
 import os
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 
@@ -130,6 +130,26 @@ def test_parent_revalidates_numeric_output_independently(features):
     result = evaluate(harness(), f"def propose(snapshot):\n    return {features}\n")
     assert result["status"] == "rejected"
     assert result["proposal"] is None
+
+
+@pytest.mark.parametrize("feature", ["1.00001", "-1.00001"])
+def test_actual_child_output_cannot_round_under_protected_magnitude(feature):
+    kernel = harness()
+    with localcontext() as context:
+        context.prec = 3
+        result = evaluate(kernel, f"def propose(snapshot):\n    return {{'signal': {feature!r}}}\n")
+    assert result["status"] == "rejected"
+    assert result["proposal"] is None
+    assert "bounds" in result["process"]["validation_error"]
+
+
+@pytest.mark.parametrize("value", ["1000000000000.01", "-1000000000000.01"])
+def test_snapshot_input_bound_is_exact_under_small_decimal_context(value):
+    kernel = harness()
+    with localcontext() as context:
+        context.prec = 3
+        with pytest.raises(ValueError, match="bounds"):
+            kernel.snapshot({**OBSERVATIONS, "price_eur": value})
 
 
 def test_duplicate_json_fields_and_stale_snapshot_are_rejected():

@@ -86,7 +86,7 @@ def _bounded_number(value: str, maximum: Decimal) -> str:
     parts = amount.as_tuple()
     # Bound fixed-point precision before formatting. A short scientific string
     # such as 0e-999999999 can otherwise expand into huge protected-parent output.
-    if (not -18 <= parts.exponent <= 36 or len(parts.digits) > 36 or abs(amount) > maximum):
+    if (not -18 <= parts.exponent <= 36 or len(parts.digits) > 36 or amount.copy_abs() > maximum):
         raise ValueError("number exceeds protected fixed-point bounds")
     return canonical_decimal(amount)
 
