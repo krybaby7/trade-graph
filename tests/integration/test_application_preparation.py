@@ -12,6 +12,7 @@ from tests.integration.test_protected_financial_runtime import ENTER, activate
 
 from trade_graph.adapters.engineering.plugin_artifacts import canonical_bytes, sha256
 from trade_graph.adapters.engineering.plugin_runtime import runtime_environment_sha256
+from trade_graph.application import application_preparation
 from trade_graph.application.application_preparation import (
     EXPERIMENT,
     ApplicationPreparationLoop,
@@ -303,4 +304,39 @@ def test_failed_generation_retains_its_usage_without_activation_or_automatic_ref
                               (receipt["reservation_id"],)).fetchone()[0] == "COMMITTED"
     assert current.projection.status()["phase"] == "LEGACY"
     assert step(loop)["status"] == "FAILED" and len(current.receipts()) == 1
+    loop.close()
+
+
+def test_exact_finite_cases_step_once_each_without_repeating_completed_health(tmp_path, environment_pin):
+    current = flow(tmp_path, environment_pin, multiple_cases=True)
+    loop, _ = prepare(current)
+    first = step(loop)
+    assert first["status"] == "HEALTH" and len(loop._samples()) == 1
+    assert len(current.projection.read(version=1)) == 2
+    assert step(loop)["status"] == "ACTIVE" and len(loop._samples()) == 2
+    assert len(current.projection.read(version=1)) == 3
+    assert step(loop)["status"] == "ACTIVE" and len(current.projection.read(version=1)) == 3
+    assert len(current.gateway.attempts) == len(current.receipts()) == 1
+    loop.close()
+
+
+def test_expired_finite_health_deadline_restores_code_without_new_candidate_effect(
+    tmp_path, environment_pin, monkeypatch
+):
+    current = flow(tmp_path, environment_pin)
+    loop, _ = prepare(current)
+    save = loop._save_state
+
+    def expire_after_activation(state):
+        save(state)
+        if state["status"] == "HEALTH":
+            monkeypatch.setattr(application_preparation.time, "time_ns",
+                                lambda: state["started_at_ns"] + 121_000_000_000)
+
+    monkeypatch.setattr(loop, "_save_state", expire_after_activation)
+    state = step(loop)
+    assert state["status"] == "ROLLED_BACK" and state["failure"] == "finite_health_deadline_exhausted"
+    assert len(loop._samples()) == 0 and len(current.projection.read(version=1)) == 1
+    assert current.projection.status()["active_build"] == current.engineer.policy.baseline_build_sha256
+    assert len(current.receipts()) == 1
     loop.close()

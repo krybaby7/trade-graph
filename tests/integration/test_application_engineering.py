@@ -12,6 +12,7 @@ from tests.leadership_support import commission, reply
 from tests.leadership_support import stack as leadership_stack
 
 from trade_graph.adapters.engineering.artifact_files import content_hash
+from trade_graph.adapters.engineering.plugin_artifacts import PluginStageStore, canonical_bytes
 from trade_graph.adapters.engineering.plugin_runtime import runtime_environment_sha256
 from trade_graph.application.activation import VersionController
 from trade_graph.application.application_engineering import (
@@ -22,6 +23,7 @@ from trade_graph.application.application_engineering import (
     OfflineApplicationEngineer,
     application_engineering_controller_sha256,
 )
+from trade_graph.application.application_projection import OfflineApplicationProjection, retain_projection_corpus
 from trade_graph.application.authority import paper_owner_policy, seed_paper_authority
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.worker import RoleWorker
@@ -46,9 +48,24 @@ def patch(source=V2, path=SOURCE_PATH):
 
 
 def flow(tmp_path, environment_pin, *, source=V2, max_steps=3, max_spend="1", owner_grant=True,
-         maximum_recoveries=3):
+         maximum_recoveries=3, multiple_cases=False):
     projection, store, arguments, snapshot, secretary, financial = setup(tmp_path, environment_pin)
     db, clock, ledger, _, _, pid, _ = financial
+    if multiple_cases:
+        # One independently selected additional synthetic input exercises actual
+        # finite multi-case stepping; it makes no new Secretary provenance claim.
+        cases = json.loads(canonical_bytes(projection._corpus()["cases"]))
+        second = json.loads(canonical_bytes(cases[0]))
+        second["snapshot"]["digest_id"] = "independent-synthetic-second-input"
+        second["snapshot"]["reports"][0]["summary"] = "Independent second synthetic presentation input."
+        projection_policy = projection.policy
+        projection.close()
+        store = PluginStageStore(tmp_path / "multiple-projection-private")
+        corpus = retain_projection_corpus(store, [*cases, second])
+        projection_policy = projection_policy.model_copy(update={"corpus_sha256": corpus})
+        arguments = {**arguments, "policy": projection_policy,
+                     "expected_policy_sha256": projection_policy.sha256}
+        projection = OfflineApplicationProjection(store, **arguments)
     build, _, _ = baseline(projection, snapshot)
     artifact = content_hash({SOURCE_PATH: V1})
     policy = ApplicationCommissionPolicy(baseline_release_id="projection-baseline-1",

@@ -84,3 +84,10 @@ synthetic paper fill, compatible sidecar activation, pointer-checkpoint recovery
 interrupted health before/after its effect, source/full-usage/allocation drift,
 wrong scope/key/authentication, competing process/task leases and unknown or
 failed generation costs retained without activation, refund or redispatch.
+
+The final combined projection/commission/preparation run passed 55 tests in
+313.61 seconds, including the existing 26 projection/migration tests, 13
+commission tests and 16 preparation tests. The additional preparation cases ran
+two independently selected finite inputs one per step, preserved completed health
+without repetition, and refused a new health effect after its deadline while
+retaining the generated source cost and restoring the effect-backed baseline.
