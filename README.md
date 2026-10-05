@@ -39,6 +39,11 @@ software gaps, operating checks and forward evaluation. The broader
 [multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is saved as deferred work;
 it is not implemented or the current execution scope.
 
+**Testing host:** the owner has chosen an existing Windows PC for now. Follow
+[the WSL2 local testing guide](docs/WINDOWS-LOCAL-TESTING.md); cloud hosting is
+deferred. Initial rehearsals/public checks require no paid model calls. Current
+autonomous AI adapters use separately billed APIs rather than subscription login.
+
 Give your coding orchestrator [IMPLEMENTATION-START-HERE.md](IMPLEMENTATION-START-HERE.md). Repository instructions are [AGENTS.md](AGENTS.md). [planning/tasks.json](planning/tasks.json) contains dependency-ordered deliverables and acceptance criteria; [planning/progress.json](planning/progress.json) records actual completion evidence.
 
 Standard-library planning utilities (no paid calls, installs or orders):

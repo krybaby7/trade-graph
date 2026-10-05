@@ -5,18 +5,20 @@ complete and Kraken Pro is available. This is account setup progress, not a
 successful Trade Graph API test. No account email, login details or credentials
 belong in this repository.
 
-## Recommended place to run it
+## Place to run it during testing
 
-Use a small always-on Linux cloud server for the graph and open Mission Control
-in Safari on the iPad. The server runs the software, stores private records and
-contacts Kraken; the iPad displays the dashboard. No GPU is needed. A starting
-target is approximately two CPU cores and 4 GB RAM; actual deployment and disk
-requirements still need checking on the selected installation.
+Owner update, 2026-10-05: use the existing **Windows PC with WSL2 Ubuntu** during
+testing. This supersedes the earlier cloud-server recommendation. Follow the
+[Windows local guide](WINDOWS-LOCAL-TESTING.md) to launch Mission Control, run
+the no-paid checks and keep records in private Linux storage. The PC runs the
+graph, stores records and contacts Kraken; the browser displays the dashboard.
+It must stay awake and connected during continuous tests.
 
-An existing computer is also possible, but it must stay on and connected for
-continuous operation. The current cloud coding session is a temporary development
-environment, not an always-on deployment. No hosting provider, purchase or
-operating budget has been selected or authorized.
+Revisit an always-on Linux cloud server after the local operating path works.
+The current cloud coding session is a temporary development environment, not
+an always-on deployment. No hosting purchase or real operating allowance is
+selected by this plan. Claude/Codex subscriptions and the current runtime's
+separately billed model API calls remain distinct.
 
 The dashboard is mobile-friendly, but the running server currently listens only
 on its own computer. An authenticated private HTTPS access path must be configured
@@ -26,7 +28,7 @@ before there is a live address to open on the iPad. The existing local address
 
 ## First connection: read the actual Kraken account
 
-1. Prepare the selected host and confirm that the public Kraken check succeeds.
+1. Prepare the Windows/WSL2 installation and confirm that the public Kraken check succeeds.
    This workspace's latest public check failed through its network proxy, so
    account verification alone does not resolve that connectivity issue.
 2. Create a dedicated read-only API key in Kraken Pro's API settings. Permit

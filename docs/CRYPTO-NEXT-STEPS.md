@@ -9,7 +9,7 @@ This plan is based on source checkpoint `5f7cbeb`. T00–T16 retain their record
 - Use the existing Kraken-oriented paper path and BTC/USD and ETH/USD examples where current public access supports them, while confirming the intended live crypto venue first as described below.
 - Keep USD10,000 virtual capital with EUR reporting. Real AI/hosting spending stays separate.
 - Retain all six role workflows, the software Secretary and existing financial/recovery protections.
-- Choose one active model provider after checking current capabilities, account access and prices. Retain both adapters without requiring two accounts or selecting a vendor from the research report's incomplete comparison.
+- Choose one active model provider after checking current capabilities, account access and prices. Investigate [official subscription-backed CLI options](reviews/2026-10-05-local-subscription-options.md) before committing to separate API spending, reflecting the owner's existing Claude/Codex subscriptions. The current graph implements direct API adapters only. Retain both adapters without requiring two accounts or selecting a vendor from the research report's incomplete comparison.
 - Retain the low-frequency, event-driven approach. The documented four-hour Trader/daily Research/evidence-gated review cadences are starting examples, not a requirement to trade or call a model without useful evidence.
 - Start with existing unproven strategy hypotheses and simple controls. Defer additional exchanges, equities/ETFs, paid news and broader deployed Engineer classes while this experiment is established.
 
@@ -20,8 +20,9 @@ Kraken remains the current technical reference, not a conclusion about the best 
 Owner update, 2026-10-05: Kraken verification and Kraken Pro access are reported
 complete. Authenticated graph connectivity is still untested. The practical
 next step is a dedicated read-only API connection on the selected host; see
-[Kraken onboarding and iPad access](KRAKEN-ONBOARDING.md). A small always-on
-Linux server is recommended, with no provider or purchase selected yet.
+[Kraken onboarding and iPad access](KRAKEN-ONBOARDING.md). The owner has since
+chosen an existing Windows PC for the testing period, using
+[WSL2 Ubuntu](WINDOWS-LOCAL-TESTING.md); cloud hosting is deferred.
 
 Owner clarification, 2026-10-05: connected trading tests should target the platform intended for eventual real trades. Settle this before investing in a more elaborate custom fill simulator. Kraken spot is the conditional first candidate and the only implemented [live exchange adapter](../src/trade_graph/adapters/brokers/kraken_live.py); the runnable CLI still refuses live mode. Alpaca and Binance execution adapters are not implemented.
 
@@ -76,9 +77,15 @@ Prepare these alongside the first two software slices:
 
 Local scripted tests can proceed without keys. Actual public probes and credentialed calls need their own retained outcomes. Historical proxy HTTP 403 failures remain unresolved; do not label a synthetic transport or configuration check as an external success.
 
-## 4. Select one host and run a short operating check
+## 4. Prepare the selected PC and run a short operating check
 
-Before funded observation, the owner needs to designate one always-on Linux installation, choose an active provider/account and set a separate real operating allowance. No vendor or exact monthly price is selected by this plan.
+Use the existing Windows PC with WSL2 Ubuntu for initial testing; no VPS purchase
+is needed. Begin with the dashboard, offline rehearsal and public-data checks,
+which need no paid inference. Before funded observation, verify the exact local
+installation, choose an active model-provider route and set a separate real
+operating allowance. Existing Claude/Codex subscriptions do not automatically
+fund the graph's current direct API adapters. Keep the PC awake and connected
+for the declared observation window; revisit always-on hosting later.
 
 Use the [operations runbook](operations.md) and verify on that installation:
 

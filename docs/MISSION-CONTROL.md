@@ -24,7 +24,7 @@ uv run trade-graph dashboard --database runtime/trade_graph.sqlite
 
 For an existing initialized account, run only the dashboard command. Open `http://127.0.0.1:8000/login`, use `session_token` from the private `runtime/owner-session.json` file, and select **Mission Control**. Login opens the progress view. Keep the session file and runtime databases outside Git.
 
-The web server listens locally. Viewing it from another machine requires that installation's approved private access or port forwarding; the repository does not publish a hosted site. A cloud workspace and its running process may stop when the session ends. Use the same dashboard command on the eventual always-on host.
+The web server listens locally. Viewing it from another machine requires that installation's approved private access or port forwarding; the repository does not publish a hosted site. A cloud workspace and its running process may stop when the session ends. The owner has selected a Windows PC for initial testing; use [WSL2 Ubuntu and the local setup guide](WINDOWS-LOCAL-TESTING.md). The same dashboard command can later run on an always-on host.
 
 ### Viewing from an iPad
 
@@ -39,7 +39,7 @@ A downloaded preview is a saved snapshot, without live refresh or runnable
 checks. Files/Quick Look may display HTML without its interactive JavaScript.
 For continuous updates, use the running dashboard through its configured
 private access path. The [onboarding guide](KRAKEN-ONBOARDING.md) records the
-recommended server arrangement and the next Kraken account check.
+current PC-first arrangement and the next Kraken account check.
 
 ## Run a check
 

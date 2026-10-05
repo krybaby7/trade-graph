@@ -10,11 +10,20 @@ historical and does not certify this newer source.
 
 ## Kraken onboarding continuation — 2026-10-05
 
+**Latest host direction:** test on the owner's existing Windows PC using WSL2
+Ubuntu; defer a cloud-server purchase. The [local guide](docs/WINDOWS-LOCAL-TESTING.md)
+provides initial dashboard and no-paid checks. Windows/WSL2 acceptance has not
+been run from this cloud workspace. Current model adapters use direct APIs;
+Claude Code/Codex subscription-backed runtime adapters are not implemented.
+[The interface review](docs/reviews/2026-10-05-local-subscription-options.md)
+records official noninteractive CLI capabilities worth investigating; current
+subscription eligibility/permitted use and a compatible gateway remain unverified.
+
 The owner reports completed Kraken verification and Kraken Pro access. No
 credentials or authenticated account observation were supplied or run here.
-The [onboarding guide](docs/KRAKEN-ONBOARDING.md) records the proposed small
-always-on Linux host, iPad viewing path and first bounded read-only account
-check. Hosting remains unselected; the current dashboard is loopback-only.
+The [onboarding guide](docs/KRAKEN-ONBOARDING.md) records the PC-first arrangement,
+iPad viewing path and first bounded read-only account check. The exact local
+installation is unverified; the current dashboard is loopback-only.
 The protected collector exists as a Python interface; its owner-local setup
 command and verified-result connection to Mission Control remain to be built.
 This documentation update changes no task acceptance, account connection,
