@@ -105,9 +105,11 @@ be checked here even if an offline rehearsal passes.
 ## 4. Connect the account and AI separately
 
 Follow [Kraken onboarding](KRAKEN-ONBOARDING.md) for the first read-only account
-observation. The existing protected collector still needs its owner-local command
-and dashboard-result integration. Account verification is already owner-reported;
-authenticated graph connectivity is pending.
+observation. Run `uv run trade-graph kraken-read-only` in an interactive Ubuntu
+terminal using the existing database and a private owner directory outside the
+checkout. The onboarding guide gives the complete command and permission list.
+Mission Control imports only redacted historical results; its account-check Run
+button stays disabled. Actual authenticated account connectivity remains pending.
 
 Current real AI paper evaluation requires an OpenAI or Anthropic API key, reviewed
 model configuration and an explicit real spending allowance. Having Claude/Codex

@@ -46,12 +46,68 @@ before there is a live address to open on the iPad. The existing local address
    Control. The dashboard should distinguish a successful account read from
    remaining order-execution and live-trading checks.
 
-The [protected collector](KRAKEN-CONFORMANCE.md) is already implemented as a
-Python interface. Owner-local credential/grant provisioning, an executable
-onboarding command and its verified-result integration into Mission Control
-remain implementation work. There is currently no working account-test button
-or browser credential-entry form. Use the collector's existing signed, pinned,
-time-limited authority rather than substituting a caller's success/permission flag.
+## Owner-local read-only command
+
+The CLI connects the existing [protected collector and verifier](KRAKEN-CONFORMANCE.md)
+to Mission Control's **Kraken read-only account check**. Run it yourself in an
+interactive Ubuntu terminal after reviewing a dedicated key's read permissions:
+
+```bash
+cd ~/trade-graph
+source "$HOME/.local/bin/env"
+uv run trade-graph kraken-read-only \
+  --database runtime/trade_graph.sqlite \
+  --owner-directory "$HOME/.local/share/trade-graph-owner/kraken" \
+  --symbol BTC/USD
+```
+
+The command prompts for the key and secret without terminal echo and requires
+explicit bounded read-only authorization before any network request. It refuses
+redirected/noninteractive credential entry. API credentials are used only in that
+short-lived owner process and are not saved to files, environment variables,
+command arguments, the graph or browser. Never paste credentials into chat or
+Mission Control. The owner directory must remain outside the checkout and runtime.
+Signed grants, separate verification keys, private run intent, exact pins and raw
+captures belong only in that owner-private directory. Keep that directory out of
+Git, graph context, diagnostic output and shared evidence.
+
+The initial command supports one symbol, BTC/USD. Its default observation is
+bounded to 60 seconds, 128 requests and five history pages, with a declared
+seven-day history start. Typed confirmation authorizes only the existing
+`observe_read_only_venue_account` action. The native observation contract uses
+`mode="live"` for account identity; it creates no live portfolio, policy, mandate,
+trading service or paid-work grant. It submits, modifies, cancels and withdraws
+nothing. A deposit is unnecessary.
+
+Mission Control imports only verifier-derived historical metadata: fixed stage
+labels, observation and verification times, actual versus synthetic transport,
+authenticated-private-read count, freshness expiry and pending checks. It receives
+no account identifiers, holdings, fee values, orders/trades, raw responses,
+credentials or owner verification keys. The browser Run button stays disabled;
+run the owner-local command in Ubuntu. A partial prefix stays partial, and old
+observations remain historical rather than becoming fresh on dashboard refresh.
+This check does not establish full reconciliation.
+
+Implementation verification uses synthetic HTTPS fixtures only. Actual
+authenticated Kraken operation remains unverified until the owner runs the
+command privately. Successful local public checks are separate evidence.
+
+### Required read-only permissions
+
+Select only **Query Funds**, **Query Open Orders & Trades**, **Query Closed
+Orders & Trades**, and **Query Ledger Entries** in Kraken Pro. Leave all other
+permissions disabled, including order modification/cancellation and withdrawals.
+See [Kraken's key configuration guide](https://support.kraken.com/articles/360000919966-how-to-create-an-api-key).
+The adapter reads BalanceEx, TradeVolume, OpenOrders, ClosedOrders, QueryOrders,
+TradesHistory and QueryLedgers; these match the four query grants.
+
+Successful requests establish only the reads observed. The existing
+`key_permission_inventory_unverified` and `withdrawals_absent_unverified` checks
+stay pending: this command does not audit every permission or prove native
+account ownership. API-key two-factor authentication requires client OTP support,
+which this command does not implement. Follow
+[Kraken's API key security guidance](https://support.kraken.com/articles/api-key-security)
+for private handling and suitable restrictions.
 
 ## After that connection works
 
