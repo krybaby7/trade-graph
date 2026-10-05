@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04",
-  "status_note": "2026-10-04 round4 local checkpoint verified at 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c: 2544 full tests, 464 mapped / all 40 applicable cases, exact installed wheel and actual immutable image passed. Six implementation/review streams complete; acceptance statuses unchanged: 17 done / 4 in progress / 2 blocked. No paid/private/live/production authority or operation. Details docs/reviews/2026-10-04-next-contracts.md.",
+  "updated_at": "2026-10-05",
+  "status_note": "2026-10-05: all 26 linked workspaces audited with no omitted source/docs/tests. Round4 verified source 153c6a5 retains 2544 passing full tests and 464 mapped / all 40 cases; GitHub integration publication independently verified at 48fecba. CI timeout corrected 20 to 45 minutes; publication documentation follows the published implementation. Acceptance stays 17 done / 4 in progress / 2 blocked; no paid/private/live/production authority. GitHub Actions API status unavailable (Forbidden).",
   "tasks": {
     "T00": {
       "status": "done",
@@ -240,7 +240,8 @@
         "2026-10-04: Takeover native public pair/ticker identities and descriptor-protected installed operations preflight integrated (ea56c0e/1db9a08). Author 201 tests and independent native/path reviews passed; actual backup/offline restore preserved source facts. Three opt-in official public GETs remain ProxyError through configured proxy; no funded observation.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: exact service-unit/configuration/process/package binding and actual paper lost-ack/restart proof integrated; author 195 tests and final installed two-process proof passed, one fill/attempt, owner pause and drained leases retained. Actual systemd/intended host remains unverified.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Owner-designated installation, approved public connectivity/current model routes/prices, separate real funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Exact service binding and local process restart proof are implemented.",
       "execution_state": "idle",
@@ -261,7 +262,8 @@
         "2026-10-04: Bounded opt-in lossless runtime archive and atomic immutable snapshots integrated (ab314c0/1bd3fdb): 4,096 capture/binding and 4,096 snapshot limits,128 MiB stored/2 GiB expanded, complete historical cost/trial checks. Author 200 and independent 34 archive/snapshot tests passed. External provenance remains false.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: protected four-arm preregistered paper producer, complete native fee/rebate/cost projections and schema2 historical verification integrated. Author 258 and independent 258 cases passed; legitimate later operations preserve historical captures while omitted current expenses/trials refuse. External economics remains unverified.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Untouched actual future four-arm blocks; authenticated market/billing provenance, complete failed/shared costs, actual baseline execution and dependence/regime/useful-decision assessment. Historical producers and exact paper/live mapping are implemented; complete economic source remains8 MiB / 20,000 rows and larger horizons need design.",
       "execution_state": "idle",
@@ -283,7 +285,8 @@
         "2026-10-04: Exact native selected scope/replay/fact-window conformance plus separately retained rounded native quote principal integrated (07e8cb6/059f77c/e88cb83). Exact cash/FIFO/reserves and sticky over-limit incidents preserve executed facts. Retained replay verifies synchronously inside async dispatch (61f5d07). Native-cost independent 208 and broad author 319 async/conformance tests passed; no private venue observation or order.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: exact signed multiasset fee/rebate accounting, append-only earlier-fill correction preserving known-at history, paper auxiliary holds and conditional unverified partial arithmetic integrated. Final independent 309 conservation/reserve cases passed; legacy-fee incident, Ledger substitution, bounded materialization/time/max-ID findings fixed. No factual native venue proof granted.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Eligible least-privilege actual native venue/account conformance and complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Signed fees/rebates, correction and paper fee holds are implemented; larger replay beyond 4,096 rows / 8 MiB, finer execution ties and late fee-only amendments remain contract work.",
       "execution_state": "idle",
@@ -303,7 +306,8 @@
         "2026-10-04: Migration 0013 and durable closed pilot lifecycle, permanent committed holds, scoped fresh post-effect observations and concrete atomic execution/dispatch adoption integrated (292c3d8/13d820c/11f2c8b/eb96c10/8560dfd). Root timestamp/owned-history corrections included. Author 383 and independent 28 dispatch tests passed; no callbacks or caller booleans grant live increases.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: root 0014 immutable owner incident review/revocation, private full-scope paper/live mapping and exact optional Execution resolver integrated; synthetic native capture remains pending. Root hook fail-closed/binding regressions passed; no hold release, owner resume or buying grant. Genuine upstream evidence still absent.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Genuine T17/T18/T19/T21 evidence, complete external account history, explicit owner capital/loss/all-role expense permissions and protected live commissioning; then separately authorized measured pilot/protection/recovery/stop evidence. Authenticated mapping and incident review grant no buying/resume authority; readiness and enablement false.",
       "execution_state": "idle",
@@ -324,7 +328,8 @@
         "2026-10-04: Owner-pinned protected service bootstrap and complete immutable offline image/container configuration integrated (0cb3caf/57682d3). All six actual handlers run confined stages under protected parent effects and exclusive service ownership. Source/default paper boot and package pins validated; final root image build/rehearsal recorded in review checkpoint.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: root 0014 / 0016 financial checkpoint/budget origins and concrete full streaming history/local witness, pre-provider/post-settlement publication and optional strict provider proxy preparation integrated. 353 author,87 independent finance,125 independent funded and209 root integration tests passed; 49 direct privilege/network attacks refused. Final frozen-source offline image proof passed; intended host/funded operation remains unverified.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Actual intended-host/image/distribution admission and repeated adversarial/recovery proof there; external whole-host rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transitions. Provider profile needs separately reviewed public market/FX routing plus actual routes/prices/keys/funding/network policy; scans capped 1 million rows / 512 MiB / 5 seconds and long Ledger projections not incremental.",
       "execution_state": "idle",
@@ -344,7 +349,8 @@
         "2026-10-04: Class-scoped offline commissioned Engineer/spend/repair integrated(d1d34bb), authenticated autonomous synthetic plugin activation/health/restart/rollback(9e07365) and separate confined Secretary projection effects/compatible sidecar expansion/backfill/disposable contraction(f0937c6). Author 33 combined plugin and 26 application tests passed; independent 14 rollout and 26 projection repeats passed. No default runtime scheduling, real model route or owner class grant added.",
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: actual synthetic Secretary application Engineer/gateway commissions and opt-in compatible activation/finite confined health/restart/rollback loop integrated. Final 65 author / 13 independent cases passed; stale-owner and final-health checkpoint defects fixed. Actual final installed workflow passed, preserving one paper fill / two application records, synthetic costs and zero repeated model/child effects. No production class authority.",
-        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open."
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
       ],
       "remaining": "Genuine T18/T21 evidence, broader owner class grants, production scheduling/routing/admission, funded commissioning and broader compatible migration/deployment proof. Commissioned Secretary application and fenced synthetic preparation are implemented; finite functional proof grants no default/broader production authority.",
       "execution_state": "idle",
@@ -395,9 +401,20 @@
     "public_probe_status": "No new public probe requested. Historical 12:03 official GETs failed configured proxy; connectivity remains unverified.",
     "publication": {
       "target_branch": "codex/orchestrator-takeover-2026-10-04",
-      "status": "local_only",
+      "canonical_branch": "cursor/trade-graph-r1-548a",
+      "status": "published_source",
+      "transport": "GitHub HTTPS; new integration branch; existing implementation branch is the normal fast-forward publication target; no force push or history rewrite",
+      "published_at": "2026-10-05",
+      "verified_pushed_commit": "48fecba2c62df14fa1b56dbcd653f9ec381c79de",
       "documentation_follows_verified_source": true,
-      "push_or_merge_performed": false
+      "push_or_merge_performed": true,
+      "push_performed": true,
+      "merge_performed": false,
+      "main_unchanged": true,
+      "audit": "docs/reviews/2026-10-05-publication-audit.md",
+      "workspaces_audited": 26,
+      "unintegrated_deliverables_found": 0,
+      "ci_outcome": "not_verified_github_actions_api_forbidden"
     }
   },
   "historical_submission": {
@@ -644,7 +661,24 @@
     "finished_at": "2026-10-04T14:49:19.271754+00:00",
     "source_commit": "153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c",
     "review": "docs/reviews/2026-10-04-next-contracts.md",
-    "execution_note": "All six local implementation and independent-review streams integrated and idle; root frozen full/gate/installed/image/hash verification completed. Actual acceptance and owner authority remain open."
+    "execution_note": "All six local implementation and independent-review streams integrated and idle; root frozen full/gate/installed/image/hash verification completed. Actual acceptance and owner authority remain open. 2026-10-05: all 26 linked workspaces independently audited, no omitted implementation; integrated source published and exact remote 48fecba verified. Final publication documentation follows; acceptance unchanged.",
+    "publication": {
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "canonical_branch": "cursor/trade-graph-r1-548a",
+      "status": "published_source",
+      "transport": "GitHub HTTPS; new integration branch; existing implementation branch is the normal fast-forward publication target; no force push or history rewrite",
+      "published_at": "2026-10-05",
+      "verified_pushed_commit": "48fecba2c62df14fa1b56dbcd653f9ec381c79de",
+      "documentation_follows_verified_source": true,
+      "push_or_merge_performed": true,
+      "push_performed": true,
+      "merge_performed": false,
+      "main_unchanged": true,
+      "audit": "docs/reviews/2026-10-05-publication-audit.md",
+      "workspaces_audited": 26,
+      "unintegrated_deliverables_found": 0,
+      "ci_outcome": "not_verified_github_actions_api_forbidden"
+    }
   },
   "orchestration_history": [
     {

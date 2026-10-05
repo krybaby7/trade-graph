@@ -1,6 +1,6 @@
-# Implementation status — round 4 local checkpoint
+# Implementation status — published round 4 checkpoint
 
-Updated: 2026-10-04. All six T17–T22 implementation/review streams are integrated;
+Updated: 2026-10-05. All six T17–T22 implementation/review streams are integrated;
 local verification is complete. **Actual acceptance gates remain open.** T00–T16
 retain their recorded completion scopes: 17 of 23 tasks are complete. No funded
 soak, authenticated venue collection, live pilot or production rollout is running.
@@ -10,7 +10,13 @@ Tree: `f00d10dc928a60fb6617279f1707ad1aa5301995`.
 Branch: `codex/orchestrator-takeover-2026-10-04`; continuation from `1cb4e5a`.
 Previous checkpoints, branches and worktrees remain preserved. Final documentation
 follows verified source without package/README/image-input changes. This checkpoint
-is local; no push, merge or new CI outcome is claimed.
+was verified locally on 2026-10-04. GitHub publication was verified on 2026-10-05
+at `48fecba2c62df14fa1b56dbcd653f9ec381c79de` on the integration branch;
+this publication record follows that commit. The existing implementation branch
+is `cursor/trade-graph-r1-548a`. No merge to `main` or new CI outcome is claimed.
+The runtime workflow now allows 45 minutes for the measured 25-minute full suite.
+All 26 linked workspaces were audited; no omitted implementation was found.
+See [the publication audit](docs/reviews/2026-10-05-publication-audit.md).
 Default: USD10,000 virtual capital, EUR reporting; real operating budget separate;
 paid calls and live trading disabled.
 
