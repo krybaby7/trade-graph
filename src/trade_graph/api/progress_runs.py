@@ -58,11 +58,11 @@ _CHECKS = (
     ),
     (
         "kraken-account",
-        "Kraken account reconciliation",
-        "Compare authenticated account balances, orders and trades.",
+        "Kraken read-only account check",
+        "View verified historical read-only observations and pending readiness checks.",
         "account",
         False,
-        "Requires a verified account and a separately configured read-only integration.",
+        "Run the protected owner CLI on the WSL host; browser execution is disabled.",
     ),
     (
         "kraken-order-validation",
@@ -104,8 +104,12 @@ def checks() -> list[dict[str, Any]]:
     ]
 
 
+def _current_time() -> datetime:
+    return datetime.now(UTC)
+
+
 def _now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return _current_time().isoformat().replace("+00:00", "Z")
 
 
 def _private_directory(path: Path) -> None:
@@ -140,6 +144,7 @@ def _connection(path: Path) -> Iterator[sqlite3.Connection]:
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA busy_timeout=5000")
+        connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("""CREATE TABLE IF NOT EXISTS progress_runs (
             run_id TEXT PRIMARY KEY, portfolio_id TEXT NOT NULL, deployment_id TEXT NOT NULL,
             check_id TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL,
@@ -148,6 +153,9 @@ def _connection(path: Path) -> Iterator[sqlite3.Connection]:
             owner_pid INTEGER NOT NULL)""")
         connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS progress_one_active
             ON progress_runs(portfolio_id, deployment_id) WHERE status IN ('queued', 'running')""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS progress_account_observations (
+            run_id TEXT PRIMARY KEY REFERENCES progress_runs(run_id) ON DELETE CASCADE,
+            metadata_json TEXT NOT NULL)""")
         yield connection
     finally:
         connection.close()
@@ -188,9 +196,9 @@ def _recover(connection: sqlite3.Connection) -> None:
             )
 
 
-def _record(row: sqlite3.Row) -> dict[str, Any]:
+def _record(row: sqlite3.Row, *, now: datetime | None = None) -> dict[str, Any]:
     check = next(item for item in checks() if item["id"] == row["check_id"])
-    return {
+    record = {
         "run_id": row["run_id"],
         "check_id": row["check_id"],
         "label": check["label"],
@@ -202,6 +210,14 @@ def _record(row: sqlite3.Row) -> dict[str, Any]:
         "steps": json.loads(row["steps_json"]),
         "synthetic": row["check_id"] == "offline-loop",
     }
+    if row["check_id"] == "kraken-account":
+        from trade_graph.api.account_checks import project_history
+
+        try:
+            return project_history(record, json.loads(row["account_json"]), now=now or _current_time())
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+            raise RuntimeError("The private check registry is unavailable.") from None
+    return record
 
 
 def runs(runtime: Any) -> list[dict[str, Any]]:
@@ -209,8 +225,10 @@ def runs(runtime: Any) -> list[dict[str, Any]]:
         with _connection(_path(runtime)) as connection:
             _recover(connection)
             rows = connection.execute(
-                """SELECT * FROM progress_runs WHERE portfolio_id=? AND deployment_id=?
-                ORDER BY started_at DESC, run_id DESC LIMIT ?""",
+                """SELECT r.*, a.metadata_json AS account_json FROM progress_runs r
+                LEFT JOIN progress_account_observations a ON a.run_id=r.run_id
+                WHERE r.portfolio_id=? AND r.deployment_id=?
+                ORDER BY r.started_at DESC, r.run_id DESC LIMIT ?""",
                 (*_scope(runtime), _KEEP_SCOPE),
             ).fetchall()
             return [_record(row) for row in rows]

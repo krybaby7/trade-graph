@@ -256,7 +256,13 @@
         heading.append(element("span", "mc-type-tag", typeLabel(check.kind, false, check.id)), status);
         card.append(heading, element("h3", "", check.label), element("p", "", check.description));
         const actions = element("div", "mc-check-action");
-        if (check.available && owner) {
+        if (check.id === "kraken-account") {
+          const button = element("button", "mc-button", "Run from owner CLI");
+          button.type = "button";
+          button.dataset.runCheck = "kraken-account";
+          button.disabled = true;
+          actions.append(button, element("code", "", "uv run trade-graph kraken-read-only --database runtime/trade_graph.sqlite --owner-directory ~/.local/share/trade-graph-owner/kraken --symbol BTC/USD"));
+        } else if (check.available && owner) {
           const button = element("button", "mc-button", check.id === "offline-loop" ? "Run local rehearsal →" : check.id === "kraken-public" ? "Check public Kraken API →" : "Run check →");
           button.type = "button";
           button.dataset.runCheck = text(check.id);
@@ -288,10 +294,10 @@
     for (const button of all("[data-run-check]")) {
       const check = list(snapshot?.checks).find(item => item.id === button.dataset.runCheck);
       const activeRun = list(snapshot?.test_runs).some(run => run.check_id === button.dataset.runCheck && ["queued", "running"].includes(run.status)) || acknowledgedChecks.has(button.dataset.runCheck);
-      button.disabled = preview || !connected || !owner || !csrf || authExpired || Boolean(runningCheck) || activeRun || !check?.available || unknownChecks.has(button.dataset.runCheck);
+      button.disabled = button.dataset.runCheck === "kraken-account" || preview || !connected || !owner || !csrf || authExpired || Boolean(runningCheck) || activeRun || !check?.available || unknownChecks.has(button.dataset.runCheck);
       const card = button.closest("[data-check-id]");
       const reason = card.querySelector("[data-check-reason]");
-      reason.textContent = preview ? "This is a saved preview. Run checks from the live dashboard server." :
+      reason.textContent = button.dataset.runCheck === "kraken-account" ? "Browser execution is disabled. Run the protected owner CLI on the WSL host." : preview ? "This is a saved preview. Run checks from the live dashboard server." :
         unknownChecks.has(button.dataset.runCheck) ? "The request outcome is uncertain. Check the saved run history before trying again." :
         activeRun ? "This check is running. Its saved status will update automatically." :
         !csrf ? "Sign in with an owner browser session to run this check." :
@@ -313,6 +319,29 @@
       summary.append(element("span", `mc-run-icon ${tone(run.status)}`, run.status === "passed" ? "✓" : "›"), name, badge(run.status), element("span", "mc-disclosure-arrow", "⌄"));
       const body = element("div", "mc-run-body");
       body.append(element("p", "", run.summary || "The run has not produced a summary yet."));
+      if (run.account_observation) {
+        const account = run.account_observation;
+        const observation = element("div", "mc-account-observation");
+        observation.append(element("h4", "", `Historical observation · ${text(account.symbol)}`));
+        const facts = element("dl");
+        for (const [name, value] of [
+          ["Observation time", time(account.observation_finished_at)],
+          ["Verified at", time(account.verified_at)],
+          ["Freshness", `${account.freshness === "fresh" ? "Fresh historical capture" : "Stale historical capture"} · Maximum age ${count(account.maximum_age_seconds)} seconds from observation time`],
+          ["Transport", run.synthetic ? "Synthetic injected transport; actual connectivity unverified" : "Actual collector-owned HTTPS transport"],
+          ["Authenticated private reads", count(account.authenticated_private_read_count)],
+          ["Source identity", "Current collector and adapter verified at import"]
+        ]) {
+          const pair = element("div");
+          pair.append(element("dt", "", name), element("dd", "", value));
+          facts.append(pair);
+        }
+        observation.append(facts, element("h4", "", "Pending checks"));
+        const pending = element("ul");
+        for (const item of list(account.pending_checks)) pending.append(element("li", "", item));
+        observation.append(pending);
+        body.append(observation);
+      }
       const steps = element("ol", "mc-run-steps");
       for (const step of list(run.steps)) {
         const item = element("li");
@@ -404,7 +433,7 @@
   }
   async function runCheck(button) {
     const checkId = button.dataset.runCheck;
-    if (button.disabled || runningCheck || !owner || !csrf || !connected) return;
+    if (button.dataset.runCheck === "kraken-account" || button.disabled || runningCheck || !owner || !csrf || !connected) return;
     runningCheck = checkId;
     const feedback = button.closest("[data-check-id]").querySelector("[data-check-feedback]");
     feedback.classList.remove("is-error");
