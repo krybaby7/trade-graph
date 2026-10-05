@@ -6,7 +6,7 @@ This plan is based on source checkpoint `5f7cbeb`. T00–T16 retain their record
 
 ## Near-term experiment
 
-- Use the existing Kraken-oriented paper path and BTC/USD and ETH/USD examples where current public access supports them.
+- Use the existing Kraken-oriented paper path and BTC/USD and ETH/USD examples where current public access supports them, while confirming the intended live crypto venue first as described below.
 - Keep USD10,000 virtual capital with EUR reporting. Real AI/hosting spending stays separate.
 - Retain all six role workflows, the software Secretary and existing financial/recovery protections.
 - Choose one active model provider after checking current capabilities, account access and prices. Retain both adapters without requiring two accounts or selecting a vendor from the research report's incomplete comparison.
@@ -14,6 +14,16 @@ This plan is based on source checkpoint `5f7cbeb`. T00–T16 retain their record
 - Start with existing unproven strategy hypotheses and simple controls. Defer additional exchanges, equities/ETFs, paid news and broader deployed Engineer classes while this experiment is established.
 
 Kraken remains the current technical reference, not a conclusion about the best eventual execution venue or current account-specific fees. USD and stablecoins remain distinct.
+
+## 0. Confirm the eventual live venue and test its own API
+
+Owner clarification, 2026-10-05: connected trading tests should target the platform intended for eventual real trades. Settle this before investing in a more elaborate custom fill simulator. Kraken spot is the conditional first candidate and the only implemented [live exchange adapter](../src/trade_graph/adapters/brokers/kraken_live.py); the runnable CLI still refuses live mode. Alpaca and Binance execution adapters are not implemented.
+
+Verify actual account access, supported spot pairs/order types, costs and the available testing route for that exact product. Prefer the chosen venue's own hosted practice/test API for connected order-lifecycle tests where supported. A hosted virtual account still simulates fills; a different product's demo or another venue's fills do not establish the intended live execution behavior. Current official practice/test support has not been verified here because documentation retrieval was blocked by the environment's HTTP proxy.
+
+Start with its public data and authenticated read-only account API, then its verified practice or validation-only route where available. The existing [Kraken read-only collector](KRAKEN-CONFORMANCE.md) does not submit or validate orders; a validation-only order path would need a separate implementation. Once software/account prerequisites are met and a real-capital envelope is explicitly authorized, very small actual orders on the selected production platform can establish real fills, fees, cancellation and reconciliation behavior before any increase in capital. This planning clarification authorizes no real orders or spending.
+
+Keep local simulation for repeatable historical and failure tests. Usable price history remains necessary with either execution path, and local friction refinements should be scoped after the venue/testing choice. A suitable hosted paper API can be trialed without first completing an elaborate local fill model.
 
 ## What already works
 
@@ -98,4 +108,4 @@ No fixed short run can establish profitability. Supported, not-supported and ins
 | T22 | Preserve existing limited R1 improvements and synthetic preparation; broader production classes are deferred. |
 | Multi-asset direction | Saved, deferred. Revisit on owner request or after reviewing the initial crypto evidence. |
 
-The first implementation step is the history/feature-to-department slice above. It can be built and meaningfully tested without waiting for a VPS purchase, private account access or paid API credentials. The friction/profile slice is another bounded dependency-ready follow-up; neither substitutes for actual funded external acceptance.
+The first planning step is to confirm the intended live venue and its own testing route. The history/feature-to-department slice can be built and meaningfully tested in parallel without waiting for a VPS purchase, private account access or paid API credentials. Scope the local friction/profile follow-up around the selected testing path; neither substitutes for actual external acceptance.
