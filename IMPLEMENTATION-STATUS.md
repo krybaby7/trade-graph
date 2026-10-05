@@ -8,6 +8,18 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Kraken onboarding continuation — 2026-10-05
+
+The owner reports completed Kraken verification and Kraken Pro access. No
+credentials or authenticated account observation were supplied or run here.
+The [onboarding guide](docs/KRAKEN-ONBOARDING.md) records the proposed small
+always-on Linux host, iPad viewing path and first bounded read-only account
+check. Hosting remains unselected; the current dashboard is loopback-only.
+The protected collector exists as a Python interface; its owner-local setup
+command and verified-result connection to Mission Control remain to be built.
+This documentation update changes no task acceptance, account connection,
+spending or live authority. Runtime source and tests are unchanged.
+
 ## Mission Control continuation — 2026-10-05
 
 The authenticated dashboard now includes `/progress`: an interactive department

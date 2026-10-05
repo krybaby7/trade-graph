@@ -17,6 +17,12 @@ Kraken remains the current technical reference, not a conclusion about the best 
 
 ## 0. Confirm the eventual live venue and test its own API
 
+Owner update, 2026-10-05: Kraken verification and Kraken Pro access are reported
+complete. Authenticated graph connectivity is still untested. The practical
+next step is a dedicated read-only API connection on the selected host; see
+[Kraken onboarding and iPad access](KRAKEN-ONBOARDING.md). A small always-on
+Linux server is recommended, with no provider or purchase selected yet.
+
 Owner clarification, 2026-10-05: connected trading tests should target the platform intended for eventual real trades. Settle this before investing in a more elaborate custom fill simulator. Kraken spot is the conditional first candidate and the only implemented [live exchange adapter](../src/trade_graph/adapters/brokers/kraken_live.py); the runnable CLI still refuses live mode. Alpaca and Binance execution adapters are not implemented.
 
 Verify actual account access, supported spot pairs/order types, costs and the available testing route for that exact product. Prefer the chosen venue's own hosted practice/test API for connected order-lifecycle tests where supported. A hosted virtual account still simulates fills; a different product's demo or another venue's fills do not establish the intended live execution behavior. Current official practice/test support has not been verified here because documentation retrieval was blocked by the environment's HTTP proxy.

@@ -26,6 +26,21 @@ For an existing initialized account, run only the dashboard command. Open `http:
 
 The web server listens locally. Viewing it from another machine requires that installation's approved private access or port forwarding; the repository does not publish a hosted site. A cloud workspace and its running process may stop when the session ends. Use the same dashboard command on the eventual always-on host.
 
+### Viewing from an iPad
+
+Mission Control's mobile layout has been checked in Chromium; iPad Safari has
+not yet been tested directly. Safari can be the dashboard viewer once an
+authenticated private HTTPS address is configured for the running host. The
+iPad does not need to run Python or hold Kraken API credentials. There is no
+hosted live address yet, and opening `127.0.0.1` on the iPad refers to the iPad
+itself rather than this cloud workspace.
+
+A downloaded preview is a saved snapshot, without live refresh or runnable
+checks. Files/Quick Look may display HTML without its interactive JavaScript.
+For continuous updates, use the running dashboard through its configured
+private access path. The [onboarding guide](KRAKEN-ONBOARDING.md) records the
+recommended server arrangement and the next Kraken account check.
+
 ## Run a check
 
 Owner access can start two bounded checks:
