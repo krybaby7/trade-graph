@@ -1,5 +1,12 @@
 # Implementation status — published round 4 checkpoint
 
+**Owner continuation focus, 2026-10-05:** finish the existing crypto paper
+operation and forward evaluation. Read [the reassessed next steps](docs/CRYPTO-NEXT-STEPS.md).
+The [multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is saved and deferred.
+This documentation update changes no runtime source or task acceptance status;
+the recorded suite, installed-wheel and image verification below refer to their
+original frozen checkpoints, before these README/direction updates.
+
 Updated: 2026-10-05. All six T17–T22 implementation/review streams are integrated;
 local verification is complete. **Actual acceptance gates remain open.** T00–T16
 retain their recorded completion scopes: 17 of 23 tasks are complete. No funded

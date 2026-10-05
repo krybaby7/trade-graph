@@ -33,6 +33,12 @@ See [protected deployment](docs/PROTECTED-DEPLOYMENT.md),
 
 ## Continue implementation
 
+**Current owner focus (2026-10-05): finish the existing crypto paper experiment.**
+Read [the reassessed crypto next steps](docs/CRYPTO-NEXT-STEPS.md) for concrete
+software gaps, operating checks and forward evaluation. The broader
+[multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is saved as deferred work;
+it is not implemented or the current execution scope.
+
 Give your coding orchestrator [IMPLEMENTATION-START-HERE.md](IMPLEMENTATION-START-HERE.md). Repository instructions are [AGENTS.md](AGENTS.md). [planning/tasks.json](planning/tasks.json) contains dependency-ordered deliverables and acceptance criteria; [planning/progress.json](planning/progress.json) records actual completion evidence.
 
 Standard-library planning utilities (no paid calls, installs or orders):
