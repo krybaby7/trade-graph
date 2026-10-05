@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from datetime import UTC
+import re
+import sys
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1"])
     dashboard.add_argument("--port", type=int, default=8000)
     dashboard.add_argument("--session-file", default="runtime/owner-session.json")
+    kraken = sub.add_parser("kraken-read-only", help="owner-local bounded native account observation")
+    kraken.add_argument("--database", default="runtime/trade_graph.sqlite")
+    kraken.add_argument("--owner-directory", default="~/.local/share/trade-graph-owner/kraken")
+    kraken.add_argument("--symbol", default="BTC/USD")
     demo = sub.add_parser("demo")
     demo.add_argument("--offline", action="store_true")
     demo.add_argument("--work", default="runtime/demo")
@@ -129,9 +135,54 @@ def _latest_portfolio(db) -> str:
     return str(row["portfolio_id"])
 
 
+def _kraken_summary(result: dict) -> dict:
+    """Project only fixed public observation facts from the verified bridge."""
+    from trade_graph.api.account_checks import PENDING_LABELS
+    from trade_graph.application.venue_conformance import STAGES
+
+    observation = result.get("account_observation", {})
+    if not isinstance(observation, dict):
+        raise ValueError("invalid observation summary")
+    summary = {"symbol": "BTC/USD", "full_reconciliation": "pending"}
+    run_id = result.get("run_id")
+    if isinstance(run_id, str) and re.fullmatch(r"[0-9a-f]{32}", run_id):
+        summary["run_id"] = run_id
+    status = result.get("status")
+    if status in {"incomplete", "stale"}:
+        summary["status"] = status
+    stages = observation.get("verified_completed_stages", [])
+    if not isinstance(stages, list):
+        raise ValueError("invalid observation summary")
+    summary["stages"] = [stage for stage in STAGES if stage in stages]
+    for key, allowed in (("transport_basis", {"owned_https", "injected_transport"}),
+                         ("freshness", {"fresh", "stale"})):
+        value = observation.get(key)
+        if value in allowed:
+            summary[key] = value
+    for key in ("started_at", "finished_at"):
+        value = observation.get("observation_" + key)
+        if isinstance(value, str) and len(value) <= 64:
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if stamp.tzinfo is not None:
+                summary[key] = stamp.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    allowed_pending = set(PENDING_LABELS.values())
+    pending = observation.get("pending_checks", [])
+    if not isinstance(pending, list):
+        raise ValueError("invalid observation summary")
+    summary["pending"] = [reason for reason in dict.fromkeys(pending) if reason in allowed_pending]
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    owner_command = "kraken-read-only" in (argv if argv is not None else sys.argv[1:])
+    if owner_command:
+        args, unknown = parser.parse_known_args(argv)
+        if unknown:
+            print("Read-only observation refused: unrecognized owner command options.", file=sys.stderr)
+            return 2
+    else:
+        args = parser.parse_args(argv)
     if args.version or args.command is None:
         print(
             f"trade-graph {__version__} mode={MODE} "
@@ -139,6 +190,17 @@ def main(argv: list[str] | None = None) -> int:
             f"paid_calls_enabled={PAID_CALLS_ENABLED} live_enabled={LIVE_ENABLED}"
         )
         return 0
+    if args.command == "kraken-read-only":
+        try:
+            from trade_graph.application.kraken_onboarding import run_kraken_read_only
+
+            result = run_kraken_read_only(Path(args.database), Path(args.owner_directory), args.symbol)
+            print(json.dumps(_kraken_summary(result)))
+            return 0
+        except (Exception, KeyboardInterrupt):
+            print("Read-only observation failed or refused; private evidence is retained when collection began.",
+                  file=sys.stderr)
+            return 1
     if args.command == "doctor":
         from trade_graph.application.operations import doctor_report
 
