@@ -1,11 +1,40 @@
-# Implementation status — published round 4 checkpoint
+# Implementation status — crypto continuation and recorded checkpoints
 
 **Owner continuation focus, 2026-10-05:** finish the existing crypto paper
 operation and forward evaluation. Read [the reassessed next steps](docs/CRYPTO-NEXT-STEPS.md).
 The [multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is saved and deferred.
-This documentation update changes no runtime source or task acceptance status;
-the recorded suite, installed-wheel and image verification below refer to their
-original frozen checkpoints, before these README/direction updates.
+The direction notes preserve task acceptance status. The Mission Control
+dashboard continuation below adds presentation and bounded test tracking;
+the round 4 full-suite, installed-wheel and protected-image evidence remains
+historical and does not certify this newer source.
+
+## Mission Control continuation — 2026-10-05
+
+The authenticated dashboard now includes `/progress`: an interactive department
+map, the 23-task roadmap, evidence milestones, actual runtime activity and a
+persistent Kraken test tracker. Login opens this view. Source checkouts refresh
+planning state; installed wheels use a labelled packaged progress snapshot.
+Project acceptance remains **17 done / 4 in progress / 2 blocked**.
+
+Owner-started checks are limited to the existing isolated offline loop and four
+fixed Kraken public GETs. Results live in a private sidecar database, not the
+financial journal. Account reconciliation, order validation and real-order tests
+remain unavailable here. Serving or refreshing the view starts no test, trading
+service or paid model request. See [the guide](docs/MISSION-CONTROL.md).
+
+Verified: **191 targeted tests passed**, full source/test Ruff, Node syntax,
+planning/DAG and ten planning checks. Actual Chromium desktop/mobile checks
+passed graph selection, all/blocked roadmap filters, expanded-detail retention,
+owner-started rehearsal/status refresh, offline snapshots and recovery, without
+horizontal overflow or browser script errors. The actual rehearsal passed all
+14 scripted checks without external AI calls or Kraken orders. An actual public
+check failed at connection through this cloud environment's proxy; no public,
+private-account or real-order success is claimed. An offline wheel includes the
+new modules, catalog, template and static assets. This is scoped dashboard
+verification; the 2,544-test suite and protected image were not rerun/rebuilt.
+See [the continuation review](docs/reviews/2026-10-05-mission-control.md).
+
+## Historical published round 4 checkpoint
 
 Updated: 2026-10-05. All six T17–T22 implementation/review streams are integrated;
 local verification is complete. **Actual acceptance gates remain open.** T00–T16

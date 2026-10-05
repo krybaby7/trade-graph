@@ -114,6 +114,11 @@ Run the authenticated dashboard in a separate terminal:
 uv run trade-graph dashboard --database runtime/trade_graph.sqlite
 ```
 
+**Mission Control** at `/progress` visualizes the department graph, implementation
+milestones, recorded activity and Kraken test missions. It refreshes every five
+seconds and includes bounded owner-started local rehearsals and public Kraken API
+checks. Account/order/live tests remain pending. See [the dashboard guide](docs/MISSION-CONTROL.md).
+
 Open `http://127.0.0.1:8000/login` and paste `session_token` from the private
 `runtime/owner-session.json` file. Keep that file outside Git. New runtime directories
 use mode 0700 and session files use 0600; existing database directories must be private.

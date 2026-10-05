@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% macro tone(status) -%}{% if status in ['completed', 'done', 'passed', 'success'] %}complete{% elif status in ['running', 'in_progress', 'queued'] %}active{% elif status in ['failed', 'error'] %}failed{% elif status in ['blocked', 'unavailable'] %}blocked{% else %}pending{% endif %}{%- endmacro %}
+{% macro status_label(status) -%}{{ status|default('pending', true)|replace('_', ' ')|capitalize }}{%- endmacro %}
+{% macro kind_label(kind, synthetic=false) -%}{% if synthetic or kind in ['offline', 'offline-loop', 'local', 'synthetic', 'local_simulation'] %}Local simulation{% elif kind in ['public', 'kraken-public', 'public_api'] %}Public API{% elif kind in ['account', 'private', 'authenticated', 'private_api'] %}Account API{% elif kind == 'live' %}Planned real orders{% elif kind == 'validation' %}Planned validation{% else %}Planned check{% endif %}{%- endmacro %}
+{% macro arrow() -%}<svg class="mc-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12 12 4M4 4h8v8"></path></svg>{%- endmacro %}
+{% block title %}Mission Control{% endblock %}
+{% block body_class %}mission-control{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="/static/progress.css"><script src="/static/progress.js" defer></script>{% endblock %}
+{% block eyebrow %}Your trading graph{% endblock %}
+{% block heading %}Mission Control{% endblock %}
+{% block description %}See what is built, what the departments are doing, and what each Kraken test actually proves.{% endblock %}
+{% block content %}
+{% set project = data.get('project', {}) %}
+{% set departments = data.get('departments', []) %}
+{% set service = data.get('service', {}) %}
+{% set next_step = data.get('next_step', {}) %}
+{% set completed = project.get('completed') %}
+{% set total = project.get('total') %}
+{% set percent = project.get('percent') %}
+<div id="mission-control" data-role="{{ role }}">
+  <p class="mc-storage-warning" data-storage-warning role="status"{% if not data.get('test_storage_error') %} hidden{% endif %}>{{ data.get('test_storage_error') or '' }}</p>
+  <div class="mc-toolbar">
+    <div class="mc-focus"><span class="mc-focus-dot" aria-hidden="true"></span> Crypto mission <span class="mc-separator">/</span> Kraken <span class="mc-tag">Spot · BTC &amp; ETH</span></div>
+    <div class="mc-sync"><span class="mc-sync-dot" aria-hidden="true"></span><span data-sync-label role="status" aria-live="polite">Connecting to dashboard</span><span class="mc-separator">·</span><time data-last-sync>{{ data.get('as_of', 'No update recorded') }}</time></div>
+  </div>
+
+  <section class="mc-hero" aria-labelledby="mission-title">
+    <div class="mc-hero-copy">
+      <p class="mc-kicker">One step closer. Evidence at every step.</p>
+      <h2 id="mission-title">Build the system.<br><span>Prove the connection.</span></h2>
+      <p class="mc-hero-description">Your progress is saved. Now we are turning a working graph into a tested Kraken workflow, one clear mission at a time.</p>
+      <div class="mc-hero-links"><a class="mc-primary-link" href="#test-missions">Explore test missions {{ arrow() }}</a><a class="mc-text-link" href="#roadmap">See the full roadmap {{ arrow() }}</a></div>
+      <p class="mc-small-note">Milestones reward verified work. They do not measure profits or encourage more trades.</p>
+    </div>
+    <div class="mc-completion">
+      <div class="mc-ring" role="img" aria-label="{{ completed if completed is not none else 'Unknown' }} of {{ total if total is not none else 'unknown' }} implementation tasks completed" data-project-ring>
+        <svg viewBox="0 0 160 160" aria-hidden="true"><circle class="mc-ring-track" cx="80" cy="80" r="67" pathLength="100"></circle><circle class="mc-ring-value" cx="80" cy="80" r="67" pathLength="100" stroke-dasharray="{{ percent if percent is not none else 0 }} 100" data-ring-value></circle></svg>
+        <div class="mc-ring-content"><strong data-project-completed>{{ completed if completed is not none else '—' }}</strong><span>of <b data-project-total>{{ total if total is not none else '—' }}</b> tasks</span></div>
+      </div>
+      <div class="mc-completion-copy"><p class="mc-kicker">Implementation milestones</p><strong><span data-project-percent>{{ percent if percent is not none else '—' }}</span>% complete</strong><p>Built and verified in the recorded task plan.<br>Live readiness is a separate milestone.</p></div>
+    </div>
+  </section>
+
+  <section class="mc-stats" aria-label="Project status">
+    <article class="mc-stat"><span class="mc-stat-icon complete" aria-hidden="true">✓</span><div><p>Built &amp; verified</p><strong data-stat-completed>{{ completed if completed is not none else '—' }}</strong><span>implementation tasks</span></div></article>
+    <article class="mc-stat"><span class="mc-stat-icon active" aria-hidden="true">{{ arrow() }}</span><div><p>Work in progress</p><strong data-stat-progress>{{ project.get('in_progress') if project.get('in_progress') is not none else '—' }}</strong><span>unfinished tasks</span></div></article>
+    <article class="mc-stat"><span class="mc-stat-icon blocked" aria-hidden="true">‖</span><div><p>Waiting on prerequisites</p><strong data-stat-blocked>{{ project.get('blocked') if project.get('blocked') is not none else '—' }}</strong><span>blocked tasks</span></div></article>
+    <article class="mc-stat mc-stat-service"><span class="mc-stat-icon service" aria-hidden="true">◎</span><div><p>Trading runtime</p><strong class="mc-service-label" data-service-label>{{ 'Trading service is running' if service.get('status') == 'running' else 'Trading service is idle' if service.get('status') == 'idle' else 'Not observed' }}</strong><span data-service-note>{{ service.get('last_seen') or 'Dashboard access does not mean agents are running' }}</span></div></article>
+  </section>
+
+  <section class="mc-next" aria-labelledby="next-title"><div class="mc-next-marker" aria-hidden="true">NEXT</div><div><h2 id="next-title" data-next-title>{{ next_step.get('title', 'Awaiting the next verified step') }}</h2><p data-next-description>{{ next_step.get('description', 'The current task plan will appear when progress data is available.') }}</p></div><a href="#test-missions" class="mc-next-arrow" aria-label="Go to test missions">→</a></section>
+
+  <section class="mc-panel mc-graph-panel" aria-labelledby="graph-title">
+    <div class="mc-panel-heading"><div><p class="mc-kicker">The organisation</p><h2 id="graph-title">Meet your trading graph</h2><p>Click a department to see its job, connections and latest recorded activity.</p></div><span class="mc-outline-tag">Six AI roles + shared software</span></div>
+    <div class="mc-graph-layout">
+      <div class="mc-graph-area">
+        <div class="mc-graph" data-department-graph>
+          <svg class="mc-edges" aria-hidden="true"><defs><marker id="mc-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5" fill="currentColor"></path></marker></defs><g data-edges></g></svg>
+          {% for department in departments %}
+          <button class="mc-node{% if loop.first %} is-selected{% endif %}" type="button" data-department-id="{{ department.id }}" data-department-purpose="{{ department.get('purpose', '') }}" data-department-api="{{ department.get('api', '') }}" data-department-status="{{ department.get('status', 'idle') }}" data-department-last-activity="{{ department.get('last_activity') or '' }}" aria-pressed="{{ 'true' if loop.first else 'false' }}" aria-controls="department-detail" disabled>
+            <span class="mc-node-top"><span class="mc-node-symbol" aria-hidden="true">{{ department.name[:1] }}</span><span class="mc-node-state {{ tone(department.get('status')) }}"><span></span>{{ status_label(department.get('status')) }}</span></span>
+            <strong>{{ department.name }}</strong><span class="mc-node-caption">{{ 'Protected software' if department.id in ['secretary', 'execution', 'market'] else 'AI department' }}</span>
+          </button>
+          {% else %}<p class="mc-empty">Department data is not available yet.</p>{% endfor %}
+        </div>
+        <div class="mc-graph-legend"><span><i class="mc-legend-dot" aria-hidden="true"></i> Department state comes from its task journal</span><span><i class="mc-legend-line" aria-hidden="true"></i> Work and evidence flow</span></div>
+      </div>
+      {% set department = departments[0] if departments else {} %}
+      <aside class="mc-department-detail" id="department-detail" aria-labelledby="department-name">
+        <p class="mc-kicker">Department spotlight</p><h3 id="department-name" data-detail-name>{{ department.get('name', 'Select a department') }}</h3><span class="mc-status {{ tone(department.get('status')) }}" data-detail-status>{{ status_label(department.get('status')) }}</span>
+        <p class="mc-detail-purpose" data-detail-purpose>{{ department.get('purpose', 'Its role and activity will appear here.') }}</p>
+        <dl class="mc-detail-facts"><div><dt>API / service connection</dt><dd data-detail-api>{{ department.get('api') or 'No direct external API' }}</dd></div><div><dt>Last recorded activity</dt><dd data-detail-activity>{{ department.get('last_activity') or 'No activity recorded yet' }}</dd></div><div><dt>Work handed to / received from</dt><dd data-detail-connections>Explore a department to see its connections.</dd></div></dl>
+        <a class="mc-text-link" href="/organization" data-detail-link>Open department records <span aria-hidden="true">→</span></a>
+      </aside>
+    </div>
+    <div class="mc-integrations" aria-label="Integration families"><span class="mc-integration-heading">API map · adapters</span><span><i class="mc-api-icon kraken" aria-hidden="true">K</i> Kraken <small>Market + account adapters</small></span><span><i class="mc-api-icon ai" aria-hidden="true">AI</i> OpenAI / Anthropic <small>Configured provider still needs verification</small></span><span><i class="mc-api-icon fx" aria-hidden="true">€</i> ECB / Frankfurter <small>EUR reporting</small></span><span><i class="mc-api-icon code" aria-hidden="true">⌘</i> GitHub <small>Code + recorded evidence</small></span></div>
+  </section>
+
+  <section class="mc-panel" aria-labelledby="milestones-title"><div class="mc-panel-heading"><div><p class="mc-kicker">Unlock with evidence</p><h2 id="milestones-title">The path to a tested trading system</h2></div><span class="mc-outline-tag">Readiness ≠ profitability</span></div><ol class="mc-milestones" data-milestones>{% for milestone in data.get('milestones', []) %}<li class="mc-milestone {{ tone(milestone.get('status')) }}"><span class="mc-milestone-marker" aria-hidden="true">{{ '✓' if milestone.get('status') == 'completed' else loop.index }}</span><div><span class="mc-status {{ tone(milestone.get('status')) }}">{{ status_label(milestone.get('status')) }}</span><h3>{{ milestone.title }}</h3><p>{{ milestone.description }}</p>{% if milestone.get('task_ids') %}<span class="mc-small-note">{{ milestone.task_ids|join(' · ') }}</span>{% endif %}</div></li>{% else %}<li class="mc-empty">Milestones are not available yet.</li>{% endfor %}</ol></section>
+
+  <section class="mc-panel" id="test-missions" aria-labelledby="tests-title"><div class="mc-panel-heading"><div><p class="mc-kicker">Kraken test lab</p><h2 id="tests-title">Small missions. Clear results.</h2><p>Each run tells you exactly what was tested. Account verification is not inferred from a public API check.</p></div><span class="mc-outline-tag">No real-order button</span></div>
+    <div class="mc-checks" data-checks>{% for check in data.get('checks', []) %}{% set check_runs = data.get('test_runs', [])|selectattr('check_id', 'equalto', check.id)|list %}{% set last_run = check_runs[0] if check_runs else none %}<article class="mc-check" data-check-id="{{ check.id }}"><div class="mc-check-heading"><span class="mc-type-tag">{{ kind_label(check.get('kind'), check.id == 'offline-loop') }}</span><span class="mc-status {{ tone(last_run.status if last_run else none) }}" data-check-status>{{ status_label(last_run.status) if last_run else 'No run yet' }}</span></div><h3>{{ check.label }}</h3><p>{{ check.description }}</p><div class="mc-check-action">{% if check.get('available') and role == 'owner' %}<button class="mc-button" type="button" data-run-check="{{ check.id }}" disabled>{{ 'Run local rehearsal' if check.id == 'offline-loop' else 'Check public Kraken API' if check.id == 'kraken-public' else 'Run check' }} <span aria-hidden="true">→</span></button><p class="mc-small-note" data-check-reason>Controls become available after the dashboard connects.</p>{% else %}<span class="mc-locked">{{ 'Owner access needed' if check.get('available') else 'Not available yet' }}</span><p class="mc-small-note" data-check-reason>{{ check.get('reason') or 'This check requires owner access.' }}</p>{% endif %}<p class="mc-check-feedback" data-check-feedback role="status" aria-live="polite"></p></div></article>{% else %}<p class="mc-empty">No test missions are registered.</p>{% endfor %}</div>
+    <div class="mc-runs-heading"><h3>Run history</h3><span class="mc-small-note">Actual saved results · newest first</span></div>
+    <div class="mc-test-runs" data-test-runs>{% for run in data.get('test_runs', []) %}<details class="mc-run" data-run-id="{{ run.run_id }}"><summary><span class="mc-run-icon {{ tone(run.get('status')) }}" aria-hidden="true">{{ '✓' if run.get('status') == 'passed' else '›' }}</span><span class="mc-run-label"><strong>{{ run.label }}</strong><span>{{ kind_label(run.get('kind'), run.get('synthetic', false)) }} · {{ run.get('started_at') or 'No start time recorded' }}</span></span><span class="mc-status {{ tone(run.get('status')) }}">{{ status_label(run.get('status')) }}</span><span class="mc-disclosure-arrow" aria-hidden="true">⌄</span></summary><div class="mc-run-body"><p>{{ run.get('summary') or 'The run has not produced a summary yet.' }}</p><ol class="mc-run-steps">{% for step in run.get('steps', []) %}<li><span class="mc-status {{ tone(step.get('status')) }}">{{ status_label(step.get('status')) }}</span><div><strong>{{ step.label }}</strong><p>{{ step.get('detail') or 'No detail recorded.' }}</p></div></li>{% endfor %}</ol><span class="mc-small-note">Run {{ run.run_id }}{% if run.get('finished_at') %} · Finished {{ run.finished_at }}{% endif %}</span></div></details>{% else %}<div class="mc-empty mc-empty-runs"><span aria-hidden="true">◎</span><h3>Your first result belongs here.</h3><p>No saved test runs yet. Start with a local rehearsal or a public Kraken API check when the controls are available.</p></div>{% endfor %}</div>
+    <noscript><p class="mc-small-note">This page shows the saved snapshot. Enable JavaScript for updates, department selection and test controls.</p></noscript>
+  </section>
+
+  <div class="mc-bottom-grid">
+    <section class="mc-panel mc-roadmap-panel" id="roadmap" aria-labelledby="roadmap-title"><div class="mc-panel-heading"><div><p class="mc-kicker">Nothing gets lost</p><h2 id="roadmap-title">Your implementation roadmap</h2><p>Expand a task to see its scope and recorded evidence.</p></div><span class="mc-outline-tag" data-roadmap-total>{{ total if total is not none else '—' }} tasks</span></div>
+      <div class="mc-filters" role="group" aria-label="Filter roadmap"><button type="button" class="is-selected" data-task-filter="all" aria-pressed="true" disabled>All tasks</button><button type="button" data-task-filter="in_progress" aria-pressed="false" disabled>In progress</button><button type="button" data-task-filter="blocked" aria-pressed="false" disabled>Blocked</button><button type="button" data-task-filter="done" aria-pressed="false" disabled>Completed</button></div>
+      <div class="mc-task-list" data-task-list>{% for task in project.get('tasks', []) %}<details class="mc-task" data-task-id="{{ task.id }}" data-task-status="{{ task.status }}"><summary><span class="mc-task-number {{ tone(task.status) }}">{{ task.id }}</span><strong>{{ task.title }}</strong><span class="mc-status {{ tone(task.status) }}">{{ status_label(task.status) }}</span><span class="mc-disclosure-arrow" aria-hidden="true">⌄</span></summary><div class="mc-task-body"><p>{{ task.get('description') or 'No description recorded.' }}</p><dl><div><dt>Phase</dt><dd>{{ task.get('phase') or 'Not specified' }}</dd></div><div><dt>Depends on</dt><dd>{{ task.get('dependencies', [])|join(' · ') or 'No prerequisites' }}</dd></div><div><dt>Recorded evidence</dt><dd>{{ task.get('evidence_summary') or 'No completion evidence recorded yet.' }}</dd></div></dl></div></details>{% else %}<p class="mc-empty">Task data is not available. No progress has been estimated.</p>{% endfor %}</div><p class="mc-empty" data-task-empty hidden>No tasks match this filter.</p><p class="mc-source-note">Source: <span data-project-source>{{ project.get('source', 'unavailable')|replace('_', ' ') }}</span> · <time data-project-updated>{{ project.get('updated_at') or 'No update recorded' }}</time></p>
+    </section>
+    <section class="mc-panel mc-activity-panel" aria-labelledby="activity-title"><div class="mc-panel-heading"><div><p class="mc-kicker">The journal</p><h2 id="activity-title">What is happening</h2><p>Recorded activity, not generated commentary.</p></div><span class="mc-feed-dot" aria-hidden="true"></span></div><ol class="mc-activity" data-activity>{% for event in data.get('activity', []) %}<li class="mc-activity-item"><span class="mc-activity-marker" aria-hidden="true"></span><div><span class="mc-activity-kind">{{ event.get('kind', 'event')|replace('_', ' ') }} · {{ event.get('source', 'journal') }}</span><h3>{{ event.title }}</h3><p>{{ event.get('detail') or 'No additional detail recorded.' }}</p><time>{{ event.get('at') or 'Time not recorded' }}</time>{% if event.get('href', '').startswith('/') and not event.get('href', '').startswith('//') %}<a class="mc-text-link" href="{{ event.href }}">Open record →</a>{% endif %}</div></li>{% else %}<li class="mc-empty">No runtime activity is recorded yet. Departments will appear active only when there is journal evidence.</li>{% endfor %}</ol></section>
+  </div>
+  <div class="mc-bottom-note"><span aria-hidden="true">◇</span><p>The multi-asset direction is saved for later. This view tracks the current crypto project and separates software progress, test evidence and live readiness.</p><a href="/trading">Open trading journal →</a></div>
+</div>
+{% endblock %}

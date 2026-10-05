@@ -12,13 +12,14 @@
   <link rel="stylesheet" href="/static/dashboard.css">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <script src="/static/dashboard.js" defer></script>
+  {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/" aria-label="Trade Graph overview"><span class="brand-mark" aria-hidden="true">TG</span><span class="brand-copy">Trade Graph<small>Paper operations</small></span></a>
     <nav class="site-nav" aria-label="Main navigation">
-      {% for name, label, path in [('overview', 'Overview', '/'), ('trading', 'Trading', '/trading'), ('organization', 'Organisation', '/organization'), ('costs', 'Costs', '/costs'), ('changes', 'Improvements', '/changes')] %}
+      {% for name, label, path in [('progress', 'Mission Control', '/progress'), ('overview', 'Overview', '/'), ('trading', 'Trading', '/trading'), ('organization', 'Organisation', '/organization'), ('costs', 'Costs', '/costs'), ('changes', 'Improvements', '/changes')] %}
       <a class="nav-link{% if page == name %} active{% endif %}" href="{{ path }}"{% if page == name %} aria-current="page"{% endif %}>{{ label }}</a>
       {% endfor %}
       {% if role == 'owner' %}<a class="nav-link{% if page == 'owner' %} active{% endif %}" href="/owner"{% if page == 'owner' %} aria-current="page"{% endif %}>Owner controls</a>{% endif %}

@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from trade_graph.api import evidence, financial
+from trade_graph.api import evidence, financial, progress, progress_runs
 from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.api.controls import configuration, register_controls
 from trade_graph.api.health import health as project_health
@@ -92,6 +92,21 @@ def create_app(runtime) -> FastAPI:
         data["degraded_reasons"] = data["health"]["degraded_reasons"]
         return data
 
+    def progress_data():
+        storage_error = None
+        try:
+            test_runs = progress_runs.runs(runtime)
+        except RuntimeError:
+            test_runs = []
+            storage_error = "Test history is unavailable. Check the private runtime folder before running tests."
+        data = progress.progress(runtime, test_runs=test_runs)
+        checks = progress_runs.checks()
+        if storage_error:
+            checks = [{**check, "available": False, "reason": storage_error} for check in checks]
+        data["checks"] = checks
+        data["test_storage_error"] = storage_error
+        return data
+
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request):
         return TEMPLATES.TemplateResponse(request, "login.html", {
@@ -137,6 +152,24 @@ def create_app(runtime) -> FastAPI:
         identity(request)
         with runtime.database.snapshot():
             return redact(overview_data())
+
+    @app.get("/api/v1/progress")
+    def progress_projection(request: Request):
+        identity(request)
+        with runtime.database.snapshot():
+            return redact(progress_data())
+
+    @app.post("/api/v1/progress/tests/{check_id}/run", status_code=202)
+    def start_progress_test(request: Request, check_id: str):
+        owner_write(request)
+        try:
+            return redact(progress_runs.start(runtime, check_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="test is unavailable or unknown") from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=409, detail="another test is active or test storage is unavailable"
+            ) from exc
 
     @app.get("/api/v1/positions")
     def positions(request: Request, limit: Limit = 50, offset: Offset = 0):
@@ -209,6 +242,12 @@ def create_app(runtime) -> FastAPI:
         identity(request)
         with runtime.database.snapshot():
             return render(request, "overview", overview_data())
+
+    @app.get("/progress", response_class=HTMLResponse)
+    def progress_page(request: Request):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "progress", progress_data())
 
     @app.get("/trading", response_class=HTMLResponse)
     def trading_page(request: Request, limit: Limit = 50, offset: Offset = 0):

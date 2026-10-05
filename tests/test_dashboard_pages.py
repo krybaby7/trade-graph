@@ -14,7 +14,7 @@ def render(name: str, data: dict | None = None, **context) -> str:
 
 
 @pytest.mark.parametrize(
-    "name", ["overview", "trading", "organization", "costs", "changes", "evidence", "owner", "login"]
+    "name", ["progress", "overview", "trading", "organization", "costs", "changes", "evidence", "owner", "login"]
 )
 def test_pages_render_empty_journal_without_invented_values(name: str) -> None:
     page = render(f"{name}.html", role="owner", csrf="test-csrf", auth_mechanism="cookie")

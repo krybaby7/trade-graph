@@ -4,6 +4,11 @@
 
 Start with a responsive server-rendered interface backed by FastAPI. Server projections calculate money; do not duplicate authoritative arithmetic in the browser. Every value carries native units, EUR valuation basis, timestamp and provisional/stale status. The default account is USD10,000 virtual with EUR reporting, not EUR100.
 
+**Mission Control:** the interactive department map, evidence-based implementation
+milestones, runtime activity and Kraken test tracker at `/progress`. See
+[setup and evidence labels](MISSION-CONTROL.md). Project completion, local
+rehearsals, public API results and future account/real-order acceptance remain distinct.
+
 **Overview:** allocated/current portfolio value, external flows, realized/unrealized results, trading fees, AI/other costs, net economic performance, drawdown and declared benchmark. Show simulated trading results, simulated net-economic results after allocated real expenses, and actual real-money spend distinctly. Separate setup/recurring views without excluding attributable costs from all-in performance.
 
 **Trading:** native cash/locked balances, positions/lots/theses/invalidation, active/pending/unknown orders and fills, current mandate/strategy/experiment/exposure. Show requested/submitted sizing, rounding, fees and execution deviations. Stale marks and uncertain orders are visibly degraded, not a healthy green portfolio.
