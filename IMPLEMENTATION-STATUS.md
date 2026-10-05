@@ -8,12 +8,105 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Owner-local Kraken read-only implementation — 2026-10-05
+
+Integrated source checkpoint `7cd5605` on
+`codex/orchestrator-takeover-2026-10-04`, descended from `caae082`.
+The CLI and dashboard implementation commits are `12277de` and `4ab5e0d`.
+Development used isolated WSL2 Linux-home worktrees, followed by a fast-forward
+into the existing checkout. The earlier local setup evidence below was preserved.
+
+`uv run trade-graph kraken-read-only --database runtime/trade_graph.sqlite
+--owner-directory ~/.local/share/trade-graph-owner/kraken --symbol BTC/USD`
+now provides hidden owner-terminal credential entry, exact typed authorization,
+separate signed/pinned private intent and bounded native collection. It validates
+the existing policy, active artifact, version/generation and current retained
+proof before importing an allowlisted historical projection. Defaults are
+60 seconds, 128 requests, five history pages and a seven-day history window;
+the signed grant expires after two minutes. Credentials remain in the local
+collector process and are not saved. Private grants and retained native evidence
+remain outside the checkout and financial runtime directory.
+
+Mission Control calls this **Kraken read-only account check**. Browser Run stays
+disabled and provides CLI instructions. Results show verified completed stages,
+original observation/verification times, actual owned HTTPS versus synthetic
+injected transport, private-read counts and pending checks. Missing stages and
+unrequested order lookups remain pending. Historical freshness expires from
+the original observation time; imports do not renew it or claim full reconciliation.
+
+Verified **655 relevant synthetic tests passed**, with no final failures/skips,
+including the complete command/backend/collector/verifier/import/API/HTML path
+and a retained partial permission failure. Full source/test Ruff, JavaScript
+syntax, staged and repository hygiene, and diff checks passed. An isolated
+in-app Chromium check confirmed the disabled button, readable pending gates,
+expanded-result refresh and the change from fresh to stale after 60 seconds,
+with no console errors. The initial broader fixture run had one database-mode
+warning failure under umask 0022; the documented private umask 0077 resolved it.
+The full suite, installed wheel and protected image were not rerun/rebuilt.
+
+Before and after integration, private digests confirmed the financial database,
+existing progress history, planning acceptance, lockfile, owner-session file and
+earlier local evidence remained unchanged. No runtime account was initialized
+or reset, and no authenticated Kraken request or paid model call was made.
+The existing loopback dashboard was reloaded onto the new source using the same
+database and session file. Windows `http://localhost:8000/login` returned HTTP
+200; a read-only preflight validated the existing policy/artifact scope without
+requesting credentials. Financial records and retained history stayed unchanged.
+Actual account connectivity, owner identity, permission inventory, withdrawal
+absence, ledger reconciliation and T17–T22 acceptance remain pending. The owner
+can configure a read-only key privately and run the command next; see
+[permissions and instructions](docs/KRAKEN-ONBOARDING.md).
+
+## Owner Windows/WSL2 local setup — 2026-10-05
+
+Scoped local operation was verified on the owner's Windows PC using WSL2
+Ubuntu 26.04.1 LTS, Linux x86_64 and the Linux-home checkout
+`~/trade-graph`. Implementation branch:
+`codex/orchestrator-takeover-2026-10-04`; source checkpoint:
+`caae08262b67edb38aa2854f99cf68ec5f13a020`. Python 3.12.15 and the
+unchanged committed lockfile were installed with
+`uv sync --frozen --group dev --python 3.12`.
+
+No existing Linux runtime database was found. A fresh USD10,000 virtual paper
+account with EUR reporting was initialized once. Its runtime directory and
+owner-session file were verified at 0700 and 0600 respectively. The dashboard
+is running on loopback; the actual Windows browser address is
+`http://localhost:8000/login`. Windows localhost returned HTTP 200;
+authenticated login, `/progress` and `/api/v1/progress` returned HTTP 200,
+and unauthenticated progress access returned HTTP 401. The session token was
+kept out of command output and chat.
+
+Actual owner-authorized Mission Control results, retained in the private
+`runtime/progress-runs.sqlite` sidecar: local rehearsal passed all **14**
+scripted checks, with zero external provider calls and no Kraken orders;
+all **four actual Kraken public checks** passed (server time, online status,
+BTC/ETH pair rules and bid/ask spreads). Private-account connectivity and
+order execution were not tested. **36 targeted dashboard/progress/CLI tests**,
+Ruff for source/tests, the 23-task DAG validator and **10 planning tests**
+passed. The full suite and protected image/host acceptance were not run.
+
+`trade-graph doctor` returned **degraded**, with database integrity/schema
+current and warnings for a provisional financial result, pending model
+routing and no persisted market observations. Its separate network/public
+probe fields remain pending; Mission Control's public-check evidence does
+not populate those fields. The bounded paper service `run --mode paper
+--once` completed one tick with reconciled recovery, zero decisions and no
+failures. Paid calls and live trading remained disabled; actual spend was
+zero. No continuous trading service was started.
+
+Private local setup, doctor and maintenance reports are retained under
+`runtime/`; no tokens or private financial records are published in Git.
+This scoped evidence supersedes earlier statements that this local dashboard
+path had not been tested. Historical cloud proxy failures remain historical.
+T17–T22 acceptance states and all funding, private-account, economic,
+protected-host/image, production and live-authority gates remain unchanged.
+
 ## Kraken onboarding continuation — 2026-10-05
 
 **Latest host direction:** test on the owner's existing Windows PC using WSL2
 Ubuntu; defer a cloud-server purchase. The [local guide](docs/WINDOWS-LOCAL-TESTING.md)
-provides initial dashboard and no-paid checks. Windows/WSL2 acceptance has not
-been run from this cloud workspace. Current model adapters use direct APIs;
+provides initial dashboard and no-paid checks. The local evidence above now
+records scoped Windows/WSL2 verification. Current model adapters use direct APIs;
 Claude Code/Codex subscription-backed runtime adapters are not implemented.
 [The interface review](docs/reviews/2026-10-05-local-subscription-options.md)
 records official noninteractive CLI capabilities worth investigating; current
@@ -22,12 +115,12 @@ subscription eligibility/permitted use and a compatible gateway remain unverifie
 The owner reports completed Kraken verification and Kraken Pro access. No
 credentials or authenticated account observation were supplied or run here.
 The [onboarding guide](docs/KRAKEN-ONBOARDING.md) records the PC-first arrangement,
-iPad viewing path and first bounded read-only account check. The exact local
-installation is unverified; the current dashboard is loopback-only.
-The protected collector exists as a Python interface; its owner-local setup
-command and verified-result connection to Mission Control remain to be built.
-This documentation update changes no task acceptance, account connection,
-spending or live authority. Runtime source and tests are unchanged.
+iPad viewing path and first bounded read-only account check. The local dashboard
+is verified on loopback; iPad access remains unverified.
+The owner-local command and verified historical Mission Control import are now
+implemented and tested synthetically, as recorded above. Actual authenticated
+account behavior is still unverified. These changes grant no task acceptance,
+spending or live authority.
 
 ## Mission Control continuation — 2026-10-05
 
