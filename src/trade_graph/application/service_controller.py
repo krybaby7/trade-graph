@@ -8,6 +8,7 @@ worker. No exchange transport, model provider or credential is created here.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -455,28 +456,41 @@ class ServiceController:
 
             nonflat = _nonflat(self.runtime) or self.runtime.execution._has_outstanding(self.runtime.portfolio_id)
             profile = ("MANAGE_ONLY" if position_policy == "manage-only" else "FLATTEN") if nonflat else "STOPPED"
-            current = self.runtime.execution.pause(self.runtime.portfolio_id)
-            if (
-                nonflat
-                and current
-                and (
-                    (current["originator"] == "system" and current["profile"] != "RUNNING")
-                    or current["profile"] in {"FLATTEN", "CANCEL_ALL", "STOPPED"}
-                )
-            ):
-                profile = current["profile"]
-            else:
-                self.runtime.execution.set_pause(
-                    self.runtime.portfolio_id, profile, "owner", "Owner service stop request"
-                )
-            if not nonflat:
-                self.database.execute("""UPDATE graph_service_runs SET stop_requested = 1,
-                    status = 'STOPPING' WHERE status IN ('STARTING', 'RUNNING', 'MANAGEMENT_ONLY')""")
-            result = {
-                "profile": profile,
-                "service_stop_requested": not bool(nonflat),
-                "management": "Service remains active for reconciliation and position protection."
-                if nonflat
-                else "Flat account: service drains current work and stops. No monitoring continues offline.",
-            }
+            from trade_graph.api.controls import Command, _Commands, _revision, _scope
+
+            def effect():
+                nonlocal profile
+                current = self.runtime.execution.pause(self.runtime.portfolio_id)
+                if (
+                    nonflat
+                    and current
+                    and (
+                        (current["originator"] == "system" and current["profile"] != "RUNNING")
+                        or current["profile"] in {"FLATTEN", "CANCEL_ALL", "STOPPED"}
+                    )
+                ):
+                    profile = current["profile"]
+                else:
+                    self.runtime.execution.set_pause(
+                        self.runtime.portfolio_id, profile, "owner", "Owner service stop request"
+                    )
+                if not nonflat:
+                    self.database.execute("""UPDATE graph_service_runs SET stop_requested = 1,
+                        status = 'STOPPING' WHERE status IN ('STARTING', 'RUNNING', 'MANAGEMENT_ONLY')""")
+                return {
+                    "profile": profile,
+                    "service_stop_requested": not bool(nonflat),
+                    "management": "Service remains active for reconciliation and position protection."
+                    if nonflat
+                    else "Flat account: service drains current work and stops. No monitoring continues offline.",
+                }
+
+            scope = _scope(self.runtime, "owner")
+            command = Command(
+                request_id=hashlib.sha256(("service-stop:" + request_id).encode()).hexdigest(),
+                expected_revision=_revision(self.runtime, scope),
+            )
+            # A newer stop fences a still-running resume/pause command. The local
+            # emergency latch remains available during an interrupted owner command.
+            result = _Commands(self.runtime).mutate(scope, command, "service-stop", effect, allow_processing=True)
             return self._record(request_id, "stop_service", payload, result)

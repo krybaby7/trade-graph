@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import signal
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -453,3 +454,33 @@ def test_artifact_schedule_cannot_restore_automatic_optimisation(tmp_path):
         stack.database.execute("SELECT COUNT(*) FROM schedules WHERE name='artifact-research-review'").fetchone()[0]
         == 1
     )
+
+
+def test_service_stop_fences_an_owner_resume_already_reconciling(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    client = TestClient(create_app(runtime))
+    token, _ = issue_session(runtime.database, runtime.clock, "owner")
+    headers = {"Authorization": f"Bearer {token}"}
+    entered, finish = threading.Event(), threading.Event()
+    original = runtime.execution.reconcile
+
+    async def slow_reconcile():
+        entered.set()
+        assert await asyncio.to_thread(finish.wait, 5)
+        return await original()
+
+    runtime.execution.reconcile = slow_reconcile
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        resume = pool.submit(lambda: client.post("/api/v1/owner/resume", headers=headers, json={}))
+        assert entered.wait(5)
+        stop = client.post(
+            "/api/v1/owner/stop-service",
+            headers=headers,
+            json={"request_id": "newer-stop", "position_policy": "manage-only"},
+        )
+        assert stop.status_code == 200 and stop.json()["profile"] == "STOPPED"
+        finish.set()
+        assert resume.result(timeout=5).status_code == 409
+    assert runtime.execution.profile(runtime.portfolio_id) == "STOPPED"
+    rows = runtime.database.execute("SELECT action FROM dashboard_command_evidence").fetchall()
+    assert {row[0] for row in rows} == {"resume", "service-stop"}
