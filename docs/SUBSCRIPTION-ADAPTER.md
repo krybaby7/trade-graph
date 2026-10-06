@@ -197,3 +197,23 @@ portfolio mode. Live Optimisation may analyze and record proposals; commissioned
 Engineer changes remain paper-scoped under existing acceptance checks and require
 separate owner-pinned promotion to a live deployment. No live artifact authority
 was widened by the subscription composition.
+
+## Startup binding and remaining network gate
+
+Protected paper and live service bindings now consume this profile directly and
+compose the six subscription handlers after exclusive financial ownership and
+protected graph admission. An invalid or changed subscription profile blocks new
+AI work and removes model handlers while reconciliation/protection continue.
+A subscription profile rejects API credentials, transports, funded API profiles,
+model routing and price cards. Dashboard readiness checks the same admission
+once, then rechecks the profile pin without repeatedly probing login.
+
+The standard protected image has no network; the current funded-paper launch
+profile supplies API egress and is deliberately incompatible with subscription
+operation. The live profile permits Kraken/FX traffic, not subscription-provider
+traffic. The native executor currently uses its parent network and clears proxy
+environment settings. Consequently this installation also requires an independently
+reviewed subscription-specific protected egress/CLI assembly before continuous
+subscription operation can be commissioned. This launch profile is not implemented
+or verified here. Neither root-distributed login files nor the actual WSL
+Bubblewrap tests remove this exact networking blocker.

@@ -159,3 +159,17 @@ def test_live_cli_refusal_retains_start_failure_without_credentials(tmp_path, ca
     assert row["error_type"] == "AuthorityDenied"
     assert db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 0
     db.close()
+
+
+def test_protected_dashboard_bind_is_not_a_public_host_option():
+    import pytest
+
+    from trade_graph.cli import main
+
+    args = build_parser().parse_args(["dashboard", "--mode", "live", "--protected-owner", "/owner",
+                                      "--protected-network-bind"])
+    assert args.protected_network_bind is True
+    with pytest.raises(SystemExit):
+        main(["dashboard", "--protected-network-bind"])
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["dashboard", "--host", "0.0.0.0"])

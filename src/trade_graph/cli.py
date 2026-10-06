@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--database", default="runtime/trade_graph.sqlite")
     dashboard.add_argument("--portfolio-id")
     dashboard.add_argument("--config", help="private owner runtime configuration for dashboard starts")
+    dashboard.add_argument("--protected-network-bind", action="store_true", help=argparse.SUPPRESS)
     dashboard.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1"])
     dashboard.add_argument("--port", type=int, default=8000)
     dashboard.add_argument("--session-file", default="runtime/owner-session.json")
@@ -305,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, default=str))
         return 1 if report["status"] == "error" else 0
     if args.command == "dashboard":
+        if args.protected_network_bind and (args.mode != "live" or not args.protected_owner or args.port != 8000):
+            parser.error("network binding is reserved for the independently verified protected live dashboard")
         if not 1 <= args.port <= 65535:
             parser.error("port must be between 1 and 65535")
         import uvicorn
@@ -319,13 +322,26 @@ def main(argv: list[str] | None = None) -> int:
         except (ValueError, OSError, TradeGraphError) as exc:
             parser.error(f"dashboard startup refused ({type(exc).__name__}); verify the configured mode and scope")
         try:
+            if args.protected_network_bind:
+                from trade_graph.kernel.live_network import load_live_network_profile
+                from trade_graph.live_runtime import live_startup_prerequisites
+
+                owner = Path(args.protected_owner)
+                profile = load_live_network_profile(owner)
+                admission = live_startup_prerequisites(Path(args.database),
+                    config_path=Path(args.config) if args.config else None, protected_owner=owner)
+                if profile.dashboard_host_port is None or not admission["ready"]:
+                    raise ValueError("protected dashboard network admission is unavailable")
+                # The immutable deployment controller permits only the approved
+                # host-loopback publication; this address stays inside its network.
+                args.host = "0.0.0.0"
             session_path = owner_session_file(runtime, Path(args.session_file))
             address = f"[{args.host}]" if args.host == "::1" else args.host
             print(f"Dashboard: http://{address}:{args.port}/login")
             print(f"Owner session file: {session_path} (private; paste session_token on the login page)")
             uvicorn.run(create_app(runtime), host=args.host, port=args.port, workers=1, access_log=False)
-        except ValueError as exc:
-            parser.error(str(exc))
+        except (ValueError, OSError, TradeGraphError) as exc:
+            parser.error(f"dashboard serving refused ({type(exc).__name__}); protected admission is required")
         finally:
             runtime.database.close()
         return 0

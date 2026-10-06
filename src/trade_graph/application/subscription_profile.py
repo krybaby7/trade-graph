@@ -118,3 +118,20 @@ def load_subscription_profile(protected_owner: Path) -> SubscriptionAdmission:
     except (OSError, ValueError, TypeError, KeyError, RecursionError, TradeGraphError):
         return _blocked(config, "protected subscription profile, pinned native CLI or host isolation admission refused",
                         profile_sha256=digest)
+
+
+def subscription_profile_unchanged(protected_owner: Path, profile_sha256: str | None) -> bool:
+    """Recheck immutable owner bytes without another auth probe or inference."""
+    try:
+        (protected_owner / "subscription-profile.json").lstat()
+    except FileNotFoundError:
+        return profile_sha256 is None
+    except OSError:
+        return False
+    try:
+        raw = read_owner_file(protected_owner, "subscription-profile.json", 32768)
+        return hashlib.sha256(raw).hexdigest() == profile_sha256
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError, TradeGraphError):
+        return False

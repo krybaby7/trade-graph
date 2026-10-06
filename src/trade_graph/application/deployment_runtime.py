@@ -41,6 +41,7 @@ class ProtectedDeploymentBinding:
         self.release_id = "owner-" + self.manifest.sha256[:16] + "-" + source_id
         self.api_keys, self.transport = api_keys, transport
         self.funded_profile = self._funded_bundle()
+        self._initialise_subscription()
         if self.funded_profile is not None:
             from trade_graph.adapters.models.transport import HttpxProviderHttp
             from trade_graph.kernel.funded_profile import load_funded_credentials
@@ -51,6 +52,60 @@ class ProtectedDeploymentBinding:
             self.transport = HttpxProviderHttp(proxy=self.funded_profile.proxy_url, trust_env=False,
                                                allowed_urls=self.funded_profile.endpoints)
         self.protected = None
+
+    def _initialise_subscription(self):
+        from trade_graph.application.subscription_profile import load_subscription_profile
+
+        self.subscription_admission = load_subscription_profile(self.directory)
+        admission = self.subscription_admission
+        self.subscription_declared = admission.config is not None or admission.profile_sha256 is not None
+        try:
+            (self.directory / "subscription-profile.json").lstat()
+            self.subscription_declared = True
+        except FileNotFoundError:
+            pass
+        except OSError:
+            self.subscription_declared = True
+        if self.subscription_declared:
+            configured = getattr(self.runtime, "config", None)
+            if (self.funded_profile is not None or self.api_keys or self.transport is not None
+                    or self.runtime.model_config is not None or getattr(configured, "models", None) is not None
+                    or getattr(configured, "price_cards", [])):
+                raise AuthorityDenied("subscription deployment refuses API model routing, credentials and price cards")
+            if admission.config and admission.config.deployment_id != self.manifest.deployment_id:
+                raise AuthorityDenied("subscription profile differs from the protected deployment")
+        self.runtime.subscription_admission = admission
+        self.runtime.subscription_provider = admission.status.get("selected_provider")
+
+    def _subscription_current(self):
+        from trade_graph.application.subscription_profile import subscription_profile_unchanged
+
+        return subscription_profile_unchanged(self.directory, self.subscription_admission.profile_sha256)
+
+    def _subscription_ready(self):
+        if not self.subscription_declared:
+            return self._subscription_current()
+        admission = self.subscription_admission
+        if (not self._subscription_current() or not admission.adapter or not admission.status.get("ready")
+                or not self.runtime.model_handlers):
+            return False
+        return self.runtime.model_handlers.router.readiness(self.runtime.portfolio_id)["ready"]
+
+    def _subscription_handlers(self):
+        from trade_graph.application.subscription_runtime import assemble_subscription_handlers
+
+        admission = self.subscription_admission
+        if not self._subscription_current() or not admission.adapter or not admission.status.get("ready"):
+            self.runtime.handlers = {}
+            return {}
+        runtime = self.runtime
+        runtime.model_handlers = assemble_subscription_handlers(
+            runtime.office, runtime.secretary, runtime.engineer, runtime.artifact_runtime, admission.config,
+            protected_runtime=self.protected, workspace_root=runtime.database.path.parent / "engineering",
+            adapter=admission.adapter,
+        )
+        runtime.handlers = runtime.model_handlers.handlers
+        return runtime.handlers
 
     def _funded_bundle(self):
         from trade_graph.kernel.deployment_image import read_owner_file
@@ -106,6 +161,11 @@ class ProtectedDeploymentBinding:
                 self.protected.financial._release(status)
             except (TradeGraphError, ValueError):
                 controller._recover_mutable(status["active_release_id"], status["generation"])
+        if not self._subscription_current():
+            runtime.handlers = {}
+            return {}
+        if self.subscription_declared:
+            return self._subscription_handlers()
         if runtime.model_config is None:
             return {}
         runtime.model_handlers = assemble_protected_handlers(
@@ -119,7 +179,7 @@ class ProtectedDeploymentBinding:
     def ready(self) -> bool:
         try:
             self.manifest.assert_current()
-            if not self.protected or not self._unchanged():
+            if not self.protected or not self._unchanged() or not self._subscription_ready():
                 return False
             status = self.protected.controller.status()
             if status["status"] != "RUNNING":

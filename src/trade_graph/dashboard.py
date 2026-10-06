@@ -31,17 +31,40 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
             config=load_live_runtime_config(config_path) if config_path else None,
         )
 
+        subscription = _subscription_prerequisites(protected_owner)
+
         def prerequisites():
             result = live_startup_prerequisites(path, config_path=config_path, protected_owner=protected_owner)
-            return {"paper_available": False, "live_available": result["ready"], "ai_available": False,
-                    "reasons": ["Subscription model routing and isolation require owner provisioning."],
+            return {**subscription(), "paper_available": False, "live_available": result["ready"],
                     "live_reasons": [] if result["ready"] else [result["reason"]]}
 
         runtime.service_controller = ServiceController(runtime, config_path=config_path,
                                                        protected_owner=protected_owner, prerequisites=prerequisites)
         return runtime
-    if mode != "paper" or protected_owner is not None:
+    if mode != "paper":
         raise ValueError("choose paper or a separately commissioned protected live dashboard")
+    prerequisites = None
+    if protected_owner is not None:
+        if config_path is not None:
+            raise ValueError("protected dashboard loads paper-config.json only from its owner directory")
+        from trade_graph.application.deployment_runtime import _owner_bundle
+        from trade_graph.kernel.deployment_image import read_owner_file
+        from trade_graph.paper_runtime import PaperRuntimeConfig
+
+        manifest, _, _ = _owner_bundle(protected_owner)
+        manifest.assert_current()
+        try:
+            config = PaperRuntimeConfig.model_validate_json(
+                read_owner_file(protected_owner, "paper-config.json", 262144))
+        except FileNotFoundError:
+            config = PaperRuntimeConfig()
+        if config.models or config.price_cards or (protected_owner / "funded-paper-profile.json").exists():
+            raise ValueError("subscription dashboard rejects API model routing, price cards and funded API profiles")
+        subscription = _subscription_prerequisites(protected_owner)
+
+        def prerequisites():
+            return {**subscription(), "paper_available": True, "live_available": False,
+                    "live_reasons": ["Live startup requires separately commissioned protected owner configuration."]}
     path = path.resolve()
     if not path.is_file():
         raise ValueError("database does not exist; initialize a paper account first")
@@ -64,9 +87,28 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
     execution = Execution(database, ledger, clock, PaperBroker(database, clock))
     runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
                               portfolio_id=row["portfolio_id"], deployment_id="deployment")
-    runtime.service_controller = ServiceController(runtime, config_path=config_path)
+    runtime.service_controller = ServiceController(runtime, config_path=config_path,
+                                                   protected_owner=protected_owner, prerequisites=prerequisites)
     return runtime
 
+
+
+def _subscription_prerequisites(protected_owner):
+    """One read-only admission; polling only rechecks immutable owner bytes."""
+    from trade_graph.application.subscription_profile import load_subscription_profile, subscription_profile_unchanged
+
+    admission = load_subscription_profile(protected_owner)
+
+    def status():
+        current = subscription_profile_unchanged(protected_owner, admission.profile_sha256)
+        ready = bool(current and admission.adapter and admission.status.get("ready"))
+        reasons = [] if ready else admission.status.get("blockers", [])
+        if not current:
+            reasons = ["Protected subscription profile changed; restart after owner review. Management continues."]
+        return {"ai_available": ready, "selected_provider": admission.status.get("selected_provider"),
+                "reasons": reasons, "subscription": admission.status}
+
+    return status
 
 def owner_session_file(runtime, path: Path) -> Path:
     """Write an owner session once to a restricted local file, never to stdout."""

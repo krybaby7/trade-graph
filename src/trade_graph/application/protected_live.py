@@ -66,6 +66,7 @@ class ProtectedLiveDeploymentBinding(ProtectedDeploymentBinding):
         self.funded_profile = None
         self.protected = None
         self.api_keys, self.transport = {}, None
+        self._initialise_subscription()
 
     def _funded_bundle(self):
         return None
@@ -92,6 +93,11 @@ class ProtectedLiveDeploymentBinding(ProtectedDeploymentBinding):
                 self.protected.financial._release(status)
             except (TradeGraphError, ValueError):
                 controller._recover_mutable(status["active_release_id"], status["generation"])
+        if not self._subscription_current():
+            runtime.handlers = {}
+            return {}
+        if self.subscription_declared:
+            return self._subscription_handlers()
         if runtime.model_config is None:
             return {}
         runtime.model_handlers = assemble_protected_handlers(
@@ -105,7 +111,7 @@ class ProtectedLiveDeploymentBinding(ProtectedDeploymentBinding):
     def ready(self):
         try:
             self.manifest.assert_current()
-            if not self.protected or not self._unchanged():
+            if not self.protected or not self._unchanged() or not self._subscription_ready():
                 return False
             status = self.protected.controller.status()
             if status["status"] != "RUNNING":
