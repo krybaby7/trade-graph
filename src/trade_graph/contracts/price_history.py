@@ -20,7 +20,7 @@ HistorySymbol = Literal["BTC/USD", "ETH/USD"]
 class HourlyCandle(BaseModel):
     """A received, completed hour; availability is receipt time, never backdated."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     symbol: HistorySymbol
     interval_minutes: Literal[60] = 60
@@ -48,10 +48,18 @@ class HourlyCandle(BaseModel):
     @field_validator("open", "high", "low", "close", "vwap", "volume", mode="before")
     @classmethod
     def _decimal(cls, value: Any) -> Decimal:
+        if isinstance(value, str) and len(value) > 128:
+            raise ValueError("decimal input exceeds 128 characters")
         try:
-            return parse_decimal(value)
+            parsed = parse_decimal(value)
         except InvalidOperation as error:
             raise ValueError("invalid decimal") from error
+        digits = len(parsed.as_tuple().digits)
+        exponent = int(parsed.as_tuple().exponent)
+        fixed_span = max(digits + max(exponent, 0), 2 - exponent if exponent < 0 else digits)
+        if fixed_span > 128:
+            raise ValueError("decimal fixed-point representation exceeds 128 characters")
+        return parsed
 
     @field_validator("open_time_utc", "close_time_utc", "available_at_utc")
     @classmethod
