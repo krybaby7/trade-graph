@@ -214,3 +214,20 @@ def test_attempt_details_do_not_duplicate_aggregate_subscription_receipts(tmp_pa
     assert len(costs["subscription"]["records"][0]["attempts"]) == 1
     assert costs["subscription"]["unknown_inference_costs"] == 1
     assert costs["actual_spend"] == "0"
+
+
+def test_subscription_projection_preserves_reported_totals_and_nulls_unreported_breakdowns(tmp_path):
+    import json
+
+    runtime = _runtime(tmp_path)
+    subscription_record(runtime)
+    usage = {"uncached_input_tokens": 360, "cache_read_tokens": 90, "cache_write_tokens": 0,
+        "billed_output_tokens": 20, "reasoning_tokens": 0, "tool_units": 0,
+        "provider_reported_input_tokens": 450,
+        "unreported_fields": ["cache_write_tokens", "reasoning_tokens"]}
+    runtime.database.execute("UPDATE subscription_invocations SET usage_json=?", (json.dumps(usage),))
+    shown = financial.costs(runtime)["subscription"]["records"][0]["usage"]
+    assert shown["provider_reported_input_tokens"] == 450
+    assert shown["uncached_input_tokens"] == 360 and shown["cache_read_tokens"] == 90
+    assert shown["cache_write_tokens"] is None and shown["reasoning_tokens"] is None
+    assert shown["billed_output_tokens"] == 20 and shown["tool_units"] == 0

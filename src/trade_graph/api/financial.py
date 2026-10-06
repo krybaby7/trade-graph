@@ -220,6 +220,17 @@ def _expense_records(runtime) -> list[dict]:
 
 
 
+def _subscription_usage(raw: str | None) -> dict:
+    """Zero placeholders in legacy numeric contracts are not measured usage."""
+    usage = _json(raw)
+    allowed = {"uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
+               "billed_output_tokens", "reasoning_tokens", "tool_units"}
+    for field in usage.get("unreported_fields", []):
+        if field in allowed:
+            usage[field] = None
+    return usage
+
+
 def _subscription_cost_state(runtime, at: str) -> dict:
     """Expose subscription uncertainty without inventing a charge or fee allocation.
 
@@ -239,13 +250,13 @@ def _subscription_cost_state(runtime, at: str) -> dict:
             FROM subscription_attempts WHERE invocation_id=? AND created_at<=?
             ORDER BY attempt_index""", (record["invocation_id"], at))
         for attempt in attempts:
-            attempt["usage"] = _json(attempt.pop("usage_json"))
+            attempt["usage"] = _subscription_usage(attempt.pop("usage_json"))
             attempt["billing_kind"] = "subscription"
         record["attempts"] = attempts
         record["synthetic"] = bool(record["synthetic"])
         record["billing_kind"] = "subscription"
         record["quota"] = _json(record.pop("quota_json"))
-        record["usage"] = _json(record.pop("usage_json"))
+        record["usage"] = _subscription_usage(record.pop("usage_json"))
         record["inference_dispatched"] = record["cost_status"] != "not_incurred" and record["state"] != "BLOCKED"
         dispatched_count = len(attempts) or int(record["inference_dispatched"])
         attempt_count += dispatched_count
