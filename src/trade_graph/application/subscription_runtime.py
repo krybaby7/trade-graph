@@ -1,4 +1,4 @@
-"""Fixed-provider subscription departmental assembly with no API pricing or automatic repairs."""
+"""Protected subscription departmental assembly with configured operating limits."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ class SubscriptionRouter:
         status = self.adapter.readiness.public_status()
         paused = SubscriptionJournal(self.budget.database, self.budget.clock).provider_status(
             self.config.subscription.provider)["ai_paused"]
-        ready = status["ready"] and not paused and self.config.subscription.provider != "codex_subscription"
+        ready = status["ready"] and not paused
         return {**status, "ready": ready, "selected_provider": self.config.subscription.provider,
                 "roles": {role: {"provider": self.config.subscription.provider,
                           "model": self.config.subscription.model, "ready": ready} for role in MODEL_ROLES}}
@@ -108,7 +108,7 @@ class SubscriptionGateway:
                                   if key in allowed})
         selected = request.model_copy(update={"context": context})
         return self.adapter.invoke(selected, invocation_id=invocation_id, journal=self.journal,
-                                   cancel_event=cancel_event)
+                                   cancel_event=cancel_event, before_attempt=authorize)
 
 
 class SubscriptionDepartmentMixin:
@@ -166,8 +166,10 @@ class SubscriptionDepartmentMixin:
 
     def invoke(self, task, request):
         limits = self.gateway.router.config.subscription
-        request = request.model_copy(update={"timeout_seconds": min(120, limits.maximum_seconds),
-                                             "max_output_tokens": min(4096, limits.maximum_output_tokens)})
+        request = request.model_copy(update={"timeout_seconds": limits.maximum_seconds,
+                                             "max_output_tokens": limits.maximum_output_tokens,
+                                             "max_tool_calls": getattr(limits, "maximum_tool_calls", 0)
+                                             if getattr(limits, "department_tools", {}).get(task["role"]) else 0})
         return self.gateway.invoke(request, deployment_id=self.deployment_id, invocation_id=self._invocation_id(task),
                                    portfolio_id=task["portfolio_id"], authorize=lambda: self._eligible(task))
 
@@ -299,10 +301,12 @@ class SubscriptionEngineerHandler(EngineerHandler):
         budget = self.database.execute("SELECT * FROM deployment_budget WHERE deployment_id = ?",
                                        (self.deployment_id,)).fetchone()
         if (worker["allocated_spend"] is None or Decimal(worker["allocated_spend"]) != change.max_spend.amount
-                or budget is None or change.max_spend.amount > policy.root_paid_limit.amount
-                or change.max_spend.amount > Decimal(budget["root_limit"])
-                or Decimal(budget["total_allowance"]) > policy.monthly_operating.amount
-                or Decimal(budget["daily_limit"]) > policy.daily_paid_limit.amount
+                or budget is None and change.max_spend.amount != 0
+                or change.max_spend.amount > policy.root_paid_limit.amount
+                or budget is not None and (
+                    change.max_spend.amount > Decimal(budget["root_limit"])
+                    or Decimal(budget["total_allowance"]) > policy.monthly_operating.amount
+                    or Decimal(budget["daily_limit"]) > policy.daily_paid_limit.amount)
                 or change.max_steps > policy.engineer_max_paid_attempts
                 or worker["max_attempts"] != change.max_steps):
             raise AuthorityDenied("commission exceeds persisted monetary/attempt envelope")
@@ -343,11 +347,26 @@ class SubscriptionEngineerHandler(EngineerHandler):
         task.update(snapshot=job["snapshot"], snapshot_id=job["run_id"])
         return job["output"] if job["phase"] == "TERMINAL" else self(task)
 
+    def _prepare(self, task):
+        with self.database.immediate():
+            job = super()._prepare(task)
+            limits = self.gateway.router.config.subscription
+            request = dict(job["request"])
+            request.update(timeout_seconds=limits.maximum_seconds,
+                           max_output_tokens=limits.maximum_output_tokens)
+            job["request"] = request
+            self._save(task, job)
+            return job
+
     def _retry(self, task, job, reason, kind, candidate_id=None):
-        return self._terminal(task, job, "FAILED", reason, candidate_id)
+        row = self.database.execute("SELECT state FROM subscription_invocations WHERE invocation_id=?",
+                                    (job["invocation_id"],)).fetchone()
+        if row and row["state"] == "UNCERTAIN":
+            return self._terminal(task, job, "WAITING_EXTERNAL", reason, candidate_id)
+        return super()._retry(task, job, reason, kind, candidate_id)
 
     def _schema_failure(self, task, job, reason):
-        return self._terminal(task, job, "FAILED", reason)
+        return super()._schema_failure(task, job, reason)
 
     def _terminal(self, task, job, status, reason, candidate_id=None):
         row = self.database.execute("SELECT state FROM subscription_invocations WHERE invocation_id=?",

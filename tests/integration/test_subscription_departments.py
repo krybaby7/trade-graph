@@ -86,8 +86,8 @@ def test_zero_money_subscription_allocation_needs_no_api_funding(tmp_path):
     assert setup.run('research') == 1
     assert setup.row(task)['status'] == 'SUCCEEDED', setup.row(task)['output_json']
     assert len(cli.requests) == 1
-    assert cli.requests[0].timeout_seconds == 120
-    assert cli.requests[0].max_output_tokens == 4096
+    assert cli.requests[0].timeout_seconds == setup.assembly.router.config.subscription.maximum_seconds
+    assert cli.requests[0].max_output_tokens == setup.assembly.router.config.subscription.maximum_output_tokens
     assert setup.db.execute('SELECT COUNT(*) FROM deployment_budget').fetchone()[0] == 0
     receipt = setup.db.execute('SELECT * FROM subscription_invocations WHERE task_id=?', (task,)).fetchone()
     assert receipt['cost_status'] == 'unknown' and receipt['actual_cost_native'] is None
@@ -145,7 +145,7 @@ def test_codex_current_blocker_is_enforced_inside_department_factory(tmp_path):
     assert not setup.assembly.router.readiness(setup.pid)["ready"]
 
 
-def test_engineer_schema_failure_never_queues_automatic_repair(tmp_path):
+def test_engineer_schema_failure_can_repair_within_commissioned_steps(tmp_path):
     setup, _protected, cli = flow(tmp_path)
     change = _task(setup.clock, setup.pid, setup.baseline, max_steps=3,
                    max_spend=Money(amount="0.5", currency="EUR"))
@@ -157,9 +157,14 @@ def test_engineer_schema_failure_never_queues_automatic_repair(tmp_path):
     cli.outputs["engineer"] = {"wrong": "schema"}
     assert setup.run("engineer") == 1
     assert setup.run("engineer") == 0
+    setup.clock.advance(30)
+    cli.outputs["engineer"] = {"summary": "Repair the allowlisted context artifact.", "files": [
+        {"path": "artifacts/context_policy.json", "content": json.dumps(POLICY)}]}
+    assert setup.run("engineer") == 1
     row = setup.db.execute("SELECT * FROM tasks WHERE role='engineer'").fetchone()
-    assert row["status"] == "FAILED"
-    assert len([request for request in cli.requests if request.role == "engineer"]) == 1
+    assert row["status"] == "SUCCEEDED", row["output_json"]
+    assert len([request for request in cli.requests if request.role == "engineer"]) == 2
+    assert setup.db.execute("SELECT COUNT(*) FROM subscription_invocations WHERE role='engineer'").fetchone()[0] == 2
 
 
 def test_uncertain_subscription_outcome_waits_without_replaying_model(tmp_path):
@@ -317,7 +322,7 @@ def test_new_subscription_invocation_id_cannot_repeat_a_task_after_persisted_out
     plan = setup.db.execute("SELECT scope_json FROM protected_rpc_requests WHERE "
                            "json_extract(scope_json,'$.operation')='invoke_model'").fetchone()
     request = ModelRequest.model_validate(json.loads(plan[0])["original_request"])
-    with pytest.raises(AuthorityDenied, match="one subscription invocation"):
+    with pytest.raises(AuthorityDenied, match="ordinary task invocation identity"):
         setup.assembly.gateway.invoke(request, invocation_id="forbidden-second-attempt", deployment_id="deployment",
             portfolio_id=setup.pid, authorize=lambda: None)
     assert len(cli.requests) == 1
@@ -342,3 +347,41 @@ def test_subscription_journal_envelope_retains_the_persisted_portfolio_mode(tmp_
             "snapshot": {"evidence_refs": []}}
     assert handler._envelope(task)["mode"] == mode
     assert not cli.requests and not setup.transport.calls
+
+
+def test_normal_department_uses_configured_subscription_limits(tmp_path):
+    setup, _protected, cli = flow(tmp_path)
+    configured = setup.assembly.router.config.subscription.model_copy(update={
+        "maximum_seconds": 240, "maximum_output_tokens": 8192})
+    setup.assembly.router.config.subscription = configured
+    setup.assembly.router.adapter.config = configured
+    setup.db.execute("DELETE FROM role_allocations")
+    setup.db.execute("DELETE FROM deployment_budget")
+    setup.office.scheduler.add_task(role="research", objective="Normal public research",
+        portfolio_id=setup.pid, allocated_spend=__import__("decimal").Decimal("0"))
+    assert setup.run("research") == 1
+    assert cli.requests[0].timeout_seconds == 240
+    assert cli.requests[0].max_output_tokens == 8192
+
+
+def test_zero_money_commission_uses_subscription_without_fake_api_budget(tmp_path):
+    from decimal import Decimal
+
+    setup, _protected, cli = flow(tmp_path)
+    setup.db.execute("DELETE FROM role_allocations")
+    setup.db.execute("DELETE FROM deployment_budget")
+    change = _task(setup.clock, setup.pid, setup.baseline, max_steps=2,
+                   max_spend=Money(amount="0", currency="EUR"))
+    setup.engineer.propose(setup.pid, change)
+    cli.outputs["leader"] = reply([setup.ref, change.record_id], [
+        {"kind": "commission", "change_id": change.record_id}])
+    leader = setup.office.scheduler.add_task(role="leader", objective="Commission within subscription allowance",
+        portfolio_id=setup.pid, allocated_spend=Decimal("0"))
+    setup.run("leader")
+    assert setup.row(leader)["status"] == "SUCCEEDED", setup.row(leader)["output_json"]
+    assert setup.run("engineer") == 1
+    engineer = setup.db.execute("SELECT * FROM tasks WHERE role='engineer'").fetchone()
+    assert engineer["status"] == "SUCCEEDED", engineer["output_json"]
+    assert setup.db.execute("SELECT COUNT(*) FROM deployment_budget").fetchone()[0] == 0
+    receipt = setup.db.execute("SELECT * FROM subscription_invocations WHERE role='engineer'").fetchone()
+    assert receipt["cost_status"] == "unknown" and receipt["actual_cost_native"] is None

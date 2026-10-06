@@ -6,7 +6,6 @@ import json
 
 from trade_graph.adapters.models.subscription import SubscriptionJournal
 from trade_graph.contracts.models import ModelRequest, ModelResult
-from trade_graph.domain.clock import parse_utc
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.kernel.department_gateway import ProtectedDepartmentGateway
 from trade_graph.kernel.runtime_manifest import document_sha256
@@ -59,13 +58,23 @@ class ProtectedSubscriptionGateway(ProtectedDepartmentGateway):
 
     def invoke(self, request: ModelRequest, **kwargs) -> ModelResult:
         invocation_id, authorize = kwargs.get("invocation_id"), kwargs.get("authorize")
-        if not invocation_id or not callable(authorize) or request.max_tool_calls != 0:
-            raise AuthorityDenied("subscription models require durable tool-free leased invocation")
+        limits = self.gateway.router.config.subscription
+        tools = getattr(limits, "department_tools", {}).get(request.role, [])
+        maximum_tools = getattr(limits, "maximum_tool_calls", 0) if tools else 0
+        if (not invocation_id or not callable(authorize)
+                or not 0 <= request.max_tool_calls <= maximum_tools):
+            raise AuthorityDenied("subscription models require a durable leased invocation with configured tools")
         self.gateway.assert_request(request)
         previous = self.database.execute("SELECT invocation_id FROM subscription_invocations WHERE task_id=?",
                                          (request.task_id,)).fetchone()
-        if previous is not None and previous["invocation_id"] != invocation_id:
-            raise AuthorityDenied("only one subscription invocation is permitted per persisted task")
+        if request.role == "engineer":
+            job_row = self.database.execute("SELECT document_json FROM engineering_jobs WHERE task_id=?",
+                                            (request.task_id,)).fetchone()
+            job = json.loads(job_row[0]) if job_row else {}
+            if job.get("invocation_id") != invocation_id or job.get("phase") != "REQUESTING":
+                raise AuthorityDenied("Engineer generation differs from its durable commissioned request")
+        elif previous is not None and previous["invocation_id"] != invocation_id:
+            raise AuthorityDenied("ordinary task invocation identity cannot change during recovery")
         billing = {"deployment_id": self.gateway.router.config.deployment_id,
                    "portfolio_id": kwargs["portfolio_id"], "billing_kind": "subscription",
                    "provider": self.gateway.router.config.subscription.provider, "model": request.model}
@@ -96,8 +105,10 @@ class ProtectedSubscriptionGateway(ProtectedDepartmentGateway):
 
         def protected_authorize():
             self._assert_scope(scope, request, billing, authorize)
-            if self.clock.now() >= parse_utc(scope["expires_at"]):
-                raise StaleState("subscription dispatch capability expired before external effect")
+            # The short-lived child RPC capability was consumed by the completed
+            # plan. Each external attempt instead rechecks the current controller,
+            # lease, owner authority and exact persisted request through this
+            # private callback; a provider retry is not a replay of the child token.
 
         result = recovered or self.gateway.invoke(effective, **{**kwargs, "authorize": protected_authorize,
                                                                "cancel_event": self.cancelled})

@@ -171,7 +171,7 @@ def test_actual_protected_dashboard_retains_subscription_fee_evidence(
         owner.mkdir(mode=0o700)
         (owner / "subscription-profile.json").write_text("synthetic refused profile, no credentials")
     runtime = dashboard_runtime(fixture.database.path, protected_owner=owner)
-    assert not hasattr(runtime, "subscription_provider")
+    assert runtime.subscription_provider == provider
     assert runtime.database.execute("SELECT COUNT(*) FROM subscription_invocations").fetchone()[0] == 0
     costs = financial.costs(runtime)
     assert costs["subscription"]["shared_fee_allocation_status"] == expected
