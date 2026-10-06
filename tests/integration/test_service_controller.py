@@ -161,7 +161,7 @@ def test_paid_api_configuration_is_refused_and_default_is_management_only(tmp_pa
         ServiceController(runtime).start_optimisation("no-inference")
 
 
-def test_manual_cycle_is_one_shot_deduplicated_and_concurrent_cycle_explicit(tmp_path):
+def test_manual_cycle_deduplicates_and_configured_manual_only_is_explicit(tmp_path):
     runtime, broker = runtime_stack(tmp_path)
     seen = []
     service = PaperService(
@@ -169,6 +169,7 @@ def test_manual_cycle_is_one_shot_deduplicated_and_concurrent_cycle_explicit(tmp
         runtime.execution,
         handlers={"optimisation": lambda task: seen.append(task) or {}},
         schedule_intervals={"optimisation": 1},
+        optimisation_manual_only=True,
     )
     control = ServiceController(runtime, prerequisites=synthetic_ready)
 
@@ -186,7 +187,8 @@ def test_manual_cycle_is_one_shot_deduplicated_and_concurrent_cycle_explicit(tmp
         assert (await service.tick(wait_roles=True)).scheduled == 0
         assert len(seen) == 1
         task = runtime.database.execute("SELECT * FROM tasks WHERE task_id = ?", (first["task_id"],)).fetchone()
-        assert task["max_attempts"] == 1 and task["deadline_at"]
+        assert task["max_attempts"] == runtime.execution.authority.active_policy().ordinary_max_paid_attempts
+        assert task["deadline_at"] is None
         await service.stop()
         assert control.status()["service"]["status"] == "STOPPED"
 
@@ -194,41 +196,28 @@ def test_manual_cycle_is_one_shot_deduplicated_and_concurrent_cycle_explicit(tmp
     assert broker.submit_count == 0
 
 
-def test_previous_auto_cycle_retired_and_leader_cannot_recommission(tmp_path):
+def test_previous_automatic_cycle_is_preserved_and_leader_can_recommission(tmp_path):
     runtime, _ = runtime_stack(tmp_path)
     scheduler = Scheduler(runtime.database, runtime.clock)
-    old = scheduler.add_task(
-        role="optimisation", objective="artifact-optimisation-review", portfolio_id=runtime.portfolio_id
-    )
+    old = scheduler.add_task(role="optimisation", objective="artifact-optimisation-review",
+                             portfolio_id=runtime.portfolio_id)
     scheduler.ensure_schedule(runtime.portfolio_id, "artifact-optimisation-review", 60, "coalesce")
     seen = []
-    service = PaperService(
-        runtime.database,
-        runtime.execution,
-        handlers={"optimisation": lambda task: seen.append(task) or {}},
-        schedule_intervals={"optimisation": 1},
-    )
-
+    service = PaperService(runtime.database, runtime.execution,
+        handlers={"optimisation": lambda task: seen.append(task) or {}}, schedule_intervals={})
     async def scenario():
-        assert (await service.tick(wait_roles=True)).completed == 0
-        assert (
-            runtime.database.execute("SELECT status FROM tasks WHERE task_id = ?", (old,)).fetchone()[0] == "CANCELLED"
-        )
-        assert (
-            runtime.database.execute("SELECT COUNT(*) FROM schedules WHERE name LIKE '%optimisation%'").fetchone()[0]
-            == 0
-        )
-        with pytest.raises(AuthorityDenied, match="owner-requested"):
-            service.scheduler.add_task(
-                role="optimisation", objective="Leader commission", portfolio_id=runtime.portfolio_id
-            )
+        assert (await service.tick(wait_roles=True)).completed == 1
+        assert runtime.database.execute("SELECT status FROM tasks WHERE task_id=?", (old,)).fetchone()[0] == "SUCCEEDED"
+        assert runtime.database.execute("SELECT COUNT(*) FROM schedules "
+                                        "WHERE name LIKE '%optimisation%'").fetchone()[0] == 1
+        service.scheduler.add_task(role="optimisation", objective="Leader commission",
+                                   portfolio_id=runtime.portfolio_id)
         await service.stop()
-
     asyncio.run(scenario())
-    assert seen == []
+    assert len(seen) == 1
 
 
-def test_owner_cycle_descendants_share_deadline_and_one_attempt(tmp_path):
+def test_owner_cycle_descendants_keep_explicit_deadline_and_configured_attempts(tmp_path):
     runtime, _ = runtime_stack(tmp_path)
     scheduler = Scheduler(runtime.database, runtime.clock)
     deadline = utc_iso(runtime.clock.now() + timedelta(minutes=10))
@@ -243,7 +232,7 @@ def test_owner_cycle_descendants_share_deadline_and_one_attempt(tmp_path):
         role="leader", objective="Review once", portfolio_id=runtime.portfolio_id, parent_id=root, max_attempts=3
     )
     row = runtime.database.execute("SELECT * FROM tasks WHERE task_id = ?", (child,)).fetchone()
-    assert row["max_attempts"] == 1 and row["deadline_at"] == deadline
+    assert row["max_attempts"] == 3 and row["deadline_at"] == deadline
 
 
 def test_quota_exhaustion_pauses_all_new_ai_while_management_continues(tmp_path):
@@ -322,6 +311,7 @@ def test_flat_stop_request_observed_by_heartbeat(tmp_path):
 
 def test_expired_requested_cycle_performs_no_model_work(tmp_path):
     runtime, _ = runtime_stack(tmp_path)
+    runtime.config = SimpleNamespace(optimisation_deadline_seconds=600)
     calls = []
     service = PaperService(
         runtime.database,
@@ -522,7 +512,7 @@ def test_quota_pause_applies_only_to_the_fixed_selected_subscription_provider(tm
     assert runtime.database.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 0
 
 
-def test_retired_automatic_optimisation_cannot_run_queued_descendants(tmp_path):
+def test_existing_automatic_optimisation_tree_runs_without_retirement(tmp_path):
     runtime, _ = runtime_stack(tmp_path)
     scheduler = Scheduler(runtime.database, runtime.clock)
     old = scheduler.add_task(role="optimisation", objective="automatic-review", portfolio_id=runtime.portfolio_id)
@@ -539,14 +529,13 @@ def test_retired_automatic_optimisation_cannot_run_queued_descendants(tmp_path):
                            schedule_intervals={})
 
     async def scenario():
-        assert (await service.tick(wait_roles=True)).completed == 0
-        assert seen == []
+        for _ in range(3):
+            assert (await service.tick(wait_roles=True)).completed == 1
+        assert set(seen) == {old, child, grandchild}
         rows = runtime.database.execute("SELECT task_id,status,attempts_used FROM tasks").fetchall()
         assert {row["task_id"] for row in rows} == {old, child, grandchild}
-        assert {row["status"] for row in rows} == {"CANCELLED"}
-        assert {row["attempts_used"] for row in rows} == {0}
-        saved = runtime.database.execute("SELECT output_json FROM tasks WHERE task_id=?", (child,)).fetchone()[0]
-        assert json.loads(saved)["retained"] == "unresolved external evidence"
+        assert {row["status"] for row in rows} == {"SUCCEEDED"}
+        assert {row["attempts_used"] for row in rows} == {1}
         await service.stop()
 
     asyncio.run(scenario())

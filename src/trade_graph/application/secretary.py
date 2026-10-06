@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal
 
 from trade_graph.adapters.persistence.db import atomic
 from trade_graph.domain.errors import DuplicateRecord, ValidationFailure
@@ -18,6 +19,7 @@ class Secretary:
         self.execution, self.scheduler = execution, scheduler
         self.database = scheduler.database
         self.artifact_runtime = artifact_runtime
+        self.subscription_only = False
 
     @atomic
     def report(
@@ -193,7 +195,7 @@ class Secretary:
             portfolio_id=portfolio_id,
             dedup_key=f"secretary:{digest['digest_id']}",
             payload={"digest_id": digest["digest_id"]},
-            allocated_spend=policy.root_paid_limit.amount,
+            allocated_spend=Decimal("0") if self.subscription_only else policy.root_paid_limit.amount,
         )
         return task_id
 
@@ -212,7 +214,8 @@ class Secretary:
         task_id = (self.artifact_runtime.coalesce_due(portfolio_id, "leader") if artifact_schedule
                    else self.scheduler.coalesce_due(portfolio_id, "leader-review", "leader"))
         if task_id:
-            self.scheduler.allocate(task_id, self.execution.authority.active_policy().root_paid_limit.amount)
+            self.scheduler.allocate(task_id, Decimal("0") if self.subscription_only
+                                    else self.execution.authority.active_policy().root_paid_limit.amount)
             # A newer digest must not overwrite an older, as-yet-undelivered batch.
             # Pin one bounded batch to this task, including across restarts.
             pending = self.database.execute(

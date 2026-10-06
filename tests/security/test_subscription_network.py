@@ -110,7 +110,7 @@ def test_subscription_cannot_reuse_funded_live_or_ordinary_launch():
             spec.create_arguments(name="trade-graph-wrong", action=action)
 
 
-@pytest.mark.parametrize("action", ["boot-subscription", "check-subscription",
+@pytest.mark.parametrize("action", ["boot-subscription", "boot-subscription-dashboard", "check-subscription",
                                     "research-subscription", "manage-subscription"])
 def test_subscription_launch_keeps_unprivileged_boundary_and_exact_seccomp_path(action):
     ordinary = deployment()
@@ -204,8 +204,8 @@ def test_network_profile_loader_rejects_duplicate_fields(monkeypatch, tmp_path):
         load_subscription_network_profile(tmp_path)
 
 
-def test_subscription_boot_dispatches_only_bounded_phase_and_check_never_invokes(monkeypatch, capsys):
-    from trade_graph.application import subscription_smoke
+def test_subscription_boot_dispatches_normal_service_without_research_prerequisite(monkeypatch, capsys):
+    from trade_graph.application import subscription_operation, subscription_smoke
     from trade_graph.kernel import subscription_network
     value = profile()
     calls = []
@@ -218,9 +218,13 @@ def test_subscription_boot_dispatches_only_bounded_phase_and_check_never_invokes
     assert deployment_image.main(["check-subscription"]) == 0
     assert calls == [] and '\"live_authorization\":false' in capsys.readouterr().out
     from pathlib import Path
-    for action, phase in (("research-subscription", "research"), ("boot-subscription", "cycle")):
-        assert deployment_image.main([action]) == 0
-        assert calls[-1] == (Path("/var/lib/trade-graph/trade_graph.sqlite"), Path("/run/trade-graph-owner"), phase)
+    monkeypatch.setattr(subscription_operation, "run_subscription_operation",
+                        lambda database, owner, *, maximum_ticks: calls.append((database, owner, maximum_ticks))
+                        or {"status": "paper_stopped", "failures": []})
+    assert deployment_image.main(["research-subscription"]) == 0
+    assert calls[-1] == (Path("/var/lib/trade-graph/trade_graph.sqlite"), Path("/run/trade-graph-owner"), "research")
+    assert deployment_image.main(["boot-subscription"]) == 0
+    assert calls[-1] == (Path("/var/lib/trade-graph/trade_graph.sqlite"), Path("/run/trade-graph-owner"), None)
     monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory:
                         value.model_copy(update={"paper_config_sha256": "f" * 64}))
     with pytest.raises(PermissionError, match="configuration/profile"):
@@ -345,3 +349,18 @@ def test_management_entrypoint_has_no_auth_admission_or_bounded_model_phase(monk
                         lambda *_a, **_k: calls.append("management") or {"mode": "MANAGE_ONLY"})
     assert deployment_image.main(["manage-subscription"]) == 0
     assert calls == ["management"] and "MANAGE_ONLY" in capsys.readouterr().out
+
+
+def test_subscription_dashboard_is_same_private_state_and_not_live_commissioning(monkeypatch):
+    from trade_graph import cli
+    from trade_graph.kernel import subscription_network
+    value = profile()
+    trust_files(monkeypatch, value)
+    monkeypatch.setattr(deployment_image, "assert_boot_environment", lambda: deployment().runtime_manifest)
+    monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory: value)
+    calls = []
+    monkeypatch.setattr(cli, "main", lambda args: calls.append(args) or 0)
+    assert deployment_image.main(["boot-subscription-dashboard"]) == 0
+    assert calls == [["dashboard", "--mode", "paper", "--database", "/var/lib/trade-graph/trade_graph.sqlite",
+        "--protected-owner", "/run/trade-graph-owner", "--session-file", "/var/lib/trade-graph/owner-session.json",
+        "--protected-network-bind", "--port", "8000"]]

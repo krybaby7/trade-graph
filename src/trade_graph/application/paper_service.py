@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 from trade_graph.adapters.persistence.db import Database
@@ -33,6 +34,7 @@ DEFAULT_SCHEDULES = {
     "research": 86400,
     "learning": 302400,
     "leader": 604800,
+    "optimisation": 604800,
 }
 PAUSED_WORK = {"PAUSE_DECISIONS", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN", "STOPPED"}
 
@@ -74,12 +76,18 @@ class PaperService:
         service_mode: str = "paper",
         service_run_id: str | None = None,
         subscription_provider: str | None = None,
+        automatic_schedule: bool = True,
+        optimisation_manual_only: bool = False,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
             raise ValidationFailure(f"{service_mode} execution bound to the service database is required")
         if subscription_provider not in {None, "codex_subscription", "claude_subscription"}:
             raise ValidationFailure("one supported subscription provider is required")
+        if type(automatic_schedule) is not bool or type(optimisation_manual_only) is not bool:
+            raise ValidationFailure("explicit boolean schedule controls required")
+        self.automatic_schedule = automatic_schedule
+        self.optimisation_manual_only = optimisation_manual_only
         self.subscription_provider = subscription_provider
         self.service_mode, self.service_run_id = service_mode, service_run_id
         if (isinstance(tick_interval_seconds, bool) or not isinstance(tick_interval_seconds, (int, float))
@@ -89,18 +97,23 @@ class PaperService:
         self.database, self.execution = database, execution
         self.clock = clock or execution.clock
         self.scheduler = artifact_runtime.scheduler if artifact_runtime else Scheduler(database, self.clock)
-        self.scheduler.manual_optimisation_only = True
+        self.scheduler.manual_optimisation_only = optimisation_manual_only
         if self.scheduler.database is not database:
             raise ValidationFailure("artifact runtime must use the service database")
         self.secretary = secretary or Secretary(execution, self.scheduler, artifact_runtime=artifact_runtime)
+        self.secretary.subscription_only = subscription_provider is not None
         self.handlers = dict(handlers or {})
         self.artifact_runtime, self.public_feed = artifact_runtime, public_feed
         if artifact_runtime:
-            artifact_runtime.disabled_schedule_roles = {"optimisation"}
+            if optimisation_manual_only:
+                artifact_runtime.disabled_schedule_roles.add("optimisation")
+            else:
+                artifact_runtime.disabled_schedule_roles.discard("optimisation")
         self.portfolio_ids = tuple(dict.fromkeys(portfolio_ids or ()))
         self.management_portfolio_ids: tuple[str, ...] = ()
         self.schedule_intervals = dict(DEFAULT_SCHEDULES if schedule_intervals is None else schedule_intervals)
-        self.schedule_intervals.pop("optimisation", None)
+        if optimisation_manual_only:
+            self.schedule_intervals.pop("optimisation", None)
         for role, interval in self.schedule_intervals.items():
             if role not in DEFAULT_SCHEDULES:
                 raise ValidationFailure("Engineer work must be explicitly commissioned")
@@ -223,7 +236,6 @@ class PaperService:
                 raise ValidationFailure(f"persisted {self.service_mode} portfolios are required")
             self._started = True
             self._heartbeat_task = asyncio.create_task(self._heartbeat())
-            await self._offload(self._manual_optimisation_only)
             if self.recover_commands:
                 await self._offload(self.recover_commands)
             # No graph handler may run before uncertainty and owner pauses recover.
@@ -311,25 +323,11 @@ class PaperService:
                     failures.append("dispatch:" + type(exc).__name__)
         return management, tuple(failures)
 
-    def _manual_optimisation_only(self) -> None:
-        """Retire old automatic work without erasing its attempts or receipts."""
-        with self.database.immediate():
-            self.database.execute("DELETE FROM schedules WHERE name IN "
-                                  "('optimisation-review', 'artifact-optimisation-review')")
-            self.database.execute("""WITH RECURSIVE retired(task_id) AS (
-                SELECT task_id FROM tasks WHERE role='optimisation'
-                AND NOT EXISTS (SELECT 1 FROM service_control_requests c
-                    WHERE c.action='start_optimisation'
-                    AND json_extract(c.result_json, '$.task_id')=tasks.root_task_id)
-                UNION SELECT child.task_id FROM tasks child JOIN retired ON child.parent_id=retired.task_id
-            ) UPDATE tasks SET status='CANCELLED',
-                output_json=json_set(CASE WHEN json_valid(output_json) THEN output_json ELSE '{}' END,
-                    '$.retired_optimisation_reason', 'Optimisation is owner-requested only'),
-                lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL
-                WHERE task_id IN (SELECT task_id FROM retired)
-                AND status IN ('QUEUED','LEASED','RUNNING','WAITING_EXTERNAL','BLOCKED_BUDGET')""")
-
     def _ai_paused(self) -> bool:
+        if self.subscription_provider is not None and self.runtime_ready is not None:
+            # The admitted router owns compatible route/quota selection. A
+            # paused primary route must not disable a verified fallback.
+            return not self.runtime_ready()
         if self.subscription_provider is not None:
             return bool(self.database.execute(
                 "SELECT 1 FROM subscription_provider_state WHERE provider=? AND ai_paused=1",
@@ -338,14 +336,15 @@ class PaperService:
             "SELECT 1 FROM subscription_provider_state WHERE ai_paused = 1 LIMIT 1").fetchone())
 
     def _schedules(self) -> int:
-        self._manual_optimisation_only()
-        if self._ai_paused():
+        if self.artifact_runtime:
+            self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
+        if self._ai_paused() or not self.automatic_schedule:
             for pid in self.portfolio_ids:
                 self.secretary.process(pid, route=False)
             return 0
         created = 0
-        if self.artifact_runtime:
-            self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
+        allocation = (Decimal("0") if self.subscription_provider is not None
+                      else self.execution.authority.active_policy().root_paid_limit.amount)
         if self.runtime_ready and not self.runtime_ready():
             for pid in self.portfolio_ids:
                 self.secretary.process(pid, route=False)
@@ -364,9 +363,10 @@ class PaperService:
             bundle = None
             if self.artifact_runtime:
                 bundle = self.artifact_runtime.versions.load_active(pid)
-                settings = self.artifact_runtime.schedule_settings(bundle)
+                settings = {role: interval for role, interval in self.artifact_runtime.schedule_settings(bundle).items()
+                            if role not in self.artifact_runtime.disabled_schedule_roles}
                 self.artifact_runtime.apply_schedules(pid, bundle)
-            for role, interval in self.schedule_intervals.items():
+            for role, interval in {**self.schedule_intervals, **settings}.items():
                 if role not in self.handlers:
                     continue
                 if profile in PAUSED_WORK and role != "leader":
@@ -392,25 +392,25 @@ class PaperService:
                         task_id = self.secretary.scheduled(pid, interval)
                     elif role in settings:
                         task_id = self.artifact_runtime.coalesce_due(
-                            pid, role, allocated_spend=self.execution.authority.active_policy().root_paid_limit.amount,
+                            pid, role, allocated_spend=allocation,
                         )
                     else:
                         task_id = self.scheduler.coalesce_due(pid, name, role)
                         if task_id:
                             self.scheduler.allocate(
-                                task_id, self.execution.authority.active_policy().root_paid_limit.amount,
+                                task_id, allocation,
                             )
                     if task_id:
                         self.database.execute(
                             "UPDATE tasks SET max_attempts = ?, expected_version = ? WHERE task_id = ?",
-                            (min(3, self.execution.authority.active_policy().ordinary_max_paid_attempts),
+                            (self.execution.authority.active_policy().ordinary_max_paid_attempts,
                              bundle["artifact_hash"] if bundle else None, task_id),
                         )
                     created += bool(task_id)
         return created
 
     def _run_role(self) -> int:
-        # One finite task per launch keeps cadence and shutdown under the controller.
+        # Run one task at a time; recurring service ticks continue departmental work.
         if self._ai_paused() or (self.runtime_ready and not self.runtime_ready()):
             return 0
         lease = self.scheduler.claim(self.owner, ttl_seconds=self.role_ttl_seconds, roles=set(self.handlers))
@@ -420,7 +420,7 @@ class PaperService:
         if row["deadline_at"] and row["deadline_at"] <= self.scheduler.now():
             self.scheduler.skip(lease, {"reason": "Bounded task deadline expired; no new inference"})
             return 0
-        if row["role"] == "optimisation":
+        if row["role"] == "optimisation" and self.optimisation_manual_only:
             requested = self.database.execute("""SELECT 1 FROM service_control_requests
                 WHERE action = 'start_optimisation'
                 AND portfolio_id = ? AND json_extract(result_json, '$.task_id') = ?""",

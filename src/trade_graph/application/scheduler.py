@@ -71,9 +71,8 @@ class Scheduler:
             root = parent["root_task_id"]
             root_row = self.database.execute(
                 "SELECT objective, deadline_at FROM tasks WHERE task_id = ?", (root,)).fetchone()
-            if root_row["objective"] == "owner-optimisation-cycle":
-                # All descendants share the owner cycle's finite deadline and one attempt.
-                max_attempts = 1
+            if root_row["objective"] == "owner-optimisation-cycle" and root_row["deadline_at"]:
+                # An explicitly configured owner deadline also bounds descendants.
                 if deadline_at is None or deadline_at > root_row["deadline_at"]:
                     deadline_at = root_row["deadline_at"]
             if root_task_id is not None and root_task_id != root:

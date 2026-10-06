@@ -272,7 +272,10 @@ class ServiceController:
             "pause_profile": self.runtime.execution.profile(self.runtime.portfolio_id),
             "prerequisites": ready,
             "optimisation": self._cycle(cycle["task_id"]) if cycle else None,
-            "automatic_optimisation": False,
+            "automatic_optimisation": (
+                getattr(getattr(self.runtime, "config", None), "automatic_schedule", True)
+                and not getattr(getattr(self.runtime, "config", None), "optimisation_manual_only", False)
+            ),
             "ai_usage": {
                 "providers": providers,
                 "available_quota": "unknown" if not providers else "provider_reported",
@@ -305,7 +308,7 @@ class ServiceController:
             "status": state,
             "created_at": root["created_at"],
             "deadline_at": root["deadline_at"],
-            "bounded_attempts": 1,
+            "bounded_attempts": root["max_attempts"],
             "tasks": [
                 {
                     "task_id": row["task_id"],
@@ -440,14 +443,17 @@ class ServiceController:
                 raise StaleState("An optimisation cycle is already active or unresolved; review its saved status.")
             policy = self.runtime.execution.authority.active_policy()
             scheduler = Scheduler(self.database, self.clock)
-            amount = policy.root_paid_limit.amount
+            amount = (Decimal("0") if getattr(self.runtime, "subscription_provider", None) is not None
+                      else policy.root_paid_limit.amount)
+            deadline_seconds = getattr(getattr(self.runtime, "config", None), "optimisation_deadline_seconds", None)
             task_id = scheduler.add_task(
                 role="optimisation",
                 objective="owner-optimisation-cycle",
                 portfolio_id=self.runtime.portfolio_id,
                 dedup_key="owner-optimisation:" + request_id,
-                max_attempts=1,
-                deadline_at=utc_iso(self.clock.now() + timedelta(minutes=10)),
+                max_attempts=policy.ordinary_max_paid_attempts,
+                deadline_at=utc_iso(self.clock.now() + timedelta(seconds=deadline_seconds))
+                    if deadline_seconds is not None else None,
                 allocated_spend=amount,
                 payload={"owner_requested": True, "consultation": True, "followup_budget": str(amount / Decimal(2))},
             )

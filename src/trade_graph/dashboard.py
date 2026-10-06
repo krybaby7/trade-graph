@@ -44,6 +44,7 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
     if mode != "paper":
         raise ValueError("choose paper or a separately commissioned protected live dashboard")
     prerequisites = None
+    config = None
     if protected_owner is not None:
         if config_path is not None:
             raise ValueError("protected dashboard loads paper-config.json only from its owner directory")
@@ -86,7 +87,9 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
     ledger = Ledger(database, clock)
     execution = Execution(database, ledger, clock, PaperBroker(database, clock))
     runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
-                              portfolio_id=row["portfolio_id"], deployment_id="deployment")
+                              portfolio_id=row["portfolio_id"], deployment_id="deployment", config=config,
+                              subscription_provider=subscription().get("selected_provider")
+                                  if protected_owner is not None else None)
     runtime.service_controller = ServiceController(runtime, config_path=config_path,
                                                    protected_owner=protected_owner, prerequisites=prerequisites)
     return runtime

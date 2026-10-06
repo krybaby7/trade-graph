@@ -306,8 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, default=str))
         return 1 if report["status"] == "error" else 0
     if args.command == "dashboard":
-        if args.protected_network_bind and (args.mode != "live" or not args.protected_owner or args.port != 8000):
-            parser.error("network binding is reserved for the independently verified protected live dashboard")
+        if args.protected_network_bind and (not args.protected_owner or args.port != 8000):
+            parser.error("network binding is reserved for the independently verified protected dashboard")
         if not 1 <= args.port <= 65535:
             parser.error("port must be between 1 and 65535")
         import uvicorn
@@ -323,17 +323,29 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"dashboard startup refused ({type(exc).__name__}); verify the configured mode and scope")
         try:
             if args.protected_network_bind:
-                from trade_graph.kernel.live_network import load_live_network_profile
-                from trade_graph.live_runtime import live_startup_prerequisites
-
                 owner = Path(args.protected_owner)
-                profile = load_live_network_profile(owner)
-                admission = live_startup_prerequisites(Path(args.database),
-                    config_path=Path(args.config) if args.config else None, protected_owner=owner)
-                if profile.dashboard_host_port is None or not admission["ready"]:
-                    raise ValueError("protected dashboard network admission is unavailable")
-                # The immutable deployment controller permits only the approved
-                # host-loopback publication; this address stays inside its network.
+                if args.mode == "live":
+                    from trade_graph.kernel.live_network import load_live_network_profile
+                    from trade_graph.live_runtime import live_startup_prerequisites
+
+                    profile = load_live_network_profile(owner)
+                    admission = live_startup_prerequisites(Path(args.database),
+                        config_path=Path(args.config) if args.config else None, protected_owner=owner)
+                    if profile.dashboard_host_port is None or not admission["ready"]:
+                        raise ValueError("protected dashboard network admission is unavailable")
+                else:
+                    from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
+                    from trade_graph.kernel.subscription_network import (
+                        load_subscription_network_profile,
+                        validate_subscription_configuration,
+                    )
+
+                    manifest = assert_boot_environment()
+                    profile = load_subscription_network_profile(owner)
+                    raw = read_owner_file(owner, "paper-config.json", 262144)
+                    validate_subscription_configuration(profile, manifest, raw)
+                # No subscription host port is published. The owner controller
+                # forwards loopback to this listener on its inspected private network.
                 args.host = "0.0.0.0"
             session_path = owner_session_file(runtime, Path(args.session_file))
             address = f"[{args.host}]" if args.host == "::1" else args.host
@@ -454,6 +466,15 @@ def main(argv: list[str] | None = None) -> int:
                 config = load_runtime_config(Path(args.config) if args.config else None)
             if args.command == "run" and args.public_data:
                 config = config.model_copy(update={"public_data_enabled": True})
+            if (args.command == "run" and args.protected_owner
+                    and (Path(args.protected_owner) / "subscription-network-profile.json").exists()):
+                from trade_graph.application.subscription_operation import run_subscription_operation
+
+                result = run_subscription_operation(Path(args.database), Path(args.protected_owner),
+                    maximum_ticks=1 if args.once else args.max_ticks, portfolio_id=args.portfolio_id,
+                    service_run_id=args.service_run_id)
+                print(json.dumps(result, default=str))
+                return 0 if not result.get("failures") else 1
             runtime = assemble_paper_runtime(
                 Path(args.database), portfolio_id=args.portfolio_id, config=config,
                 protected_owner=Path(args.protected_owner) if args.command == "run" and args.protected_owner else None,
@@ -485,6 +506,9 @@ def main(argv: list[str] | None = None) -> int:
                 prepare_runtime=runtime.prepare_runtime, runtime_ready=runtime.runtime_ready,
                 service_run_id=args.service_run_id,
                 subscription_provider=getattr(runtime, "subscription_provider", None),
+                automatic_schedule=config.automatic_schedule,
+                optimisation_manual_only=config.optimisation_manual_only,
+                schedule_intervals=config.schedule_intervals,
             )
             outcome = asyncio.run(service.run(max_ticks=1 if args.once else args.max_ticks))
             decisions_created = runtime.database.execute(

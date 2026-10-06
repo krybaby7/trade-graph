@@ -9,7 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.engineering.artifact_files import write_file
@@ -31,12 +31,30 @@ from trade_graph.domain.errors import AuthorityDenied
 class PaperRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    automatic_schedule: bool = True
+    optimisation_manual_only: bool = False
+    schedule_intervals: dict[str, int] | None = None
+    optimisation_deadline_seconds: int | None = Field(default=None, gt=0)
     models: dict | None = None
     price_cards: list[PriceCard] = Field(default_factory=list, max_length=50)
     public_data_enabled: bool = False
+    public_history_enabled: bool = True
+    public_history_hours: int = Field(default=168, ge=1, le=719)
+    public_history_interval_seconds: int = Field(default=3600, ge=1)
     paper_symbols: list[str] = Field(default_factory=lambda: ["BTC/USD", "ETH/USD"], min_length=1, max_length=10)
     tick_interval_seconds: float = Field(default=1, gt=0, le=60, allow_inf_nan=False)
     public_poll_interval_seconds: int = Field(default=10, ge=1, le=3600)
+
+    @field_validator("schedule_intervals", mode="before")
+    @classmethod
+    def _schedule_intervals(cls, value):
+        if value is None:
+            return value
+        allowed = {"trader", "research", "learning", "leader", "optimisation"}
+        if (type(value) is not dict or not set(value) <= allowed
+                or any(type(interval) is not int or interval <= 0 for interval in value.values())):
+            raise ValueError("supported departments and positive integer schedule intervals required")
+        return value
 
 
 def load_runtime_config(path: Path | None) -> PaperRuntimeConfig:
