@@ -17,6 +17,6 @@
 - [x] Write failing actual handler/worker tests; extend TraderHandler and ResearchHandler with the active templates' requested fields and provenance. Retain their snapshot/request values across later observations and restart. Research findings cite supplied feature snapshots without inventing publication times.
 - [x] Verify exact Arithmetic at Decimal precision 50, ROUND_HALF_EVEN: SMA20/50 close means; 20-hour pullback fraction from high; 24-hour high/low and range midpoint. Also define starter fallback returns (2/5 closes), pullback_depth alias and midpoint_distance. Unsupported requested fields remain explicit.
 - [x] Document formulas, units, lookbacks, receipt-time availability and Kraken's 720-entry limit with the current official reference. Keep synthetic observations separate from actual public collection.
-- [ ] Run relevant Linux/WSL checks, independent review and staged secret/hygiene checks. Commit and fast-forward publish the sanitized checkpoint without resetting either owner's checkout.
+- [x] Run relevant Linux/WSL checks, independent review and staged secret/hygiene checks. Commit and fast-forward publish the sanitized checkpoint without resetting either owner's checkout.
 
 Root owns migrations, contexts, CLI, progress and documentation. History and collector agents own disjoint source/tests; root integrates their commits and tests the whole slice. The original Windows status addition already exists unchanged in the latest published source. No private account requests, runtime resets, paid calls or live trading are part of this work.

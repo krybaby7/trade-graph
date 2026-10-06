@@ -14,6 +14,10 @@ Verified source: `ce4dbb7cca688a657e65095bd3d5eabb435ab166` on
 `codex/kraken-hourly-history-2026-10-06`, based on `9dedf976`.
 Documentation follows that verified source. The integration publication target
 is `codex/orchestrator-takeover-2026-10-04`; no merge to `main` is required.
+The sanitized source/documentation checkpoint `25611438809ecadb3436c7338b0378b36efc4a83`
+was fast-forward published and independently matched to the remote branch on
+2026-10-06. This publication record follows that checkpoint. No force push,
+`main` merge or new GitHub CI result is claimed.
 
 An additive 0017 migration retains immutable completed BTC/USD and ETH/USD
 hourly candle revisions alongside existing financial records and snapshots.

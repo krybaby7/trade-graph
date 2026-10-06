@@ -728,7 +728,7 @@
     }
   ],
   "hourly_history_continuation": {
-    "status": "implementation_complete_publication_pending",
+    "status": "complete",
     "owner": "codex-orchestrator",
     "branch": "codex/kraken-hourly-history-2026-10-06",
     "base_commit": "9dedf976ef18944e96e7127ca1e2ce7006d0d243",
@@ -749,6 +749,16 @@
     ],
     "acceptance_transition": false,
     "pending": "T17–T22 acceptance, funded/forward economics, full venue conformance, intended-host/protected-image and live authorization unchanged",
-    "guide": "docs/KRAKEN-PRICE-HISTORY.md"
+    "guide": "docs/KRAKEN-PRICE-HISTORY.md",
+    "publication": {
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "status": "published_verified",
+      "verified_pushed_commit": "25611438809ecadb3436c7338b0378b36efc4a83",
+      "published_at": "2026-10-06",
+      "documentation_follows_verified_source": true,
+      "force_push": false,
+      "main_unchanged": true,
+      "ci_outcome": "not_rerun_or_verified"
+    }
   }
 }
