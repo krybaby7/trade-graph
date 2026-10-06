@@ -8,6 +8,40 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Kraken public-catalog compatibility fix — 2026-10-06
+
+Source fix: `571765f05f45c5e2871c6ed56b13d363490d4e92` on
+`codex/fix-kraken-one-character-assets-2026-10-06`, based on the clean owner
+checkpoint `5f7225e`. An owner-local redacting script located the retained
+observation and matched its displayed projection ID without exposing private
+scope, keys or native account responses. It reported only `instruments`,
+`ValidationFailure`, and request method `Assets`.
+
+The hash-matched retained **public** Assets response contains valid one-character
+asset names/altnames. The old minimum of two characters fails before the selected
+BTC/USD AssetPairs request. A length-only fix still failed on the public catalog's
+`USD_CREDIT`; the final bounded grammar admits one to 32 characters, beginning
+with an ASCII alphanumeric and allowing alphanumerics, dots and underscores
+thereafter. Alias identity, exact selected-pair scope, coherent metadata
+publication, Decimal normalization and all read/write authority controls remain.
+
+Verified on locked Python 3.12.15: **264 relevant synthetic tests passed**, including
+29 new catalog/boundary/invalid-input/default-disabled-write cases. Both one-character
+and underscore regressions failed before their fixes. Command:
+`uv run pytest tests/integration/test_kraken_live_adapter.py
+tests/integration/test_kraken_identity_recovery.py tests/integration/test_venue_conformance.py
+tests/integration/test_kraken_onboarding.py tests/integration/test_kraken_onboarding_flow.py
+tests/unit/test_repository_hygiene.py`. Full source/test Ruff, planning validation,
+repository/staged hygiene and diff checks passed. Independent review found no blockers.
+
+A public-only replay of the entire retained Assets response plus an actual
+public HTTPS AssetPairs GET through `KrakenRestTransport` passed and returned
+exactly BTC/USD. No private Kraken requests, order dispatch, paid calls or
+owner-local command rerun occurred. Before/after private digest/mode comparisons
+confirmed retained evidence and runtime records unchanged. Services were not
+restarted. The owner will rerun the bounded command; authenticated stages,
+full-suite/wheel/image verification and T17–T22 acceptance remain pending.
+
 ## Owner-local Kraken read-only implementation — 2026-10-05
 
 Integrated source checkpoint `7cd5605` on

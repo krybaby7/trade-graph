@@ -93,6 +93,8 @@
 | D86 | Use the owner's [Windows PC with WSL2 Ubuntu](WINDOWS-LOCAL-TESTING.md) for initial testing; defer cloud hosting | This supersedes the proposed immediate VPS. Start with no-paid local/public checks; actual WSL2 acceptance remains pending. The current direct model API adapters are separate from Claude/Codex subscriptions, and no subscription-backed runtime adapter is implemented. |
 | D87 | Connect a BTC/USD owner-local hidden-prompt command to the existing signed, pinned read-only collector and a minimal historical Mission Control projection | A fresh bounded grant is separate from graph authority. Private retained evidence stays outside the checkout and runtime; the sidecar receives verifier-derived public metadata only. Browser execution stays disabled, expiry and partial stages remain visible, and synthetic tests do not establish account connectivity, reconciliation, permission inventory or T17–T22 acceptance. |
 
+| D88 | Accept legitimate Kraken public catalog asset codes of one to 32 characters, starting with an ASCII alphanumeric and allowing alphanumerics, dots and underscores thereafter | Retained and current public Assets contain one-character codes and USD_CREDIT. Validate the full catalog without expanding selected BTC/USD scope; retain credit identity and existing accounting/authority contracts. See the 2026-10-06 [verification](../IMPLEMENTATION-STATUS.md). |
+
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
 ## Remaining decisions
