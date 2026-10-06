@@ -22,7 +22,7 @@ class Chunks(httpx.SyncByteStream):
         self.closed = True
 
 
-def _client(monkeypatch, response):
+def _client(monkeypatch, response, *, trust_env=True, proxy=None):
     original = httpx.Client
     requests = []
 
@@ -32,7 +32,8 @@ def _client(monkeypatch, response):
 
     def factory(*args, **kwargs):
         assert kwargs["follow_redirects"] is False
-        assert "trust_env" not in kwargs  # Keep the configured proxy controls.
+        assert kwargs["trust_env"] is trust_env
+        assert kwargs.pop("proxy") == proxy
         return original(*args, transport=httpx.MockTransport(handler), **kwargs)
 
     monkeypatch.setattr(httpx, "Client", factory)
@@ -46,6 +47,15 @@ def test_public_transport_decodes_bounded_stream_and_closes(monkeypatch):
     assert text == '{"rate":0.9}'
     assert len(calls) == 1 and calls[0].headers["accept-encoding"] == "identity"
     assert stream.closed
+
+
+def test_protected_public_transport_uses_pinned_proxy_without_environment_fallback(monkeypatch):
+    stream = Chunks([b'{"rate":0.9}'])
+    proxy = "http://protected-proxy.invalid:8080"
+    calls = _client(monkeypatch, httpx.Response(200, stream=stream), trust_env=False, proxy=proxy)
+    text = public.HttpxTextTransport(proxy=proxy, trust_env=False).get_text("https://api.frankfurter.dev/v2/rates")
+    assert text == '{"rate":0.9}'
+    assert len(calls) == 1 and stream.closed
 
 
 @pytest.mark.parametrize("headers", [{}, {"content-length": "4"}])
