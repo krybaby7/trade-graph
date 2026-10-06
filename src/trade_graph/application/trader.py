@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -38,6 +39,7 @@ class Trader:
         root_task_id: str | None = None,
         run_id: str | None = None,
         template_documents: dict | None = None,
+        snapshot_feature_refs: list[str] | None = None,
     ) -> TraderTurn:
         if not result.ok or result.payload is None:
             self.execution.ledger._activity(
@@ -48,8 +50,14 @@ class Trader:
             return TraderTurn(kind="failure", action=None)
         choice = _choice(result.payload)
         as_of = self.execution.clock.now()
+        # The role handler supplies exact references from its retained snapshot.
+        # A model cannot exempt an arbitrary finding by naming a feature prefix.
+        feature_refs = set(snapshot_feature_refs or [])
+        if any(re.fullmatch(r"hourly-features:[0-9a-f]{64}", ref) is None for ref in feature_refs):
+            raise ValidationFailure("historical feature references must identify retained snapshots")
         for finding_id in choice["evidence_ids"]:
-            self.research.require_fresh(portfolio_id, finding_id, as_of=as_of)
+            if finding_id not in feature_refs:
+                self.research.require_fresh(portfolio_id, finding_id, as_of=as_of)
         mandate = self.execution.authority.active_mandate(portfolio_id)
         policy = self.execution.authority.active_policy()
         if choice["experiment"] and not mandate.discretionary_experiment:

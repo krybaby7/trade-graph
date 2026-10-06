@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import Field
@@ -13,6 +13,7 @@ from pydantic import Field
 from trade_graph.adapters.persistence.db import atomic
 from trade_graph.application.leadership import GatewayRole
 from trade_graph.application.learning import LearningJournal, OptimisationReview
+from trade_graph.application.market_context import active_templates, market_context
 from trade_graph.application.research import ResearchStore
 from trade_graph.contracts.leadership import DepartmentReply
 from trade_graph.contracts.models import (
@@ -22,6 +23,7 @@ from trade_graph.contracts.models import (
     OptimisationProposal,
     ResearchFinding,
 )
+from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import Money, parse_decimal
 
@@ -44,20 +46,33 @@ class ResearchHandler(GatewayRole):
     reply_type = ResearchReply
 
     def context(self, task: dict) -> dict:
+        with self.database.snapshot():
+            return self._history_context(task, as_of=self.clock.now())
+
+    def _history_context(self, task: dict, *, as_of: datetime) -> dict:
         context = super().context(task)
+        bundle = self.artifact_runtime.bundle_for(task)
+        templates = self.artifact_runtime.templates(bundle)
+        market = market_context(self.office.execution, context["guard"], templates, as_of=as_of)
         sources = []
+        # Reserve a bounded source for every selected symbol before cached findings.
         for symbol in context["guard"]["mandate"]["symbols"][:8]:
-            observation = self.office.execution.latest_observation(
-                symbol, self.scheduler.now(), self.office.execution.venue)
+            history = market[symbol]["history"]
+            if history["event_time_utc"] and history["available_at_utc"]:
+                sources.append({"source_ref": history["source_ref"], "kind": "historical_features",
+                                "document": history})
+        for symbol in context["guard"]["mandate"]["symbols"][:8]:
+            observation = market[symbol]["observation"]
             if observation is not None:
-                sources.append({"source_ref": observation.observation_id, "kind": "market_observation",
-                                "document": observation.model_dump(mode="json")})
+                sources.append({"source_ref": observation["observation_id"], "kind": "market_observation",
+                                "document": observation})
             for finding in ResearchStore(self.database, self.clock).fresh(
-                task["portfolio_id"], symbol, as_of=self.clock.now())[:8]:
+                task["portfolio_id"], symbol, as_of=as_of)[:8]:
                 sources.append({"source_ref": finding.record_id, "kind": "cached_finding",
                                 "document": finding.model_dump(mode="json")})
         sources = list({source["source_ref"]: source for source in sources}.values())[:20]
-        return {**context, "sources": sources,
+        return {**context, "as_of": utc_iso(as_of), "market": market, "strategy_templates": templates,
+                "active_strategy_templates": active_templates(templates, context["guard"]), "sources": sources,
                 "evidence_refs": list(dict.fromkeys(context["evidence_refs"] + [s["source_ref"] for s in sources])),
                 "analysis_instruction": "Cite supplied sources only. Findings are hypotheses, never trade authority."}
 
@@ -72,20 +87,28 @@ class ResearchHandler(GatewayRole):
                 raise ValidationFailure("research source is outside the persisted snapshot")
             document = source["document"]
             is_market = source["kind"] == "market_observation"
+            is_history = source["kind"] == "historical_features"
+            if is_history and (document.get("event_time_utc") is None or document.get("available_at_utc") is None):
+                raise ValidationFailure("historical finding requires retained source event and receipt times")
+            created_at = self.clock.now()
             # Software preserves provenance/times instead of accepting invented URLs,
             # currencies, source hashes or an asserted provider-managed web search.
             finding = ResearchFinding(
                 **self._envelope(task), question=analysis.question, claim=analysis.claim,
-                source_url=(f"urn:trade-graph:observation:{analysis.source_ref}"
-                            if is_market else document["source_url"]),
-                publisher=document.get("venue", document.get("publisher", "cached source")),
-                published_at_utc=document.get("event_time_utc", document.get("published_at_utc")),
+                source_url=(f"urn:trade-graph:historical-features:{analysis.source_ref}" if is_history
+                            else f"urn:trade-graph:observation:{analysis.source_ref}" if is_market
+                            else document["source_url"]),
+                publisher=(document["source"] if is_history
+                           else document.get("venue", document.get("publisher", "cached source"))),
+                published_at_utc=(None if is_history
+                                  else document.get("event_time_utc", document.get("published_at_utc"))),
                 event_at_utc=document.get("event_time_utc", document.get("event_at_utc")),
-                retrieved_at_utc=self.clock.now(), available_at_utc=self.clock.now(),
+                retrieved_at_utc=document["available_at_utc"] if is_history else created_at,
+                available_at_utc=created_at,
                 source_hash=hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest(),
-                instruments=[document["symbol"]] if is_market else document["instruments"],
+                instruments=[document["symbol"]] if is_market or is_history else document["instruments"],
                 relevance="source-analysis", counterevidence=analysis.counterevidence,
-                expires_at_utc=self.clock.now() + timedelta(seconds=analysis.expires_after_seconds),
+                expires_at_utc=created_at + timedelta(seconds=analysis.expires_after_seconds),
                 invalidation=analysis.invalidation,
             )
             ResearchStore(self.database, self.clock)._insert(finding)
