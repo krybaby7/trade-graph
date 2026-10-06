@@ -503,5 +503,7 @@ def _evaluate_live_readiness(
             "economic_evidence": economics.economic_verdict if ready and economics else "insufficient_evidence",
             "declared_economic_verdict": economics.economic_verdict if economics else None,
             "upstream_verification": upstream_verification,
-            "execution_authority": ("separate protected lifecycle activation required; readiness grants no effects"
-                                    if ready else "disabled; advisory evidence cannot enable the broker or owner policy")}
+            "execution_authority": (
+                "separate protected lifecycle activation required; readiness grants no effects"
+                if ready else "disabled; advisory evidence cannot enable the broker or owner policy"
+            )}

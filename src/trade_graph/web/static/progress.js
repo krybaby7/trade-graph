@@ -386,7 +386,7 @@
     const service = lifecycle?.service || {};
     const ready = lifecycle?.prerequisites || {};
     const profile = lifecycle?.pause_profile || "RUNNING";
-    write("[data-runtime-mode]", `${label(service.mode || "paper")} · ${ready.live_available ? "Live requires explicit commissioning" : "Live disabled"}`);
+    write("[data-runtime-mode]", `${label(service.mode || "paper")} · ${service.mode === "live" && ready.live_available ? "Protected live startup eligible; final admission repeats before effects" : "Live disabled"}`);
     write("[data-runtime-status]", `Service ${label(service.status || "IDLE")}. AI ${ready.ai_available ? "available" : "unavailable or paused"}. Portfolio ${label(profile)}.${service.error_type ? ` Last failure: ${text(service.error_type)}.` : ""}`);
     write("[data-runtime-prerequisites]", list(ready.reasons).join(" ") || "Owner prerequisites satisfied for this configured mode.");
     const cycle = lifecycle?.optimisation;
@@ -397,7 +397,7 @@
     const active = ["STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING", "ATTACHED_EXISTING"].includes(service.status);
     for (const button of all("[data-service-action]")) {
       const action = button.dataset.serviceAction;
-      const enabled = action === "start-trading" ? ready.paper_available : action === "start-optimisation" ?
+      const enabled = action === "start-trading" ? ready[`${service.mode || "paper"}_available`] : action === "start-optimisation" ?
         service.status === "RUNNING" && ready.ai_available && profile === "RUNNING" && !["QUEUED", "RUNNING", "BLOCKED"].includes(cycle?.status) : active;
       button.disabled = !connected || !owner || !csrf || Boolean(serviceAction) || !enabled;
     }
@@ -418,7 +418,7 @@
       try { sessionStorage.setItem(`tg-service-${action}`, requestId); } catch (_) { /* current page keeps the identity */ }
     }
     const body = action === "pause" ? {profile: "MANAGE_ONLY", reason: "Owner dashboard AI pause"} :
-      action === "start-trading" ? {request_id: requestId, mode: "paper"} :
+      action === "start-trading" ? {request_id: requestId, mode: snapshot?.lifecycle?.service?.mode || "paper"} :
       action === "stop-service" ? {request_id: requestId, position_policy: "manage-only"} : {request_id: requestId};
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);

@@ -258,7 +258,7 @@ class ServiceController:
             (self.runtime.portfolio_id,),
         ).fetchone()
         return {
-            "service": observed or {"status": "IDLE", "mode": "paper"},
+            "service": observed or {"status": "IDLE", "mode": getattr(self.runtime.execution, "mode", "paper")},
             "database_owned": owned,
             "pause_profile": self.runtime.execution.profile(self.runtime.portfolio_id),
             "prerequisites": ready,

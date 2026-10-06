@@ -1,4 +1,4 @@
-"""Local paper dashboard assembly; no scheduler or paid integration starts here."""
+"""Owner dashboard assembly; serving never starts a service or external effect."""
 
 from __future__ import annotations
 
@@ -15,7 +15,33 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.domain.clock import SystemClock
 
 
-def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_path: Path | None = None):
+def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_path: Path | None = None,
+                      mode: str = "paper", protected_owner: Path | None = None):
+    from trade_graph.application.service_controller import ServiceController
+
+    if mode == "live":
+        from trade_graph.live_runtime import (
+            assemble_live_dashboard_runtime,
+            live_startup_prerequisites,
+            load_live_runtime_config,
+        )
+
+        runtime = assemble_live_dashboard_runtime(
+            path, portfolio_id=portfolio_id, protected_owner=protected_owner,
+            config=load_live_runtime_config(config_path) if config_path else None,
+        )
+
+        def prerequisites():
+            result = live_startup_prerequisites(path, config_path=config_path, protected_owner=protected_owner)
+            return {"paper_available": False, "live_available": result["ready"], "ai_available": False,
+                    "reasons": ["Subscription model routing and isolation require owner provisioning."],
+                    "live_reasons": [] if result["ready"] else [result["reason"]]}
+
+        runtime.service_controller = ServiceController(runtime, config_path=config_path,
+                                                       protected_owner=protected_owner, prerequisites=prerequisites)
+        return runtime
+    if mode != "paper" or protected_owner is not None:
+        raise ValueError("choose paper or a separately commissioned protected live dashboard")
     path = path.resolve()
     if not path.is_file():
         raise ValueError("database does not exist; initialize a paper account first")
@@ -38,7 +64,6 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
     execution = Execution(database, ledger, clock, PaperBroker(database, clock))
     runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
                               portfolio_id=row["portfolio_id"], deployment_id="deployment")
-    from trade_graph.application.service_controller import ServiceController
     runtime.service_controller = ServiceController(runtime, config_path=config_path)
     return runtime
 

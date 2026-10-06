@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import re
+import sqlite3
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -47,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     subscription = sub.add_parser("subscription-status", help="read-only native subscription CLI metadata")
     subscription.add_argument("--provider", choices=["codex", "claude"], default="codex")
     dashboard = sub.add_parser("dashboard")
+    dashboard.add_argument("--mode", choices=["paper", "live"], default="paper")
+    dashboard.add_argument("--protected-owner", help="read-only owner-pinned protected live deployment")
     dashboard.add_argument("--database", default="runtime/trade_graph.sqlite")
     dashboard.add_argument("--portfolio-id")
     dashboard.add_argument("--config", help="private owner runtime configuration for dashboard starts")
@@ -145,13 +148,43 @@ def _record_start_failure(database: str, run_id: str | None, error_type: str) ->
     try:
         db = Database(Path(database))
         service_finished(db, SystemClock(), run_id, error_type)
-    except (OSError, ValueError, TradeGraphError):
+    except (OSError, ValueError, sqlite3.DatabaseError, TradeGraphError):
         # An unavailable journal is diagnosed as an interrupted process by the
         # controller; private exception detail never enters operator output.
         pass
     finally:
         if db is not None:
             db.close()
+
+
+def _run_live(args, parser) -> int:
+    """Invoke only the owner-pinned factory; no CLI flag supplies authorization."""
+    from trade_graph.application.live_service import LiveService
+    from trade_graph.live_runtime import assemble_live_runtime, load_live_runtime_config
+
+    runtime = None
+    try:
+        if args.public_data:
+            raise ValueError("live public transport is fixed by the protected commission")
+        runtime = assemble_live_runtime(
+            Path(args.database), portfolio_id=args.portfolio_id,
+            config=load_live_runtime_config(Path(args.config)) if args.config else None,
+            protected_owner=Path(args.protected_owner) if args.protected_owner else None,
+        )
+        outcome = asyncio.run(LiveService(runtime, service_run_id=args.service_run_id).run(
+            max_ticks=1 if args.once else args.max_ticks))
+        print(json.dumps({"mode": "live", "portfolio_id": runtime.portfolio_id,
+                          "live_enabled": True, "paid_calls_enabled": False,
+                          "service": outcome}, default=str))
+        return 1 if outcome["failures"] else 0
+    except (ValueError, LookupError, OSError, RuntimeError, sqlite3.DatabaseError, TradeGraphError) as exc:
+        _record_start_failure(args.database, args.service_run_id, type(exc).__name__)
+        parser.error(f"protected live startup/operation refused ({type(exc).__name__}); live trading stays disabled "
+                     "until independent owner commissioning and authorization pass")
+    finally:
+        if runtime is not None:
+            runtime.database.close()
+    return 1
 
 
 def _latest_portfolio(db) -> str:
@@ -281,9 +314,10 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             runtime = dashboard_runtime(Path(args.database), args.portfolio_id,
-                                        config_path=Path(args.config) if args.config else None)
-        except ValueError as exc:
-            parser.error(str(exc))
+                                        config_path=Path(args.config) if args.config else None, mode=args.mode,
+                                        protected_owner=Path(args.protected_owner) if args.protected_owner else None)
+        except (ValueError, OSError, TradeGraphError) as exc:
+            parser.error(f"dashboard startup refused ({type(exc).__name__}); verify the configured mode and scope")
         try:
             session_path = owner_session_file(runtime, Path(args.session_file))
             address = f"[{args.host}]" if args.host == "::1" else args.host
@@ -372,12 +406,14 @@ def main(argv: list[str] | None = None) -> int:
         ledger.database.close()
         return 0
     if args.command in {"run", "soak"}:
-        if args.mode != "paper":
-            parser.error("run only starts paper mode; live trading stays disabled")
+        if args.mode not in {"paper", "live"} or args.command == "soak" and args.mode != "paper":
+            parser.error("only run supports a separately commissioned protected live mode")
         if args.command == "run" and args.max_ticks is not None and args.max_ticks < 1:
             parser.error("max-ticks must be a positive integer")
         if args.command == "run" and args.once and args.max_ticks is not None:
             parser.error("choose --once or --max-ticks")
+        if args.command == "run" and args.mode == "live":
+            return _run_live(args, parser)
         if args.command == "run" and args.protected_owner and args.config:
             parser.error("protected deployment loads paper-config.json only from its pinned owner directory")
         from trade_graph.application.owner_commands import recover_owner_commands
