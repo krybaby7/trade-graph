@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import uuid
@@ -28,6 +29,17 @@ class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if str(self.path) != ":memory:":
+            # SQLite derives sidecar permissions from the main file. Create only
+            # new storage privately; admission of existing files belongs to callers.
+            try:
+                descriptor = os.open(
+                    self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600,
+                )
+            except FileExistsError:
+                pass
+            else:
+                os.close(descriptor)
         self._local = threading.local()
         self._connection = self._open()
         self._connection.execute("PRAGMA journal_mode=WAL")
