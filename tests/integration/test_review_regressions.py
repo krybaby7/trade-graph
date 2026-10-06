@@ -1,6 +1,7 @@
 """Reproductions from the 2026-09-30 review; no credentials or network."""
 
 import asyncio
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -420,3 +421,43 @@ def test_reconciliation_reads_all_fill_pages_before_releasing(stack):
     assert execution.owned_quantity(portfolio, "BTC") == 1
     assert execution.intent_state(intent) == "FILLED"
     assert execution._reserved(portfolio, "USD") == 0
+
+
+def test_legacy_usage_receipt_retry_compares_validated_semantics_without_rewriting(budget):
+    reservation = reserve(budget)
+    usage = ModelUsage(uncached_input_tokens=10, billed_output_tokens=1)
+    receipt = budget.commit(reservation, usage, provider="openai", model="fixture", fx_rate=D("0.9"))
+    legacy = json.dumps(usage.model_dump(exclude={"provider_reported_input_tokens", "unreported_fields"}),
+                        indent=2, sort_keys=True)
+    budget.database.execute("UPDATE usage_receipts SET usage_json=? WHERE receipt_id=?", (legacy, receipt))
+    assert budget.commit(reservation, usage, provider="openai", model="fixture", fx_rate=D("0.9")) == receipt
+    assert budget.database.execute("SELECT usage_json FROM usage_receipts WHERE receipt_id=?",
+                                   (receipt,)).fetchone()[0] == legacy
+    assert budget.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 1
+    for changed in (usage.model_copy(update={"billed_output_tokens": 2}),
+                    usage.model_copy(update={"provider_reported_input_tokens": 10}),
+                    usage.model_copy(update={"unreported_fields": ["reasoning_tokens"]})):
+        with pytest.raises(ValueError, match="receipt conflict"):
+            budget.commit(reservation, changed, provider="openai", model="fixture", fx_rate=D("0.9"))
+
+
+@pytest.mark.parametrize("field", ["uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
+                                   "billed_output_tokens", "tool_units"])
+def test_unreported_priced_usage_retains_api_reservation(budget, field):
+    reservation = reserve(budget)
+    usage = ModelUsage(uncached_input_tokens=0, billed_output_tokens=0, unreported_fields=[field])
+    with pytest.raises(ValueError, match="usage is unresolved"):
+        budget.commit(reservation, usage, provider="openai", model="fixture", fx_rate=D("0.9"))
+    assert budget.database.execute("SELECT state FROM budget_reservations WHERE reservation_id=?",
+                                   (reservation,)).fetchone()[0] == "RESERVED"
+    assert budget.database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] == 0
+
+
+def test_unreported_reasoning_remains_priced_by_measured_billed_output(budget):
+    reservation = reserve(budget)
+    usage = ModelUsage(uncached_input_tokens=10, billed_output_tokens=5,
+                       unreported_fields=["reasoning_tokens"])
+    assert usage_cost(card(), usage) == usage_cost(card(), usage.model_copy(update={"unreported_fields": []}))
+    receipt = budget.commit(reservation, usage, provider="openai", model="fixture", fx_rate=D("0.9"))
+    assert budget.database.execute("SELECT status FROM usage_receipts WHERE receipt_id=?",
+                                   (receipt,)).fetchone()[0] == "committed"

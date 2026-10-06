@@ -10,6 +10,10 @@ MILLION = Decimal("1000000")
 
 
 def usage_cost(card: PriceCard, usage: ModelUsage) -> Decimal:
+    priced_fields = {"uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
+                     "billed_output_tokens", "tool_units"}
+    if priced_fields.intersection(usage.unreported_fields):
+        raise ValueError("priced usage is unresolved; retain the reservation")
     read_rate = card.input_per_million if card.cache_read_per_million is None else card.cache_read_per_million
     if usage.cache_write_tokens and card.cache_write_per_million is None:
         raise ValueError("cache-write pricing is unresolved; retain the reservation")
