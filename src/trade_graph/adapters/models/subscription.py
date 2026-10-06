@@ -23,6 +23,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from pydantic import Field
 from referencing.exceptions import Unresolvable
 
+from trade_graph.adapters.models.providers import lookup_capabilities
 from trade_graph.application.gateway import _bounded_json, _validate_schema
 from trade_graph.contracts.models import ContractModel, ModelRequest, ModelResult, ModelUsage
 from trade_graph.domain.clock import utc_iso
@@ -264,6 +265,7 @@ class SubscriptionAdapter:
     def _validate_request(self, request: ModelRequest) -> None:
         expected = "openai" if self.config.provider == "codex_subscription" else "anthropic"
         if (request.provider != expected or request.model != self.config.model or request.synthetic
+                or lookup_capabilities(expected, request.model) is None
                 or request.max_tool_calls != 0
                 or not 1 <= request.max_output_tokens <= self.config.maximum_output_tokens
                 or not 1 <= request.timeout_seconds <= self.config.maximum_seconds):
@@ -378,8 +380,9 @@ def claude_environment(maximum_output_tokens: int) -> dict[str, str]:
 
 
 def claude_command(binary: str, request: ModelRequest) -> list[str]:
+    settings = {"switchModelsOnFlag": False, "availableModels": [request.model], "fallbackModel": []}
     return [binary, "-p", "--restricted", "--safe-mode", "--output-format", "json", "--max-turns", "1",
             "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-            "--setting-sources", "", "--settings", '{"switchModelsOnFlag":false}', "--no-session-persistence",
+            "--setting-sources", "", "--settings", json.dumps(settings), "--no-session-persistence",
             "--model", request.model, "--json-schema", json.dumps(request.output_schema),
             "--system-prompt", request.instructions]

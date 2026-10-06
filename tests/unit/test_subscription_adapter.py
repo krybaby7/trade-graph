@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from threading import Event
 
@@ -169,6 +170,9 @@ def test_claude_supported_controls_disable_all_retry_repair_tools_and_fallback()
     assert command[command.index("--max-turns") + 1] == "1"
     assert command[command.index("--tools") + 1] == ""
     assert "--fallback-model" not in command
+    settings = json.loads(command[command.index("--settings") + 1])
+    assert settings["availableModels"] == [request().model]
+    assert settings["fallbackModel"] == []
     environment = claude_environment(1000)
     assert environment["CLAUDE_CODE_MAX_RETRIES"] == "0"
     assert environment["MAX_STRUCTURED_OUTPUT_RETRIES"] == "1"
@@ -239,3 +243,12 @@ def test_error_array_quota_message_stops_new_ai_and_extra_turns_are_rejected(jou
         exit_code=0)
     result = parse_claude_outcome(extra_turns, request())
     assert result.failure == "validation" and result.usage.billed_output_tokens == 9
+
+
+def test_unreviewed_model_alias_is_rejected_before_launch(journal):
+    executor = Executor()
+    config = SubscriptionConfig(provider="claude_subscription", model="sonnet", enabled=True,
+                                allowed_context_keys={"research": ["market"]})
+    model = SubscriptionAdapter(config, ready(), executor)
+    result = model.invoke(request().model_copy(update={"model": "sonnet"}), invocation_id="alias", journal=journal)
+    assert result.failure == "validation" and executor.calls == 0

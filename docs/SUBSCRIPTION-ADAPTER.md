@@ -44,6 +44,8 @@ external schema references, tools or excess input/time/token bounds are refused
 before dispatch. Domain JSON Schema validation is local and never invokes a
 repair model. Actual model identity must match the configured model; extra turns
 and another model cause failure while validated usage facts are retained.
+Model aliases and unreviewed model IDs are refused locally. The CLI receives an
+exact-model allowlist and an empty fallback chain through supported settings.
 
 Migration 0018 supplies `subscription_invocations` and
 `subscription_provider_state`. The controller journals each attempt before an
