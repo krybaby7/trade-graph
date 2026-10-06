@@ -504,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_subscription_smoke(Path(STATE_MOUNT) / "trade_graph.sqlite", directory,
             phase="research" if args.action == "research-subscription" else "cycle")
         print(canonical_json(result))
-        return 0
+        return 0 if result.get("status") == "SUCCEEDED" else 1
     try:
         read_owner_file(Path(OWNER_MOUNT), "subscription-network-profile.json", 32768)
     except FileNotFoundError:

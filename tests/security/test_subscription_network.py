@@ -212,7 +212,7 @@ def test_subscription_boot_dispatches_only_bounded_phase_and_check_never_invokes
     monkeypatch.setattr(deployment_image, "assert_boot_environment", lambda: deployment().runtime_manifest)
     monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory: value)
     monkeypatch.setattr(subscription_smoke, "run_subscription_smoke",
-                        lambda database, owner, *, phase: calls.append((database, owner, phase)) or {"phase": phase})
+                        lambda database, owner, *, phase: calls.append((database, owner, phase)) or {"phase": phase, "status": "SUCCEEDED"})
     assert deployment_image.main(["check-subscription"]) == 0
     assert calls == [] and '\"live_authorization\":false' in capsys.readouterr().out
     from pathlib import Path
@@ -302,3 +302,16 @@ def test_host_distribution_checks_profile_and_seccomp_before_create(monkeypatch,
     files["subscription-network-profile.json"] = changed.model_dump_json().encode()
     with pytest.raises(PermissionError, match="network profile differs"):
         spec.verify_host_paths()
+
+
+@pytest.mark.parametrize("status", ["FAILED", "WAITING_EXTERNAL", "INCOMPLETE"])
+def test_bounded_entrypoint_exit_reports_unsuccessful_operation(monkeypatch, capsys, status):
+    from trade_graph.application import subscription_smoke
+    from trade_graph.kernel import subscription_network
+    value = profile()
+    trust_files(monkeypatch, value)
+    monkeypatch.setattr(deployment_image, "assert_boot_environment", lambda: deployment().runtime_manifest)
+    monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory: value)
+    monkeypatch.setattr(subscription_smoke, "run_subscription_smoke", lambda *_a, **_k: {"status": status})
+    assert deployment_image.main(["research-subscription"]) == 1
+    assert status in capsys.readouterr().out
