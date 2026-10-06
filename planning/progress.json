@@ -728,7 +728,7 @@
     }
   ],
   "hourly_history_continuation": {
-    "status": "in_progress",
+    "status": "implementation_complete_publication_pending",
     "owner": "codex-orchestrator",
     "branch": "codex/kraken-hourly-history-2026-10-06",
     "base_commit": "9dedf976ef18944e96e7127ca1e2ce7006d0d243",
@@ -739,6 +739,16 @@
     ],
     "contracts": "docs/superpowers/plans/2026-10-06-kraken-hourly-history.md",
     "authority": "Public data and synthetic source/test work only; no private requests, paid calls or live trading",
-    "evidence": []
+    "source_commit": "ce4dbb7cca688a657e65095bd3d5eabb435ab166",
+    "evidence": [
+      "354 relevant WSL2 Python 3.12.15 tests passed; exact Decimal/history/restart/retained context and existing controls verified",
+      "Full src/tests Ruff, 23-task DAG, ten planning checks, independent reviews and repository/staged hygiene passed",
+      "Offline wheel build and isolated locked-dependency installed wheel smoke passed",
+      "Actual public-only two-GET smoke retained 60 completed candles per pair, zero missing requested slots, in a disposable paper database",
+      "Historical authenticated read-only observation recorded using redacted retained evidence; no new private account request"
+    ],
+    "acceptance_transition": false,
+    "pending": "T17–T22 acceptance, funded/forward economics, full venue conformance, intended-host/protected-image and live authorization unchanged",
+    "guide": "docs/KRAKEN-PRICE-HISTORY.md"
   }
 }

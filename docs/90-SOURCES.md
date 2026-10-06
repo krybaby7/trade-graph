@@ -28,6 +28,8 @@ Review date: **2026-09-29**. These are official documentation/publication refere
 | S22 | [Kraken-owned SDK source review](reviews/2026-10-02-kraken-foundation.md) | Focused source review 2026-10-02: pinned official asset/order/trade/ledger/signing references. Direct REST documentation was proxy-blocked; authenticated and unresolved wire conformance stay pending |
 | S23 | [Frankfurter official v2 OpenAPI source](https://github.com/lineofflight/frankfurter/blob/915fabfef4f4074437e32e25aac71f437ecfa76e/lib/public/v2/openapi.json) | Focused source review 2026-10-02: provider-scoped rate endpoint and required actual pair/date. [Continuation evidence](reviews/2026-10-02-t17-operations.md) records failed public probes; source review is not a working current FX response |
 
+| S24 | [Kraken Get OHLC Data](https://docs.kraken.com/api-reference/market-data/get-ohlc-data) | Reviewed 2026-10-06: public pair-scoped GET, interval 60, incremental `since`, 720-entry recent-history ceiling and mandatory final uncommitted candle. See [history definitions and bounds](KRAKEN-PRICE-HISTORY.md); documentation verification is separate from actual collection or account acceptance. |
+
 ## Verification boundaries
 
 No paid OpenAI/Anthropic request, exchange authentication, real order, GitHub Actions billing test or deployment benchmark was performed while preparing the plan. Model selection is an evaluation proposal. The supplied price data is a dated snapshot for a calculator; the runtime must refresh and validate it. EUR/USD conversion and hosting in the cost example are assumptions, not retrieved market/vendor quotes.

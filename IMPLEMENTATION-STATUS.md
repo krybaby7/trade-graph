@@ -8,6 +8,67 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Bounded public Kraken hourly history — 2026-10-06
+
+Verified source: `ce4dbb7cca688a657e65095bd3d5eabb435ab166` on
+`codex/kraken-hourly-history-2026-10-06`, based on `9dedf976`.
+Documentation follows that verified source. The integration publication target
+is `codex/orchestrator-takeover-2026-10-04`; no merge to `main` is required.
+
+An additive 0017 migration retains immutable completed BTC/USD and ETH/USD
+hourly candle revisions alongside existing financial records and snapshots.
+The public collector makes at most two fixed OHLC GETs, accepts 1–719 hours,
+bounds each response to 1 MiB with a ten-second timeout, and always excludes
+Kraken's final uncommitted candle. It has no account/credential request route.
+Restart deduplicates unchanged evidence without renewing its availability.
+
+Research and Trader now receive the fields requested by their pinned active
+strategy templates in their actual retained worker snapshots and model
+requests. Decimal precision 50/ROUND_HALF_EVEN, documented 20/50-hour means,
+20-hour pullback and 24-hour range definitions, source manifests and actual
+receipt-time availability accompany explicit insufficient/gapped/stale or
+unsupported history. Future closes and later receipts cannot enter earlier
+as-of inputs. Retained contexts remain unchanged after later collection and
+restart. See [formulas, limits and operations](docs/KRAKEN-PRICE-HISTORY.md).
+
+Verified on locked Python **3.12.15** under WSL2:
+
+- **354 relevant tests passed** in 45.05 seconds, covering exact arithmetic,
+  malformed/public transport bounds, revisions/deduplication/restart, additive
+  migration preservation, actual Research/Trader worker snapshots and requests,
+  concurrent writer/clock boundaries, future/later-available exclusion,
+  explicit missing history, evidence citations and existing paper controls.
+- Full source/test Ruff, the 23-task DAG/reference validator, ten planning
+  checks, repository/staged hygiene and diff checks passed. Independent
+  collector, storage and context reviews found no blocking findings.
+- The final wheel built offline. A fresh isolated wheel installation acquired
+  the unchanged locked runtime dependencies; installed CLI, 0017 migration,
+  two scripted collections, exact features, context module and installed
+  strategy templates passed. The initial offline-only install lacked cached
+  dependencies; no lockfile or dependency versions were changed.
+- An **actual public HTTPS smoke** in a separate disposable paper database
+  collected **60 BTC/USD + 60 ETH/USD completed candles**, with zero missing
+  requested hours and two GETs. Both latest closes were
+  `2026-10-06T12:00:00Z`; post-response availability was
+  `12:33:32.636891Z` and `12:33:34.371941Z` respectively. These are actual
+  public observations, distinct from synthetic checks; raw candle/runtime
+  files are excluded from Git.
+
+Bounded owner-PC command, from the updated WSL2 checkout and existing private
+paper database:
+
+```bash
+uv run --frozen trade-graph collect-kraken-history --database runtime/trade_graph.sqlite --hours 168
+```
+
+This session preserved the original Windows local modification, owner WSL2
+checkout, financial/runtime databases and private owner evidence. No private
+account request, owner database initialization/reset, paid model call or live
+order occurred. USD10,000 virtual capital/EUR reporting and separate real
+budget controls remain unchanged. Full-suite, protected-image rebuild and
+intended-host acceptance were not rerun; funded/forward economic evidence,
+complete venue conformance and **all remaining T17–T22 gates stay pending**.
+
 ## Historical authenticated Kraken read-only observation — 2026-10-06
 
 The owner-local retained **BTC/USD authenticated read-only observation**
