@@ -4,7 +4,10 @@ import asyncio
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
@@ -320,3 +323,65 @@ def test_private_witness_ancestor_symlink_is_refused_through_secure_handles(tmp_
     private.symlink_to(moved, target_is_directory=True)
     with pytest.raises(StaleState, match="ancestor"):
         runtime.financial.issue("protected-test", portfolio, "BTC/USD")
+
+
+def test_same_controller_readiness_waits_for_concurrent_witness_owner(tmp_path):
+    db, clock, ledger, execution, broker, portfolio, runtime = prepared(tmp_path)
+    attempted = threading.Event()
+    def readiness():
+        attempted.set()
+        return runtime.financial.history.ready(portfolio)
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        with runtime.financial.history.witness_lock():
+            future = workers.submit(readiness)
+            assert attempted.wait(1)
+            with pytest.raises(TimeoutError):
+                future.result(timeout=0.1)
+        assert future.result(timeout=2) is True
+    assert runtime.financial.history.ready(portfolio) is True
+
+
+def test_same_controller_nested_witness_verification_is_reentrant(tmp_path):
+    db, clock, ledger, execution, broker, portfolio, runtime = prepared(tmp_path)
+    with runtime.financial.history.witness_lock():
+        with db.immediate():
+            assert runtime.financial.history.ready(portfolio) is True
+    assert runtime.financial.history.ready(portfolio) is True
+
+
+def test_readiness_waits_until_committed_checkpoint_witness_is_published(tmp_path, monkeypatch):
+    db, clock, ledger, execution, broker, portfolio, runtime = prepared(tmp_path)
+    ledger.deposit(portfolio, "USD", Decimal("1"), "concurrent-owner-flow")
+    publishing, release = threading.Event(), threading.Event()
+    original = runtime.financial.history._write_witness
+    def publish(*args):
+        publishing.set()
+        assert release.wait(2)
+        return original(*args)
+    monkeypatch.setattr(runtime.financial.history, "_write_witness", publish)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        issued = workers.submit(runtime.financial.issue, "protected-test", portfolio, "BTC/USD")
+        try:
+            assert publishing.wait(2)
+            checked = workers.submit(runtime.financial.history.ready, portfolio)
+            with pytest.raises(TimeoutError):
+                checked.result(timeout=0.1)
+        finally:
+            release.set()
+        assert issued.result(timeout=2)["snapshot"]["cash"] == "10001"
+        assert checked.result(timeout=2) is True
+
+
+def test_other_process_witness_owner_still_refuses_readiness(tmp_path):
+    db, clock, ledger, execution, broker, portfolio, runtime = prepared(tmp_path)
+    command = ("import fcntl,sys; lock=open(sys.argv[1], 'r+'); "
+               "fcntl.flock(lock, fcntl.LOCK_EX); print('locked', flush=True); sys.stdin.readline()")
+    process = subprocess.Popen([sys.executable, "-c", command, str(runtime.financial.history.path) + ".lock"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        assert process.stdout.readline() == b"locked\n"
+        assert runtime.financial.history.ready(portfolio) is False
+    finally:
+        process.communicate(input=b"release\n", timeout=2)
+    assert process.returncode == 0
+    assert runtime.financial.history.ready(portfolio) is True
