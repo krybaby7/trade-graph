@@ -232,13 +232,25 @@ def _subscription_cost_state(runtime, at: str) -> dict:
         quota_json,usage_json,created_at,updated_at FROM subscription_invocations
         WHERE created_at<=? ORDER BY created_at DESC,invocation_id""", (at,))
     unknown = 0
+    attempt_count = 0
     for record in records:
+        attempts = _rows(runtime, """SELECT attempt_id,attempt_index,provider,requested_model,actual_model,
+            state,usage_json,cost_status,actual_cost_native,created_at,updated_at
+            FROM subscription_attempts WHERE invocation_id=? AND created_at<=?
+            ORDER BY attempt_index""", (record["invocation_id"], at))
+        for attempt in attempts:
+            attempt["usage"] = _json(attempt.pop("usage_json"))
+            attempt["billing_kind"] = "subscription"
+        record["attempts"] = attempts
         record["synthetic"] = bool(record["synthetic"])
         record["billing_kind"] = "subscription"
         record["quota"] = _json(record.pop("quota_json"))
         record["usage"] = _json(record.pop("usage_json"))
         record["inference_dispatched"] = record["cost_status"] != "not_incurred" and record["state"] != "BLOCKED"
-        unknown += not record["synthetic"] and record["inference_dispatched"] and record["cost_status"] == "unknown"
+        dispatched_count = len(attempts) or int(record["inference_dispatched"])
+        attempt_count += dispatched_count
+        if not record["synthetic"] and record["inference_dispatched"] and record["cost_status"] == "unknown":
+            unknown += dispatched_count
     selected = getattr(runtime, "subscription_provider", None)
     admission = getattr(runtime, "subscription_admission", None)
     declared = bool(getattr(admission, "profile_sha256", None) or getattr(admission, "config", None))
@@ -258,7 +270,7 @@ def _subscription_cost_state(runtime, at: str) -> dict:
             declared = True  # Metadata failure cannot establish resolved zero fees.
     shared_pending = (declared or selected in {"codex_subscription", "claude_subscription"}
                       or any(not record["synthetic"] for record in records))
-    return {"records": records, "unknown_inference_costs": unknown,
+    return {"records": records, "attempt_count": attempt_count, "unknown_inference_costs": unknown,
             "shared_fee_allocation_status": "unknown" if shared_pending else "not_recorded",
             "recorded_expense_totals_exclude_unknown_costs": True,
             "basis": "subscription outcomes are separate from API accruals; shared fees require owner expense evidence",

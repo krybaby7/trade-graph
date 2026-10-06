@@ -67,8 +67,9 @@ def stage_subscription_tools(directory: Path, context: Path, inputs: dict) -> di
     manifest_path = _native_file(directory, "manifest.json", 65536)
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes, object_pairs_hook=_unique_fields)
-    if (not isinstance(manifest, dict) or set(manifest) != {
-            "schema_version", "platform", "base_image", "claude_sha256", "packages"}
+    required = {"schema_version", "platform", "base_image", "claude_sha256", "packages"}
+    optional = {"codex_sha256"} if "codex" in policy else set()
+    if (not isinstance(manifest, dict) or not required <= set(manifest) or set(manifest) - required - optional
             or manifest["schema_version"] != 1 or policy.get("schema_version") != 1
             or any(manifest.get(name) != inputs.get(name) or policy.get(name) != inputs.get(name)
                    for name in ("platform", "base_image"))
@@ -81,6 +82,13 @@ def stage_subscription_tools(directory: Path, context: Path, inputs: dict) -> di
     if not isinstance(packages, list) or not 1 <= len(packages) <= 8:
         raise ValueError("a bounded reviewed bubblewrap package set is required")
     seen_packages, seen_files, sources = set(), {"claude", "manifest.json"}, [(claude, manifest["claude_sha256"])]
+    if "codex_sha256" in manifest:
+        codex = _native_file(directory, "codex", 512 * 1024 * 1024)
+        if (manifest["codex_sha256"] != policy["codex"]["sha256"]
+                or file_sha256(codex) != manifest["codex_sha256"]):
+            raise ValueError("native Codex SHA256 differs from the reviewed release")
+        sources.append((codex, manifest["codex_sha256"]))
+        seen_files.add("codex")
     for package in packages:
         if (not isinstance(package, dict) or set(package) != {
                 "filename", "package", "version", "architecture", "sha256"}
@@ -121,6 +129,7 @@ def stage_subscription_tools(directory: Path, context: Path, inputs: dict) -> di
         (target / "manifest.json").write_bytes(manifest_bytes)
         return {"subscription_tools": {
             "claude": policy["claude"],
+            **({"codex": policy["codex"]} if "codex_sha256" in manifest else {}),
             "packages": packages,
             "manifest_sha256": file_sha256(target / "manifest.json"),
             "policy_sha256": file_sha256(policy_path),
@@ -131,7 +140,7 @@ def stage_subscription_tools(directory: Path, context: Path, inputs: dict) -> di
         raise
 
 
-def subscription_dockerfile(original: bytes, *, enabled: bool) -> bytes:
+def subscription_dockerfile(original: bytes, *, enabled: bool, codex: bool = False) -> bytes:
     """Preserve default bytes; add offline native tools only before sealing."""
     if not enabled:
         return original
@@ -147,6 +156,9 @@ def subscription_dockerfile(original: bytes, *, enabled: bool) -> bytes:
         "/opt/trade-graph/claude --version",
         "rm -rf /subscription-tools",
     ]
+    if codex:
+        commands[-1:-1] = ["cp /subscription-tools/codex /opt/trade-graph/codex",
+                           "chmod 0755 /opt/trade-graph/codex", "/opt/trade-graph/codex --version"]
     additions = "COPY subscription-tools /subscription-tools\nRUN " + " && \\\n    ".join(commands) + "\n"
     return original.replace(marker, additions.encode() + marker)
 
@@ -205,7 +217,8 @@ def build(output: Path, *, subscription_tools: Path | None = None) -> Deployment
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
     dockerfile = subscription_dockerfile((ROOT / "deploy/Dockerfile.protected").read_bytes(),
-                                         enabled=subscription_tools is not None)
+                                         enabled=subscription_tools is not None,
+                                         codex="codex" in native_inputs.get("subscription_tools", {}))
     (context / "Dockerfile").write_bytes(dockerfile)
     retained_inputs = {"schema_version": 1, "base_image": inputs["base_image"],
                        "source_date_epoch": inputs["source_date_epoch"],

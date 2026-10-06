@@ -2,7 +2,7 @@
 
 Provider authentication/refresh hosts follow the official network documentation:
 https://code.claude.com/docs/en/network-config (reviewed 2026-10-07).
-Only the native, previously authenticated Claude CLI belongs on the provider port.
+Only native, subscription-authenticated Codex/Claude clients belong on the provider port.
 The market port admits Kraken/Frankfurter domains, never inference domains.
 
 Encrypted HTTP paths and billing cannot be inspected here. The protected caller
@@ -23,7 +23,8 @@ import socket
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-PROVIDER_HOSTS = frozenset({"api.anthropic.com", "claude.ai", "platform.claude.com"})
+PROVIDER_HOSTS = frozenset({"api.anthropic.com", "claude.ai", "platform.claude.com",
+                            "chatgpt.com", "auth.openai.com"})
 MARKET_HOSTS = frozenset({"api.kraken.com", "api.frankfurter.dev"})
 
 Resolver = Callable[[str], Awaitable[Sequence[str]]]

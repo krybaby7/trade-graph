@@ -479,3 +479,12 @@ def test_fixed_accept_wildcard_preserves_checked_tls_relay():
     assert headers == b"HTTP/1.1 200 Connection Established\r\n\r\n"
     assert body == b"opaque-encrypted-response" and observed == [_hello("api.kraken.com")]
     assert calls == [("resolve", "api.kraken.com"), ("dial", "1.1.1.1", 443)]
+
+
+@pytest.mark.parametrize("host", ["chatgpt.com", "auth.openai.com"])
+def test_codex_subscription_hosts_have_only_provider_listener_access(host):
+    module = _proxy()
+    raw = f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode()
+    assert module._connect_host(raw, module.PROVIDER_HOSTS) == host
+    with pytest.raises(module._Refused):
+        module._connect_host(raw, module.MARKET_HOSTS)

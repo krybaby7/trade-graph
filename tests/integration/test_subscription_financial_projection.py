@@ -198,3 +198,19 @@ def test_unavailable_existing_readiness_is_conservative_without_constructing_a_s
     assert costs["subscription"]["shared_fee_allocation_status"] == "unknown"
     assert costs["provisional"] and financial.overview(runtime)["performance"]["net_economic_pnl"] is None
     assert runtime.database.execute("SELECT COUNT(*) FROM graph_service_runs").fetchone()[0] == 0
+
+
+def test_attempt_details_do_not_duplicate_aggregate_subscription_receipts(tmp_path):
+    runtime = _runtime(tmp_path)
+    subscription_record(runtime)
+    now = utc_iso(runtime.clock.now())
+    runtime.database.execute("""INSERT INTO subscription_attempts
+        (attempt_id,invocation_id,attempt_index,request_hash,provider,requested_model,state,usage_json,created_at,updated_at)
+        VALUES ('attempt-one','subscription-fixture',1,'request-hash','claude_subscription',
+                'claude-sonnet-5-5','FAILED','{"uncached_input_tokens":4,"billed_output_tokens":2}',?,?)""", (now, now))
+    costs = financial.costs(runtime)
+    assert costs["subscription"]["attempt_count"] == 1
+    assert len(costs["subscription"]["records"]) == 1
+    assert len(costs["subscription"]["records"][0]["attempts"]) == 1
+    assert costs["subscription"]["unknown_inference_costs"] == 1
+    assert costs["actual_spend"] == "0"

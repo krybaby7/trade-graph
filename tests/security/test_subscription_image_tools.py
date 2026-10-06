@@ -194,3 +194,23 @@ def test_duplicated_manifest_fields_are_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="duplicate fields"):
         module.stage_subscription_tools(directory, context, {"platform": manifest["platform"],
                                                             "base_image": manifest["base_image"]})
+
+
+def test_optional_codex_binary_is_hash_pinned_and_staged_without_auth(tmp_path, monkeypatch):
+    module, directory, context, manifest, _commands = reviewed_inputs(tmp_path, monkeypatch)
+    binary = b"reviewed-native-codex"
+    digest = hashlib.sha256(binary).hexdigest()
+    (directory / "codex").write_bytes(binary)
+    manifest["codex_sha256"] = digest
+    save_manifest(directory, manifest)
+    policy_path = module.ROOT / "deploy/subscription-native-inputs.json"
+    policy = json.loads(policy_path.read_bytes())
+    policy["codex"] = {"version": "0.160.1", "sha256": digest}
+    policy_path.write_text(json.dumps(policy))
+    result = module.stage_subscription_tools(directory, context, {"platform": manifest["platform"],
+                                                                "base_image": manifest["base_image"]})
+    assert (context / "subscription-tools/codex").read_bytes() == binary
+    assert result["subscription_tools"]["codex"]["sha256"] == digest
+    original = (ROOT / "deploy/Dockerfile.protected").read_bytes()
+    assert "/opt/trade-graph/codex --version" in module.subscription_dockerfile(
+        original, enabled=True, codex=True).decode()
