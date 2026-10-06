@@ -726,5 +726,19 @@
       "execution_note": "All six local implementation and independent-review streams integrated and idle; root combined verification completed. Actual acceptance and owner-authority gates remain open.",
       "review": "docs/reviews/2026-10-04-orchestrator-takeover.md"
     }
-  ]
+  ],
+  "hourly_history_continuation": {
+    "status": "in_progress",
+    "owner": "codex-orchestrator",
+    "branch": "codex/kraken-hourly-history-2026-10-06",
+    "base_commit": "9dedf976ef18944e96e7127ca1e2ce7006d0d243",
+    "task_scope": "Dependency-ready continuation of completed T04/T10 runtime history inputs, serving T17; no task acceptance transition",
+    "dependencies": [
+      "T04",
+      "T10"
+    ],
+    "contracts": "docs/superpowers/plans/2026-10-06-kraken-hourly-history.md",
+    "authority": "Public data and synthetic source/test work only; no private requests, paid calls or live trading",
+    "evidence": []
+  }
 }

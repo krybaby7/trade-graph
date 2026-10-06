@@ -8,6 +8,34 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Historical authenticated Kraken read-only observation — 2026-10-06
+
+The owner-local retained **BTC/USD authenticated read-only observation**
+completed from `2026-10-06T12:05:45.367049Z` to
+`2026-10-06T12:05:46.457662Z`, verified/imported at
+`2026-10-06T12:05:46.500666Z`. A read-only, allowlisted extraction from the
+private Mission Control sidecar reports collector-owned HTTPS, **four
+authenticated private reads**, and verified completed instrument, account-fee,
+balance, open-order and bounded-native-history stages. The source matched at
+import; the owner-local source checkpoint was `9dedf976ef18944e96e7127ca1e2ce7006d0d243`.
+
+This records the verified redacted historical projection. Its original
+**60-second freshness window has expired**; importing or documenting it does
+not renew freshness. This coding session made no private-account requests
+and did not rerun credentials or reverify the native private evidence.
+Credentials, account identifiers, balances, raw payloads and verification
+keys are excluded from the public checkpoint. Both earlier and successful
+observations and the owner's financial/runtime records remain retained.
+
+Still pending: unrequested order lookups and earlier history; owner
+eligibility/account identity; key-permission inventory and withdrawal
+absence; protected-ledger reconciliation; write/cancel uncertainty and native
+stop conformance; partial-fill reserve bounds; intended-host/dependency
+admission; full T17–T22 acceptance, funded/economic evidence, protected image,
+production and live authorization. The read-only observation establishes
+scoped authenticated connectivity, not full venue conformance. Earlier
+pending statements below describe their original historical checkpoints.
+
 ## Kraken public-catalog compatibility fix — 2026-10-06
 
 Source fix: `571765f05f45c5e2871c6ed56b13d363490d4e92` on
