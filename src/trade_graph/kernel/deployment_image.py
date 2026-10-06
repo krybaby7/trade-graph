@@ -25,6 +25,7 @@ from trade_graph.kernel.runtime_manifest import (
     document_sha256,
     protected_package_sha256,
 )
+from trade_graph.kernel.subscription_network import PreparedSubscriptionNetworkProfile
 
 OWNER_MOUNT = "/run/trade-graph-owner"
 STATE_MOUNT = "/var/lib/trade-graph"
@@ -176,6 +177,7 @@ class ProtectedDeploymentSpec:
     state_directory: Path
     funded_profile: PreparedFundedPaperProfile | None = None
     live_profile: PreparedLiveNetworkProfile | None = None
+    subscription_profile: PreparedSubscriptionNetworkProfile | None = None
 
     def __post_init__(self):
         if (not isinstance(self.image, DeploymentImagePin)
@@ -201,6 +203,17 @@ class ProtectedDeploymentSpec:
             or self.live_profile.deployment_id != self.runtime_manifest.deployment_id
         ):
             raise ValueError("live profile requires separate exact image/runtime/deployment pins")
+
+        if self.subscription_profile is not None and (
+            self.funded_profile is not None or self.live_profile is not None
+            or type(self.subscription_profile) is not PreparedSubscriptionNetworkProfile
+            or self.subscription_profile.image_id != self.image.image_id
+            or self.subscription_profile.manifest_sha256 != self.runtime_manifest.sha256
+            or self.subscription_profile.protected_package_sha256 != self.image.protected_package_sha256
+            or self.subscription_profile.deployment_id != self.runtime_manifest.deployment_id
+            or Path(self.subscription_profile.seccomp_path) != self.owner_directory / "subscription-seccomp.json"
+        ):
+            raise ValueError("subscription profile requires separate exact image/runtime/network/seccomp pins")
 
     def verify_host_paths(self) -> None:
         _owner_path(self.owner_directory, directory=True)
@@ -235,11 +248,24 @@ class ProtectedDeploymentSpec:
             if live_configuration_digest(configured) != self.live_profile.live_config_sha256:
                 raise PermissionError("distributed live configuration differs from reviewed network pin")
 
+        if self.subscription_profile is not None:
+            from trade_graph.kernel.subscription_network import (
+                load_subscription_network_profile,
+                load_subscription_seccomp,
+                validate_subscription_configuration,
+            )
+
+            if load_subscription_network_profile(self.owner_directory) != self.subscription_profile:
+                raise PermissionError("distributed subscription network profile differs from owner pin")
+            raw = read_owner_file(self.owner_directory, "paper-config.json", 262144)
+            validate_subscription_configuration(self.subscription_profile, self.runtime_manifest, raw)
+            load_subscription_seccomp(self.owner_directory, self.subscription_profile)
+
     def create_arguments(self, *, name: str, action: str = "boot") -> list[str]:
         if type(name) is not str or not re.fullmatch(r"trade-graph-[a-z0-9-]{1,64}", name):
             raise ValueError("bounded deployment container name required")
         if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
-                          "boot-live", "check-live", "boot-live-dashboard"}:
+                          "boot-live", "check-live", "boot-live-dashboard", "boot-subscription", "check-subscription"}:
             raise ValueError("deployment command must be a fixed protected entrypoint")
         funded = action in {"boot-funded", "check-funded"}
         if funded != (self.funded_profile is not None):
@@ -247,6 +273,9 @@ class ProtectedDeploymentSpec:
         live = action in {"boot-live", "check-live", "boot-live-dashboard"}
         if live != (self.live_profile is not None):
             raise ValueError("live launch requires an explicit separately pinned network profile")
+        subscription = action in {"boot-subscription", "check-subscription"}
+        if subscription != (self.subscription_profile is not None):
+            raise ValueError("subscription launch requires an explicit separate network profile")
         dashboard = action == "boot-live-dashboard"
         if dashboard and self.live_profile.dashboard_host_port is None:
             raise ValueError("live dashboard publication requires its explicit owner profile pin")
@@ -255,11 +284,14 @@ class ProtectedDeploymentSpec:
             if not path.is_absolute() or ".." in path.parts or "," in str(path) or "\n" in str(path):
                 raise ValueError("unambiguous absolute mount paths required")
         environment = [argument for name in PROXY_VARIABLES for argument in ("--env", name + "=")]
-        profile = self.live_profile if live else self.funded_profile
+        profile = self.subscription_profile if subscription else self.live_profile if live else self.funded_profile
+        security = ["--security-opt", "no-new-privileges"]
+        if subscription:
+            security += ["--security-opt", "seccomp=" + self.subscription_profile.seccomp_path]
         network = profile.network_id if profile is not None else "none"
         return ["docker", "create", "--name", name, "--platform", PLATFORM, *environment,
                 "--user", f"{UID}:{GID}", "--read-only", "--network", network, *publication, "--cap-drop", "ALL",
-                "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "512m",
+                *security, "--pids-limit", "64", "--memory", "512m",
                 "--memory-swap", "512m", "--cpus", "1", "--ulimit", "core=0:0", "--init",
                 "--tmpfs", f"/tmp:{TMPFS}", "--mount",
                 f"type=bind,src={self.owner_directory},dst={OWNER_MOUNT},readonly,bind-propagation=rprivate",
@@ -294,13 +326,16 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     live = action in {"boot-live", "check-live", "boot-live-dashboard"}
     if live != (spec.live_profile is not None):
         raise PermissionError("live container requires exact separate network profile")
+    subscription = action in {"boot-subscription", "check-subscription"}
+    if subscription != (spec.subscription_profile is not None):
+        raise PermissionError("subscription container requires exact separate network profile")
     dashboard = action == "boot-live-dashboard"
     if dashboard and spec.live_profile.dashboard_host_port is None:
         raise PermissionError("live dashboard publication is not explicitly approved")
     expected_ports = ({"8000/tcp": [{"HostIp": "127.0.0.1",
                                       "HostPort": str(spec.live_profile.dashboard_host_port)}]} if dashboard else {})
     expected_exposed = {"8000/tcp": {}} if dashboard else image["Config"].get("ExposedPorts", {})
-    profile = spec.live_profile if live else spec.funded_profile
+    profile = spec.subscription_profile if subscription else spec.live_profile if live else spec.funded_profile
     expected_network = profile.network_id if profile is not None else "none"
     if funded:
         from trade_graph.kernel.funded_profile import verify_funded_network
@@ -314,8 +349,19 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
         if network is None or proxy is None:
             raise PermissionError("live launch requires independently inspected private network/proxy")
         verify_live_network(spec.live_profile, network, proxy, daemon_security_options=daemon_security_options)
+    if subscription:
+        from trade_graph.kernel.subscription_network import (
+            verify_subscription_network,
+            verify_subscription_security_options,
+        )
+
+        if network is None or proxy is None:
+            raise PermissionError("subscription launch requires independently inspected private network/proxy")
+        verify_subscription_network(spec.subscription_profile, network, proxy,
+                                    daemon_security_options=daemon_security_options)
+        verify_subscription_security_options(spec.subscription_profile, spec.owner_directory, host.get("SecurityOpt"))
     attached = container.get("NetworkSettings", {}).get("Networks")
-    network_name = network.get("Name") if funded or live else "none"
+    network_name = network.get("Name") if funded or live or subscription else "none"
     if (type(network_name) is not str or not network_name or type(attached) is not dict
             or set(attached) != {network_name}):
         raise PermissionError("protected container has an extra or substituted network attachment")
@@ -330,7 +376,7 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     expected_environment = {**_environment(image["Config"].get("Env")),
                             **{name: "" for name in PROXY_VARIABLES}}
     if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
-                       "boot-live", "check-live", "boot-live-dashboard"}
+                       "boot-live", "check-live", "boot-live-dashboard", "boot-subscription", "check-subscription"}
             or container.get("Image") != spec.image.image_id
             or container.get("State", {}).get("Running") is not False
             or container.get("State", {}).get("Status") != "created"
@@ -341,7 +387,7 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
             or config.get("Healthcheck") != image["Config"].get("Healthcheck")
             or host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False
             or host.get("NetworkMode") != expected_network or host.get("CapDrop") != ["ALL"] or host.get("CapAdd")
-            or host.get("SecurityOpt") != ["no-new-privileges"]
+            or not subscription and host.get("SecurityOpt") != ["no-new-privileges"]
             or not any(item.startswith("name=seccomp,profile=builtin") for item in daemon_security_options)
             or host.get("PidMode") or host.get("IpcMode") not in {"private", ""} or host.get("UTSMode")
             or host.get("UsernsMode") or host.get("CgroupnsMode") != "private"
@@ -417,7 +463,8 @@ def assert_boot_environment(*, mountinfo: Path = Path("/proc/self/mountinfo")) -
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded",
-                                         "boot-live", "check-live", "boot-live-dashboard"))
+                                         "boot-live", "check-live", "boot-live-dashboard",
+                                         "boot-subscription", "check-subscription"))
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -427,6 +474,39 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(canonical_json(build_seal(json.loads(args.inputs.read_bytes()))) + "\n")
         return 0
     manifest = assert_boot_environment()
+    if args.action in {"boot-subscription", "check-subscription"}:
+        from trade_graph.kernel.subscription_network import (
+            load_subscription_network_profile,
+            load_subscription_seccomp,
+            validate_subscription_configuration,
+        )
+
+        directory = Path(OWNER_MOUNT)
+        profile = load_subscription_network_profile(directory)
+        raw = read_owner_file(directory, "paper-config.json", 262144)
+        validate_subscription_configuration(profile, manifest, raw)
+        load_subscription_seccomp(directory, profile)
+        for incompatible in ("funded-paper-profile.json", "live-network-profile.json"):
+            try:
+                read_owner_file(directory, incompatible, 32768)
+            except FileNotFoundError:
+                continue
+            raise PermissionError("subscription paper launch refuses funded API and live profiles")
+        if args.action == "check-subscription":
+            print(canonical_json({"status": "subscription_paper_profile_prepared", "profile_sha256": profile.sha256,
+                                  "intended_host_verified": False, "live_authorization": False,
+                                  "paid_authorization": False, "inference_attempts": 0}))
+            return 0
+        from trade_graph.cli import main as cli_main
+
+        return cli_main(["run", "--mode", "paper", "--database", f"{STATE_MOUNT}/trade_graph.sqlite",
+                         "--protected-owner", OWNER_MOUNT, "--once"])
+    try:
+        read_owner_file(Path(OWNER_MOUNT), "subscription-network-profile.json", 32768)
+    except FileNotFoundError:
+        pass
+    else:
+        raise PermissionError("subscription owner bundle requires its separate paper launch profile")
     if args.action in {"boot-live", "check-live", "boot-live-dashboard"}:
         from trade_graph.kernel.live_network import load_live_network_profile
         from trade_graph.live_runtime import (
