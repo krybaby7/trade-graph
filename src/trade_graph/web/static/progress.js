@@ -23,6 +23,8 @@
   let connected = false;
   let authExpired = false;
   let runningCheck = null;
+  let serviceAction = null;
+  const serviceRequests = new Map();
   let pollTimer = null;
   let polling = false;
   let pollController = null;
@@ -83,6 +85,7 @@
       one(".mc-sync").append(link);
     }
     updateControls();
+    renderLifecycle(snapshot?.lifecycle);
   }
   function renderProject(project) {
     write("[data-project-completed]", count(project.completed));
@@ -379,8 +382,74 @@
     if (!fragment.childNodes.length) fragment.append(element("li", "mc-empty", "No runtime activity is recorded yet. Departments will appear active only when there is journal evidence."));
     one("[data-activity]").replaceChildren(fragment);
   }
+  function renderLifecycle(lifecycle) {
+    const service = lifecycle?.service || {};
+    const ready = lifecycle?.prerequisites || {};
+    const profile = lifecycle?.pause_profile || "RUNNING";
+    write("[data-runtime-mode]", `${label(service.mode || "paper")} · ${ready.live_available ? "Live requires explicit commissioning" : "Live disabled"}`);
+    write("[data-runtime-status]", `Service ${label(service.status || "IDLE")}. AI ${ready.ai_available ? "available" : "unavailable or paused"}. Portfolio ${label(profile)}.${service.error_type ? ` Last failure: ${text(service.error_type)}.` : ""}`);
+    write("[data-runtime-prerequisites]", list(ready.reasons).join(" ") || "Owner prerequisites satisfied for this configured mode.");
+    const cycle = lifecycle?.optimisation;
+    write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. Automatic scheduling disabled.` : "Optimisation: no requested cycle recorded. Automatic scheduling disabled.");
+    const usage = lifecycle?.ai_usage;
+    const providers = list(usage?.providers).map(provider => `${text(provider.provider)}${provider.ai_paused ? " paused" : ""}: ${text(provider.quota)}${provider.reason ? ` (${text(provider.reason)})` : ""}`).join(" · ");
+    write("[data-ai-usage]", `Subscription quota: ${providers || "unknown"}. Unknown usage/cost records: ${count(usage?.unknown_usage_or_cost_records)}. Subscription usage, real expenses and virtual capital remain separate.`);
+    const active = ["STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING", "ATTACHED_EXISTING"].includes(service.status);
+    for (const button of all("[data-service-action]")) {
+      const action = button.dataset.serviceAction;
+      const enabled = action === "start-trading" ? ready.paper_available : action === "start-optimisation" ?
+        service.status === "RUNNING" && ready.ai_available && profile === "RUNNING" && !["QUEUED", "RUNNING", "BLOCKED"].includes(cycle?.status) : active;
+      button.disabled = !connected || !owner || !csrf || Boolean(serviceAction) || !enabled;
+    }
+  }
+  async function controlService(button) {
+    const action = button.dataset.serviceAction;
+    if (button.disabled || serviceAction || !owner || !csrf || !connected) return;
+    serviceAction = action;
+    const feedback = one("[data-service-feedback]");
+    feedback.classList.remove("is-error");
+    feedback.textContent = "Recording owner request…";
+    renderLifecycle(snapshot?.lifecycle);
+    let requestId = serviceRequests.get(action);
+    if (!requestId) {
+      try { requestId = sessionStorage.getItem(`tg-service-${action}`); } catch (_) { /* storage can be unavailable */ }
+      requestId ||= crypto.randomUUID();
+      serviceRequests.set(action, requestId);
+      try { sessionStorage.setItem(`tg-service-${action}`, requestId); } catch (_) { /* current page keeps the identity */ }
+    }
+    const body = action === "pause" ? {profile: "MANAGE_ONLY", reason: "Owner dashboard AI pause"} :
+      action === "start-trading" ? {request_id: requestId, mode: "paper"} :
+      action === "stop-service" ? {request_id: requestId, position_policy: "manage-only"} : {request_id: requestId};
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let definite = false;
+    try {
+      const response = await fetch(`/api/v1/owner/${action}`, {method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf}, body: JSON.stringify(body), signal: controller.signal});
+      const result = await response.json();
+      definite = true;
+      if (response.status === 401 || response.status === 403) loginNotice();
+      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Request rejected (HTTP ${response.status}).`);
+      feedback.textContent = action === "start-optimisation" ? `One bounded cycle ${text(result.task_id)} recorded. Follow its saved status below.` :
+        action === "start-trading" ? `${result.attached ? "Attached to existing" : "Recorded startup for"} service ${text(result.run_id) || "already owned"}. Check its actual status below.` :
+        action === "pause" ? "AI paused. Reconciliation and protection continue." : text(result.management);
+      await poll();
+    } catch (error) {
+      feedback.classList.add("is-error");
+      feedback.textContent = definite ? text(error.message) : "Request outcome uncertain. Saved status will refresh; another click reuses this request identity.";
+    } finally {
+      clearTimeout(timeout);
+      if (definite) {
+        serviceRequests.delete(action);
+        try { sessionStorage.removeItem(`tg-service-${action}`); } catch (_) { /* no persisted request */ }
+      }
+      serviceAction = null;
+      renderLifecycle(snapshot?.lifecycle);
+    }
+  }
   function render(data) {
     snapshot = data;
+    renderLifecycle(data.lifecycle);
     renderProject(data.project || {});
     write("[data-service-label]", data.service?.status === "running" ? "Trading service is running" : data.service?.status === "idle" ? "Trading service is idle" : "Not observed");
     write("[data-service-note]", data.service?.last_seen ? `Last observed ${time(data.service.last_seen)}` : "Dashboard access does not mean agents are running");
@@ -424,6 +493,7 @@
       connected = false;
       if (!document.hidden) syncState("Updates unavailable · showing last saved snapshot", "offline");
       updateControls();
+      renderLifecycle(snapshot?.lifecycle);
     } finally {
       clearTimeout(timeout);
       polling = false;
@@ -476,6 +546,8 @@
     if (department && !department.disabled) selectDepartment(department.dataset.departmentId);
     const filter = event.target.closest("[data-task-filter]");
     if (filter && !filter.disabled) { taskFilter = filter.dataset.taskFilter; filterTasks(); }
+    const serviceButton = event.target.closest("[data-service-action]");
+    if (serviceButton) void controlService(serviceButton);
     const button = event.target.closest("[data-run-check]");
     if (button) void runCheck(button);
   });

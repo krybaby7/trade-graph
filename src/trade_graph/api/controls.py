@@ -466,6 +466,8 @@ def _budget(runtime, body: BudgetCommand) -> dict:
 
 
 def _assign(runtime, body: TaskCommand) -> dict:
+    if body.role == "optimisation":
+        raise AuthorityDenied("Optimisation requires the dedicated owner cycle control")
     authority = AuthorityRecord(runtime.database, runtime.clock)
     policy, mandate = authority.active_policy(), authority.active_mandate(runtime.portfolio_id)
     if mandate.expires_at_utc <= runtime.clock.now():

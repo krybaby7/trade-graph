@@ -20,6 +20,7 @@ class ArtifactRuntime:
         self.versions, self.scheduler = versions, scheduler
         self.database = scheduler.database
         self.loaded: dict[str, dict] = {}
+        self.disabled_schedule_roles: set[str] = set()
 
     @staticmethod
     def identity(bundle: dict) -> dict:
@@ -121,7 +122,8 @@ class ArtifactRuntime:
 
     def apply_schedules(self, portfolio_id: str, bundle: dict) -> None:
         """Only this explicit namespace is artifact-managed; protection has no schedule here."""
-        settings = self.schedule_settings(bundle)
+        settings = {role: interval for role, interval in self.schedule_settings(bundle).items()
+                    if role not in self.disabled_schedule_roles}
         with self.database.immediate():
             self.versions.assert_current(portfolio_id, bundle)
             rows = self.database.execute(
@@ -151,7 +153,7 @@ class ArtifactRuntime:
         bundle = self.versions.load_active(portfolio_id)
         self.versions.assert_current(portfolio_id, bundle)
         self.apply_schedules(portfolio_id, bundle)
-        if role not in self.schedule_settings(bundle):
+        if role in self.disabled_schedule_roles or role not in self.schedule_settings(bundle):
             return None
         with self.database.immediate():
             self.versions.assert_current(portfolio_id, bundle)

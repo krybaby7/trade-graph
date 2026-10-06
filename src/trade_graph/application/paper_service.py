@@ -23,6 +23,7 @@ from typing import Any
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.scheduler import Scheduler, TaskLease
 from trade_graph.application.secretary import Secretary
+from trade_graph.application.service_controller import service_finished, service_heartbeat, service_started
 from trade_graph.application.worker import RoleWorker
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import StaleState, ValidationFailure
@@ -31,7 +32,6 @@ DEFAULT_SCHEDULES = {
     "trader": 14400,
     "research": 86400,
     "learning": 302400,
-    "optimisation": 604800,
     "leader": 604800,
 }
 PAUSED_WORK = {"PAUSE_DECISIONS", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN", "STOPPED"}
@@ -71,9 +71,13 @@ class PaperService:
         prepare_runtime: Callable[[], Mapping[str, Callable]] | None = None,
         runtime_ready: Callable[[], bool] | None = None,
         system_version_id: str = "paper-runtime",
+        service_mode: str = "paper",
+        service_run_id: str | None = None,
     ) -> None:
-        if execution.mode != "paper" or execution.database is not database:
-            raise ValidationFailure("paper execution bound to the service database is required")
+        if (service_mode not in {"paper", "live"} or execution.mode != service_mode
+                or execution.database is not database):
+            raise ValidationFailure(f"{service_mode} execution bound to the service database is required")
+        self.service_mode, self.service_run_id = service_mode, service_run_id
         if (isinstance(tick_interval_seconds, bool) or not isinstance(tick_interval_seconds, (int, float))
                 or not math.isfinite(tick_interval_seconds) or tick_interval_seconds <= 0):
             raise ValidationFailure("positive finite service tick interval required")
@@ -81,14 +85,18 @@ class PaperService:
         self.database, self.execution = database, execution
         self.clock = clock or execution.clock
         self.scheduler = artifact_runtime.scheduler if artifact_runtime else Scheduler(database, self.clock)
+        self.scheduler.manual_optimisation_only = True
         if self.scheduler.database is not database:
             raise ValidationFailure("artifact runtime must use the service database")
         self.secretary = secretary or Secretary(execution, self.scheduler, artifact_runtime=artifact_runtime)
         self.handlers = dict(handlers or {})
         self.artifact_runtime, self.public_feed = artifact_runtime, public_feed
+        if artifact_runtime:
+            artifact_runtime.disabled_schedule_roles = {"optimisation"}
         self.portfolio_ids = tuple(dict.fromkeys(portfolio_ids or ()))
         self.management_portfolio_ids: tuple[str, ...] = ()
         self.schedule_intervals = dict(DEFAULT_SCHEDULES if schedule_intervals is None else schedule_intervals)
+        self.schedule_intervals.pop("optimisation", None)
         for role, interval in self.schedule_intervals.items():
             if role not in DEFAULT_SCHEDULES:
                 raise ValidationFailure("Engineer work must be explicitly commissioned")
@@ -182,13 +190,15 @@ class PaperService:
         if self.public_feed is not None:
             self.execution.blocks_increase = self._blocks_increase
         try:
-            if self.database.execute("SELECT 1 FROM portfolios WHERE mode != 'paper' LIMIT 1").fetchone():
+            if self.database.execute("SELECT 1 FROM portfolios WHERE mode != ? LIMIT 1",
+                                     (self.service_mode,)).fetchone():
                 # Execution and the simulated broker currently share database-wide
                 # outboxes/lookups. R1 cannot safely run them against live/replay
                 # history, even when that history appears financially complete.
-                raise ValidationFailure("paper service requires a database containing only paper portfolios")
+                raise ValidationFailure(
+                    f"{self.service_mode} service requires a database containing only {self.service_mode} portfolios")
             rows = self.database.execute(
-                "SELECT portfolio_id FROM portfolios WHERE mode = 'paper' ORDER BY created_at, rowid",
+                "SELECT portfolio_id FROM portfolios WHERE mode = ? ORDER BY created_at, rowid", (self.service_mode,),
             ).fetchall()
             available = {row["portfolio_id"] for row in rows}
             # A database owns one execution outbox. Selecting a newer experiment
@@ -197,17 +207,23 @@ class PaperService:
             if not self.portfolio_ids:
                 self.portfolio_ids = tuple(row["portfolio_id"] for row in rows)
             if not self.portfolio_ids or any(pid not in available for pid in self.portfolio_ids):
-                raise ValidationFailure("persisted paper portfolios are required")
+                raise ValidationFailure(f"persisted {self.service_mode} portfolios are required")
             self._started = True
             self._heartbeat_task = asyncio.create_task(self._heartbeat())
+            await self._offload(self._manual_optimisation_only)
             if self.recover_commands:
                 await self._offload(self.recover_commands)
             # No graph handler may run before uncertainty and owner pauses recover.
             await self._offload(self._management)
             if self.prepare_runtime:
                 self.handlers = dict(await self._offload(self.prepare_runtime))
+            self.service_run_id = await self._offload(
+                lambda: service_started(self.database, self.clock, self.portfolio_ids[0], self.service_mode,
+                                        self.service_run_id, ai_available=bool(self.handlers) and
+                                        (self.runtime_ready is None or self.runtime_ready())))
             self._ready = True
-        except BaseException:
+        except BaseException as exc:
+            await self._offload(service_finished, self.database, self.clock, self.service_run_id, type(exc).__name__)
             self._started = False
             if self._heartbeat_task:
                 self._heartbeat_task.cancel()
@@ -240,6 +256,8 @@ class PaperService:
                 if row is None or row["owner"] != self.owner:
                     raise StaleState("service process lease was replaced")
                 self.scheduler.acquire_process_lease(name, self.owner, self.role_ttl_seconds)
+            if service_heartbeat(self.database, self.clock, self.service_run_id):
+                self.request_stop()
             with self._lease_lock:
                 lease = self._active_lease
                 if lease:
@@ -280,7 +298,29 @@ class PaperService:
                     failures.append("dispatch:" + type(exc).__name__)
         return management, tuple(failures)
 
+    def _manual_optimisation_only(self) -> None:
+        """Retire old automatic work without erasing its attempts or receipts."""
+        with self.database.immediate():
+            self.database.execute("DELETE FROM schedules WHERE name IN "
+                                  "('optimisation-review', 'artifact-optimisation-review')")
+            self.database.execute("""UPDATE tasks SET status = 'CANCELLED',
+                output_json = '{"reason":"Optimisation is owner-requested only"}',
+                lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
+                WHERE role = 'optimisation' AND status IN ('QUEUED', 'LEASED', 'RUNNING')
+                AND NOT EXISTS (SELECT 1 FROM service_control_requests c
+                    WHERE c.action = 'start_optimisation'
+                    AND json_extract(c.result_json, '$.task_id') = tasks.task_id)""")
+
+    def _ai_paused(self) -> bool:
+        return bool(self.database.execute(
+            "SELECT 1 FROM subscription_provider_state WHERE ai_paused = 1 LIMIT 1").fetchone())
+
     def _schedules(self) -> int:
+        self._manual_optimisation_only()
+        if self._ai_paused():
+            for pid in self.portfolio_ids:
+                self.secretary.process(pid, route=False)
+            return 0
         created = 0
         if self.artifact_runtime:
             self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
@@ -349,12 +389,20 @@ class PaperService:
 
     def _run_role(self) -> int:
         # One finite task per launch keeps cadence and shutdown under the controller.
-        if self.runtime_ready and not self.runtime_ready():
+        if self._ai_paused() or (self.runtime_ready and not self.runtime_ready()):
             return 0
         lease = self.scheduler.claim(self.owner, ttl_seconds=self.role_ttl_seconds, roles=set(self.handlers))
         if lease is None:
             return 0
         row = self.scheduler.leased_row(lease)
+        if row["role"] == "optimisation":
+            requested = self.database.execute("""SELECT 1 FROM service_control_requests
+                WHERE action = 'start_optimisation'
+                AND portfolio_id = ? AND json_extract(result_json, '$.task_id') = ?""",
+                (row["portfolio_id"], row["task_id"])).fetchone()
+            if not requested:
+                self.scheduler.skip(lease, {"reason": "Optimisation requires a persisted owner request"})
+                return 0
         if row["portfolio_id"] not in self.portfolio_ids:
             self.scheduler.defer(lease, {"reason": "portfolio is outside service scope"}, 30)
             return 0
@@ -623,7 +671,11 @@ class PaperService:
             if self.execution.blocks_increase == self._blocks_increase:
                 self.execution.blocks_increase = self._old_gate
             try:
-                self._release()
+                try:
+                    service_finished(self.database, self.clock, self.service_run_id,
+                                     type(errors[0]).__name__ if errors else None)
+                finally:
+                    self._release()
             except Exception as exc:
                 errors.append(exc)
             self._stopping = False

@@ -32,6 +32,7 @@ class Scheduler:
         self.max_descendants = 12
         self._positive(max_root_steps, "max_root_steps")
         self.max_root_steps = max_root_steps
+        self.manual_optimisation_only = False
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
@@ -59,6 +60,8 @@ class Scheduler:
         deadline_at: str | None = None,
     ) -> str:
         self._positive(max_attempts, "max_attempts")
+        if role == "optimisation" and self.manual_optimisation_only:
+            raise AuthorityDenied("Optimisation is owner-requested only")
         task_id = str(uuid.uuid4())
         root = task_id
         if parent_id is not None:
@@ -66,6 +69,13 @@ class Scheduler:
             if parent is None:
                 raise ValidationFailure("parent task does not exist")
             root = parent["root_task_id"]
+            root_row = self.database.execute(
+                "SELECT objective, deadline_at FROM tasks WHERE task_id = ?", (root,)).fetchone()
+            if root_row["objective"] == "owner-optimisation-cycle":
+                # All descendants share the owner cycle's finite deadline and one attempt.
+                max_attempts = 1
+                if deadline_at is None or deadline_at > root_row["deadline_at"]:
+                    deadline_at = root_row["deadline_at"]
             if root_task_id is not None and root_task_id != root:
                 raise AuthorityDenied("child cannot switch root task budgets")
             if parent["portfolio_id"] != portfolio_id:
@@ -252,6 +262,8 @@ class Scheduler:
     @atomic
     def ensure_schedule(self, portfolio_id: str, name: str, interval_seconds: int, policy: str) -> None:
         self._positive(interval_seconds, "interval_seconds")
+        if self.manual_optimisation_only and name in {"optimisation-review", "artifact-optimisation-review"}:
+            raise AuthorityDenied("Optimisation is owner-requested only")
         if policy != "coalesce":
             raise ValidationFailure("unsupported missed-run policy")
         existing = self.database.execute(

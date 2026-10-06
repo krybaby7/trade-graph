@@ -15,7 +15,7 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.domain.clock import SystemClock
 
 
-def dashboard_runtime(path: Path, portfolio_id: str | None = None):
+def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_path: Path | None = None):
     path = path.resolve()
     if not path.is_file():
         raise ValueError("database does not exist; initialize a paper account first")
@@ -36,8 +36,11 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None):
     clock = SystemClock()
     ledger = Ledger(database, clock)
     execution = Execution(database, ledger, clock, PaperBroker(database, clock))
-    return SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
-                           portfolio_id=row["portfolio_id"], deployment_id="deployment")
+    runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
+                              portfolio_id=row["portfolio_id"], deployment_id="deployment")
+    from trade_graph.application.service_controller import ServiceController
+    runtime.service_controller = ServiceController(runtime, config_path=config_path)
+    return runtime
 
 
 def owner_session_file(runtime, path: Path) -> Path:

@@ -19,6 +19,8 @@ from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.api.controls import configuration, register_controls
 from trade_graph.api.health import health as project_health
 from trade_graph.api.security import redact
+from trade_graph.api.service import controller as service_controller
+from trade_graph.api.service import register_service_controls
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import NotFound
 
@@ -105,6 +107,7 @@ def create_app(runtime) -> FastAPI:
             checks = [{**check, "available": False, "reason": storage_error} for check in checks]
         data["checks"] = checks
         data["test_storage_error"] = storage_error
+        data["lifecycle"] = service_controller(runtime).status()
         return data
 
     @app.get("/login", response_class=HTMLResponse)
@@ -304,6 +307,7 @@ def create_app(runtime) -> FastAPI:
             return render(request, "owner", data)
 
     register_controls(app, runtime, identity, owner_write)
+    register_service_controls(app, runtime, identity, owner_write)
     return app
 
 
