@@ -113,3 +113,11 @@ None prevents offline development. Mark credentialed verification pending when c
 | D93 | Protected live startup remains separately commissioned and disabled in this installation | Scripted broker/conformance and local controller tests establish implementation behavior only. This task forbids private Kraken requests and real orders; source completion does not grant allocation, key permissions, host admission or live authority. |
 
 - **D94 (2026-10-06):** Owner-requested startup source can be implemented/tested while credentialed T17 acceptance is blocked. Retain acceptance states and all independent live/Engineer commissioning gates; synthetic tests do not satisfy missing dependencies.
+
+- **D95 (2026-10-07):** The owner permits bounded documented CLI-internal retries
+  within included subscription quota. Select the implemented native Claude route
+  with explicit zero transport/timeout retries and one structured attempt; retain
+  disabled application retries, fallback, extra usage and API billing. Earlier
+  Codex zero-retry blockers are historical, not a present owner restriction.
+  [Final-image evidence](reviews/2026-10-07-first-paper-cycle.md) gates this paper
+  route separately from subscription login, financial acceptance and live authority.

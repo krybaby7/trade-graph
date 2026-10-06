@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06",
-  "status_note": "2026-10-06: tested source b1ca4c5 passes 435 final startup, financial and isolation regressions; 2,998 collected cases are covered across recorded runs. The WSL dashboard is updated and preserved. Subscription operation is blocked by retry, native login, egress and intended-image gates; live is disabled and uncommissioned. Research inference: zero. No private Kraken requests or API billing. Acceptance states unchanged; local checkpoint only.",
+  "updated_at": "2026-10-07",
+  "status_note": "2026-10-07: tested source 643f185 passes 445 selected tests; final native Claude 2.1.292 image isolation, production mounts and actual public proxy transport pass. Public Kraken/ECB refreshed; original USD10,000 paper account preserved and MANAGE_ONLY. Inference attempts 0: owner subscription login/disabled usagecredits verification and protected-state migration pending. No private Kraken/API billing/live authority; T17 acceptance remains in_progress. Sanitized evidence only in Git.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -226,8 +226,8 @@
     },
     "T17": {
       "status": "in_progress",
-      "owner": "codex-startup-integration",
-      "branch": "codex/start-controls-2026-10-06",
+      "owner": "codex-root",
+      "branch": "codex/first-paper-cycle-2026-10-07",
       "evidence": [
         "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
         "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
@@ -246,7 +246,9 @@
         "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
         "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
         "2026-10-06: protected subscription adapter and six-role startup tested; Codex retries/native Claude login/intended-image provider egress/isolation block actual inference and continuous paper acceptance.",
-        "2026-10-06 b1ca4c5: 435 final startup, subscription, controller, manual-cycle, dashboard, cost, storage and proxy regressions pass. Frozen full-run 2,905 passes, corrected 227 unit/funded passes and final 435 passes cover 2,998 collected cases; no clean monolithic final-source full pass is claimed. Actual child/UI lifecycle and installation postflight preserve every old financial/progress row and 30 protected files. Research inference is zero; continuous paper AI was not run. Native subscription login, zero retries, provider egress and intended-image admission remain blocked."
+        "2026-10-06 b1ca4c5: 435 final startup, subscription, controller, manual-cycle, dashboard, cost, storage and proxy regressions pass. Frozen full-run 2,905 passes, corrected 227 unit/funded passes and final 435 passes cover 2,998 collected cases; no clean monolithic final-source full pass is claimed. Actual child/UI lifecycle and installation postflight preserve every old financial/progress row and 30 protected files. Research inference is zero; continuous paper AI was not run. Native subscription login, zero retries, provider egress and intended-image admission remain blocked.",
+        "2026-10-07 owner-authorized narrow continuation claimed from preserved e36e447: one actual Kraken public-data subscription paper cycle; implementation/testing underway, no new acceptance completion. See docs/superpowers/plans/2026-10-07-first-paper-cycle.md.",
+        "2026-10-07: docs/reviews/2026-10-07-first-paper-cycle.md records final actual image/public-data checks and 445 local passing tests at 643f185. Native login absent; zero credentialed inference, no Research/Trader result, no acceptance transition. Original financial/owner state preserved except requested MANAGE_ONLY pause; private evidence excluded from Git."
       ],
       "remaining": "Owner-designated installation, approved public connectivity/current model routes/prices, separate real funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Exact service binding and local process restart proof are implemented.",
       "execution_state": "idle",

@@ -1,3 +1,45 @@
+# First actual Kraken-data paper cycle — 2026-10-07
+
+**Operating milestone pending owner subscription login.** Tested source `643f185`,
+branch `codex/first-paper-cycle-2026-10-07`, descends from preserved `e36e447`.
+[Concrete operating evidence](docs/reviews/2026-10-07-first-paper-cycle.md) and
+[exact owner login command](docs/FIRST-PAPER-CYCLE.md#owner-login-and-included-usage-check)
+supersede the earlier native-install/egress limitations below.
+
+- Native WSL Claude 2.1.292 is signature/checksum verified and separately installed;
+  final protected image, actual nine-check isolation, strict production mount
+  inspection and public HTTP transport pass. Native subscription login is absent;
+  extra usage/auto-reload disabled status and Claude capacity need owner verification.
+- Final public refresh: 168 completed BTC/USD and ETH/USD hourly candles each,
+  latest close 2026-10-06 22:00 UTC, zero gaps. Final stored quotes were 19.625036s /
+  18.9596s old at 22:26:17 UTC. ECB USD/EUR 0.88739 dated 2026-10-06 was retrieved
+  22:25:59 UTC. Freshness must be renewed after login.
+- Diagnostic Research, normal Research, Trader and Leader inference attempts: 0.
+  No validated Research, Trader decision, simulated order or fill. This is not a
+  recorded model no-trade. Original USD10,000 portfolio/financial journal,
+  owner budget and mandate remain intact. Explicit owner pause is now MANAGE_ONLY,
+  achieved managing; service stopped and portfolio flat/no open orders.
+- Three journaled native invocations maximum, each 120s / 4096 tokens / one turn / 256KiB;
+  zero CLI transport/timeout retries and one structured attempt, no application
+  retries/repair/fallback/API billing. A valid diagnostic gates the cycle;
+  fresh quotes precede Trader. Model-free continuous management works without auth.
+- 445 selected source tests pass, zero failures/errors/skips, 47.190s; Ruff and
+  planning checks pass. All 95 pre-existing private files and progress sidecar
+  preserved. Dashboard read evidence retained privately. No private Kraken request,
+  purchase, real order or withdrawal. Unknown subscription/preparation/shared costs
+  are not counted as free. Shared Codex capacity 78% weekly remaining is not Claude
+  quota; short-window unavailable (22:23:48 UTC observation).
+
+Functioning commands include the runbook's native version/auth-status checks,
+`PYTHONPATH=src /home/adami/trade-graph/.venv/bin/python -m pytest` with the recorded
+selected tests, and the protected image's `check-subscription`. The credential-free
+actual image probes/public transport passed. `research-subscription` and
+`boot-subscription` are implemented/tested bounded phases, **not credentialed
+successes**. Protected operating-state migration and actual inference remain
+pending. No task acceptance status or live authority was advanced.
+
+---
+
 # Implementation status — owner startup controls and recorded checkpoints
 
 ## Current owner startup implementation — 2026-10-06

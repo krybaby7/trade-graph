@@ -21,17 +21,15 @@ USD10,000 with EUR reporting; it cannot fund model usage or authorize live order
   BTC/USD and ETH/USD, with zero missing hourly slots at collection**. The
   retained Frankfurter/ECB USD/EUR reference is **0.88739**, dated
   **2026-10-06**. These are historical observations, not a claim of freshness
-  now; see the [retained collection evidence](reviews/2026-10-06-research-subscription-preflight.md#actual-public-history-and-refresh).
+  now; see the [final collection evidence](reviews/2026-10-07-first-paper-cycle.md#actual-operating-evidence).
 - Model attempts are **0**; the paper portfolio remains **USD10,000**.
   Mandate revision **1** already supplies the paper authority for a
   Research/Trader cycle. It needs no Leader model call or per-trade committee.
-- Final protected-image isolation/egress probes, login, subscription capacity
-  and spending-setting checks remain pending. A package/version check does not
-  establish the final process boundary. The earlier builtin-Docker-seccomp
-  bubblewrap namespace probe refused; the intended-image result must be
-  independently retained. [Docker's seccomp reference](https://docs.docker.com/engine/security/seccomp/)
-  and the [pinned Moby default profile](https://github.com/moby/profiles/blob/2ceae35d351c156cb5a8efc0fdc4a08cf94569d8/seccomp/default.json)
-  describe namespace restrictions; neither substitutes for that probe.
+- Final protected-image isolation, production mount inspection and actual public
+  HTTP egress checks passed. Login, account capacity/spending checks and migration
+  of the preserved operating database into protected storage remain pending.
+  [Final evidence and private receipt locations](reviews/2026-10-07-first-paper-cycle.md)
+  distinguish actual confinement/public-data tests from missing model inference.
 
 ## Owner login and included-usage check
 
@@ -88,8 +86,9 @@ for any existing paper orders or positions.
 
 The prepared protected actions are `check-subscription` for metadata,
 `research-subscription` for the diagnostic phase, then `boot-subscription`
-for the bounded cycle. **A final operator inference command is not yet
-verified and is intentionally not supplied here.** Admission and the independent
+for the bounded cycle, and `manage-subscription` for continuous deterministic
+protection with AI disabled. **A credentialed operator inference command has not
+run and is intentionally not supplied here.** Admission and the independent
 image probes must pass before either inference phase starts. Provider egress
 must use the reviewed fixed proxy; the
 [official network requirements](https://code.claude.com/docs/en/network-config)
@@ -97,6 +96,11 @@ identify inference and login/refresh hosts. Login from the owner's browser is
 separate from the model process's restricted network.
 
 ## Preserve state and review the result
+
+The original WSL database is preserved and currently MANAGE_ONLY by the owner's
+requested stop. The existing portfolio is flat with no open orders. Only this
+task's pause may be explicitly resumed for its already authorized bounded cycle;
+never lift an unrelated or stronger owner halt.
 
 The original WSL database is preserved. Creating/migrating the private
 protected-state copy remains pending and must wait until the authentication and
@@ -114,9 +118,15 @@ reference FX for reporting, not an executable intraday rate.
 Kraken's [current FAQ](https://support.kraken.com/articles/advanced-api-faq)
 offers Spot REST/WebSocket/FIX testing to qualified clients through API-team
 onboarding. Its validation parameter checks an order without returning an order
-ID. This experiment uses public Kraken prices with **Trade Graph simulated
+ID. That check does not establish virtual balances or exchange-hosted fills.
+No self-service public Spot virtual-money endpoint or qualified-client access was
+verified for this installation. This experiment uses public Kraken prices with **Trade Graph simulated
 fills**. Kraken's [credential-free CLI paper engine](https://www.kraken.com/kraken-cli)
-is another local simulator; Futures demo is a separate product. No private
+is another local simulator; Futures demo is a separate derivatives environment.
+The official FAQ mentions its demo URL, while the separate
+[derivatives testing page](https://support.kraken.com/articles/360024809011-api-testing-environment-derivatives)
+announces decommissioning; current demo availability is not an assumption of this
+Spot paper path. No private
 Kraken request, validation order, real order or withdrawal belongs to this run.
 
 After the bounded run, retain the diagnostic result, Research/Trader outcomes,
