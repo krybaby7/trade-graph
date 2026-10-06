@@ -71,7 +71,8 @@ class ProtectedRuntimeController:
         instance = self.financial._instance(self.instance_id)
         if instance["generation"] == 0 and instance["active_release_id"] is None:
             portfolios = self.database.execute(
-                "SELECT portfolio_id FROM portfolios WHERE mode='paper' ORDER BY portfolio_id",
+                "SELECT portfolio_id FROM portfolios WHERE mode=? ORDER BY portfolio_id",
+                (self.financial.execution.mode,),
             ).fetchall()
             if len(portfolios) > 128:
                 raise StaleState("protected owner preparation exceeds portfolio bound")

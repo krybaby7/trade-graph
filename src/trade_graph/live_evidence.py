@@ -79,16 +79,30 @@ class LiveUpstreamSources:
     economics: EconomicUpstreamSource | None = field(default=None, repr=False)
     host: HostUpstreamSource | None = field(default=None, repr=False)
     venue: PinnedVenueObservation | None = field(default=None, repr=False)
+    commission: object | None = field(default=None, repr=False)
 
 
 def verify_live_upstream(
     scope: LivePilotScope, bundle: ReadinessBundle, clock: Clock, sources: LiveUpstreamSources | None,
+    *, database=None,
 ) -> dict:
     """Re-read retained facts; authentic external observation remains separate.
 
     Returned codes are bounded program-defined names. Private account/receipt/
     path/source records never appear in the readiness output.
     """
+    if type(sources) is LiveUpstreamSources and sources.commission is not None:
+        from trade_graph.kernel.live_commission import PinnedLiveCommission
+
+        try:
+            if type(sources.commission) is not PinnedLiveCommission:
+                raise ValueError("exact independently protected live commission required")
+            return sources.commission.verify(scope, bundle, clock, database=database)
+        except (ValueError, TypeError, AttributeError, OSError, TradeGraphError):
+            return {"status": "refused", "checks": {"independent_live_commission": False},
+                    "unresolved": [{"source": "live_commission", "code": "commission_invalid_or_unprovisioned",
+                                    "status": "refused"}],
+                    "authoritative_external_verification": False, "live_authorization": False}
     checks: dict[str, bool] = {}
     unresolved: list[dict] = []
 

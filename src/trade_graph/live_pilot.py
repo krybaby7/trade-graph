@@ -1,8 +1,8 @@
-"""Durable bounded-pilot preparation and management, with no external-effect route.
+"""Durable bounded-pilot authority and management, with no direct broker route.
 
 Only a protected service may instantiate this controller. Signed declarations
-can be staged, but the current readiness implementation prevents activation and
-submission. This module neither changes live policy nor calls a broker/provider.
+can be staged, but activation and increases require independently commissioned
+actual evidence. This module neither changes live policy nor calls a broker/provider.
 """
 
 from __future__ import annotations
@@ -96,7 +96,8 @@ class ProtectedPilotLifecycle:
 
     Startup must call recover for a previously running grant before dispatch.
     Execution adopts its reserve/begin/reconcile protocol for every live increase.
-    Current readiness stays closed; no protected live service is commissioned.
+    Advisory declarations stay closed. Independently protected commissioning is
+    required; implementing this controller never commissions an installation.
     """
 
     def __init__(self, database: Database, clock: Clock, *, scope: LivePilotScope,
@@ -230,7 +231,7 @@ class ProtectedPilotLifecycle:
         return grant.authorization_id
 
     def activate(self, authorization_id: str) -> dict:
-        """Request activation through the concrete closed readiness evaluator."""
+        """Request activation through the concrete independently verified evaluator."""
         with self.database.immediate():
             row, grant = self._grant(authorization_id)
             if row["state"] != "PENDING":
@@ -463,13 +464,36 @@ class ProtectedPilotLifecycle:
     def _verified_account_state(self, *, after: datetime | None = None) -> bool:
         """Account completion requires retained concrete external/ledger proof.
 
-        The current venue collector always leaves protected account-ledger
-        reconciliation pending. Neither an owned-history scan nor a caller's
-        complete-account label can replace it, so this currently returns false.
+        An independently commissioned service may supply a fresh protected full
+        account balance/order refresh. The original standalone read-only venue
+        collector still leaves account-ledger reconciliation pending; neither an
+        owned-history scan nor an arbitrary complete-account label replaces it.
         """
         if (not self._complete_account_history(after=after, full_account=True)
                 or type(self.upstream) is not LiveUpstreamSources):
             return False
+        if self.upstream.commission is not None:
+            from trade_graph.kernel.live_commission import PinnedLiveCommission
+
+            commission = self.upstream.commission
+            if type(commission) is not PinnedLiveCommission:
+                return False
+            try:
+                bundle = self.source.load()
+                commission.verify(self.scope, bundle, self.clock, database=self.database, management_only=True)
+                current = self.database.execute(
+                    "SELECT payload_json,created_at FROM activity_events WHERE portfolio_id=? "
+                    "AND kind='live_account_health' ORDER BY rowid DESC LIMIT 1", (self.scope.portfolio_id,),
+                ).fetchone()
+                record = json.loads(current[0]) if current else {}
+                return bool(current and record.get("state") == "complete"
+                            and record.get("basis") == "owned_https"
+                            and record.get("commission_sha256") == commission.profile_sha256
+                            and timedelta(0) <= self.clock.now() - parse_utc(current[1]) <= timedelta(seconds=60)
+                            and (after is None or parse_utc(current[1]) > after))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, ArithmeticError,
+                    RecursionError, sqlite3.DatabaseError, TradeGraphError):
+                return False
         from trade_graph.application.venue_conformance import PinnedVenueObservation
 
         source = self.upstream.venue

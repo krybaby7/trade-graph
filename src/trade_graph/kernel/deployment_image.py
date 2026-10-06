@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from trade_graph.kernel.funded_profile import PreparedFundedPaperProfile
+from trade_graph.kernel.live_network import PreparedLiveNetworkProfile
 from trade_graph.kernel.runtime_manifest import (
     ProtectedRuntimeManifest,
     canonical_json,
@@ -174,6 +175,7 @@ class ProtectedDeploymentSpec:
     owner_directory: Path
     state_directory: Path
     funded_profile: PreparedFundedPaperProfile | None = None
+    live_profile: PreparedLiveNetworkProfile | None = None
 
     def __post_init__(self):
         if (not isinstance(self.image, DeploymentImagePin)
@@ -191,6 +193,14 @@ class ProtectedDeploymentSpec:
             or self.funded_profile.deployment_id != self.runtime_manifest.deployment_id
         ):
             raise ValueError("funded-paper profile requires exact image/runtime/deployment pins")
+        if self.live_profile is not None and (
+            self.funded_profile is not None or type(self.live_profile) is not PreparedLiveNetworkProfile
+            or self.live_profile.image_id != self.image.image_id
+            or self.live_profile.manifest_sha256 != self.runtime_manifest.sha256
+            or self.live_profile.protected_package_sha256 != self.image.protected_package_sha256
+            or self.live_profile.deployment_id != self.runtime_manifest.deployment_id
+        ):
+            raise ValueError("live profile requires separate exact image/runtime/deployment pins")
 
     def verify_host_paths(self) -> None:
         _owner_path(self.owner_directory, directory=True)
@@ -213,20 +223,35 @@ class ProtectedDeploymentSpec:
             if hashlib.sha256(raw).hexdigest() != self.funded_profile.paper_config_sha256:
                 raise PermissionError("distributed funded-paper configuration differs from owner pin")
             load_funded_credentials(self.owner_directory, self.funded_profile)
+        if self.live_profile is not None:
+            from trade_graph.kernel.live_network import load_live_network_profile
+            from trade_graph.live_runtime import LiveRuntimeConfig, live_configuration_digest
+
+            if load_live_network_profile(self.owner_directory) != self.live_profile:
+                raise PermissionError("distributed live network profile differs from owner pin")
+            configured = LiveRuntimeConfig.model_validate_json(
+                read_owner_file(self.owner_directory, "live-config.json", 262144),
+            )
+            if live_configuration_digest(configured) != self.live_profile.live_config_sha256:
+                raise PermissionError("distributed live configuration differs from reviewed network pin")
 
     def create_arguments(self, *, name: str, action: str = "boot") -> list[str]:
         if type(name) is not str or not re.fullmatch(r"trade-graph-[a-z0-9-]{1,64}", name):
             raise ValueError("bounded deployment container name required")
-        if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded"}:
+        if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded", "boot-live", "check-live"}:
             raise ValueError("deployment command must be a fixed protected entrypoint")
         funded = action in {"boot-funded", "check-funded"}
         if funded != (self.funded_profile is not None):
             raise ValueError("funded-paper launch requires an explicit separately pinned profile")
+        live = action in {"boot-live", "check-live"}
+        if live != (self.live_profile is not None):
+            raise ValueError("live launch requires an explicit separately pinned network profile")
         for path in (self.owner_directory, self.state_directory):
             if not path.is_absolute() or ".." in path.parts or "," in str(path) or "\n" in str(path):
                 raise ValueError("unambiguous absolute mount paths required")
         environment = [argument for name in PROXY_VARIABLES for argument in ("--env", name + "=")]
-        network = self.funded_profile.network_id if funded else "none"
+        profile = self.live_profile if live else self.funded_profile
+        network = profile.network_id if profile is not None else "none"
         return ["docker", "create", "--name", name, "--platform", PLATFORM, *environment,
                 "--user", f"{UID}:{GID}", "--read-only", "--network", network, "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "512m",
@@ -261,15 +286,25 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     funded = action in {"boot-funded", "check-funded"}
     if funded != (spec.funded_profile is not None):
         raise PermissionError("funded-paper container requires exact separate profile")
-    expected_network = spec.funded_profile.network_id if funded else "none"
+    live = action in {"boot-live", "check-live"}
+    if live != (spec.live_profile is not None):
+        raise PermissionError("live container requires exact separate network profile")
+    profile = spec.live_profile if live else spec.funded_profile
+    expected_network = profile.network_id if profile is not None else "none"
     if funded:
         from trade_graph.kernel.funded_profile import verify_funded_network
 
         if network is None or proxy is None:
             raise PermissionError("funded-paper launch requires independently inspected network/proxy")
         verify_funded_network(spec.funded_profile, network, proxy, daemon_security_options=daemon_security_options)
+    if live:
+        from trade_graph.kernel.live_network import verify_live_network
+
+        if network is None or proxy is None:
+            raise PermissionError("live launch requires independently inspected private network/proxy")
+        verify_live_network(spec.live_profile, network, proxy, daemon_security_options=daemon_security_options)
     attached = container.get("NetworkSettings", {}).get("Networks")
-    network_name = network.get("Name") if funded else "none"
+    network_name = network.get("Name") if funded or live else "none"
     if (type(network_name) is not str or not network_name or type(attached) is not dict
             or set(attached) != {network_name}):
         raise PermissionError("protected container has an extra or substituted network attachment")
@@ -283,7 +318,7 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
         raise PermissionError("created protected container network configuration is not the exact approved profile")
     expected_environment = {**_environment(image["Config"].get("Env")),
                             **{name: "" for name in PROXY_VARIABLES}}
-    if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded"}
+    if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded", "boot-live", "check-live"}
             or container.get("Image") != spec.image.image_id
             or container.get("State", {}).get("Running") is not False
             or container.get("State", {}).get("Status") != "created"
@@ -367,7 +402,8 @@ def assert_boot_environment(*, mountinfo: Path = Path("/proc/self/mountinfo")) -
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded"))
+    parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded",
+                                         "boot-live", "check-live"))
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -377,6 +413,29 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(canonical_json(build_seal(json.loads(args.inputs.read_bytes()))) + "\n")
         return 0
     manifest = assert_boot_environment()
+    if args.action in {"boot-live", "check-live"}:
+        from trade_graph.kernel.live_network import load_live_network_profile
+        from trade_graph.live_runtime import (
+            live_configuration_digest,
+            live_startup_prerequisites,
+            load_live_runtime_config,
+        )
+
+        directory = Path(OWNER_MOUNT)
+        profile = load_live_network_profile(directory)
+        configured = load_live_runtime_config(directory / "live-config.json")
+        if (profile.manifest_sha256 != manifest.sha256 or profile.deployment_id != manifest.deployment_id
+                or profile.protected_package_sha256 != manifest.protected_package_sha256
+                or profile.live_config_sha256 != live_configuration_digest(configured)):
+            raise PermissionError("protected live launch configuration/profile mismatch")
+        if args.action == "check-live":
+            print(canonical_json(live_startup_prerequisites(Path(STATE_MOUNT) / "trade_graph.sqlite",
+                                                           protected_owner=directory)))
+            return 0
+        from trade_graph.cli import main as cli_main
+
+        return cli_main(["run", "--mode", "live", "--database", f"{STATE_MOUNT}/trade_graph.sqlite",
+                         "--protected-owner", OWNER_MOUNT])
     if args.action in {"boot-funded", "check-funded"}:
         from trade_graph.kernel.funded_profile import load_funded_credentials, load_funded_profile
         from trade_graph.paper_runtime import PaperRuntimeConfig

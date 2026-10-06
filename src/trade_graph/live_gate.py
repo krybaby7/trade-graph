@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.contracts.models import Mandate, OwnerPolicy
 from trade_graph.domain.clock import Clock, parse_utc, utc_iso
+from trade_graph.domain.errors import TradeGraphError
 from trade_graph.domain.money import Money, canonical_decimal, parse_decimal
 from trade_graph.live_evidence import LiveUpstreamSources, verify_live_upstream
 
@@ -322,6 +323,12 @@ def _evaluate_live_readiness(
         return {"enabled": False, "ready": False, "diagnostic": False, "status": "blocked",
                 "reasons": ["protected clock requires a timezone"], "checks": {"protected_clock": False}}
     grant = bundle.owner_authorization.payload
+    commissioned = False
+    if type(upstream) is LiveUpstreamSources and upstream.commission is not None:
+        from trade_graph.kernel.live_commission import PinnedLiveCommission
+
+        if type(upstream.commission) is PinnedLiveCommission:
+            commissioned = upstream.commission.admitted(database, scope, grant.authorization_id)
     check("owner_scope", grant.scope == scope)
     check("owner_freshness", grant.verified_at <= now < grant.expires_at)
     kinds = [entry.payload.kind for entry in bundle.evidence]
@@ -332,7 +339,8 @@ def _evaluate_live_readiness(
     for kind, item in evidence.items():
         check(f"{kind}_scope", item.scope == scope)
         check(f"{kind}_freshness", item.verified_at <= now < item.expires_at
-              and now - item.verified_at <= _MAX_AGE[kind])
+              and (now - item.verified_at <= _MAX_AGE[kind]
+                   or commissioned and kind in {"funding", "read_only_reconciliation"}))
         check(f"{kind}_actual_verification", item.verification_basis == "actual_external_or_deployment_verification")
         check(f"{kind}_assertions", set(item.assertions) == set(_ASSERTIONS[kind])
               and len(set(item.assertions)) == len(item.assertions))
@@ -436,6 +444,17 @@ def _evaluate_live_readiness(
                   and history.get("observation_scope") in {"owned_intent_fill_history", "complete_account"}
                   and history.get("observed_at") == health["created_at"]
                   and timedelta(0) <= now - parse_utc(health["created_at"]) <= timedelta(seconds=60)))
+            if commissioned:
+                account = database.execute(
+                    "SELECT payload_json,created_at FROM activity_events WHERE portfolio_id=? "
+                    "AND kind='live_account_health' ORDER BY rowid DESC LIMIT 1", (scope.portfolio_id,),
+                ).fetchone()
+                account_health = json.loads(account["payload_json"]) if account else {}
+                check("current_verified_account_state", bool(account
+                      and account_health.get("state") == "complete"
+                      and account_health.get("basis") == "owned_https"
+                      and account_health.get("commission_sha256") == upstream.commission.profile_sha256
+                      and timedelta(0) <= now - parse_utc(account["created_at"]) <= timedelta(seconds=60)))
             pending = database.execute(
                 "SELECT COUNT(*) FROM dashboard_commands WHERE scope = ? AND status = 'PROCESSING'",
                 (f"owner:{scope.deployment_id}",),
@@ -464,16 +483,25 @@ def _evaluate_live_readiness(
     # The current forward registry retains unverified imports. Issuer signatures
     # and digest labels cannot substitute for re-reading authenticated upstream
     # receipts/provenance and invalidating evidence when those sources change.
-    upstream_verification = verify_live_upstream(scope, bundle, clock, upstream)
+    upstream_verification = verify_live_upstream(scope, bundle, clock, upstream, database=database)
     check("authoritative_upstream_economic_verification",
           upstream_verification["authoritative_external_verification"])
-    return {"enabled": False, "ready": False, "diagnostic": False, "recorded_checks_passed": recorded_checks_passed,
+    if type(upstream) is LiveUpstreamSources and upstream.commission is not None:
+        try:
+            check("commission_readiness_bundle_pin",
+                  upstream.commission.load().readiness_bundle_sha256 == source.bundle_sha256)
+        except (ValueError, TypeError, AttributeError, OSError, TradeGraphError):
+            check("commission_readiness_bundle_pin", False)
+    ready = not reasons
+    return {"enabled": False, "ready": ready, "diagnostic": diagnostic and ready,
+            "recorded_checks_passed": recorded_checks_passed,
             "diagnostic_authorization_recorded": diagnostic and recorded_checks_passed,
-            "status": "blocked", "reasons": reasons, "checks": checks,
+            "status": "ready" if ready else "blocked", "reasons": reasons, "checks": checks,
             "live_allocation": grant.allocation.model_dump(mode="json"),
             "maximum_loss": grant.maximum_loss.model_dump(mode="json"),
             "operating_allowance": grant.operating_allowance.model_dump(mode="json"),
-            "economic_evidence": "insufficient_evidence",
+            "economic_evidence": economics.economic_verdict if ready and economics else "insufficient_evidence",
             "declared_economic_verdict": economics.economic_verdict if economics else None,
             "upstream_verification": upstream_verification,
-            "execution_authority": "disabled; advisory evidence cannot enable the broker or owner policy"}
+            "execution_authority": ("separate protected lifecycle activation required; readiness grants no effects"
+                                    if ready else "disabled; advisory evidence cannot enable the broker or owner policy")}

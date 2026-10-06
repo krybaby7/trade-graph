@@ -54,7 +54,8 @@ class HttpxTextTransport:
     a continuously trickled response; a blocked read still has its phase timeout.
     """
 
-    def __init__(self, timeout: float = 10, *, maximum_response_bytes: int = 1_048_576) -> None:
+    def __init__(self, timeout: float = 10, *, maximum_response_bytes: int = 1_048_576,
+                 proxy: str | None = None, trust_env: bool = True) -> None:
         if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                 or not math.isfinite(timeout) or timeout <= 0):
             raise ValueError("finite positive public HTTP timeout required")
@@ -62,12 +63,14 @@ class HttpxTextTransport:
             raise ValueError("public response byte limit must be between 1 and 16777216")
         self.timeout = timeout
         self.maximum_response_bytes = maximum_response_bytes
+        self.proxy, self.trust_env = proxy, trust_env
 
     def get_text(self, url: str) -> str:
         import httpx
 
         started = monotonic()
-        with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
+        with httpx.Client(timeout=self.timeout, follow_redirects=False, proxy=self.proxy,
+                          trust_env=self.trust_env) as client:
             with client.stream("GET", url, headers={"Accept-Encoding": "identity"}) as response:
                 response.raise_for_status()
                 if monotonic() - started >= self.timeout:
