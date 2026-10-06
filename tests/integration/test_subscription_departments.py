@@ -400,3 +400,23 @@ def test_router_keeps_verified_fallback_available_when_primary_quota_pauses(tmp_
     status = setup.assembly.router.readiness(setup.pid)
     assert status["ready"] and status["available_subscription_routes"] == ["codex_subscription"]
     assert status["application_automatic_fallback"]
+
+
+def test_protected_recovery_uses_durable_successful_attempt_without_model_replay(tmp_path):
+    from trade_graph.adapters.models.subscription import SubscriptionJournal
+    from trade_graph.contracts.models import ModelRequest, ModelResult
+
+    setup, _protected, cli = flow(tmp_path)
+    task_id = setup.add("research")
+    request = ModelRequest(provider="anthropic", model="claude-sonnet-5-5", role="research",
+        task_id=task_id, root_task_id=task_id, run_id="snapshot", system_version_id="version",
+        max_output_tokens=4096, timeout_seconds=120, context={}, synthetic=False, instructions="Synthetic recovery.",
+        output_schema={"type": "object"}, schema_name="recovery", max_tool_calls=0)
+    journal = SubscriptionJournal(setup.db, setup.clock)
+    assert journal.begin("known-attempt", request, "claude_subscription", {}) is None
+    attempt = journal.begin_attempt("known-attempt", 1, request, "claude_subscription")
+    expected = ModelResult(ok=True, payload={"summary": "Already observed provider response."})
+    journal.save_attempt(attempt, expected, "COMPLETED")
+    result = setup.assembly.gateway._journal_result(journal.row("known-attempt"))
+    assert result == expected and journal.row("known-attempt")["state"] == "COMPLETED"
+    assert not cli.requests

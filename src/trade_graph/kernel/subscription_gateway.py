@@ -49,11 +49,9 @@ class ProtectedSubscriptionGateway(ProtectedDepartmentGateway):
                     "allocated_spend": task["allocated_spend"], "attempts_used": task["attempts_used"]})}
 
     def _journal_result(self, row) -> ModelResult:
-        if row["result_json"]:
-            return ModelResult.model_validate_json(row["result_json"])
-        result = ModelResult(ok=False, failure="timeout_uncertain",
-            message="prior subscription dispatch has no durable response; no replay permitted")
-        SubscriptionJournal(self.database, self.clock).save(row["invocation_id"], result, "UNCERTAIN")
+        result = SubscriptionJournal(self.database, self.clock).recover_result(row["invocation_id"])
+        if result is None:
+            raise StaleState("persisted subscription receipt is missing")
         return result
 
     def invoke(self, request: ModelRequest, **kwargs) -> ModelResult:
