@@ -218,9 +218,39 @@ def _expense_records(runtime) -> list[dict]:
     ]
 
 
+
+def _subscription_cost_state(runtime, at: str) -> dict:
+    """Expose subscription uncertainty without inventing a charge or fee allocation.
+
+    The journal has no authoritative fee/currency/allocation settlement contract.
+    Its known absence of an undispatched inference charge cannot establish that a
+    shared subscription fee is free or allocated to this installation.
+    """
+    records = _rows(runtime, """SELECT invocation_id,task_id,root_task_id,role,run_id,system_version_id,
+        provider,requested_model,actual_model,state,cost_status,actual_cost_native,synthetic,
+        quota_json,usage_json,created_at,updated_at FROM subscription_invocations
+        WHERE created_at<=? ORDER BY created_at DESC,invocation_id""", (at,))
+    unknown = 0
+    for record in records:
+        record["synthetic"] = bool(record["synthetic"])
+        record["billing_kind"] = "subscription"
+        record["quota"] = _json(record.pop("quota_json"))
+        record["usage"] = _json(record.pop("usage_json"))
+        record["inference_dispatched"] = record["cost_status"] != "not_incurred" and record["state"] != "BLOCKED"
+        unknown += not record["synthetic"] and record["inference_dispatched"] and record["cost_status"] == "unknown"
+    selected = getattr(runtime, "subscription_provider", None)
+    shared_pending = (selected in {"codex_subscription", "claude_subscription"}
+                      or any(not record["synthetic"] for record in records))
+    return {"records": records, "unknown_inference_costs": unknown,
+            "shared_fee_allocation_status": "unknown" if shared_pending else "not_recorded",
+            "recorded_expense_totals_exclude_unknown_costs": True,
+            "basis": "subscription outcomes are separate from API accruals; shared fees require owner expense evidence",
+            "provisional": bool(unknown or shared_pending)}
+
 def _cost_state(runtime, currency: str = "EUR") -> dict:
     """Accruals globally and allocations per portfolio, with historical conversion."""
     at = utc_iso(runtime.clock.now())
+    subscription = _subscription_cost_state(runtime, at)
     receipts = _rows(
         runtime,
         """SELECT r.*, b.deployment_id, b.role, b.task_id, b.root_task_id,
@@ -405,6 +435,7 @@ def _cost_state(runtime, currency: str = "EUR") -> dict:
         "allocated_phases": {key: _sum(values) for key, values in allocated_phases.items()},
         "holds": {key: _sum(values) for key, values in holds.items()},
         "receipts": output_receipts,
+        "subscription": subscription,
         "reservations": reservations,
         "ledger_expenses": ledger_expenses,
         "allocations": allocations,
@@ -415,6 +446,7 @@ def _cost_state(runtime, currency: str = "EUR") -> dict:
             for key, groups in attribution.items()
         },
         "provisional": provisional
+        or subscription["provisional"]
         or bool(allocation_issues)
         or any(
             Decimal(row["unexplained"]) != 0
@@ -446,7 +478,8 @@ def costs(runtime, limit: int = 50, offset: int = 0) -> dict:
         return redact(
             {
                 "actual_spend": _amount(state["actual"]),
-                "actual_spend_basis": "actual resource accruals; settlements count once",
+                "actual_spend_basis": ("recorded actual resource accruals; settlements count once; "
+                                       "unknown subscription costs and shared fees excluded"),
                 "currency": "EUR",
                 "as_of": at,
                 "synthetic_spend": _amount(state["synthetic"]),
@@ -474,6 +507,7 @@ def costs(runtime, limit: int = 50, offset: int = 0) -> dict:
                     runtime, "SELECT * FROM role_allocations WHERE deployment_id = ?", (deployment_id,)
                 ),
                 "receipts": receipts,
+                "subscription": state["subscription"],
                 "pagination": pagination,
                 "reservations": reservations,
                 "reservation_pagination": reservation_pagination,
@@ -837,7 +871,9 @@ def overview(runtime) -> dict:
                 "drawdown": _drawdown(runtime, reporting, at, books, flows),
                 "valuation": valuation,
                 "cost_views": {
-                    "all_in": _amount(cost["allocated"]),
+                    "all_in": None if cost["subscription"]["provisional"] else _amount(cost["allocated"]),
+                    "recorded_allocated": _amount(cost["allocated"]),
+                    "subscription": cost["subscription"],
                     "setup_global": _amount(cost["phases"]["setup"]),
                     "recurring_global": _amount(cost["phases"]["recurring"]),
                     "unclassified_global": _amount(cost["phases"]["unclassified"]),
