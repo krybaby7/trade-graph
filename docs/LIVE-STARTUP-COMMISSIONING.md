@@ -88,9 +88,34 @@ holding the actual financial database inode lock. Recovery retains uncertainty
 and stronger owner/System/Leader position-management pauses; it never replays
 requests. A concurrent dashboard command can be terminally fenced as uncertain
 and require review. The read-only dashboard broker cannot perform native pause
-management or native resume verification: those actions require the protected
-exclusive worker and actual fresh reconciliation. This is an explicit control
-limitation, not a broker or authority bypass.
+management or native resume verification. The protected exclusive worker performs
+those actions after actual fresh reconciliation.
+
+## Bounded owner Resume control
+
+In live mode, the authenticated, CSRF-protected POST /api/v1/owner/resume
+queues a local request and returns HTTP 202. It accepts the existing owner
+request_id/expected_revision pair. Queuing makes no broker or model call,
+cannot create or reactivate an owner grant, and requires the one selected live
+portfolio and its active exclusive service. One pending request is allowed;
+repeat identity replays the current persisted result, while a different request
+is refused until the first request has a terminal result.
+
+The request expires after 120 seconds and binds the service run, owner revision,
+current grant and exact owner pause. The worker first reconciles durable orders,
+the entire native account, fees and order ownership. It preserves system pauses,
+unresolved orders/billing, account discrepancies, incomplete protection and
+expired, revoked or RECOVERY_REQUIRED grants. A newer Stop or owner change
+cancels an older queued Resume.
+
+Only a current ACTIVE grant with unchanged signed authorization and full
+protected readiness may lift an eligible owner pause. The provisional RUNNING
+write, readiness revalidation and terminal successful receipt share one SQLite
+writer transaction. Failure rolls back the pause and records a bounded reason.
+An interrupted predecessor request cannot be applied by its successor; it
+terminates as cancelled and requires another explicit owner request. The service
+status API exposes live_resume with its queued/succeeded/failed/cancelled state.
+Paper mode retains its existing reconciliation-based Resume behavior.
 
 Pause/stop controls must keep protection running until the financial state is
 verified flat, or retain an explicit manage-only/flatten management requirement.
@@ -108,3 +133,10 @@ loopback publication and adversarial mount/capability/port substitutions.
 These are implementation/conformance tests with synthetic brokers and admission
 stand-ins. They establish neither actual Kraken conformance nor intended-host
 commissioning, economic viability, continuous operation or live authorization.
+
+tests/integration/test_live_owner_resume.py additionally verifies local-only
+queueing, owner/CSRF authorization, duplicate identities, concurrent request
+refusal, successful scripted resumption, unresolved orders/billing, account
+mismatch, expired/revoked/recovery grants, newer Stop fencing, retained system
+FLATTEN, bounded expiry, atomic interruption rollback, current-readiness failure
+and refusal of a synthetic transport. These tests do not commission live use.

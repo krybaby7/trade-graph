@@ -260,7 +260,13 @@ class ServiceController:
             AND objective = 'owner-optimisation-cycle' ORDER BY rowid DESC LIMIT 1""",
             (self.runtime.portfolio_id,),
         ).fetchone()
+        resume = self.database.execute(
+            """SELECT request_id, result_json FROM service_control_requests
+            WHERE portfolio_id=? AND action='resume_live' ORDER BY rowid DESC LIMIT 1""",
+            (self.runtime.portfolio_id,),
+        ).fetchone()
         return {
+            "live_resume": self._resume_projection(json.loads(resume["result_json"])) if resume else None,
             "service": observed or {"status": "IDLE", "mode": getattr(self.runtime.execution, "mode", "paper")},
             "database_owned": owned,
             "pause_profile": self.runtime.execution.profile(self.runtime.portfolio_id),
@@ -327,7 +333,7 @@ class ServiceController:
         if action == "start_optimisation":
             result["optimisation"] = self._cycle(result["task_id"])
         result["replayed"] = True
-        return result
+        return self._resume_projection(result) if action == "resume_live" else result
 
     def _record(self, request_id: str, action: str, payload: dict, result: dict):
         self.database.execute(
@@ -449,6 +455,84 @@ class ServiceController:
             self._record(request_id, "start_optimisation", {}, result)
             return result
 
+    @staticmethod
+    def _resume_projection(result: dict) -> dict:
+        # Internal grant and pause bindings stay in the private journal.
+        fields = ("request_id", "status", "revision", "deadline_at", "updated_at", "reason", "replayed",
+                  "profile", "reconciled", "management_continues")
+        return {key: result[key] for key in fields if key in result}
+
+    def resume_live(self, request_id: str, expected_revision: int | None = None) -> dict:
+        """Queue one local owner request; only the exclusive worker may apply it.
+
+        This does not create, extend or reactivate a pilot grant and performs no
+        broker/model call. The post-reconciliation worker decides current
+        eligibility within the same transaction as the final pause and receipt.
+        """
+        from trade_graph.api.controls import Command, _Commands, _revision, _scope
+        from trade_graph.live_gate import OwnerPilotAuthorization
+
+        payload = {"expected_revision": expected_revision}
+        with self._control_lock(), self.database.immediate():
+            replay = self._replay(request_id, "resume_live", payload)
+            if replay:
+                return replay
+            if self.runtime.execution.mode != "live":
+                raise AuthorityDenied("protected live resume requires live mode")
+            state = self.status()["service"]
+            if (state["status"] not in {"RUNNING", "MANAGEMENT_ONLY"} or state.get("mode") != "live"
+                    or state.get("portfolio_id") != self.runtime.portfolio_id or not state.get("run_id")
+                    or state.get("stop_requested")):
+                raise AuthorityDenied("protected live resume requires an active scoped service")
+            portfolios = self.database.execute("SELECT portfolio_id,mode FROM portfolios").fetchall()
+            if (len(portfolios) != 1 or portfolios[0]["portfolio_id"] != self.runtime.portfolio_id
+                    or portfolios[0]["mode"] != "live"):
+                raise AuthorityDenied("protected live resume requires one dedicated live portfolio")
+            scope = getattr(getattr(self.runtime, "config", None), "scope", None)
+            if (scope is None or scope.portfolio_id != self.runtime.portfolio_id
+                    or scope.account_id != self.runtime.execution.account_id
+                    or scope.venue != self.runtime.execution.venue):
+                raise AuthorityDenied("protected live resume requires exact current owner scope")
+            pending = self.database.execute(
+                """SELECT 1 FROM service_control_requests WHERE portfolio_id=? AND action='resume_live'
+                AND json_extract(result_json, '$.status')='QUEUED' LIMIT 1""",
+                (self.runtime.portfolio_id,),
+            ).fetchone()
+            if pending:
+                raise StaleState("a live resume request is already queued; inspect its saved status")
+            pause = self.runtime.execution.pause(self.runtime.portfolio_id)
+            if pause is None or pause["profile"] == "RUNNING" or pause["originator"] != "owner":
+                raise AuthorityDenied("only a persisted owner pause is eligible for live resume")
+            grant = self.database.execute(
+                """SELECT authorization_id, authorization_json FROM live_pilot_grants
+                WHERE portfolio_id=? ORDER BY rowid DESC LIMIT 1""",
+                (self.runtime.portfolio_id,),
+            ).fetchone()
+            if grant is None or OwnerPilotAuthorization.model_validate_json(grant["authorization_json"]).scope != scope:
+                raise AuthorityDenied("current scoped owner pilot grant is required; resume cannot create one")
+            owner_scope = _scope(self.runtime, "owner")
+            command = Command(
+                request_id=hashlib.sha256(("live-resume:" + request_id).encode()).hexdigest(),
+                expected_revision=(
+                    _revision(self.runtime, owner_scope) if expected_revision is None else expected_revision
+                ),
+            )
+            now = self.clock.now()
+
+            def effect():
+                return {
+                    "request_id": request_id, "status": "QUEUED",
+                    "deadline_at": utc_iso(now + timedelta(seconds=120)), "updated_at": utc_iso(now),
+                    "reason": "waiting for exclusive live service reconciliation",
+                    "management_continues": True, "run_id": state["run_id"],
+                    "authorization_id": grant["authorization_id"],
+                    "pause_binding": {key: pause[key] for key in ("profile", "originator", "requested_at")},
+                }
+
+            result = _Commands(self.runtime).mutate(owner_scope, command, "resume-live", effect)
+            self._record(request_id, "resume_live", payload, result)
+            return self._resume_projection(result)
+
     def stop(self, request_id: str, position_policy: str = "manage-only") -> dict:
         if position_policy not in {"manage-only", "flatten"}:
             raise ValidationFailure("Choose manage-only or flatten for existing orders and positions.")
@@ -486,6 +570,13 @@ class ServiceController:
                         self.runtime.execution.set_pause(pid, requested, "owner", "Owner service stop request")
                     if pid == self.runtime.portfolio_id:
                         profile = requested
+                self.database.execute(
+                    """UPDATE service_control_requests SET result_json=json_set(result_json,
+                    '$.status','CANCELLED','$.reason','newer owner stop retained','$.updated_at',?)
+                    WHERE action='resume_live' AND json_extract(result_json,'$.status')='QUEUED'
+                    AND portfolio_id IN (SELECT portfolio_id FROM portfolios WHERE mode=?)""",
+                    (utc_iso(self.clock.now()), self.runtime.execution.mode),
+                )
                 if not nonflat:
                     self.database.execute("""UPDATE graph_service_runs SET stop_requested = 1,
                         status = 'STOPPING' WHERE status IN ('STARTING', 'RUNNING', 'MANAGEMENT_ONLY')""")

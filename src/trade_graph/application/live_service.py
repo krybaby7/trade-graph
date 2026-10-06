@@ -8,10 +8,13 @@ the graph cannot bypass the protected pilot or choose an external account.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from decimal import Decimal, localcontext
 
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
+from trade_graph.domain.clock import parse_utc, utc_iso
 from trade_graph.domain.errors import AuthorityDenied, ValidationFailure
 from trade_graph.domain.money import parse_decimal
 from trade_graph.kernel.live_commission import PinnedLiveCommission
@@ -119,6 +122,115 @@ class LiveService(PaperService):
                     "commission_sha256": runtime.commission.profile_sha256,
                 })
 
+    def _process_owner_resumes(self, failures):
+        """Finish queued local effects only after this worker's native refresh.
+
+        No PROCESSING replay is needed: eligibility, owner revision, RUNNING and
+        the terminal journal result commit atomically. A crash before commit
+        leaves the old run binding, which a successor cancels without replay.
+        """
+        if not self._ready:
+            return
+        from trade_graph.api.controls import _resume_barriers, _revision, _scope
+        from trade_graph.application.service_controller import process_identity
+
+        pending = self.database.execute(
+            """SELECT request_id FROM service_control_requests WHERE portfolio_id=? AND action='resume_live'
+            AND json_extract(result_json, '$.status')='QUEUED' ORDER BY rowid LIMIT 100""",
+            (self.runtime.portfolio_id,),
+        ).fetchall()
+        for request in pending:
+            try:
+                with self.database.immediate():
+                    row = self.database.execute("SELECT result_json FROM service_control_requests WHERE request_id=?",
+                                                (request["request_id"],)).fetchone()
+                    result = json.loads(row["result_json"])
+                    if result["status"] != "QUEUED":
+                        continue
+                    terminal, reason = None, None
+                    current = self.database.execute("SELECT * FROM graph_service_runs WHERE run_id=?",
+                                                    (self.service_run_id,)).fetchone()
+                    if (result["run_id"] != self.service_run_id or current is None
+                            or current["pid"] != os.getpid()
+                            or current["pid_start_ticks"] != process_identity(os.getpid())
+                            or current["status"] not in {"RUNNING", "MANAGEMENT_ONLY"}
+                            or current["stop_requested"] or self._stop_requested.is_set()):
+                        terminal, reason = (
+                            "CANCELLED", "service stopped or interrupted; a new owner request is required"
+                        )
+                    elif _revision(self.runtime, _scope(self.runtime, "owner")) != result["revision"]:
+                        terminal, reason = "CANCELLED", "newer owner state retained"
+                    elif self.clock.now() >= parse_utc(result["deadline_at"]):
+                        terminal, reason = "FAILED", "live resume request expired"
+                    else:
+                        pause = self.execution.pause(self.runtime.portfolio_id)
+                        binding = None if pause is None else {
+                            key: pause[key] for key in ("profile", "originator", "requested_at")
+                        }
+                        if (binding != result["pause_binding"] or pause["originator"] != "owner"):
+                            terminal, reason = "FAILED", "owner pause changed; system and emergency pauses are retained"
+                        elif failures or not self._account_ready:
+                            terminal, reason = "FAILED", "native account reconciliation or protection is incomplete"
+                        elif getattr(getattr(self.execution.broker, "transport", None),
+                                     "observation_basis", "synthetic") != "owned_https":
+                            terminal, reason = "FAILED", "actual full-account native observation is required"
+                        else:
+                            barriers = _resume_barriers(self.runtime)
+                            if barriers:
+                                terminal, reason = "FAILED", "resume blocked: " + "; ".join(barriers)
+                    if terminal:
+                        self._finish_owner_resume(request["request_id"], result, terminal, reason)
+                        continue
+                    lifecycle = self.runtime.lifecycle
+                    if result["authorization_id"] != self.runtime.authorization_id:
+                        raise AuthorityDenied("current owner grant changed; a new request is required")
+                    grant_row, grant = lifecycle._grant(self.runtime.authorization_id)
+                    if grant_row["state"] != "ACTIVE":
+                        raise AuthorityDenied("current owner grant is not ACTIVE; resume cannot reactivate it")
+                    lifecycle._current_bundle(grant_row, grant)
+                    # Readiness consumes persisted RUNNING. It is provisional
+                    # inside this writer transaction only; failed admission
+                    # rolls back the pause before retaining a FAILED receipt.
+                    self.execution.set_pause(self.runtime.portfolio_id, "RUNNING", "owner",
+                                             "owner resume after native account reconciliation")
+                    if not lifecycle._ready(grant_row, grant):
+                        raise AuthorityDenied("current protected live readiness is incomplete")
+                    ai_ready = bool(self.handlers) and self._runtime_ready() and not self._ai_paused()
+                    self.database.execute(
+                        "UPDATE graph_service_runs SET status=? WHERE run_id=?",
+                        ("RUNNING" if ai_ready else "MANAGEMENT_ONLY", self.service_run_id),
+                    )
+                    self._finish_owner_resume(request["request_id"], result, "SUCCEEDED",
+                                              "current protected live readiness and native account verified",
+                                              profile="RUNNING", reconciled=True)
+                    self.runtime.ledger._activity(self.runtime.portfolio_id, "live_owner_resumed", {
+                        "request_id": request["request_id"], "revision": result["revision"],
+                        "run_id": self.service_run_id,
+                    })
+            except Exception as exc:
+                # The local effect transaction rolled back. Error prose from
+                # broker/filesystem failures never enters dashboard projection.
+                reason = (
+                    str(exc)[:512] if isinstance(exc, AuthorityDenied)
+                    else "resume admission failed: " + type(exc).__name__
+                )
+                with self.database.immediate():
+                    row = self.database.execute("SELECT result_json FROM service_control_requests WHERE request_id=?",
+                                                (request["request_id"],)).fetchone()
+                    result = json.loads(row["result_json"])
+                    if result["status"] == "QUEUED":
+                        self._finish_owner_resume(request["request_id"], result, "FAILED", reason)
+
+    def _finish_owner_resume(self, request_id, result, status, reason, **extra):
+        if not self.database.connection.in_transaction:
+            raise AuthorityDenied("live resume receipt requires atomic owner effect transaction")
+        document = {**result, "status": status, "reason": reason, "updated_at": utc_iso(self.clock.now()), **extra}
+        self.database.execute(
+            "UPDATE service_control_requests SET result_json=? WHERE request_id=? "
+            "AND json_extract(result_json, '$.status')='QUEUED'",
+            (json.dumps(document, sort_keys=True), request_id),
+        )
+
     def _management(self):
         management, failures = {}, []
         with self._execution_lock:
@@ -143,6 +255,7 @@ class LiveService(PaperService):
                     management[pid] = asyncio.run(self.execution.advance_pause(pid))
                 except Exception as exc:
                     failures.append("pause:" + type(exc).__name__)
+            self._process_owner_resumes(failures)
             if not failures:
                 try:
                     asyncio.run(self.execution.dispatch())
