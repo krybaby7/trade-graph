@@ -257,8 +257,11 @@ class SubscriptionTraderHandler(SubscriptionDepartmentMixin, TraderHandler):
             "report_id": report_id,
             "artifact": task["snapshot"]["artifact"],
             "context_bytes": len(json.dumps(context, sort_keys=True, ensure_ascii=False).encode()),
-            "input_tokens": (usage.uncached_input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
-                             if usage else None),
+            "input_tokens": (usage.provider_reported_input_tokens
+                if usage and usage.provider_reported_input_tokens is not None else
+                usage.uncached_input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+                if usage and not {"uncached_input_tokens", "cache_read_tokens", "cache_write_tokens"}
+                    .intersection(usage.unreported_fields) else None),
             "output_tokens": usage.billed_output_tokens if usage else None,
         }
         return self._record(task, output)
