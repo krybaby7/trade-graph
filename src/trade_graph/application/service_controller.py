@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.domain.clock import utc_iso
@@ -357,6 +358,8 @@ class ServiceController:
             if current["status"] in ACTIVE_SERVICE | {"ATTACHED_EXISTING"}:
                 if current["mode"] != mode:
                     raise StaleState("another service mode already owns this database")
+                if current.get("portfolio_id") not in {None, self.runtime.portfolio_id}:
+                    raise StaleState("another portfolio graph already owns this service; select its portfolio scope")
                 result = {"run_id": current["run_id"], "attached": True}
             else:
                 run_id = str(uuid.uuid4())
@@ -456,35 +459,47 @@ class ServiceController:
                 return replay
             from trade_graph.api.controls import _nonflat
 
-            nonflat = _nonflat(self.runtime) or self.runtime.execution._has_outstanding(self.runtime.portfolio_id)
-            profile = ("MANAGE_ONLY" if position_policy == "manage-only" else "FLATTEN") if nonflat else "STOPPED"
+            managed = {}
+            for row in self.database.execute("SELECT portfolio_id FROM portfolios WHERE mode=?",
+                                             (self.runtime.execution.mode,)):
+                pid = row["portfolio_id"]
+                projected = SimpleNamespace(ledger=self.runtime.ledger, portfolio_id=pid)
+                managed[pid] = _nonflat(projected) or self.runtime.execution._has_outstanding(pid)
+            if self.runtime.portfolio_id not in managed:
+                raise AuthorityDenied("service stop requires a persisted portfolio in the current mode")
+            nonflat = any(managed.values())
+            profile = "STOPPED"
             from trade_graph.api.controls import Command, _Commands, _revision, _scope
 
             def effect():
                 nonlocal profile
-                current = self.runtime.execution.pause(self.runtime.portfolio_id)
-                if (
-                    nonflat
-                    and current
-                    and (
+                for pid, holdings in managed.items():
+                    requested = ("MANAGE_ONLY" if position_policy == "manage-only" else "FLATTEN") \
+                        if holdings else "STOPPED"
+                    current = self.runtime.execution.pause(pid)
+                    if holdings and current and (
                         (current["originator"] == "system" and current["profile"] != "RUNNING")
                         or current["profile"] in {"FLATTEN", "CANCEL_ALL", "STOPPED"}
-                    )
-                ):
-                    profile = current["profile"]
-                else:
-                    self.runtime.execution.set_pause(
-                        self.runtime.portfolio_id, profile, "owner", "Owner service stop request"
-                    )
+                    ):
+                        requested = current["profile"]
+                    else:
+                        self.runtime.execution.set_pause(pid, requested, "owner", "Owner service stop request")
+                    if pid == self.runtime.portfolio_id:
+                        profile = requested
                 if not nonflat:
                     self.database.execute("""UPDATE graph_service_runs SET stop_requested = 1,
                         status = 'STOPPING' WHERE status IN ('STARTING', 'RUNNING', 'MANAGEMENT_ONLY')""")
+                else:
+                    self.database.execute("""UPDATE graph_service_runs SET status='MANAGEMENT_ONLY'
+                        WHERE status='RUNNING'""")
                 return {
                     "profile": profile,
                     "service_stop_requested": not bool(nonflat),
-                    "management": "Service remains active for reconciliation and position protection."
-                    if nonflat
-                    else "Flat account: service drains current work and stops. No monitoring continues offline.",
+                    "management": (
+                        "Service remains active for reconciliation and protection across all managed portfolios."
+                        if nonflat else
+                        "All managed accounts are flat: service drains work and stops. No monitoring continues offline."
+                    ),
                 }
 
             scope = _scope(self.runtime, "owner")

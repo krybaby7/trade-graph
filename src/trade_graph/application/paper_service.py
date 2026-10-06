@@ -316,13 +316,18 @@ class PaperService:
         with self.database.immediate():
             self.database.execute("DELETE FROM schedules WHERE name IN "
                                   "('optimisation-review', 'artifact-optimisation-review')")
-            self.database.execute("""UPDATE tasks SET status = 'CANCELLED',
-                output_json = '{"reason":"Optimisation is owner-requested only"}',
-                lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
-                WHERE role = 'optimisation' AND status IN ('QUEUED', 'LEASED', 'RUNNING')
+            self.database.execute("""WITH RECURSIVE retired(task_id) AS (
+                SELECT task_id FROM tasks WHERE role='optimisation'
                 AND NOT EXISTS (SELECT 1 FROM service_control_requests c
-                    WHERE c.action = 'start_optimisation'
-                    AND json_extract(c.result_json, '$.task_id') = tasks.task_id)""")
+                    WHERE c.action='start_optimisation'
+                    AND json_extract(c.result_json, '$.task_id')=tasks.root_task_id)
+                UNION SELECT child.task_id FROM tasks child JOIN retired ON child.parent_id=retired.task_id
+            ) UPDATE tasks SET status='CANCELLED',
+                output_json=json_set(CASE WHEN json_valid(output_json) THEN output_json ELSE '{}' END,
+                    '$.retired_optimisation_reason', 'Optimisation is owner-requested only'),
+                lease_owner=NULL, lease_token=NULL, lease_expires_at=NULL
+                WHERE task_id IN (SELECT task_id FROM retired)
+                AND status IN ('QUEUED','LEASED','RUNNING','WAITING_EXTERNAL','BLOCKED_BUDGET')""")
 
     def _ai_paused(self) -> bool:
         if self.subscription_provider is not None:

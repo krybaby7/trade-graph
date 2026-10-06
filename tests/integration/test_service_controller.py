@@ -520,3 +520,60 @@ def test_quota_pause_applies_only_to_the_fixed_selected_subscription_provider(tm
     assert control.status()["prerequisites"]["ai_available"] is False
     assert service._ai_paused() is True
     assert runtime.database.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 0
+
+
+def test_retired_automatic_optimisation_cannot_run_queued_descendants(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    scheduler = Scheduler(runtime.database, runtime.clock)
+    old = scheduler.add_task(role="optimisation", objective="automatic-review", portfolio_id=runtime.portfolio_id)
+    child = scheduler.add_task(
+        role="leader", objective="automatic-followup", parent_id=old, portfolio_id=runtime.portfolio_id)
+    grandchild = scheduler.add_task(
+        role="engineer", objective="automatic-improvement", parent_id=child, portfolio_id=runtime.portfolio_id)
+    runtime.database.execute("UPDATE tasks SET output_json=? WHERE task_id=?",
+                             ('{"retained":"unresolved external evidence"}', child))
+    seen = []
+    service = PaperService(runtime.database, runtime.execution,
+                           handlers={role: lambda task: seen.append(task["task_id"]) or {}
+                                     for role in ("optimisation", "leader", "engineer")},
+                           schedule_intervals={})
+
+    async def scenario():
+        assert (await service.tick(wait_roles=True)).completed == 0
+        assert seen == []
+        rows = runtime.database.execute("SELECT task_id,status,attempts_used FROM tasks").fetchall()
+        assert {row["task_id"] for row in rows} == {old, child, grandchild}
+        assert {row["status"] for row in rows} == {"CANCELLED"}
+        assert {row["attempts_used"] for row in rows} == {0}
+        saved = runtime.database.execute("SELECT output_json FROM tasks WHERE task_id=?", (child,)).fetchone()[0]
+        assert json.loads(saved)["retained"] == "unresolved external evidence"
+        await service.stop()
+
+    asyncio.run(scenario())
+
+
+def test_flat_other_portfolio_cannot_stop_existing_portfolio_protection(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    runtime.execution.save_observation(_quote(runtime.clock, "99", "100"))
+    intent = runtime.execution.authorize(runtime.portfolio_id, _decision(runtime.clock, runtime.portfolio_id))
+    second = runtime.ledger.create_portfolio(mode="paper", reporting_currency="EUR")
+    runtime.ledger.deposit(second, "USD", Decimal("10000"), "synthetic-second-opening")
+    other = SimpleNamespace(**{**vars(runtime), "portfolio_id": second})
+    control = ServiceController(other)
+    service = PaperService(runtime.database, runtime.execution, portfolio_ids=[runtime.portfolio_id],
+                           schedule_intervals={})
+
+    async def scenario():
+        await service.start()
+        with pytest.raises(StaleState, match="portfolio"):
+            control.start_trading("different-graph-scope")
+        result = control.stop("other-portfolio-stop")
+        assert not result["service_stop_requested"]
+        assert runtime.database.execute("SELECT stop_requested FROM graph_service_runs").fetchone()[0] == 0
+        assert runtime.execution.profile(runtime.portfolio_id) == "MANAGE_ONLY"
+        assert runtime.execution.profile(second) == "STOPPED"
+        assert runtime.execution._has_outstanding(runtime.portfolio_id)
+        assert runtime.execution.intent_state(intent) != "REJECTED"
+        await service.stop()
+
+    asyncio.run(scenario())

@@ -71,7 +71,7 @@ def test_installed_catalog_is_dated_snapshot_not_fake_runtime_evidence(runtime, 
     monkeypatch.setattr(projection, "_SOURCE_ROOT", tmp_path / "installed")
     catalog = projection.progress(runtime)["project"]
     assert catalog["source"] == "packaged_snapshot"
-    assert catalog["updated_at"] == "2026-10-05"
+    assert catalog["updated_at"] == "2026-10-06"
     assert catalog["completed"] == 17
     assert catalog["total"] == 23
     assert not any("owner" in task or "branch" in task or "evidence" in task for task in catalog["tasks"])
