@@ -385,3 +385,18 @@ def test_zero_money_commission_uses_subscription_without_fake_api_budget(tmp_pat
     assert setup.db.execute("SELECT COUNT(*) FROM deployment_budget").fetchone()[0] == 0
     receipt = setup.db.execute("SELECT * FROM subscription_invocations WHERE role='engineer'").fetchone()
     assert receipt["cost_status"] == "unknown" and receipt["actual_cost_native"] is None
+
+
+def test_router_keeps_verified_fallback_available_when_primary_quota_pauses(tmp_path):
+    from trade_graph.adapters.models.subscription import SubscriptionJournal
+
+    setup, _protected, cli = flow(tmp_path)
+    adapter = setup.assembly.router.adapter
+    config = adapter.config.model_copy(update={"provider": "codex_subscription", "model": "gpt-6.1-sol"})
+    readiness = SubscriptionReadiness("codex_subscription", "0.160.1", True, (), {}, "chatgpt", "linux-bubblewrap")
+    adapter.fallbacks = (SubscriptionAdapter(config, readiness, cli),)
+    journal = SubscriptionJournal(setup.db, setup.clock)
+    journal.pause_ai(adapter.config.provider, {})
+    status = setup.assembly.router.readiness(setup.pid)
+    assert status["ready"] and status["available_subscription_routes"] == ["codex_subscription"]
+    assert status["application_automatic_fallback"]

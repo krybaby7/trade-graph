@@ -79,10 +79,9 @@ class SubscriptionRouter:
             raise AuthorityDenied("mutable artifacts cannot change the fixed subscription provider/model")
 
     def readiness(self, portfolio_id=None):
-        status = self.adapter.readiness.public_status()
-        paused = SubscriptionJournal(self.budget.database, self.budget.clock).provider_status(
-            self.config.subscription.provider)["ai_paused"]
-        ready = status["ready"] and not paused
+        status = self.adapter.public_status(
+            journal=SubscriptionJournal(self.budget.database, self.budget.clock))
+        ready = status["ready"]
         return {**status, "ready": ready, "selected_provider": self.config.subscription.provider,
                 "roles": {role: {"provider": self.config.subscription.provider,
                           "model": self.config.subscription.model, "ready": ready} for role in MODEL_ROLES}}
