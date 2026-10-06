@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard = sub.add_parser("dashboard")
     dashboard.add_argument("--database", default="runtime/trade_graph.sqlite")
     dashboard.add_argument("--portfolio-id")
+    dashboard.add_argument("--config", help="private owner runtime configuration for dashboard starts")
     dashboard.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1"])
     dashboard.add_argument("--port", type=int, default=8000)
     dashboard.add_argument("--session-file", default="runtime/owner-session.json")
@@ -70,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--mode", default="paper")
     run.add_argument("--database", default="runtime/trade_graph.sqlite")
     run.add_argument("--portfolio-id")
+    run.add_argument("--service-run-id", help=argparse.SUPPRESS)
     run.add_argument("--config")
     run.add_argument("--protected-owner", help="read-only owner-pinned protected deployment directory")
     run.add_argument("--once", action="store_true", help="perform one service tick, then exit")
@@ -127,6 +129,27 @@ def _paper_stack(database: str):
     ledger = Ledger(db, clock)
     execution = Execution(db, ledger, clock, PaperBroker(db, clock))
     return db, execution
+
+
+def _record_start_failure(database: str, run_id: str | None, error_type: str) -> None:
+    """Retain bounded failure type when startup failed before worker acquisition."""
+    if not run_id or not Path(database).is_file():
+        return
+    from trade_graph.adapters.persistence.db import Database
+    from trade_graph.application.service_controller import service_finished
+    from trade_graph.domain.clock import SystemClock
+
+    db = None
+    try:
+        db = Database(Path(database))
+        service_finished(db, SystemClock(), run_id, error_type)
+    except (OSError, ValueError, TradeGraphError):
+        # An unavailable journal is diagnosed as an interrupted process by the
+        # controller; private exception detail never enters operator output.
+        pass
+    finally:
+        if db is not None:
+            db.close()
 
 
 def _latest_portfolio(db) -> str:
@@ -250,7 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         from trade_graph.dashboard import dashboard_runtime, owner_session_file
 
         try:
-            runtime = dashboard_runtime(Path(args.database), args.portfolio_id)
+            runtime = dashboard_runtime(Path(args.database), args.portfolio_id,
+                                        config_path=Path(args.config) if args.config else None)
         except ValueError as exc:
             parser.error(str(exc))
         try:
@@ -373,6 +397,8 @@ def main(argv: list[str] | None = None) -> int:
                 protected_owner=Path(args.protected_owner) if args.command == "run" and args.protected_owner else None,
             )
         except (ValueError, LookupError, OSError, TradeGraphError) as exc:
+            if args.command == "run":
+                _record_start_failure(args.database, args.service_run_id, type(exc).__name__)
             parser.error(f"paper startup failed ({type(exc).__name__}); "
                          "use doctor to inspect private runtime readiness")
         try:
@@ -395,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
                 secretary=runtime.secretary, tick_interval_seconds=config.tick_interval_seconds,
                 recover_commands=lambda: recover_owner_commands(runtime),
                 prepare_runtime=runtime.prepare_runtime, runtime_ready=runtime.runtime_ready,
+                service_run_id=args.service_run_id,
             )
             outcome = asyncio.run(service.run(max_ticks=1 if args.once else args.max_ticks))
             decisions_created = runtime.database.execute(
@@ -402,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
             ).fetchone()[0] - initial_decisions
             paid_enabled = runtime.paid_calls_enabled and runtime.execution.authority.active_policy().paid_calls_enabled
         except (ValueError, LookupError, OSError, RuntimeError, TradeGraphError) as exc:
+            _record_start_failure(args.database, args.service_run_id, type(exc).__name__)
             parser.error(f"paper operation failed ({type(exc).__name__}); "
                          "use doctor to inspect private runtime readiness")
         finally:
