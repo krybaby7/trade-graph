@@ -8,6 +8,39 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Owner-local bounded Research preflight — 2026-10-06
+
+The WSL checkout fast-forwarded from `9dedf97` to `e920cb7`. The real existing
+paper database now retains **168 completed hourly candles each for BTC/USD and
+ETH/USD**, covering 2026-09-29 14:00 through 2026-10-06 14:00 UTC, with **zero gaps**.
+A single bounded public-data tick refreshed quotes/FX, created no decisions and
+reported no failures. Private consistent backups and preservation manifests
+confirm financial/order/decision/budget/expense/authority records, retained
+private Kraken evidence, progress history and owner-session bytes unchanged.
+The stale dashboard process was restored on loopback using the same database
+and session; WSL and Windows `/login` returned HTTP 200. Windows checkout local
+changes were untouched.
+
+**AI analysis is blocked before inference.** Installed official Codex 0.125.0
+is logged in through ChatGPT, and its official account/rate-limit metadata was
+verified without starting a thread or turn. Its built-in provider's automatic
+retries cannot be disabled using the documented provider configuration;
+installed Claude Code 2.1.280 is logged out. Shared Codex config was restored
+byte-for-byte after read-only compatibility checks. No Research model call,
+real model/result, direct API spend, private Kraken request or live operation
+occurred. Exact available quota and unknown subscription/preparation costs are
+recorded in an ignored private preflight receipt, not a fabricated usage bill.
+
+A public-only packet, prompt and locally checked result schema are prepared
+privately. No production subscription adapter or continuous graph operation
+was configured, and T17–T22 acceptance is unchanged. **162 relevant tests passed**;
+full-suite/wheel/image checks were not rerun. See the
+[commands, preservation evidence, official sources and exact next step](docs/reviews/2026-10-06-research-subscription-preflight.md).
+Documentation checkpoint branch: `codex/research-diagnostic-2026-10-06`, source
+base `e920cb7`. Next: official Claude subscription login plus quota/extra-usage
+verification and a tested zero-retry isolated Research invocation, or an official
+Codex zero-retry configuration. Refresh the public snapshot before inference.
+
 ## Bounded public Kraken hourly history — 2026-10-06
 
 Verified source: `ce4dbb7cca688a657e65095bd3d5eabb435ab166` on

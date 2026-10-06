@@ -30,6 +30,8 @@ Review date: **2026-09-29**. These are official documentation/publication refere
 
 | S24 | [Kraken Get OHLC Data](https://docs.kraken.com/api-reference/market-data/get-ohlc-data) | Reviewed 2026-10-06: public pair-scoped GET, interval 60, incremental `since`, 720-entry recent-history ceiling and mandatory final uncommitted candle. See [history definitions and bounds](KRAKEN-PRICE-HISTORY.md); documentation verification is separate from actual collection or account acceptance. |
 
+| S25 | [Codex/Claude official subscription preflight sources](reviews/2026-10-06-research-subscription-preflight.md#verified-official-subscription-route-and-exact-blockers) | Reviewed 2026-10-06: real installed CLI login/metadata checks, official subscription/structured interfaces and installed-version retry restrictions; no inference was started. |
+
 ## Verification boundaries
 
 No paid OpenAI/Anthropic request, exchange authentication, real order, GitHub Actions billing test or deployment benchmark was performed while preparing the plan. Model selection is an evaluation proposal. The supplied price data is a dated snapshot for a calculator; the runtime must refresh and validate it. EUR/USD conversion and hosting in the cost example are assumptions, not retrieved market/vendor quotes.

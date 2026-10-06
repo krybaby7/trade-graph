@@ -760,5 +760,32 @@
       "main_unchanged": true,
       "ci_outcome": "not_rerun_or_verified"
     }
+  },
+  "research_diagnostic_continuation": {
+    "status": "checkpoint_complete",
+    "owner": "codex-orchestrator",
+    "branch": "codex/research-diagnostic-2026-10-06",
+    "base_commit": "e920cb7",
+    "dependencies": [
+      "T04",
+      "T10",
+      "T16"
+    ],
+    "task_scope": "Owner-requested bounded public-data/official subscription Research diagnostic serving T17; acceptance unchanged",
+    "authority": "Public Kraken/FX, documented local subscription metadata, one zero-retry Research inference only if safely verified; no private Kraken, live trading, API spend or purchases",
+    "evidence": [
+      "WSL git pull --ff-only preserved local commits and reached e920cb7",
+      "Real public collection inserted 168 completed hourly candles per BTC/USD and ETH/USD, zero gaps; single public-data tick created zero decisions",
+      "Consistent backups and exact before/after comparisons preserved existing financial/authority/expense state, private Kraken evidence, progress history and owner-session bytes",
+      "Official Codex 0.125.0 ChatGPT account and quota verified without inference; built-in zero-retry override unsupported; Claude Code 2.1.280 logged out",
+      "Public-only packet/schema prepared privately; Research inference attempts 0, actual model/result none; unknown subscription/controller usage/cost retained as unknown",
+      "162 targeted locked WSL tests passed; dashboard restored using same database/session, HTTP 200 in WSL and Windows",
+      "Full source/test Ruff, 23-task planning validator, ten directly invoked planning tests, repository/staged secret hygiene and diff checks passed; initial planning pytest invocation error corrected"
+    ],
+    "ai_status": "blocked_before_inference",
+    "source_commit": "e920cb7",
+    "acceptance_transition": false,
+    "review": "docs/reviews/2026-10-06-research-subscription-preflight.md",
+    "next_work": "Official Claude subscription login, verify included quota and disabled extra usage, then verify documented zero-retry/no-fallback/no-tool structured invocation; refresh public inputs. No continuous/runtime acceptance."
   }
 }
