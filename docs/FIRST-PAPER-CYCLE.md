@@ -1,4 +1,9 @@
-# First public-data paper cycle — operating runbook
+# First public-data paper cycle — historical operating runbook
+
+**Superseded operating policy, 2026-10-07.** Retained as preparation history and evidence.
+The owner now authorizes normal recurring paper operation, configurable limits, supported retries
+and compatible verified subscription fallback. Use [NORMAL-PAPER-OPERATION.md](NORMAL-PAPER-OPERATION.md)
+for current operation; historical limits, login state and observations below are not current requirements.
 
 **Preparation checkpoint, 2026-10-07. No model attempt or completed AI cycle is
 claimed.** This route uses the owner's existing Claude subscription, Kraken

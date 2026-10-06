@@ -1,6 +1,6 @@
 # 09 — Dashboard, configuration and operational runbooks
 
-**Owner update, 2026-10-06:** Optimisation is manual only. Start Optimisation requests one bounded review/improvement cycle; periodic, artifact-scheduled and automatically delegated Optimisation are disabled in the installed service. Ordinary departments continue automatically when a single subscription route is admitted. New startup controls do not authorize separately billed model APIs, extra usage, retries or fallback. Protected acceptance/deployment and separate live commissioning remain required.
+**Owner update, 2026-10-07:** Normal local paper operation supersedes the earlier diagnostic and manual-only restrictions. Enable configured departmental schedules and Optimisation, ordinary configurable execution limits, supported retries and compatible verified existing-subscription fallback. A first Research success or single paper cycle is not a startup gate, and the service does not pause automatically after its first cycle. Preserve accounting, contract validation, credential isolation and order reconciliation. Separately billed APIs, paid extras, purchases and real-money trading remain disabled. Paper operation is independent of live commissioning. See [the normal paper runbook](NORMAL-PAPER-OPERATION.md).
 
 
 ## Dashboard
@@ -43,6 +43,10 @@ GET  /api/v1/changes
 GET  /api/v1/changes/{id}
 GET  /api/v1/events
 GET  /api/v1/health
+GET  /api/v1/service
+POST /api/v1/owner/start-trading
+POST /api/v1/owner/start-optimisation
+POST /api/v1/owner/stop-service
 POST /api/v1/owner/budgets
 POST /api/v1/owner/config
 POST /api/v1/owner/pause
@@ -65,7 +69,7 @@ ordinary writes wait for recovery. Browser retries keep the original command ID 
 
 Owner policy lives separately from agent-editable artifacts, with a hash/revision and restricted writer. It defines account allocations, expense periods, provider/venue allowlists, exposure bounds, live eligibility and change classes. Leader configuration validates as a subset. Candidate artifacts cannot select a new policy, DB or secret path.
 
-config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Paper initialization creates no real expense allowance. Paid operation requires a separate owner-approved allowance and explicit owner and runtime paid permission. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
+config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Paper initialization creates no real expense allowance. Separately billed API operation requires a separate owner-approved allowance and explicit owner and runtime paid permission. The authorized subscription paper path uses an authenticated existing plan and its supported limits; it does not require an invented API budget or live-account commissioning. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
 
 Store actual credentials outside Git and model contexts; broker keys belong only to the protected execution/kernel boundary. ChatGPT/coding-agent integrations do not supply deployed credentials automatically. Optional GitHub mirroring uses a separately scoped integration service, never the Engineer's direct access to an owner token.
 
@@ -88,9 +92,10 @@ trade-graph soak --mode paper --config <private-file> --duration-seconds <second
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
 `run` continuously reconciles, manages protection and schedules scoped work; `--once` performs a bounded tick.
-Default startup assembles no model handlers or external feed. Public data is opt-in, and model dispatch requires
-approved credentialed routes, a real operating allowance and both owner/runtime paid permission. `soak`
-requires those gates and records actual, estimated, synthetic and unresolved costs separately. Planning utilities
+An unconfigured startup assembles no model handlers or external feed. Public data is opt-in. The configured
+subscription paper path admits verified subscription routes and enables normal schedules without a diagnostic
+success prerequisite; separately billed model paths retain their own allowance and paid-permission requirements.
+`soak` records actual, estimated, synthetic and unresolved costs separately. Planning utilities
 `scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
 
 The T15 local dashboard command is verified:
@@ -103,7 +108,9 @@ uv run trade-graph dashboard --database runtime/trade_graph.sqlite
 Open `http://127.0.0.1:8000/login` and use `session_token` from `runtime/owner-session.json`.
 Keep the database and session file private and outside Git. Initialization creates new directories with mode
 0700; the session file uses 0600. An existing database directory must be private. Serving starts one loopback
-web worker and no scheduler or provider. See IMPLEMENTATION-STATUS.md for evidence and remaining operating work.
+web worker. In the protected subscription dashboard, authenticated Start Trading launches the normal paper
+service as a child in the same protected container; Start Optimisation uses the configured ordinary limits.
+See [NORMAL-PAPER-OPERATION.md](NORMAL-PAPER-OPERATION.md) and IMPLEMENTATION-STATUS.md for operating evidence.
 
 ## Runbooks
 
