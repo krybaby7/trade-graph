@@ -28,7 +28,8 @@ _CHECKS = frozenset({"private_files_denied", "windows_mounts_denied", "host_proc
 
 def _profile_digest(directory: Path, raw: bytes) -> str:
     digest = hashlib.sha256(raw)
-    for name in ("subscription-network-profile.json", "subscription-isolation.json", "subscription-seccomp.json"):
+    for name in ("subscription-network-profile.json", "subscription-isolation.json", "subscription-seccomp.json",
+                 "paper-config.json"):
         digest.update(name.encode() + b"\0")
         try:
             digest.update(read_owner_file(directory, name, 262144))

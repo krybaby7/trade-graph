@@ -58,6 +58,14 @@ def installed_artifacts() -> dict[str, str]:
     return json.loads(files("trade_graph").joinpath("runtime_artifacts.json").read_text())
 
 
+def subscription_market_transport(protected_owner: Path):
+    from trade_graph.adapters.market.public import HttpxTextTransport
+    from trade_graph.kernel.subscription_network import load_subscription_network_profile
+
+    profile = load_subscription_network_profile(protected_owner)
+    return HttpxTextTransport(timeout=5, proxy=profile.market_proxy_url, trust_env=False)
+
+
 def _private_directory(path: Path) -> None:
     if path.is_symlink():
         raise ValueError("private runtime directory cannot be a symlink")
@@ -153,7 +161,9 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper'",
             )]
             feed = PublicPaperFeed(execution, maintenance_ids, config.paper_symbols,
-                                   interval_seconds=config.public_poll_interval_seconds)
+                                   interval_seconds=config.public_poll_interval_seconds,
+                                   transport=subscription_market_transport(protected_owner)
+                                   if protected_owner is not None else None)
         runtime = SimpleNamespace(database=database, clock=clock, portfolio_id=pid, ledger=ledger,
                                execution=execution, scheduler=scheduler, versions=versions,
                                artifact_runtime=artifact_runtime, budget=budget, secretary=secretary,
