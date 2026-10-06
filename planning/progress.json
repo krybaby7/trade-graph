@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-06",
-  "status_note": "2026-10-06: source 09160e4 implements subscription/controller/live-capable slices with credential-free checks; subscription operationally blocked, live disabled/uncommissioned. No inference or private Kraken request. Acceptance unchanged; full-suite/postflight pending.",
+  "status_note": "2026-10-06: tested source b1ca4c5 passes 435 final startup, financial and isolation regressions; 2,998 collected cases are covered across recorded runs. The WSL dashboard is updated and preserved. Subscription operation is blocked by retry, native login, egress and intended-image gates; live is disabled and uncommissioned. Research inference: zero. No private Kraken requests or API billing. Acceptance states unchanged; local checkpoint only.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -79,7 +79,8 @@
       "evidence": [
         "tests/integration/test_models_and_budget.py still covers concurrent reservations, uncertain usage, paid-call refusal and cache/reasoning usage",
         "tests/integration/test_expense_controls.py covers schema-repair and timeout-retry receipts, a root limit that stops the next retry, a fallback on a separate price card, leader and engineer receipts, role/task/version views, a persisted unexplained invoice difference, and an unchanged allowance after a EUR10000 paper deposit",
-        "Migration 0003 is additive. No provider invoice was downloaded and no credentialed model call was made."
+        "Migration 0003 is additive. No provider invoice was downloaded and no credentialed model call was made.",
+        "2026-10-06 b1ca4c5: subscription journal costs and shared fees remain unknown and separate from API expenses. Actual configured, refused or unreadable dashboard profiles and interrupted attempts make economics provisional/null. Known spend, allowance, trading P&L and virtual capital are unchanged; 84 independent financial/dashboard tests pass. No paid-provider result."
       ]
     },
     "T08": {
@@ -244,7 +245,8 @@
         "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
         "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
         "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
-        "2026-10-06: protected subscription adapter and six-role startup tested; Codex retries/native Claude login/intended-image provider egress/isolation block actual inference and continuous paper acceptance."
+        "2026-10-06: protected subscription adapter and six-role startup tested; Codex retries/native Claude login/intended-image provider egress/isolation block actual inference and continuous paper acceptance.",
+        "2026-10-06 b1ca4c5: 435 final startup, subscription, controller, manual-cycle, dashboard, cost, storage and proxy regressions pass. Frozen full-run 2,905 passes, corrected 227 unit/funded passes and final 435 passes cover 2,998 collected cases; no clean monolithic final-source full pass is claimed. Actual child/UI lifecycle and installation postflight preserve every old financial/progress row and 30 protected files. Research inference is zero; continuous paper AI was not run. Native subscription login, zero retries, provider egress and intended-image admission remain blocked."
       ],
       "remaining": "Owner-designated installation, approved public connectivity/current model routes/prices, separate real funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Exact service binding and local process restart proof are implemented.",
       "execution_state": "idle",
@@ -293,7 +295,8 @@
         "2026-10-06: codex-orchestrator claims a scoped T19 public asset-catalog compatibility bugfix on codex/fix-kraken-one-character-assets-2026-10-06, based on clean owner checkpoint 5f7225e. Retained redacted failure is instruments/ValidationFailure after Assets only; retained public catalog contains legitimate one-character codes. Existing 104 adapter tests passed before changes. No private requests or T19 acceptance completion authorized.",
         "2026-10-06: scoped catalog compatibility fix verified: one-character asset names/altnames and USD_CREDIT normalize without expanding BTC/USD pair selection. 29 added synthetic cases include invalid syntax/type/length/readiness and disabled-write controls; 264 relevant tests passed. Full retained public Assets replay plus actual public AssetPairs GET passed using production Decimal decoding, with no private requests. Ruff, planning and repository hygiene passed; independent source review found no blockers. Private retained evidence and runtime hashes/modes stayed unchanged. Full T19 acceptance and owner-authority gates remain open.",
         "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
-        "2026-10-06: protected live startup/dashboard/native Resume pass scripted conformance. No private requests, orders or explicit live commissioning. T17 credentialed acceptance remains pending."
+        "2026-10-06: protected live startup/dashboard/native Resume pass scripted conformance. No private requests, orders or explicit live commissioning. T17 credentialed acceptance remains pending.",
+        "2026-10-06 b1ca4c5: protected live assembly, exclusive management and queued owner Resume pass scripted conformance, restart, allocation, uncertainty and duplicate controls in the 435-test slice. Whole-account reconciliation and current grant checks precede Resume or fresh dispatch. Live remains disabled. No private Kraken request, order, withdrawal or credentialed commissioning."
       ],
       "remaining": "Eligible least-privilege actual native venue/account conformance and complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Signed fees/rebates, correction and paper fee holds are implemented; larger replay beyond 4,096 rows / 8 MiB, finer execution ties and late fee-only amendments remain contract work.",
       "execution_state": "idle",
@@ -338,7 +341,8 @@
         "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
         "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
         "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
-        "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged."
+        "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged.",
+        "2026-10-06 b1ca4c5: actual WSL namespace isolation and protected source, CLI and controller admission are tested. The current wheel installs offline with frozen dependencies; 58 packages are compatible. A clean WSL fast-forward and dashboard-only restart preserve the session, settings and evidence. Subscription-specific protected provider egress remains unimplemented and unverified. No current protected image or credentialed intended-host admission is claimed."
       ],
       "remaining": "Actual intended-host/image/distribution admission and repeated adversarial/recovery proof there; external whole-host rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transitions. Provider profile needs separately reviewed public market/FX routing plus actual routes/prices/keys/funding/network policy; scans capped 1 million rows / 512 MiB / 5 seconds and long Ledger projections not incremental.",
       "execution_state": "idle",
@@ -793,5 +797,48 @@
     "acceptance_transition": false,
     "review": "docs/reviews/2026-10-06-research-subscription-preflight.md",
     "next_work": "Official Claude subscription login, verify included quota and disabled extra usage, then verify documented zero-retry/no-fallback/no-tool structured invocation; refresh public inputs. No continuous/runtime acceptance."
+  },
+  "owner_startup_continuation": {
+    "status": "implementation_checkpoint",
+    "owner": "codex-owner-startup",
+    "branch": "codex/start-controls-2026-10-06",
+    "base_commit": "937437e708bda23a0286de7d9c10fa4e6de9b219",
+    "source_commit": "b1ca4c5c7612f1ececa207aa2ed900da36c13395",
+    "authority": "Source/scripted credential-free tests and readonly official CLI/app metadata only; live disabled, no private Kraken/orders/withdrawals/API billing/purchases. One conditional Research call refused before dispatch.",
+    "final_scoped_tests": 435,
+    "final_scoped_failures": 0,
+    "final_scoped_skips": 0,
+    "combined_collected_cases_covered": 2998,
+    "verification_basis": "Frozen 90d4f55 full run: 2,905 passed and one stale test assertion failed. Corrected 98af9a4 unit/funded follow-up: 227 passed. Final b1ca4c5 combined regressions: 435 passed. All 2,998 collected cases covered across these runs; no clean monolithic final-source full pass claimed.",
+    "subscription_status": "blocked_before_inference",
+    "research_actual_model": null,
+    "research_result": null,
+    "research_inference_attempts": 0,
+    "continuous_paper_ai_run": false,
+    "live_enabled": false,
+    "live_commissioned": false,
+    "automatic_optimisation": false,
+    "public_history_refreshed": false,
+    "blockers": [
+      "Codex built-in zero retries remain unsupported in current official 0.160.1.",
+      "Windows Codex 0.125.0 login status fails the current ultra configuration; current CLI login is unverified and earlier ChatGPT evidence is historical.",
+      "Windows Claude 2.1.280 is logged out; native 2.1.285+ and disabled extra usage are required.",
+      "Native official login, root pin and intended-image isolation proof are absent.",
+      "Subscription-specific protected provider-egress assembly is unimplemented and unverified."
+    ],
+    "quota": {
+      "source": "read-only signed-in Codex app shared-account metadata",
+      "observed_at": "2026-10-06T19:38:57Z",
+      "weekly_remaining_percent": 84,
+      "weekly_used_percent": 16,
+      "weekly_reset_at": "2026-10-12T16:25:15Z",
+      "shorter_window": null,
+      "credits_balance": "0"
+    },
+    "usage_cost_attribution": "Unknown, not free; no Research inference receipt or shared-fee settlement is attributed.",
+    "preservation": "All 75 main and two progress tables unchanged except additive 0018; all 30 protected contents and modes unchanged; integrity checks pass. Windows local changes untouched; consistent private backups retained.",
+    "acceptance_transition": false,
+    "review": "docs/reviews/2026-10-06-start-controls.md",
+    "publication": "local only; no push; final sanitized documentation checkpoint follows source"
   }
 }

@@ -10,9 +10,16 @@ Architecture: subscription transport is independently admitted and isolated; a d
 - [x] Write failing live assembly/recovery tests; implement protected admission before private transport, deterministic allocation, uncertain-order reconciliation and independent maintenance with scripted broker.
 - [x] Integrate source and CLI with no API billing fallback; review tests and requirements.
 - [x] Run exactly one public-data Research diagnostic only if subscription and OS isolation admission succeeds; otherwise record exact refusal and zero inference.
-- [ ] Run targeted/full appropriate verification, actual process/UI checks, secret scans; commit sanitized checkpoint.
-- [ ] Fast-forward the clean WSL installation after consistent backups; preserve settings/session/evidence, restart dashboard only, and verify controls. No continuous model operation or live activity.
+- [x] Run targeted/full appropriate verification, actual process/UI checks and secret scans; save sanitized local checkpoints.
+- [x] Fast-forward the clean WSL installation after consistent backups; preserve settings/session/evidence, restart dashboard only, and verify controls. No continuous model operation or live activity.
 
 Owner scope supersedes proposal/approval pauses in workflow skills: this request explicitly specifies the product and authorizes concrete implementation. No additional design approval is required.
 
-Verification source 09160e4: 245 scoped plus 48 final integration tests, native isolation, independent review, installed locked wheel, Ruff, JS syntax and planning checks passed. Full suite running in a persistent private temporary directory; operational subscription and live commissioning remain blocked.
+Tested source b1ca4c5: 435 combined regressions, independent review, native isolation,
+installed frozen-dependency wheel, Ruff, JS syntax and planning checks pass. Frozen
+90d4f55 full run passed 2,905 cases before a stale proxy-test expectation; correction
+98af9a4 passes 227 unit/funded tests. Collection/XML comparison covers all 2,998 final
+cases across these runs, without claiming a clean monolithic final-source full run.
+Clean WSL fast-forward/postflight confirms all original financial/progress rows and
+30 protected-file contents/modes unchanged except additive migration 0018. Subscription
+and live commissioning remain blocked; actual Research inference count is zero.

@@ -2,7 +2,7 @@
 
 ## Current owner startup implementation — 2026-10-06
 
-Source **09160e4**, branch `codex/start-controls-2026-10-06`, based on clean WSL
+Tested source **b1ca4c5**, branch `codex/start-controls-2026-10-06`, based on clean WSL
 checkpoint `937437e708bda23a0286de7d9c10fa4e6de9b219`. This section supersedes the
 older preflight limitations below. The independent Windows checkout is preserved.
 
@@ -23,7 +23,10 @@ older preflight limitations below. The independent Windows checkout is preserved
   after whole-account reconciliation/current grant checks. It cannot create authority.
 
 **Research model/result: none; inference attempts: 0.** Windows Codex 0.125.0
-uses ChatGPT login, but current official 0.160.1 retains built-in request/stream
+had verified ChatGPT login earlier; the final login-status check cannot parse
+the current `ultra` reasoning setting, even with a per-command `high` override.
+Existing configuration/login files are unchanged. Current CLI login is unverified.
+Current official 0.160.1 retains built-in request/stream
 retries 4/5 without a supported zero-retry override. No update solves that blocker.
 Windows Claude 2.1.280 is logged out; documented controls need native 2.1.285+.
 Neither native WSL CLI is installed. Official native login, disabled extra usage/
@@ -33,7 +36,10 @@ required. A subscription-specific protected provider-egress assembly is also
 permits Kraken/FX. Login alone cannot commission the route. See
 [subscription evidence and official sources](docs/SUBSCRIPTION-ADAPTER.md).
 
-Read-only official Codex app-server metadata during this task reported weekly
+Fresh read-only Codex app account metadata at **2026-10-06 19:38:57 UTC** reports
+**84% weekly remaining / 16% used**, reset **2026-10-12 16:25:15 UTC**; shorter-window
+usage is unavailable and credits are `0`. This is shared account capacity, not
+task-level usage or a Research receipt. Earlier official CLI app-server metadata reported
 **91% remaining / 9% used**, reset **2026-10-12 16:25:16 UTC**; shorter-window data
 was unavailable and credits were `0`. The exact observation time was not retained.
 This Windows snapshot does not establish WSL admission or Research usage. Claude
@@ -47,13 +53,24 @@ zero gaps at collection; current freshness is not claimed. Separately billed mod
 calls, purchases, private Kraken requests, real orders and withdrawals: **0**.
 No continuous paper AI operation or live authorization occurred.
 
-Verification: 245 startup/subscription/isolation/controller tests and 48 final
-integration/dashboard tests passed. Independent review covered startup and 18 new
-live Resume tests with no remaining critical issue. Source/tests Ruff, JavaScript
-syntax, 23-task DAG and ten planning tests passed. The offline wheel installs with
-locked dependencies and passes installed imports/0018/manual-scheduling/CLI checks;
-one disposable deterministic paper tick created no orders, subscription calls or
-expense receipts. Full suite is running from 09160e4; no pass is claimed yet.
+Verification: **435 final-source tests pass**, zero failures/skips, in 39.96 seconds:
+startup/subscription/isolation/controller/live, private SQLite, dashboard financial
+projections, manual cycles and public proxy controls. Unknown subscription
+inference/shared fees keep economic P&L and all-in costs provisional/null;
+recorded expenses, allowance, trading P&L and virtual capital remain unchanged.
+Independent review passes 84 financial/dashboard tests and 17 proxy tests, with
+no remaining critical finding. Earlier 275, 245 and 48-test slices passed.
+The frozen 90d4f55 full run stopped after **2,905 passed / one failed** on a stale
+test expectation about explicit `trust_env`. Correction 98af9a4 passes all 227
+unit/funded-profile regressions. Collected node IDs match successful XML results
+across these runs and the final 435-test slice: **all 2,998 collected cases covered**.
+This is combined verification, not a clean monolithic final-source full run.
+An earlier interrupted run exposed private-file/soak regressions; both were fixed
+and retested. Source/tests Ruff, JavaScript syntax, 23-task DAG and 16 planning/
+progress tests pass. The final offline wheel installs into the previously frozen
+dependency environment; all 58 packages are compatible. Installed imports, private
+0018 storage, CLI/manual scheduling and unknown-fee projections pass. One final
+disposable deterministic paper tick created no orders, AI calls or expense receipts.
 A new protected image was not built or commissioned. Historical image evidence
 does not certify this source. See [verification](docs/reviews/2026-10-06-start-controls.md).
 
@@ -79,7 +96,18 @@ read/trade-only Kraken provisioning, whole-account/uncertainty/restart/alert
 verification, independent signed reviews, separate real allocation/loss allowance,
 current protected image and explicit owner live grant. T17–T22 acceptance is
 unchanged. Tests, Research inference, continuous paper and live operation remain
-separate evidence. Installation postflight/final checkpoint pending; no push.
+separate evidence.
+
+The clean WSL installation fast-forwarded to tested source **b1ca4c5** on
+`codex/orchestrator-takeover-2026-10-04`. The dashboard alone restarted on loopback
+8000 with its existing session/database: WSL and Windows login returned HTTP 200;
+authenticated progress is paper/IDLE, AI blocked, live disabled, automatic
+Optimisation false, with zero graph worker starts or subscription invocations.
+All existing financial/progress table rows and all 30 protected-file contents/modes
+match the consistent backups. The only old-table addition is schema version 0018;
+new provider metadata records the observed quota and refusal. No owner policy or
+budget changed. Sanitized verification documentation follows this tested source;
+the final local checkpoint is reported with the handoff. No push.
 
 **Owner continuation focus, 2026-10-05:** finish the existing crypto paper
 operation and forward evaluation. Read [the reassessed next steps](docs/CRYPTO-NEXT-STEPS.md).
