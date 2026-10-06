@@ -151,7 +151,8 @@ def test_blocked_route_and_non_allowlisted_inputs_do_not_dispatch(journal):
         blockers=("not logged in",), quota={}, authentication="none", isolation="unavailable")
     blocked_result = adapter(executor, blocked).invoke(request(), invocation_id="blocked", journal=journal)
     assert blocked_result.failure == "credentials"
-    unsafe = request().model_copy(update={"context": {"database": "/private/state.sqlite"}})
+    unsafe = request().model_copy(update={"task_id": "unsafe-task",
+                                          "context": {"database": "/private/state.sqlite"}})
     assert adapter(executor).invoke(unsafe, invocation_id="unsafe", journal=journal).failure == "validation"
     assert executor.calls == 0
 
@@ -263,3 +264,12 @@ def test_known_exhausted_preflight_persists_quota_pause_before_readiness_rejecti
     result = SubscriptionAdapter(config, status, executor).invoke(request(), invocation_id="exhausted", journal=journal)
     assert result.failure == "rate_limit" and executor.calls == 0
     assert journal.provider_status("claude_subscription")["ai_paused"]
+
+
+def test_another_invocation_identity_cannot_replay_the_same_subscription_task(journal):
+    executor = Executor()
+    model = adapter(executor)
+    model.invoke(request(), invocation_id="first", journal=journal)
+    with pytest.raises(StaleState, match="task already"):
+        model.invoke(request(), invocation_id="second", journal=journal)
+    assert executor.calls == 1

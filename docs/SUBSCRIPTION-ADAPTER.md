@@ -124,3 +124,68 @@ Synthetic result tests establish lifecycle/output/quota semantics only.
 Real Research inference attempts: **0**. Actual Research model/result: **none**.
 Separately billed model APIs, purchases, private Kraken requests, real orders and
 withdrawals: **0**. Public history was not refreshed by this adapter work.
+
+
+## Protected departmental integration
+
+`assemble_subscription_handlers(office, secretary, engineer, artifact_runtime,
+config, protected_runtime=..., workspace_root=..., adapter=...)` supplies all six
+real roles through the same confined mutable graph request/application protocol.
+`SubscriptionRuntimeConfig` fixes exactly one provider and exact model for the
+run. Each role receives only its immutable role-specific context allowlist;
+owner policy, budget controls, credentials, provider routes and database paths
+stay in the trusted parent. Mutable routing artifacts cannot change the selected
+subscription route. Output effects still pass existing authority, generation,
+lease, schema and Engineer acceptance checks.
+
+`ProtectedSubscriptionGateway` uses `subscription_invocations` exclusively.
+It does not manufacture an API price card, reserve an API expense, deduct zero
+cost or change virtual paper equity. Existing real-budget allocations remain
+protected context/permission bounds; the shared subscription fee and actual cost
+remain unresolved. The controller persists one invocation per task atomically,
+including blocked, failed and uncertain work. New invocation IDs cannot repair
+or retry the same task. Engineer schema, transport or acceptance failures end
+that task after its first invocation. Cancellation reaches the bounded native
+process. Recovery applies a retained valid result through the confined completion
+stage, or waits for reconciliation without another model call.
+
+`load_subscription_profile(protected_owner)` reads only root-distributed
+`subscription-profile.json` and independently reviewed, hash-pinned
+`subscription-isolation.json`. It returns `SubscriptionAdmission` with `config`,
+`adapter`, `status` and `profile_sha256`. Missing/refused admission has no adapter
+and lets the caller retain deterministic management. Its sanitized status records
+`selected_provider`, readiness, exact admission blockers and zero inference
+attempts. The caller must retain the profile pin and recheck it before work.
+
+The profile binds the runtime configuration, native ELF path/hash, the path of
+the official private `.credentials.json` login file, a strict Boolean owner review
+that extra usage/credit spending is disabled, and the independent isolation proof
+hash. The proof binds the installed protected package and native CLI hash with
+actual host checks for private-file/Windows-mount/host-process/environment denial,
+descendant termination and disabled model tools. Application code does not open
+or copy authentication-file contents. Version/login status are checked without
+inference inside the exact executor mounts. Codex profiles always remain blocked
+while supported configuration cannot disable built-in retries.
+
+This route also requires the established protected image boot environment.
+Owner files or a native WSL Bubblewrap test do **not** commission the protected
+Docker image. Its capabilities, seccomp policy and user-namespace configuration
+must admit the pinned CLI and Bubblewrap boundary while preserving confinement.
+An actual intended-image native metadata/isolation probe and bounded credentialed
+Research diagnostic are still required. No such image/subscription commissioning
+or real inference was performed here. Existing Engineer acceptance/deployment
+controls remain authoritative; subscription access does not grant live authority.
+
+Additional credential-free verification:
+
+```bash
+PYTHONPATH=src /home/adami/trade-graph/.venv/bin/python -m pytest \
+  tests/integration/test_subscription_departments.py \
+  tests/unit/test_subscription_profile.py
+```
+
+Synthetic CLI results exercise all six real role handlers and confined graph
+stages, durable result recovery, cancellation, quota pauses, unknown receipts,
+new-ID replay refusal and one-attempt Engineer behavior. The profile tests prove
+missing/unprotected/changed/boot-refused profiles fail closed and never invoke
+inference. They do not confer credentialed native CLI or live verification.

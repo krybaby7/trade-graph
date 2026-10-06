@@ -186,6 +186,10 @@ class SubscriptionJournal:
                     message="prior subscription dispatch has no durable response; no replay permitted")
                 self.save(invocation_id, result, "UNCERTAIN")
                 return result
+            existing_task = self.database.execute("SELECT invocation_id FROM subscription_invocations WHERE task_id=?",
+                                                  (request.task_id,)).fetchone()
+            if existing_task is not None:
+                raise StaleState("subscription task already has a persisted invocation; no new attempt permitted")
             now = utc_iso(self.clock.now())
             self.database.execute("""INSERT INTO subscription_invocations
                 (invocation_id,request_hash,task_id,root_task_id,role,run_id,system_version_id,provider,
