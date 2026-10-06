@@ -280,8 +280,8 @@ class SubscriptionAdapter:
                  executor: SubscriptionExecutor, *, fallbacks: tuple[SubscriptionAdapter, ...] = (),
                  readiness_probe: Callable[[], SubscriptionReadiness] | None = None) -> None:
         self.config, self.readiness, self.executor = config.model_copy(deep=True), readiness, executor
-        if any(not route.readiness.ready for route in fallbacks):
-            raise ValueError("fallback subscription routes must be independently admitted")
+        if any(route.readiness.isolation != "linux-bubblewrap" for route in fallbacks):
+            raise ValueError("fallback subscription routes require independently verified isolation")
         self.fallbacks = tuple(fallbacks)
         self.readiness_probe = readiness_probe
         self._readiness_lock, self._last_readiness = Lock(), float("-inf")

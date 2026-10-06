@@ -201,17 +201,17 @@ def load_subscription_profile(protected_owner: Path, *, _depth: int = 0) -> Subs
             extra_usage_disabled=profile.extra_usage_disabled, isolation_ready=True, native_linux=True)
         status = {**readiness.public_status(), "selected_provider": config.subscription.provider,
                   "inference_attempts": 0, "profile_sha256": digest}
-        if not readiness.ready:
-            return SubscriptionAdmission(config, None, status, digest)
         fallback_admissions = [load_subscription_profile(protected_owner / name, _depth=_depth + 1)
                                for name in profile.fallback_profiles]
         fallbacks = tuple(item.adapter for item in fallback_admissions if item.adapter is not None
                           and item.config.deployment_id == config.deployment_id)
         status["fallback_routes"] = [{"provider": item.status.get("provider"),
-                                      "ready": item.adapter is not None,
+                                      "ready": item.status["ready"],
                                       "blockers": item.status.get("blockers", [])}
                                      for item in fallback_admissions]
         status["application_automatic_fallback"] = bool(fallbacks)
+        status["ready"] = config.subscription.enabled and (readiness.ready
+                            or any(item.status["ready"] for item in fallback_admissions))
         def refresh_readiness():
             observed = probe(config.subscription, pin, login, **probe_arguments)
             return assess_subscription(config.subscription, cli_version=observed["cli_version"],

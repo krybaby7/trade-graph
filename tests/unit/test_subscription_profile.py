@@ -178,3 +178,31 @@ def test_codex_catalog_must_remove_all_filesystem_tools_before_admission(tmp_pat
     admission=load_subscription_profile(tmp_path)
     assert not admission.status["ready"] and not admission.adapter
     assert not calls
+
+
+def test_temporarily_blocked_primary_preserves_verified_fallback_and_metadata_refresh(tmp_path, monkeypatch):
+    import trade_graph.application.subscription_profile as module
+    profile=profile_files(tmp_path)
+    route=tmp_path / "fallback-codex"
+    route.mkdir()
+    profile_files(route,"codex_subscription")
+    profile["fallback_profiles"]=["fallback-codex"]
+    (tmp_path / "subscription-profile.json").write_text(json.dumps(profile))
+    trusted_files(monkeypatch,tmp_path)
+    monkeypatch.setattr(module,"probe_isolated_claude",lambda *args,**kwargs:{
+        "cli_version":"2.1.292","authentication":"none","quota":{}})
+    admission=load_subscription_profile(tmp_path)
+    assert admission.status["ready"] and admission.adapter is not None
+    assert not admission.adapter.readiness.ready and len(admission.adapter.fallbacks)==1
+    assert admission.adapter.public_status(refresh=False)["available_subscription_routes"]==["codex_subscription"]
+
+
+def test_valid_boundary_with_temporarily_missing_login_status_can_refresh_without_reassembly(tmp_path, monkeypatch):
+    import trade_graph.application.subscription_profile as module
+    profile_files(tmp_path)
+    trusted_files(monkeypatch,tmp_path)
+    monkeypatch.setattr(module,"probe_isolated_claude",lambda *args,**kwargs:{
+        "cli_version":"2.1.292","authentication":"none","quota":{}})
+    admission=load_subscription_profile(tmp_path)
+    assert not admission.status["ready"] and admission.adapter is not None
+    assert callable(admission.adapter.readiness_probe)
