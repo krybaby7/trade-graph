@@ -556,7 +556,10 @@ def aggregate_usage(results: list[ModelResult]) -> ModelUsage | None:
         return None
     fields = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "billed_output_tokens",
               "reasoning_tokens", "tool_units")
-    return ModelUsage(**{field: sum(getattr(result.usage, field) for result in results) for field in fields})
+    reported = [result.usage.provider_reported_input_tokens for result in results]
+    return ModelUsage(**{field: sum(getattr(result.usage, field) for result in results) for field in fields},
+        provider_reported_input_tokens=sum(reported) if all(value is not None for value in reported) else None,
+        unreported_fields=sorted({field for result in results for field in result.usage.unreported_fields}))
 
 
 def codex_command(binary: str, request: ModelRequest, *, schema_path: str = "/request/schema.json") -> list[str]:
@@ -622,14 +625,27 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
                 counters = event.get("usage", {})
                 if (isinstance(counters, dict) and all(type(counters.get(key, 0)) is int and
                     0 <= counters.get(key, 0) <= 100_000_000 for key in
-                    ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"))
+                    ("input_tokens", "cached_input_tokens", "cache_write_tokens", "output_tokens",
+                     "reasoning_output_tokens"))
                     and "input_tokens" in counters and "output_tokens" in counters
-                    and counters.get("cached_input_tokens", 0) <= counters["input_tokens"]):
+                    and counters.get("cached_input_tokens", 0) + counters.get("cache_write_tokens", 0)
+                        <= counters["input_tokens"]):
+                    unreported = []
+                    for provider_field, usage_field in (("cached_input_tokens", "cache_read_tokens"),
+                            ("cache_write_tokens", "cache_write_tokens"),
+                            ("reasoning_output_tokens", "reasoning_tokens")):
+                        if provider_field not in counters:
+                            unreported.append(usage_field)
+                    if "cached_input_tokens" not in counters or "cache_write_tokens" not in counters:
+                        unreported.append("uncached_input_tokens")
                     current = ModelUsage(
-                        uncached_input_tokens=counters["input_tokens"] - counters.get("cached_input_tokens", 0),
+                        uncached_input_tokens=counters["input_tokens"] - counters.get("cached_input_tokens", 0)
+                            - counters.get("cache_write_tokens", 0),
                         cache_read_tokens=counters.get("cached_input_tokens", 0),
+                        cache_write_tokens=counters.get("cache_write_tokens", 0),
                         billed_output_tokens=counters["output_tokens"],
-                        reasoning_tokens=counters.get("reasoning_output_tokens", 0))
+                        reasoning_tokens=counters.get("reasoning_output_tokens", 0),
+                        provider_reported_input_tokens=counters["input_tokens"], unreported_fields=unreported)
                     turn_usage.append(ModelResult(ok=True, usage=current))
                 else:
                     turn_usage.append(ModelResult(ok=True, usage=None))

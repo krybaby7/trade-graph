@@ -670,6 +670,15 @@ class ModelUsage(ContractModel):
     reasoning_tokens: int = Field(default=0, ge=0)
     tool_units: int = Field(default=0, ge=0)
     provider_request_id: str | None = None
+    provider_reported_input_tokens: int | None = Field(default=None, ge=0)
+    unreported_fields: list[Literal["uncached_input_tokens", "cache_read_tokens", "cache_write_tokens",
+                                   "billed_output_tokens", "reasoning_tokens", "tool_units"]] = Field(
+                                       default_factory=list, max_length=6)
+
+    @field_validator("unreported_fields")
+    @classmethod
+    def _unique_unreported_fields(cls, values: list[str]) -> list[str]:
+        return sorted(set(values))
 
 
 class ModelRequest(ContractModel):

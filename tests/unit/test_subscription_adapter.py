@@ -487,3 +487,29 @@ def test_codex_cannot_use_claude_extra_usage_boolean_to_bypass_actual_subscripti
         extra_usage_disabled=True,isolation_ready=True,native_linux=True)
     assert not status.ready
     assert "subscription-only allowance is not verified; paid extras remain unauthorized" in status.blockers
+
+
+def test_codex_reports_missing_usage_breakdowns_without_inventing_measurements():
+    from trade_graph.adapters.models.subscription import aggregate_usage, parse_codex_outcome
+    from trade_graph.contracts.models import ModelResult
+    req=request().model_copy(update={"provider":"openai","model":"gpt-6.1-sol"})
+    result=parse_codex_outcome(CliOutcome('\n'.join([
+        json.dumps({"type":"item.completed","item":{"type":"agent_message","text":'{"note":"public"}'}}),
+        json.dumps({"type":"turn.completed","usage":{"input_tokens":13,"cached_input_tokens":3,"output_tokens":9}})
+    ]),0),req)
+    assert result.ok and result.usage.provider_reported_input_tokens==13
+    assert set(result.usage.unreported_fields)=={"uncached_input_tokens","cache_write_tokens","reasoning_tokens"}
+    total=aggregate_usage([result,result])
+    assert total.provider_reported_input_tokens==26 and total.unreported_fields==result.usage.unreported_fields
+    assert aggregate_usage([result,ModelResult(ok=True,usage=None)]) is None
+
+
+def test_model_usage_unknown_fields_are_validated_and_unique():
+    from pydantic import ValidationError
+
+    from trade_graph.contracts.models import ModelUsage
+    with pytest.raises(ValidationError):
+        ModelUsage(uncached_input_tokens=0,billed_output_tokens=1,unreported_fields=["fabricated"])
+    usage=ModelUsage(uncached_input_tokens=0,billed_output_tokens=1,
+        unreported_fields=["reasoning_tokens","reasoning_tokens"])
+    assert usage.unreported_fields==["reasoning_tokens"]
