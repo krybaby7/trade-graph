@@ -54,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     kraken.add_argument("--database", default="runtime/trade_graph.sqlite")
     kraken.add_argument("--owner-directory", default="~/.local/share/trade-graph-owner/kraken")
     kraken.add_argument("--symbol", default="BTC/USD")
+    history = sub.add_parser("collect-kraken-history", help="collect bounded public BTC/ETH USD hourly candles")
+    history.add_argument("--database", default="runtime/trade_graph.sqlite")
+    history.add_argument("--hours", type=int, default=168, help="completed hourly slots to request (1–719)")
     demo = sub.add_parser("demo")
     demo.add_argument("--offline", action="store_true")
     demo.add_argument("--work", default="runtime/demo")
@@ -201,6 +204,37 @@ def main(argv: list[str] | None = None) -> int:
             print("Read-only observation failed or refused; private evidence is retained when collection began.",
                   file=sys.stderr)
             return 1
+    if args.command == "collect-kraken-history":
+        if not 1 <= args.hours <= 719:
+            parser.error("history hours must be between 1 and 719")
+        database = None
+        try:
+            from trade_graph.adapters.market.public import HttpxTextTransport
+            from trade_graph.adapters.persistence.db import Database
+            from trade_graph.application.collect_price_history import collect_public_hourly_history
+            from trade_graph.domain.clock import SystemClock
+
+            path = Path(args.database)
+            if (path.is_symlink() or path.parent.is_symlink() or not path.is_file()
+                    or path.parent.stat().st_mode & 0o077):
+                raise ValueError("an existing private paper database is required")
+            database = Database(path)
+            if (database.execute("SELECT 1 FROM portfolios WHERE mode != 'paper' LIMIT 1").fetchone()
+                    or not database.execute("SELECT 1 FROM portfolios WHERE mode = 'paper' LIMIT 1").fetchone()):
+                raise ValueError("an existing paper-only database is required")
+            report = collect_public_hourly_history(
+                database, SystemClock(), HttpxTextTransport(timeout=10, maximum_response_bytes=1_048_576),
+                hours=args.hours, symbols=("BTC/USD", "ETH/USD"),
+            )
+            print(json.dumps(report))
+            return 0 if report["status"] == "ok" else 1
+        except (Exception, KeyboardInterrupt):
+            print("Public hourly history collection failed or refused; existing records are retained.",
+                  file=sys.stderr)
+            return 1
+        finally:
+            if database is not None:
+                database.close()
     if args.command == "doctor":
         from trade_graph.application.operations import doctor_report
 
