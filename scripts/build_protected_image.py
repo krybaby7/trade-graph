@@ -35,7 +35,123 @@ def run(arguments: list[str], *, output: bool = False) -> str:
     return result.stdout.strip() if output else ""
 
 
-def build(output: Path) -> DeploymentImagePin:
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("native input JSON cannot contain duplicate fields")
+        result[name] = value
+    return result
+
+
+def _native_file(directory: Path, filename: str, maximum_bytes: int) -> Path:
+    path = directory / filename
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= maximum_bytes:
+        raise ValueError("native inputs require bounded regular files without links")
+    return path
+
+
+def stage_subscription_tools(directory: Path, context: Path, inputs: dict) -> dict:
+    """Admit explicit reviewed native files, never a recursive credential directory.
+
+    The private manifest pins base-matching Debian runtime packages. Acquisition
+    and release-signature review happen before this offline assembler is invoked.
+    Package metadata and every copied byte are checked again before Docker runs.
+    """
+    if not directory.is_absolute() or directory.is_symlink() or not directory.is_dir():
+        raise ValueError("an absolute native input directory without links is required")
+    if directory.resolve() != directory:
+        raise ValueError("native input parent links are forbidden")
+    policy_path = ROOT / "deploy/subscription-native-inputs.json"
+    policy = json.loads(policy_path.read_bytes(), object_pairs_hook=_unique_fields)
+    manifest_path = _native_file(directory, "manifest.json", 65536)
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes, object_pairs_hook=_unique_fields)
+    if (not isinstance(manifest, dict) or set(manifest) != {
+            "schema_version", "platform", "base_image", "claude_sha256", "packages"}
+            or manifest["schema_version"] != 1 or policy.get("schema_version") != 1
+            or any(manifest.get(name) != inputs.get(name) or policy.get(name) != inputs.get(name)
+                   for name in ("platform", "base_image"))
+            or manifest["claude_sha256"] != policy["claude"]["sha256"]):
+        raise ValueError("native manifest must match reviewed platform, base and Claude release")
+    claude = _native_file(directory, "claude", 512 * 1024 * 1024)
+    if file_sha256(claude) != manifest["claude_sha256"]:
+        raise ValueError("native Claude SHA256 differs from the reviewed release")
+    packages = manifest["packages"]
+    if not isinstance(packages, list) or not 1 <= len(packages) <= 8:
+        raise ValueError("a bounded reviewed bubblewrap package set is required")
+    seen_packages, seen_files, sources = set(), {"claude", "manifest.json"}, [(claude, manifest["claude_sha256"])]
+    for package in packages:
+        if (not isinstance(package, dict) or set(package) != {
+                "filename", "package", "version", "architecture", "sha256"}
+                or package["package"] not in policy["allowed_debian_packages"]
+                or package["package"] in seen_packages or package["architecture"] != "amd64"
+                or not isinstance(package["version"], str)
+                or re.fullmatch(r"[0-9][A-Za-z0-9.+:~_-]{0,127}", package["version"]) is None
+                or not isinstance(package["filename"], str)
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+%~_-]{0,199}\.deb", package["filename"]) is None
+                or package["filename"] in seen_files
+                or not isinstance(package["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", package["sha256"]) is None):
+            raise ValueError("native package scope, metadata or filename is not reviewed")
+        path = _native_file(directory, package["filename"], 32 * 1024 * 1024)
+        if file_sha256(path) != package["sha256"]:
+            raise ValueError("native Debian package SHA256 differs from its reviewed manifest")
+        fields = {}
+        for line in run(["dpkg-deb", "--field", str(path), "Package", "Version", "Architecture"],
+                        output=True).splitlines():
+            name, separator, value = line.partition(": ")
+            if separator:
+                fields[name.lower()] = value
+        if any(fields.get(name) != package[name] for name in ("package", "version", "architecture")):
+            raise ValueError("native Debian package metadata differs from its reviewed manifest")
+        seen_packages.add(package["package"])
+        seen_files.add(package["filename"])
+        sources.append((path, package["sha256"]))
+    if "bubblewrap" not in seen_packages:
+        raise ValueError("the reviewed package set must include bubblewrap")
+    target = context / "subscription-tools"
+    target.mkdir()
+    try:
+        for source, digest in sources:
+            destination = target / source.name
+            shutil.copyfile(source, destination)
+            if file_sha256(destination) != digest:
+                raise ValueError("native input changed while staging")
+        (target / "manifest.json").write_bytes(manifest_bytes)
+        return {"subscription_tools": {
+            "claude": policy["claude"],
+            "packages": packages,
+            "manifest_sha256": file_sha256(target / "manifest.json"),
+            "policy_sha256": file_sha256(policy_path),
+            "inputs_sha256": directory_sha256(target),
+        }}
+    except BaseException:
+        shutil.rmtree(target)
+        raise
+
+
+def subscription_dockerfile(original: bytes, *, enabled: bool) -> bytes:
+    """Preserve default bytes; add offline native tools only before sealing."""
+    if not enabled:
+        return original
+    marker = b"COPY build-inputs.json /build-inputs.json\n"
+    if original.count(marker) != 1:
+        raise ValueError("reviewed Dockerfile seal insertion point changed")
+    commands = [
+        "dpkg -i /subscription-tools/*.deb",
+        "mkdir -p /opt/trade-graph",
+        "cp /subscription-tools/claude /opt/trade-graph/claude",
+        "chmod 0755 /opt/trade-graph/claude /usr/bin/bwrap",
+        "/usr/bin/bwrap --version",
+        "/opt/trade-graph/claude --version",
+        "rm -rf /subscription-tools",
+    ]
+    additions = "COPY subscription-tools /subscription-tools\nRUN " + " && \\\n    ".join(commands) + "\n"
+    return original.replace(marker, additions.encode() + marker)
+
+
+def build(output: Path, *, subscription_tools: Path | None = None) -> DeploymentImagePin:
     if not output.is_absolute() or output.exists():
         raise ValueError("choose a fresh absolute private build output directory")
     output.mkdir(parents=True, mode=0o700)
@@ -48,6 +164,8 @@ def build(output: Path) -> DeploymentImagePin:
                                 inputs["build_backend_requirement"])
             or type(inputs.get("source_date_epoch")) is not int or inputs["source_date_epoch"] <= 0):
         raise ValueError("reviewed digest-only base and hash-pinned build backend required")
+    native_inputs = ({} if subscription_tools is None
+                     else stage_subscription_tools(subscription_tools, context, inputs))
     requirements = context / "requirements.txt"
     requirements.write_text(run(["uv", "export", "--locked", "--offline", "--no-dev", "--no-emit-project",
                                 "--format", "requirements-txt"], output=True) + "\n")
@@ -86,6 +204,9 @@ def build(output: Path) -> DeploymentImagePin:
         target = source / path.relative_to(ROOT)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+    dockerfile = subscription_dockerfile((ROOT / "deploy/Dockerfile.protected").read_bytes(),
+                                         enabled=subscription_tools is not None)
+    (context / "Dockerfile").write_bytes(dockerfile)
     retained_inputs = {"schema_version": 1, "base_image": inputs["base_image"],
                        "source_date_epoch": inputs["source_date_epoch"],
                        "lock_sha256": file_sha256(ROOT / "uv.lock"),
@@ -94,9 +215,8 @@ def build(output: Path) -> DeploymentImagePin:
                        "acquisition_ca_sha256": file_sha256(context / "acquisition-ca.pem"),
                        "wheelhouse_sha256": directory_sha256(wheelhouse),
                        "source_sha256": directory_sha256(source),
-                       "dockerfile_sha256": file_sha256(ROOT / "deploy/Dockerfile.protected")}
+                       "dockerfile_sha256": file_sha256(context / "Dockerfile"), **native_inputs}
     (context / "build-inputs.json").write_text(canonical_json(retained_inputs) + "\n")
-    shutil.copyfile(ROOT / "deploy/Dockerfile.protected", context / "Dockerfile")
     # Feed exact normalized tar bytes, avoiding BuildKit's local directory sync
     # heuristic reusing same-size files after normalized mtimes across builds.
     context_archive = output / "build-context.tar"
@@ -148,8 +268,10 @@ def build(output: Path) -> DeploymentImagePin:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--subscription-tools", type=Path,
+                        help="reviewed native Claude and base-matching Debian package input directory")
     args = parser.parse_args()
-    pin = build(args.output)
+    pin = build(args.output, subscription_tools=args.subscription_tools)
     print(canonical_json({"image_id": pin.image_id, "archive_sha256": pin.archive_sha256,
                           "build_directory": str(args.output), "owner_approval": False,
                           "intended_host_verified": False}))

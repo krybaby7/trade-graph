@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "platform": "linux/amd64",
+  "base_image": "python@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016",
+  "claude": {
+    "version": "2.1.292",
+    "sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+    "signing_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+  },
+  "allowed_debian_packages": [
+    "bubblewrap",
+    "libcap2",
+    "libseccomp2",
+    "libselinux1",
+    "libpcre2-8-0"
+  ]
+}
