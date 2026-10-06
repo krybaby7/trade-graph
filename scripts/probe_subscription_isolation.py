@@ -22,7 +22,10 @@ import ipaddress
 import json
 import os
 import re
+import selectors
+import signal
 import socket
+import subprocess
 import sys
 import sysconfig
 import tempfile
@@ -40,7 +43,7 @@ CHECKS = FILESYSTEM_CHECKS | {"descendants_killed", "tools_disabled", "direct_eg
                              "provider_route_restricted", "market_route_restricted"}
 REQUIRED_FLAGS = frozenset({"--restricted", "--safe-mode", "--tools", "--disallowedTools",
     "--strict-mcp-config", "--mcp-config", "--setting-sources", "--settings",
-    "--no-session-persistence", "--max-turns", "--json-schema"})
+    "--no-session-persistence", "--json-schema"})
 CANARY = b"SYNTHETIC_ONLY_SUBSCRIPTION_BOUNDARY_CANARY\n"
 WINDOWS_CANARY = Path("/mnt/c/trade-graph-probe-canary")
 ENV_NAMES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KRAKEN_API_KEY", "KRAKEN_API_SECRET",
@@ -94,6 +97,52 @@ def validate_network(address: str, provider_port: int, market_port: int) -> None
 def supports_required_flags(help_text: str) -> bool:
     return all(re.search(r"(?:^|\s)" + re.escape(flag) + r"(?=\s|,|=|$)", help_text)
                for flag in REQUIRED_FLAGS)
+
+
+
+def parser_controls_verified(accepted: tuple[int, str], rejected: tuple[int, str]) -> bool:
+    # --help short-circuits unknown-option checking in pinned Claude 2.1.292.
+    # Empty input reaches an offline fixed guard only after valid option parsing.
+    return (accepted == (1, "Error: Input must be provided either through stdin or as a prompt argument "
+                         "when using --print\n")
+            and rejected == (1, "error: unknown option '--trade-graph-invalid-probe-flag'\n"))
+
+
+def bounded_parser_diagnostic(boundary, arguments: list[str], *, maximum_seconds=5, maximum_bytes=8192):
+    """Fresh offline namespace, EOF stdin, merged bounded output; never a prompt."""
+    command = boundary.command(arguments)
+    payload = bytearray()
+    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          cwd="/", env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, close_fds=True,
+                          start_new_session=True) as process:
+        deadline = time.monotonic() + maximum_seconds
+        try:
+            os.set_blocking(process.stdout.fileno(), False)
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return -1, ""
+                    for key, _ in selector.select(remaining):
+                        data = os.read(key.fd, 8192)
+                        if not data:
+                            selector.unregister(key.fileobj)
+                        else:
+                            payload.extend(data)
+                            if len(payload) > maximum_bytes:
+                                return -1, ""
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return -1, ""
+            return process.wait(timeout=remaining), payload.decode("utf-8", errors="replace")
+        except (OSError, subprocess.TimeoutExpired):
+            return -1, ""
+        finally:
+            if process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
 
 
 def filesystem_observations(payload: str) -> dict | None:
@@ -181,6 +230,10 @@ def tool_configuration_verified(native: NativeCliPin, help_text: str) -> bool:
     if (environment["CLAUDE_CODE_MAX_RETRIES"] != "0"
             or environment["MAX_STRUCTURED_OUTPUT_RETRIES"] != "1"
             or environment["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] != "0"):
+        return False
+    accepted = bounded_parser_diagnostic(boundary, arguments)
+    rejected = bounded_parser_diagnostic(boundary, [*arguments, "--trade-graph-invalid-probe-flag"])
+    if not parser_controls_verified(accepted, rejected):
         return False
     settings = json.loads(command[command.index("--settings") + 1])
     return (settings == {"switchModelsOnFlag": False, "availableModels": [request.model], "fallbackModel": []}
@@ -285,7 +338,7 @@ def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provid
     return {"schema_version": 1, "kind": "credential-free-actual-image-observations", "checks": checks,
             "blockers": blockers, "admission_proof": proof, "inference_attempts": 0,
             "provider_api_requests": 0, "exchange_api_requests": 0, "live_authorization": False,
-            "paid_authorization": False, "tools_evidence": "native-help-and-production-command-configuration",
+            "paid_authorization": False, "tools_evidence": "native-help-production-command-and-offline-parser-controls",
             "test_only_stdlib_bind": True, "probe_only_synthetic_windows_mount": True,
             "production_docker_spec_verification": "separate-required-without-probe-fixture-mounts",
             "native_version_exit_code": version.exit_code, "native_help_exit_code": help_result.exit_code,

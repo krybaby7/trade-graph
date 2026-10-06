@@ -95,3 +95,36 @@ def test_filesystem_observations_require_only_the_four_reviewed_true_fields():
     document = {name: True for name in module.FILESYSTEM_CHECKS}
     assert module.filesystem_observations(json.dumps(document)) == document
     assert module.filesystem_observations("not-json") is None
+
+
+def test_hidden_max_turns_is_verified_by_offline_parser_controls_instead_of_help_advertising():
+    module = probe()
+    assert "--max-turns" not in module.REQUIRED_FLAGS
+    accepted = (1, "Error: Input must be provided either through stdin or as a prompt argument when using --print\n")
+    rejected = (1, "error: unknown option '--trade-graph-invalid-probe-flag'\n")
+    assert module.parser_controls_verified(accepted, rejected)
+    assert not module.parser_controls_verified((0, "help output"), (0, "help output"))
+    assert not module.parser_controls_verified(rejected, rejected)
+    assert not module.parser_controls_verified(accepted, accepted)
+    assert not module.parser_controls_verified((1, "credentials missing"), rejected)
+
+
+def test_parser_diagnostic_has_empty_stdin_and_captures_only_bounded_error_output():
+    import sys
+    from types import SimpleNamespace
+
+    module = probe()
+    code = ("import sys; assert sys.stdin.read() == ''; "
+            "sys.stderr.write('synthetic parser refusal'); sys.exit(1)")
+    boundary = SimpleNamespace(command=lambda args: [sys.executable, "-I", "-c", code])
+    assert module.bounded_parser_diagnostic(boundary, []) == (1, "synthetic parser refusal")
+
+
+def test_parser_diagnostic_refuses_timeout_and_output_flood():
+    import sys
+    from types import SimpleNamespace
+
+    module = probe()
+    for code in ["import time; time.sleep(2)", "print('x'*9000)"]:
+        boundary = SimpleNamespace(command=lambda args, code=code: [sys.executable, "-I", "-c", code])
+        assert module.bounded_parser_diagnostic(boundary, [], maximum_seconds=0.1, maximum_bytes=64) == (-1, "")
