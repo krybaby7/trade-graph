@@ -73,10 +73,14 @@ class PaperService:
         system_version_id: str = "paper-runtime",
         service_mode: str = "paper",
         service_run_id: str | None = None,
+        subscription_provider: str | None = None,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
             raise ValidationFailure(f"{service_mode} execution bound to the service database is required")
+        if subscription_provider not in {None, "codex_subscription", "claude_subscription"}:
+            raise ValidationFailure("one supported subscription provider is required")
+        self.subscription_provider = subscription_provider
         self.service_mode, self.service_run_id = service_mode, service_run_id
         if (isinstance(tick_interval_seconds, bool) or not isinstance(tick_interval_seconds, (int, float))
                 or not math.isfinite(tick_interval_seconds) or tick_interval_seconds <= 0):
@@ -321,6 +325,10 @@ class PaperService:
                     AND json_extract(c.result_json, '$.task_id') = tasks.task_id)""")
 
     def _ai_paused(self) -> bool:
+        if self.subscription_provider is not None:
+            return bool(self.database.execute(
+                "SELECT 1 FROM subscription_provider_state WHERE provider=? AND ai_paused=1",
+                (self.subscription_provider,)).fetchone())
         return bool(self.database.execute(
             "SELECT 1 FROM subscription_provider_state WHERE ai_paused = 1 LIMIT 1").fetchone())
 

@@ -32,7 +32,8 @@ class LiveService(PaperService):
                          handlers={}, artifact_runtime=runtime.artifact_runtime, public_feed=runtime.public_feed,
                          secretary=runtime.secretary, tick_interval_seconds=runtime.config.tick_interval_seconds,
                          recover_commands=self._recover_live, prepare_runtime=self._prepare_live,
-                         runtime_ready=self._runtime_ready, service_mode="live", service_run_id=service_run_id)
+                         runtime_ready=self._runtime_ready, service_mode="live", service_run_id=service_run_id,
+                         subscription_provider=getattr(runtime, "subscription_provider", None))
 
     def _recover_live(self):
         lifecycle = self.runtime.lifecycle

@@ -465,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
                 recover_commands=lambda: recover_owner_commands(runtime),
                 prepare_runtime=runtime.prepare_runtime, runtime_ready=runtime.runtime_ready,
                 service_run_id=args.service_run_id,
+                subscription_provider=getattr(runtime, "subscription_provider", None),
             )
             outcome = asyncio.run(service.run(max_ticks=1 if args.once else args.max_ticks))
             decisions_created = runtime.database.execute(

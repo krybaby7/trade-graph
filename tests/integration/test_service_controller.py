@@ -500,3 +500,23 @@ def test_reused_service_object_records_a_new_boot_without_rewriting_completed_ru
         assert rows[0]["run_id"] == first
 
     asyncio.run(scenario())
+
+
+def test_quota_pause_applies_only_to_the_fixed_selected_subscription_provider(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    runtime.database.execute("INSERT INTO subscription_provider_state VALUES (?,?,?,?,?)",
+                             ("codex_subscription", 1, "unsupported retry controls", "{}", "2026-10-06T00:00:00Z"))
+    control = ServiceController(runtime, prerequisites=lambda: {
+        "paper_available": True, "live_available": False, "ai_available": True,
+        "selected_provider": "claude_subscription", "reasons": [],
+    })
+    service = PaperService(runtime.database, runtime.execution, schedule_intervals={},
+                           subscription_provider="claude_subscription")
+    assert control.status()["prerequisites"]["ai_available"] is True
+    assert service._ai_paused() is False
+    runtime.database.execute("INSERT INTO subscription_provider_state VALUES (?,?,?,?,?)",
+                             ("claude_subscription", 1, "subscription quota exhausted", "{}",
+                              "2026-10-06T00:00:00Z"))
+    assert control.status()["prerequisites"]["ai_available"] is False
+    assert service._ai_paused() is True
+    assert runtime.database.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 0

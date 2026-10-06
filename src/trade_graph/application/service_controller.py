@@ -243,7 +243,9 @@ class ServiceController:
             }
             for row in provider_states
         ]
-        if any(provider["ai_paused"] for provider in providers):
+        selected = ready.get("selected_provider")
+        if any(provider["ai_paused"] and (selected is None or provider["provider"] == selected)
+               for provider in providers):
             ready = {
                 **ready,
                 "ai_available": False,
