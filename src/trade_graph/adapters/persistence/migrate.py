@@ -14,6 +14,7 @@ from trade_graph.adapters.persistence.native_fee_reservation_schema import (
 )
 from trade_graph.adapters.persistence.native_incident_schema import STATEMENTS as NATIVE_INCIDENT_STATEMENTS
 from trade_graph.adapters.persistence.pilot_schema import STATEMENTS as PILOT_STATEMENTS
+from trade_graph.adapters.persistence.price_history_schema import STATEMENTS as PRICE_HISTORY_STATEMENTS
 from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS as PROTECTED_RUNTIME_STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
 from trade_graph.adapters.persistence.service_schema import STATEMENTS as SERVICE_STATEMENTS
@@ -440,6 +441,7 @@ STATEMENTS.append(("0013", PILOT_STATEMENTS))
 STATEMENTS.append(("0014", [*NATIVE_INCIDENT_STATEMENTS, *FINANCIAL_CHECKPOINT_STATEMENTS]))
 STATEMENTS.append(("0015", NATIVE_FEE_RESERVATION_STATEMENTS))
 STATEMENTS.append(("0016", BUDGET_ORIGIN_STATEMENTS))
+STATEMENTS.append(("0017", PRICE_HISTORY_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
