@@ -137,7 +137,10 @@ class KrakenHourlyHistory:
             if not isinstance(row, list) or len(row) != 8:
                 raise ValidationFailure("Kraken hourly candle structure is invalid")
             opened_at = _timestamp(row[0])
-            closes_at = opened_at + timedelta(hours=1)
+            try:
+                closes_at = opened_at + timedelta(hours=1)
+            except OverflowError as exc:
+                raise ValidationFailure("Kraken hourly candle close timestamp is out of range") from exc
             if previous_open is not None and opened_at <= previous_open:
                 raise ValidationFailure("Kraken hourly candles must have unique increasing timestamps")
             previous_open = opened_at
