@@ -135,12 +135,14 @@ class SubscriptionDepartmentMixin:
         if self.office.execution.authority.active_mandate(task["portfolio_id"]).expires_at_utc <= self.clock.now():
             raise AuthorityDenied("mandate expired")
         policy = self.office.execution.authority.active_policy()
-        if not current["budget"] or row["allocated_spend"] is None:
+        if row["allocated_spend"] is None:
             raise AuthorityDenied("persisted monetary allocation required")
+        if current["budget"] is None and Decimal(row["allocated_spend"]) != 0:
+            raise AuthorityDenied("nonzero allocation requires an existing deployment budget")
         if Decimal(row["allocated_spend"]) > policy.root_paid_limit.amount:
             raise AuthorityDenied("task exceeds current owner root limit")
         config = current["budget"]
-        if (
+        if config is not None and (
             Decimal(row["allocated_spend"]) > Decimal(config["root_limit"])
             or Decimal(config["total_allowance"]) > policy.monthly_operating.amount
             or Decimal(config["daily_limit"]) > policy.daily_paid_limit.amount
@@ -163,6 +165,9 @@ class SubscriptionDepartmentMixin:
         return f"{task['role']}:{task['task_id']}"
 
     def invoke(self, task, request):
+        limits = self.gateway.router.config.subscription
+        request = request.model_copy(update={"timeout_seconds": min(120, limits.maximum_seconds),
+                                             "max_output_tokens": min(4096, limits.maximum_output_tokens)})
         return self.gateway.invoke(request, deployment_id=self.deployment_id, invocation_id=self._invocation_id(task),
                                    portfolio_id=task["portfolio_id"], authorize=lambda: self._eligible(task))
 

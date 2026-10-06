@@ -75,6 +75,34 @@ def flow(tmp_path, *, blocked=False, source=GRAPH):
     return setup, protected, cli
 
 
+def test_zero_money_subscription_allocation_needs_no_api_funding(tmp_path):
+    from decimal import Decimal
+
+    setup, _protected, cli = flow(tmp_path)
+    setup.db.execute('DELETE FROM role_allocations')
+    setup.db.execute('DELETE FROM deployment_budget')
+    task = setup.office.scheduler.add_task(role='research', objective='Review current public evidence.',
+        portfolio_id=setup.pid, max_attempts=1, allocated_spend=Decimal('0'))
+    assert setup.run('research') == 1
+    assert setup.row(task)['status'] == 'SUCCEEDED', setup.row(task)['output_json']
+    assert len(cli.requests) == 1
+    assert cli.requests[0].timeout_seconds == 120
+    assert cli.requests[0].max_output_tokens == 4096
+    assert setup.db.execute('SELECT COUNT(*) FROM deployment_budget').fetchone()[0] == 0
+    receipt = setup.db.execute('SELECT * FROM subscription_invocations WHERE task_id=?', (task,)).fetchone()
+    assert receipt['cost_status'] == 'unknown' and receipt['actual_cost_native'] is None
+
+
+def test_nonzero_subscription_allocation_cannot_invent_missing_real_budget(tmp_path):
+    setup, _protected, cli = flow(tmp_path)
+    setup.db.execute('DELETE FROM role_allocations')
+    setup.db.execute('DELETE FROM deployment_budget')
+    task = setup.add('research')
+    assert setup.run('research') == 1
+    assert setup.row(task)['status'] != 'SUCCEEDED'
+    assert cli.requests == []
+
+
 def test_all_six_subscription_roles_use_confined_rpc_and_separate_unknown_cost_receipts(tmp_path):
     setup, protected, cli = flow(tmp_path)
     for role in ("research", "trader", "learning", "optimisation"):
