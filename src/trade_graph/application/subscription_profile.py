@@ -88,6 +88,7 @@ class PreparedSubscriptionProfile(ContractModel):
     native_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     official_login_file: str = Field(min_length=1, max_length=512)
     extra_usage_disabled: StrictBool = False
+    writable_login_directory: StrictBool = False
     isolation_evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     model_catalog_file: str | None = Field(default=None, pattern=r"^[a-z0-9-]+\.json$")
     quota_evidence_file: str | None = Field(default=None, pattern=r"^[a-z0-9-]+\.json$")
@@ -176,18 +177,25 @@ def load_subscription_profile(protected_owner: Path, *, _depth: int = 0) -> Subs
                     or models[0].get("slug") != config.subscription.model
                     or models[0].get("shell_type") != "disabled"
                     or "apply_patch_tool_type" not in models[0] or models[0]["apply_patch_tool_type"] is not None
-                    or models[0].get("experimental_supported_tools") != []):
+                    or models[0].get("experimental_supported_tools") != []
+                    or models[0].get("tool_mode") != "direct" or models[0].get("node_repl_disabled") is not True
+                    or models[0].get("supports_search_tool") is not False
+                    or "multi_agent_version" not in models[0] or models[0]["multi_agent_version"] is not None
+                    or "multi_agent_reasoning_effort" not in models[0]
+                    or models[0]["multi_agent_reasoning_effort"] is not None):
                 raise PermissionError("Codex model catalog retains unsupported filesystem tools")
         pin = NativeCliPin(binary, profile.native_sha256)
         pin.verify()
         probe = probe_isolated_codex if config.subscription.provider == "codex_subscription" else probe_isolated_claude
-        metadata = probe(config.subscription, pin, login,
-            extra_usage_disabled=profile.extra_usage_disabled, isolation_verified=True)
+        probe_arguments = {"extra_usage_disabled": profile.extra_usage_disabled, "isolation_verified": True}
+        if config.subscription.provider == "codex_subscription":
+            probe_arguments.update(proxy_url=network.proxy_url, credential_writable=profile.writable_login_directory)
+        metadata = probe(config.subscription, pin, login, **probe_arguments)
         # Recompute supported-version/login/extra-usage admission from sanitized
         # metadata; a claimed Boolean cannot admit an obsolete or unsigned CLI.
         quota = (sanitize_quota(json.loads(read_owner_file(protected_owner, profile.quota_evidence_file, 32768),
                                           object_pairs_hook=_unique))
-                 if profile.quota_evidence_file else metadata["quota"])
+                 if profile.quota_evidence_file and not metadata["quota"] else metadata["quota"])
         readiness = assess_subscription(config.subscription, cli_version=metadata["cli_version"],
             authentication=metadata["authentication"], quota=quota,
             extra_usage_disabled=profile.extra_usage_disabled, isolation_ready=True, native_linux=True)
@@ -204,10 +212,16 @@ def load_subscription_profile(protected_owner: Path, *, _depth: int = 0) -> Subs
                                       "blockers": item.status.get("blockers", [])}
                                      for item in fallback_admissions]
         status["application_automatic_fallback"] = bool(fallbacks)
+        def refresh_readiness():
+            observed = probe(config.subscription, pin, login, **probe_arguments)
+            return assess_subscription(config.subscription, cli_version=observed["cli_version"],
+                authentication=observed["authentication"], quota=observed["quota"],
+                extra_usage_disabled=profile.extra_usage_disabled, isolation_ready=True, native_linux=True)
+
         adapter = SubscriptionAdapter(config.subscription, readiness,
             LinuxSubscriptionExecutor(pin, login, proxy_url=network.proxy_url, config=config.subscription,
-                                      model_catalog_file=catalog),
-            fallbacks=fallbacks)
+                                      model_catalog_file=catalog, credential_writable=profile.writable_login_directory),
+            fallbacks=fallbacks, readiness_probe=refresh_readiness)
         return SubscriptionAdmission(config, adapter, status, digest)
     except FileNotFoundError:
         return _blocked(config, "protected subscription profile/native login/isolation evidence is not provisioned",

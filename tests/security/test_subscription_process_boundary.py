@@ -191,3 +191,63 @@ def test_process_output_bound_can_be_set_for_normal_operation():
     boundary=LinuxFilesystemBoundary(system_python(),share_network=False)
     outcome=boundary.run(["-I","-c","print('x'*400000)"],b"",maximum_seconds=4,maximum_output_bytes=500000)
     assert outcome.exit_code == 0 and not outcome.stopped
+
+
+def test_native_codex_auth_cache_can_refresh_only_its_dedicated_private_directory(tmp_path):
+    directory=tmp_path / "private-cli-auth"
+    directory.mkdir(mode=0o700)
+    credentials=directory / "auth.json"
+    credentials.write_text('{"fixture":"synthetic only"}')
+    credentials.chmod(0o600)
+    boundary=LinuxFilesystemBoundary(system_python(),share_network=False,credential_file=credentials,
+        provider="codex_subscription",credential_writable=True)
+    code=("import pathlib; p=pathlib.Path('/home/runner/.codex/auth.json'); "
+          "p.with_suffix('.new').write_text('renewed'); p.with_suffix('.new').replace(p); print(p.read_text())")
+    result=boundary.run(["-I","-c",code],b"",maximum_seconds=3)
+    assert result.exit_code==0 and result.stdout.strip()=="renewed"
+    assert credentials.read_text()=="renewed"
+
+
+def test_codex_quota_metadata_is_explicitly_sanitized_without_account_identifiers():
+    from trade_graph.adapters.models import subscription_process as module
+    quota=module.codex_quota_metadata({"ordinaryUsageAllowed":True,"accountId":"PRIVATE",
+        "rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":10080,"resetsAt":1791822315},
+          "secondary":None,"credits":{"balance":"0","unlimited":False,"hasCredits":False}}})
+    assert quota["ordinary_usage_allowed"] and quota["weekly"]["remaining_percent"]==75
+    assert quota["credits_balance"]=="0" and "PRIVATE" not in json.dumps(quota)
+
+
+def test_interactive_codex_quota_probe_awaits_each_response_then_exits(tmp_path):
+    from trade_graph.adapters.models.subscription_process import probe_codex_account_quota
+    script=tmp_path / "quota.py"
+    script.write_text("""import json,sys
+for line in sys.stdin:
+ d=json.loads(line)
+ if d['method']=='initialized': continue
+ if d['method']=='initialize': r={}
+ elif d['method']=='account/read': r={'account':{'type':'chatgpt','id':'PRIVATE_ACCOUNT'}}
+ elif d['method']=='account/rateLimits/read': r={'ordinaryUsageAllowed':True,'accountId':'PRIVATE_ACCOUNT',
+  'rateLimits':{'primary':{'usedPercent':25,'windowDurationMins':10080,'resetsAt':1791822315},
+  'credits':{'balance':'0'}}}
+ else: raise RuntimeError('unexpected model request')
+ print(json.dumps({'id':d['id'],'result':r})+'\\n'+json.dumps({'method':'notification'}),flush=True)
+""")
+    class Boundary:
+        def command(self,args):
+            assert 'app-server' in args and 'exec' not in args
+            return [sys.executable,str(script)]
+    quota=probe_codex_account_quota(Boundary(),maximum_seconds=3)
+    assert quota['weekly']['remaining_percent']==75 and quota['credits_balance']=='0'
+    assert 'PRIVATE' not in json.dumps(quota)
+
+
+def test_malformed_or_hanging_quota_metadata_is_bounded_and_unknown(tmp_path):
+    import time
+
+    from trade_graph.adapters.models.subscription_process import probe_codex_account_quota
+    class Boundary:
+        def command(self,args):
+            return [sys.executable,'-c',"import time;print('invalid json',flush=True);time.sleep(30)"]
+    started=time.monotonic()
+    assert probe_codex_account_quota(Boundary(),maximum_seconds=0.2)=={}
+    assert time.monotonic()-started < 3

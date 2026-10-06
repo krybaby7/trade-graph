@@ -12,11 +12,12 @@ import hashlib
 import json
 import math
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from threading import Event
+from threading import Event, Lock
 from typing import Literal, Protocol
 
 from jsonschema import Draft202012Validator
@@ -143,8 +144,11 @@ def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authent
             blockers.append("Claude Code 2.1.285 or later is required for documented native execution controls")
     if not native_linux:
         blockers.append("native Linux CLI required; Windows/WSL interop executables are refused")
-    if not extra_usage_disabled:
-        blockers.append("owner must verify extra usage, credit spending and automatic purchases are disabled")
+    clean = sanitize_quota(quota)
+    ordinary_codex_only = (config.provider == "codex_subscription" and clean.get("ordinary_usage_allowed") is True
+                          and clean.get("credits_balance") == "0" and not _quota_exhausted(clean))
+    if not extra_usage_disabled and not ordinary_codex_only:
+        blockers.append("subscription-only allowance is not verified; paid extras remain unauthorized")
     if not isolation_ready:
         blockers.append("owner-pinned Linux filesystem/process isolation has not passed its host probe")
     clean = sanitize_quota(quota)
@@ -241,6 +245,25 @@ class SubscriptionJournal:
                 (state, result.model_dump_json(), result.provider_model,
                  result.usage.model_dump_json() if result.usage else None, utc_iso(self.clock.now()), attempt_id))
 
+    def refresh_quota(self, provider: str, quota: dict) -> None:
+        """Only a newer positive provider observation can lift a quota-derived stop."""
+        clean = sanitize_quota(quota)
+        state = self.provider_status(provider)
+        observed = clean.get("observed_at")
+        if (not state["ai_paused"] or not observed or clean.get("ordinary_usage_allowed") is not True
+                or _quota_exhausted(clean) or not any(
+                    isinstance(value, dict) and (value.get("remaining_percent", 0) > 0
+                                                or "used_percent" in value and value["used_percent"] < 100)
+                    for value in [clean, *clean.values()])):
+            return
+        if datetime.fromisoformat(observed) <= datetime.fromisoformat(state["updated_at"]):
+            return
+        with self.database.immediate():
+            self.database.execute("""UPDATE subscription_provider_state
+                SET ai_paused=0,reason='',quota_json=?,updated_at=?
+                WHERE provider=? AND reason='subscription quota exhausted'""",
+                (json.dumps(clean), utc_iso(self.clock.now()), provider))
+
     def pause_ai(self, provider: str, quota: dict) -> None:
         with self.database.immediate():
             self.database.execute("""INSERT INTO subscription_provider_state
@@ -254,14 +277,44 @@ class SubscriptionAdapter:
     """Durable bounded attempts; unknown dispatches are never automatically replayed."""
 
     def __init__(self, config: SubscriptionConfig, readiness: SubscriptionReadiness,
-                 executor: SubscriptionExecutor, *, fallbacks: tuple[SubscriptionAdapter, ...] = ()) -> None:
+                 executor: SubscriptionExecutor, *, fallbacks: tuple[SubscriptionAdapter, ...] = (),
+                 readiness_probe: Callable[[], SubscriptionReadiness] | None = None) -> None:
         self.config, self.readiness, self.executor = config.model_copy(deep=True), readiness, executor
         if any(not route.readiness.ready for route in fallbacks):
             raise ValueError("fallback subscription routes must be independently admitted")
         self.fallbacks = tuple(fallbacks)
+        self.readiness_probe = readiness_probe
+        self._readiness_lock, self._last_readiness = Lock(), float("-inf")
+
+    def refresh_readiness(self, *, force: bool = False, minimum_interval_seconds: float = 60) -> SubscriptionReadiness:
+        """Refresh official metadata only, preserving pinned profiles and unknown usage."""
+        with self._readiness_lock:
+            if self.readiness_probe and (force or time.monotonic() - self._last_readiness >= minimum_interval_seconds):
+                try:
+                    self.readiness = self.readiness_probe()
+                finally:
+                    self._last_readiness = time.monotonic()
+        for route in self.fallbacks:
+            route.refresh_readiness(force=force, minimum_interval_seconds=minimum_interval_seconds)
+        return self.readiness
+
+    def public_status(self, *, journal: SubscriptionJournal | None = None, refresh: bool = True) -> dict:
+        if refresh:
+            self.refresh_readiness()
+        routes = (self, *self.fallbacks)
+        if journal:
+            for route in routes:
+                journal.refresh_quota(route.config.provider, route.readiness.quota)
+        available = [route for route in routes if route.config.enabled and route.readiness.ready
+                     and (not journal or not journal.provider_status(route.config.provider)["ai_paused"])]
+        return {**self.readiness.public_status(), "ready": self.config.enabled and bool(available),
+                "application_automatic_fallback": bool(self.fallbacks),
+                "available_subscription_routes": [route.config.provider for route in available]}
+
 
     def invoke(self, request: ModelRequest, *, invocation_id: str, journal: SubscriptionJournal,
                cancel_event: Event | None = None, before_attempt: Callable[[], None] | None = None) -> ModelResult:
+        self.refresh_readiness()
         previous = journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
         if previous is not None:
             return previous
@@ -272,17 +325,20 @@ class SubscriptionAdapter:
                                  message="subscription request outside protected bounds")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
-        if self.readiness.provider == self.config.provider and (
-            journal.provider_status(self.config.provider)["ai_paused"] or _quota_exhausted(self.readiness.quota)
-        ):
+        for route in (self, *self.fallbacks):
+            journal.refresh_quota(route.config.provider, route.readiness.quota)
+        primary_quota_blocked = (journal.provider_status(self.config.provider)["ai_paused"]
+                                 or _quota_exhausted(self.readiness.quota))
+        if primary_quota_blocked:
             journal.pause_ai(self.config.provider, self.readiness.quota)
-            result = ModelResult(ok=False, failure="rate_limit",
-                                 message="subscription quota exhausted; new AI work paused")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
-            return result
-        if not self.config.enabled or not self.readiness.ready or self.readiness.provider != self.config.provider:
-            result = ModelResult(ok=False, failure="credentials", message="; ".join(self.readiness.blockers)[:500]
-                                 or "subscription admission is disabled")
+        routes = tuple(route for route in (self, *self.fallbacks) if route.config.enabled and route.readiness.ready
+                       and route.readiness.provider == route.config.provider
+                       and not journal.provider_status(route.config.provider)["ai_paused"]
+                       and not _quota_exhausted(route.readiness.quota))
+        if not self.config.enabled or not routes:
+            result = ModelResult(ok=False, failure="rate_limit" if primary_quota_blocked else "credentials",
+                message="subscription quota exhausted; new AI work paused" if primary_quota_blocked
+                else "; ".join(self.readiness.blockers)[:500] or "subscription admission is disabled")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
         if cancel_event and cancel_event.is_set():
@@ -291,7 +347,6 @@ class SubscriptionAdapter:
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
         results = []
-        routes = (self, *self.fallbacks)
         route_index = 0
         for attempt in range(1, self.config.application_max_attempts + 1):
             route = routes[route_index]
@@ -489,6 +544,8 @@ def codex_command(binary: str, request: ModelRequest, *, schema_path: str = "/re
                 "web_search": "live" if request.max_tool_calls else "disabled",
                 "features.shell_tool": False, "features.unified_exec": False, "features.apps": False,
                 "features.view_image": False, "features.code_mode": False,
+                "features.plugins": False, "features.shell_snapshot": False,
+                "tools.update_plan.enabled": False, "tools.experimental_request_user_input.enabled": False,
                 "features.code_mode_only": False, "features.code_mode_host": False,
                 "model_catalog_json": "/request/model-catalog.json",
                 "agents.enabled": False, "features.multi_agent_v2": False,
@@ -509,6 +566,7 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
         return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted")
     usage, actual_model, payload_text = None, None, None
     completed, failed, tool_observed, search_ids = 0, False, False, set()
+    turn_usage: list[ModelResult] = []
     try:
         if len(outcome.stdout.encode()) > maximum_output_bytes:
             raise ValueError("subscription output bound exceeded")
@@ -551,8 +609,10 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
                         cache_read_tokens=counters.get("cached_input_tokens", 0),
                         billed_output_tokens=counters["output_tokens"],
                         reasoning_tokens=counters.get("reasoning_output_tokens", 0))
-                    usage = (aggregate_usage([ModelResult(ok=True, usage=usage), ModelResult(ok=True, usage=current)])
-                             if usage else current)
+                    turn_usage.append(ModelResult(ok=True, usage=current))
+                else:
+                    turn_usage.append(ModelResult(ok=True, usage=None))
+                usage = aggregate_usage(turn_usage)
             elif kind in {"turn.failed", "error"}:
                 failed = True
         if tool_observed or len(search_ids) > request.max_tool_calls or completed > maximum_turns:

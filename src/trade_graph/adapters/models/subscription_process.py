@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 from urllib.parse import urlsplit
@@ -35,6 +36,7 @@ from trade_graph.adapters.models.subscription import (
     claude_command,
     claude_environment,
     codex_command,
+    sanitize_quota,
 )
 from trade_graph.contracts.models import ModelRequest
 
@@ -73,9 +75,10 @@ class LinuxFilesystemBoundary:
     def __init__(self, pin: NativeCliPin, *, share_network: bool, credential_file: Path | None = None,
                  environment: dict[str, str] | None = None, proxy_url: str | None = None,
                  provider: str = "claude_subscription", schema_file: Path | None = None,
-                 model_catalog_file: Path | None = None) -> None:
+                 model_catalog_file: Path | None = None, credential_writable: bool = False) -> None:
         self.pin, self.share_network, self.credential_file = pin, share_network, credential_file
         self.provider, self.schema_file, self.model_catalog_file = provider, schema_file, model_catalog_file
+        self.credential_writable = credential_writable
         if provider not in {"claude_subscription", "codex_subscription"}:
             raise ValueError("unsupported subscription boundary provider")
         self.proxy_url = validate_proxy_url(proxy_url) if proxy_url is not None else None
@@ -134,7 +137,15 @@ class LinuxFilesystemBoundary:
                 raise ValueError("official subscription login file must have private permissions")
             destination = ("/home/runner/.codex/auth.json" if self.provider == "codex_subscription"
                            else "/home/runner/.claude/.credentials.json")
-            command += ["--ro-bind", str(credential.resolve()), destination]
+            if self.credential_writable:
+                directory = credential.parent
+                metadata_directory = directory.stat()
+                if (directory.is_symlink() or metadata_directory.st_mode & 0o077
+                        or metadata_directory.st_uid != os.geteuid()):
+                    raise ValueError("refreshable official auth cache requires a dedicated private directory")
+                command += ["--bind", str(directory.resolve()), str(Path(destination).parent)]
+            else:
+                command += ["--ro-bind", str(credential.resolve()), destination]
         for key, value in self.environment.items():
             command += ["--setenv", key, value]
         if self.proxy_url is not None:
@@ -227,7 +238,8 @@ def validate_proxy_url(value: str) -> str:
 
 class LinuxSubscriptionExecutor:
     def __init__(self, pin: NativeCliPin, credential_file: Path, *, proxy_url: str,
-                 config: SubscriptionConfig | None = None, model_catalog_file: Path | None = None) -> None:
+                 config: SubscriptionConfig | None = None, model_catalog_file: Path | None = None,
+                 credential_writable: bool = False) -> None:
         if not pin.require_root_owner:
             raise ValueError("production subscription executor requires a protected root-owned CLI pin")
         pin.verify()
@@ -235,6 +247,7 @@ class LinuxSubscriptionExecutor:
         selected = config or SubscriptionConfig(provider="claude_subscription", model="unselected")
         self.config = selected.model_copy(deep=True)
         self.model_catalog_file = model_catalog_file
+        self.credential_writable = credential_writable
         if self.config.provider == "codex_subscription" and model_catalog_file is None:
             raise ValueError("Codex requires a protected model catalog removing filesystem-capable tools")
         self.proxy_url = validate_proxy_url(proxy_url)
@@ -247,7 +260,7 @@ class LinuxSubscriptionExecutor:
                 schema.chmod(0o600)
                 boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
                     proxy_url=self.proxy_url, provider=self.config.provider, schema_file=schema,
-                    model_catalog_file=self.model_catalog_file)
+                    model_catalog_file=self.model_catalog_file, credential_writable=self.credential_writable)
                 payload = (request.instructions + "\nPublic departmental context:\n" +
                            json.dumps(request.context, allow_nan=False)).encode()
                 return boundary.run(codex_command("/cli/runner", request)[1:], payload,
@@ -256,7 +269,7 @@ class LinuxSubscriptionExecutor:
                     cancel_event=cancel_event)
         boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
                                             environment=claude_environment(request.max_output_tokens, self.config),
-                                            proxy_url=self.proxy_url)
+                                            proxy_url=self.proxy_url, credential_writable=self.credential_writable)
         arguments = claude_command("/cli/runner", request, self.config)[1:]
         return boundary.run(arguments, json.dumps(request.context, allow_nan=False).encode(),
                             maximum_seconds=request.timeout_seconds,
@@ -358,22 +371,144 @@ def probe_isolated_claude(config: SubscriptionConfig, pin: NativeCliPin, credent
 
 def probe_isolated_codex(config: SubscriptionConfig, pin: NativeCliPin, credential_file: Path, *,
                          extra_usage_disabled: bool = False, quota: dict | None = None,
-                         isolation_verified: bool = False) -> dict:
+                         isolation_verified: bool = False, proxy_url: str | None = None,
+                         credential_writable: bool = False) -> dict:
     """Official version/login metadata inside the same opaque native auth mount."""
     if config.provider != "codex_subscription" or not pin.require_root_owner:
         raise ValueError("isolated Codex preflight requires a protected native Codex pin")
     boundary = LinuxFilesystemBoundary(pin, share_network=False, credential_file=credential_file,
-                                        provider="codex_subscription")
+                                        provider="codex_subscription", credential_writable=credential_writable)
     version_result = boundary.run(["--version"], b"", maximum_seconds=10, metadata=True)
     match = re.search(r"\b\d+\.\d+\.\d+\b", version_result.stdout)
     version = match[0] if match and version_result.exit_code == 0 else "unavailable"
     auth = boundary.run(["-c", 'forced_login_method="chatgpt"', "login", "status"],
                         b"", maximum_seconds=10, metadata=True)
     authentication = "chatgpt" if auth.exit_code == 0 and "Logged in using ChatGPT" in auth.stdout else "none"
-    status = assess_subscription(config, cli_version=version, authentication=authentication, quota=quota or {},
+    fresh_quota = {}
+    if authentication == "chatgpt" and proxy_url is not None:
+        network_boundary = LinuxFilesystemBoundary(pin, share_network=True, credential_file=credential_file,
+            provider="codex_subscription", proxy_url=proxy_url, credential_writable=credential_writable)
+        fresh_quota = probe_codex_account_quota(network_boundary)
+    status = assess_subscription(config, cli_version=version, authentication=authentication,
+        quota=fresh_quota or quota or {},
         extra_usage_disabled=extra_usage_disabled, isolation_ready=isolation_verified,
         native_linux=True).public_status()
     status["native_cli_present"] = True
     status["inference_attempts"] = 0
     status["credential_mount_checked"] = True
     return status
+
+
+def codex_quota_metadata(result: dict) -> dict:
+    """Keep allowance observations only; drop account IDs, tokens and reset-credit identities."""
+    if not isinstance(result, dict):
+        return {}
+    limits = result.get("rateLimits")
+    if not isinstance(limits, dict):
+        return {}
+    quota = {"source": "codex-app-server", "observed_at": datetime.now(UTC).isoformat()}
+    ordinary = result.get("ordinaryUsageAllowed")
+    if type(ordinary) is bool:
+        quota["ordinary_usage_allowed"] = ordinary
+    credits = limits.get("credits")
+    if isinstance(credits, dict) and isinstance(credits.get("balance"), str):
+        quota["credits_balance"] = credits["balance"]
+    for key in ("primary", "secondary"):
+        window = limits.get(key)
+        if not isinstance(window, dict):
+            continue
+        used, duration = window.get("usedPercent"), window.get("windowDurationMins")
+        if type(used) not in (int, float) or not 0 <= used <= 100 or type(duration) is not int:
+            continue
+        name = "weekly" if duration >= 10080 else "five_hour" if duration <= 300 else key
+        if name not in {"weekly", "five_hour"}:
+            continue
+        quota[name] = {"used_percent": used, "remaining_percent": 100 - used,
+                       "window_duration_mins": duration, "resets_at": window.get("resetsAt")}
+    return sanitize_quota(quota)
+
+
+def probe_codex_account_quota(boundary: LinuxFilesystemBoundary, *, maximum_seconds: float = 20) -> dict:
+    """Read official app-server account/rate-limit metadata; never issue a thread or turn method.
+
+    JSON-RPC must remain interactive until the explicit response IDs arrive.
+    Sending all messages then EOF drops asynchronous provider responses.
+    """
+    command = boundary.command(["-c", 'forced_login_method="chatgpt"', "-c", "analytics.enabled=false",
+        "-c", "feedback.enabled=false", "-c", "features.apps=false", "app-server", "--listen", "stdio://"])
+    requests = [
+        {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "trade-graph", "version": "1"},
+                                                     "capabilities": {}}},
+        {"id": 2, "method": "account/read", "params": {"refreshToken": False}},
+        {"id": 3, "method": "account/rateLimits/read", "params": {}},
+    ]
+    quota, total, pending, buffer = {}, 0, 0, bytearray()
+    process = None
+    try:
+        process = subprocess.Popen(command, cwd="/", env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+                close_fds=True, start_new_session=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
+        def send(document):
+            process.stdin.write(json.dumps(document).encode() + b"\n")
+            process.stdin.flush()
+        send(requests[0])
+        deadline = time.monotonic() + maximum_seconds
+        with selectors.DefaultSelector() as selector:
+            for stream in (process.stdout, process.stderr):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, stream == process.stdout)
+            while pending < len(requests) and selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                for key, _ in selector.select(min(remaining, 0.1)):
+                    chunk = os.read(key.fd, 8192)
+                    total += len(chunk)
+                    if total > 262144:
+                        raise ValueError("subscription quota metadata bound exceeded")
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    if not key.data:
+                        continue  # Never retain raw CLI stderr/account identifiers.
+                    buffer.extend(chunk)
+                    while b"\n" in buffer:
+                        if pending >= len(requests):
+                            break
+                        line, _, tail = buffer.partition(b"\n")
+                        buffer = bytearray(tail)
+                        event = json.loads(line)
+                        if not isinstance(event, dict) or event.get("id") != requests[pending]["id"]:
+                            continue
+                        if "error" in event:
+                            raise ValueError("subscription quota metadata refused")
+                        if pending == 1:
+                            account = event.get("result", {}).get("account", {})
+                            if not isinstance(account, dict) or account.get("type") != "chatgpt":
+                                raise ValueError("official ChatGPT account required")
+                        if pending == 2:
+                            quota = codex_quota_metadata(event.get("result", {}))
+                        pending += 1
+                        if pending == 1:
+                            send({"method": "initialized"})
+                        if pending < len(requests):
+                            send(requests[pending])
+        process.stdin.close()
+        if process.poll() is None and pending < len(requests):
+            os.killpg(process.pid, signal.SIGKILL)
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=3)
+        return quota if pending == len(requests) else {}
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
+        return {}
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=3)
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()

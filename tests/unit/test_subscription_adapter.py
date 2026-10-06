@@ -391,3 +391,61 @@ def test_engineer_distinct_commissioned_generation_ids_can_dispatch(journal):
     req=request().model_copy(update={"role":"engineer"})
     assert model.invoke(req,invocation_id="generation1",journal=journal).ok
     assert model.invoke(req,invocation_id="generation2",journal=journal).ok
+
+
+def test_fresh_verified_positive_subscription_quota_recovers_quota_pause(journal):
+    journal.pause_ai("claude_subscription",{"remaining_percent":0})
+    known=SubscriptionReadiness("claude_subscription","2.1.292",True,(),{
+        "ordinary_usage_allowed":True,"remaining_percent":75,"observed_at":"2026-10-06T00:01:00+00:00"},
+        "subscription","linux-bubblewrap")
+    executor=Executor()
+    result=adapter(executor,known).invoke(request(),invocation_id="resumed",journal=journal)
+    assert result.ok and executor.calls==1
+    assert not journal.provider_status("claude_subscription")["ai_paused"]
+
+
+def test_codex_ordinary_subscription_with_no_spendable_credits_needs_no_claude_checkbox():
+    config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True)
+    known=assess_subscription(config,cli_version="0.160.1",authentication="chatgpt",quota={
+        "ordinary_usage_allowed":True,"credits_balance":"0","remaining_percent":75},
+        extra_usage_disabled=False,isolation_ready=True,native_linux=True)
+    assert known.ready
+
+
+def test_ready_fallback_can_run_when_primary_provider_is_durably_quota_paused(journal):
+    journal.pause_ai("claude_subscription",{"remaining_percent":0})
+    executor=Executor()
+    fallback=adapter(executor)
+    fallback.config=fallback.config.model_copy(update={"provider":"codex_subscription","model":"gpt-6.1-sol"})
+    fallback.readiness=SubscriptionReadiness("codex_subscription","0.160.1",True,(),{},"chatgpt","linux-bubblewrap")
+    fallback.executor=Executor(CliOutcome('\n'.join([json.dumps({"type":"item.completed","item":{
+        "type":"agent_message","text":'{"note":"fallback"}'}}),json.dumps({
+        "type":"turn.completed","usage":{"input_tokens":7,"output_tokens":9}})]),0))
+    primary=adapter(Executor())
+    primary=SubscriptionAdapter(primary.config,primary.readiness,primary.executor,fallbacks=(fallback,))
+    result=primary.invoke(request(),invocation_id="paused-fallback",journal=journal)
+    assert result.ok and primary.executor.calls==0 and fallback.executor.calls==1
+
+
+def test_codex_partial_multi_turn_usage_is_unknown_instead_of_known_subset():
+    from trade_graph.adapters.models.subscription import parse_codex_outcome
+    req=request().model_copy(update={"provider":"openai","model":"gpt-6.1-sol"})
+    outcome=CliOutcome('\n'.join([json.dumps({"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":9}}),
+        json.dumps({"type":"item.completed","item":{"type":"agent_message","text":'{"note":"public"}'}}),
+        json.dumps({"type":"turn.completed"})]),0)
+    result=parse_codex_outcome(outcome,req)
+    assert result.ok and result.usage is None
+
+
+def test_readiness_metadata_refresh_is_cached_and_never_invokes_inference(journal):
+    statuses=[]
+    def probe():
+        statuses.append(True)
+        return ready()
+    executor=Executor()
+    model=SubscriptionAdapter(adapter(executor).config,ready(),executor,readiness_probe=probe)
+    assert model.public_status(journal=journal)["ready"]
+    assert model.public_status(journal=journal)["ready"]
+    assert len(statuses)==1 and executor.calls==0
+    model.refresh_readiness(force=True)
+    assert len(statuses)==2 and executor.calls==0

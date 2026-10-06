@@ -25,7 +25,9 @@ def profile_files(tmp_path, provider="claude_subscription"):
     if provider == "codex_subscription":
         profile["model_catalog_file"] = "codex-model-catalog.json"
         (tmp_path / "codex-model-catalog.json").write_text(json.dumps({"models":[{"slug":model,
-            "shell_type":"disabled","apply_patch_tool_type":None,"experimental_supported_tools":[]}]}))
+            "shell_type":"disabled","apply_patch_tool_type":None,"experimental_supported_tools":[],
+            "tool_mode":"direct","node_repl_disabled":True,"supports_search_tool":False,
+            "multi_agent_version":None,"multi_agent_reasoning_effort":None}]}))
     (tmp_path / "subscription-profile.json").write_text(json.dumps(profile))
     return profile
 
