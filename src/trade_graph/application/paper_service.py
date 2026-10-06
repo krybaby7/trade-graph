@@ -123,6 +123,8 @@ class PaperService:
         self._completed_total = 0
         self._observations_total = 0
         self._shutdown_failures: list[str] = []
+        self._run_error_type: str | None = None
+        self._last_tick_failures: tuple[str, ...] = ()
         self._lease_lock = threading.Lock()
         self._execution_lock = threading.RLock()
         self._feed_failed = public_feed is not None
@@ -256,7 +258,7 @@ class PaperService:
                 if row is None or row["owner"] != self.owner:
                     raise StaleState("service process lease was replaced")
                 self.scheduler.acquire_process_lease(name, self.owner, self.role_ttl_seconds)
-            if service_heartbeat(self.database, self.clock, self.service_run_id):
+            if self._ready and service_heartbeat(self.database, self.clock, self.service_run_id):
                 self.request_stop()
             with self._lease_lock:
                 lease = self._active_lease
@@ -395,6 +397,9 @@ class PaperService:
         if lease is None:
             return 0
         row = self.scheduler.leased_row(lease)
+        if row["deadline_at"] and row["deadline_at"] <= self.scheduler.now():
+            self.scheduler.skip(lease, {"reason": "Bounded task deadline expired; no new inference"})
+            return 0
         if row["role"] == "optimisation":
             requested = self.database.execute("""SELECT 1 FROM service_control_requests
                 WHERE action = 'start_optimisation'
@@ -549,6 +554,14 @@ class PaperService:
                 if wait_roles:
                     completed += await self._wait_for_work(self._role_task)
                     self._role_task = None
+        if tuple(failures) != self._last_tick_failures:
+            with self.database.immediate():
+                for pid in self.portfolio_ids:
+                    self.execution.ledger._activity(pid, "service_degraded" if failures else "service_recovered",
+                                                    {"run_id": self.service_run_id, "failures": failures})
+                self.database.execute("UPDATE graph_service_runs SET error_type = ? WHERE run_id = ?",
+                                      (";".join(failures) if failures else None, self.service_run_id))
+            self._last_tick_failures = tuple(failures)
         return TickResult(observations, scheduled, completed, self._role_task is not None,
                           management, tuple(failures))
 
@@ -580,6 +593,9 @@ class PaperService:
                     await asyncio.wait_for(self._stop_requested.wait(), self.tick_interval_seconds)
                 except TimeoutError:
                     pass
+        except BaseException as exc:
+            self._run_error_type = type(exc).__name__
+            raise
         finally:
             try:
                 await self.stop()
@@ -673,7 +689,7 @@ class PaperService:
             try:
                 try:
                     service_finished(self.database, self.clock, self.service_run_id,
-                                     type(errors[0]).__name__ if errors else None)
+                                     type(errors[0]).__name__ if errors else self._run_error_type)
                 finally:
                     self._release()
             except Exception as exc:

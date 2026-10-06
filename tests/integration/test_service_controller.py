@@ -3,8 +3,11 @@
 import asyncio
 import json
 import os
+import signal
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -314,3 +317,139 @@ def test_flat_stop_request_observed_by_heartbeat(tmp_path):
         assert row["status"] == "STOPPED" and row["pid_start_ticks"] == process_identity(os.getpid())
 
     asyncio.run(scenario())
+
+
+def test_expired_requested_cycle_performs_no_model_work(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    calls = []
+    service = PaperService(
+        runtime.database,
+        runtime.execution,
+        handlers={"optimisation": lambda task: calls.append(task) or {}},
+        schedule_intervals={},
+    )
+    control = ServiceController(runtime, prerequisites=synthetic_ready)
+
+    async def scenario():
+        await service.start()
+        result = control.start_optimisation("expired-cycle")
+        runtime.clock.advance(601)
+        await service.tick(wait_roles=True)
+        assert calls == []
+        assert control._cycle(result["task_id"])["status"] == "FAILED"
+        await service.stop()
+
+    asyncio.run(scenario())
+
+
+def test_nonflat_stop_preserves_system_flatten_management(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    runtime.ledger.deposit(runtime.portfolio_id, "BTC", Decimal("0.1"), "synthetic-position")
+    runtime.execution.set_pause(runtime.portfolio_id, "FLATTEN", "system", "native safety incident")
+    result = ServiceController(runtime).stop("preserve-protection")
+    assert not result["service_stop_requested"] and result["profile"] == "FLATTEN"
+    assert runtime.execution.pause(runtime.portfolio_id)["originator"] == "system"
+
+
+def test_shutdown_after_tick_exception_retains_failure_status(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    service = PaperService(runtime.database, runtime.execution, schedule_intervals={})
+
+    async def broken(**kwargs):
+        raise OSError("synthetic disk failure")
+
+    service.tick = broken
+    with pytest.raises(OSError):
+        asyncio.run(service.run(max_ticks=1))
+    row = runtime.database.execute("SELECT * FROM graph_service_runs").fetchone()
+    assert row["status"] == "FAILED" and row["error_type"] == "OSError"
+    assert runtime.database.execute("SELECT COUNT(*) FROM process_leases").fetchone()[0] == 0
+
+
+def wait_until(predicate, seconds=10):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    pytest.fail("scripted child lifecycle did not reach its expected state")
+
+
+def test_actual_cli_child_singleton_kill_and_recovery_are_durable(tmp_path):
+    runtime, broker = runtime_stack(tmp_path)
+    tmp_path.chmod(0o700)
+    control = ServiceController(runtime)
+    before = runtime.database.execute("SELECT COUNT(*) FROM ledger_events").fetchone()[0]
+    launched_pids = []
+    try:
+        first = control.start_trading("actual-first")
+        wait_until(lambda: control.status()["service"]["status"] == "MANAGEMENT_ONLY")
+        row = runtime.database.execute(
+            "SELECT * FROM graph_service_runs WHERE run_id = ?", (first["run_id"],)
+        ).fetchone()
+        launched_pids.append(row["pid"])
+        duplicate = control.start_trading("actual-duplicate")
+        assert duplicate["attached"] and duplicate["run_id"] == first["run_id"]
+        assert control.status()["database_owned"]
+        assert control.status()["prerequisites"]["ai_available"] is False
+        os.kill(row["pid"], signal.SIGKILL)
+        wait_until(lambda: control.status()["service"]["status"] == "INTERRUPTED")
+        second = control.start_trading("actual-recovery")
+        assert second["run_id"] != first["run_id"] and not second["attached"]
+        wait_until(lambda: control.status()["service"]["status"] == "MANAGEMENT_ONLY")
+        row = runtime.database.execute(
+            "SELECT * FROM graph_service_runs WHERE run_id = ?", (second["run_id"],)
+        ).fetchone()
+        launched_pids.append(row["pid"])
+        assert row["pid_start_ticks"] == process_identity(row["pid"])
+        assert control.stop("actual-flat-stop")["service_stop_requested"]
+        wait_until(lambda: control.status()["service"]["status"] == "STOPPED")
+        wait_until(lambda: not control.status()["database_owned"])
+        assert runtime.database.execute("SELECT COUNT(*) FROM graph_service_runs").fetchone()[0] == 2
+        assert runtime.database.execute("SELECT COUNT(*) FROM ledger_events").fetchone()[0] == before
+        assert runtime.database.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 0
+        assert runtime.database.execute("SELECT COUNT(*) FROM subscription_invocations").fetchone()[0] == 0
+        assert broker.submit_count == 0
+    finally:
+        for pid in launched_pids:
+            if process_identity(pid):
+                os.kill(pid, signal.SIGTERM)
+        for child in tuple(control._children.values()):
+            try:
+                child.wait(timeout=5)
+            except TimeoutError:
+                child.kill()
+                child.wait(timeout=5)
+
+
+def test_artifact_schedule_cannot_restore_automatic_optimisation(tmp_path):
+    from tests.integration.test_version_lifecycle import lifecycle_stack
+
+    from trade_graph.application.artifact_runtime import ArtifactRuntime
+
+    stack = lifecycle_stack(
+        tmp_path,
+        additional_files={
+            "artifacts/schedules.json": json.dumps(
+                {"schema_version": 1, "interval_seconds": {"optimisation": 60, "research": 120}}
+            ),
+        },
+    )
+    scheduler = Scheduler(stack.database, stack.clock)
+    scheduler.ensure_schedule(stack.portfolio, "artifact-optimisation-review", 60, "coalesce")
+    runtime = ArtifactRuntime(stack.versions, scheduler)
+    runtime.disabled_schedule_roles = {"optimisation"}
+    bundle = stack.versions.begin(stack.portfolio, "owner-schedule-test", reconcile=lambda: None)
+    for _ in range(2):
+        runtime.apply_schedules(stack.portfolio, bundle)
+        assert runtime.coalesce_due(stack.portfolio, "optimisation") is None
+        assert (
+            stack.database.execute(
+                "SELECT COUNT(*) FROM schedules WHERE name='artifact-optimisation-review'"
+            ).fetchone()[0]
+            == 0
+        )
+    assert (
+        stack.database.execute("SELECT COUNT(*) FROM schedules WHERE name='artifact-research-review'").fetchone()[0]
+        == 1
+    )

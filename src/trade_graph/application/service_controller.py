@@ -106,7 +106,7 @@ def service_finished(database, clock, run_id: str | None, error_type: str | None
     if run_id is not None:
         database.execute(
             """UPDATE graph_service_runs SET status = ?, finished_at = ?, error_type = ?
-            WHERE run_id = ? AND (pid IS NULL OR (pid = ? AND pid_start_ticks = ?))""",
+            WHERE run_id = ? AND (pid IS NULL OR (pid = ? AND (pid_start_ticks IS NULL OR pid_start_ticks = ?)))""",
             (
                 "FAILED" if error_type else "STOPPED",
                 utc_iso(clock.now()),
@@ -133,6 +133,7 @@ class ServiceController:
         self.protected_owner = protected_owner
         self.launcher = launcher or self._launch
         self.prerequisites = prerequisites
+        self._children: dict[str, subprocess.Popen] = {}
 
     @contextmanager
     def _control_lock(self):
@@ -214,10 +215,13 @@ class ServiceController:
         return result
 
     def status(self) -> dict:
+        for run_id, child in tuple(self._children.items()):
+            if hasattr(child, "poll") and child.poll() is not None:
+                self._children.pop(run_id, None)
         row = self.database.execute("SELECT * FROM graph_service_runs ORDER BY rowid DESC LIMIT 1").fetchone()
         observed = self._observed(row)
         owned = database_owned(self.database)
-        if observed is None and owned:
+        if owned and (observed is None or observed["status"] not in ACTIVE_SERVICE):
             observed = {
                 "run_id": None,
                 "mode": getattr(self.runtime.execution, "mode", "paper"),
@@ -246,9 +250,7 @@ class ServiceController:
             }
         unresolved = self.database.execute("""SELECT COUNT(*) FROM subscription_invocations
             WHERE cost_status = 'unknown'
-            AND state IN ('DISPATCHED', 'COMPLETED', 'FAILED', 'UNCERTAIN')""").fetchone()[
-            0
-        ]
+            AND state IN ('DISPATCHED', 'COMPLETED', 'FAILED', 'UNCERTAIN')""").fetchone()[0]
         cycle = self.database.execute(
             """SELECT * FROM tasks WHERE portfolio_id = ?
             AND objective = 'owner-optimisation-cycle' ORDER BY rowid DESC LIMIT 1""",
@@ -388,6 +390,7 @@ class ServiceController:
                     command += ["--protected-owner", str(self.protected_owner)]
                 try:
                     child = self.launcher(command)
+                    self._children[run_id] = child
                     self.database.execute(
                         """UPDATE graph_service_runs SET pid = ?, pid_start_ticks = ?
                         WHERE run_id = ? AND status = 'STARTING'""",
@@ -452,7 +455,20 @@ class ServiceController:
 
             nonflat = _nonflat(self.runtime) or self.runtime.execution._has_outstanding(self.runtime.portfolio_id)
             profile = ("MANAGE_ONLY" if position_policy == "manage-only" else "FLATTEN") if nonflat else "STOPPED"
-            self.runtime.execution.set_pause(self.runtime.portfolio_id, profile, "owner", "Owner service stop request")
+            current = self.runtime.execution.pause(self.runtime.portfolio_id)
+            if (
+                nonflat
+                and current
+                and (
+                    (current["originator"] == "system" and current["profile"] != "RUNNING")
+                    or current["profile"] in {"FLATTEN", "CANCEL_ALL", "STOPPED"}
+                )
+            ):
+                profile = current["profile"]
+            else:
+                self.runtime.execution.set_pause(
+                    self.runtime.portfolio_id, profile, "owner", "Owner service stop request"
+                )
             if not nonflat:
                 self.database.execute("""UPDATE graph_service_runs SET stop_requested = 1,
                     status = 'STOPPING' WHERE status IN ('STARTING', 'RUNNING', 'MANAGEMENT_ONLY')""")

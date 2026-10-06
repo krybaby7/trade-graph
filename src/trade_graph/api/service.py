@@ -29,7 +29,10 @@ class StopCommand(CycleCommand):
 
 def controller(runtime) -> ServiceController:
     existing = getattr(runtime, "service_controller", None)
-    return existing or ServiceController(runtime)
+    if existing is None:
+        existing = ServiceController(runtime)
+        runtime.service_controller = existing
+    return existing
 
 
 async def _body(request, model):
