@@ -65,3 +65,5 @@ startup, duplicate attachment, abrupt process loss, restart and flat shutdown in
 a disposable synthetic database. These tests establish implementation behavior;
 they do not establish successful Research inference, continuous paper AI
 operation, Kraken conformance or authorized live commissioning.
+
+Dashboard page labels use the persisted scoped portfolio mode. A live account journal is labelled as live records, while operating expenses stay separate from trading allocation. The live scope label does not enable execution. Mission Control and Owner controls show static protected startup admission refusals, and the service lifecycle shows whether any worker is observed. Rendering these pages causes no broker effects or worker launch.

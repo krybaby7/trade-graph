@@ -425,7 +425,7 @@ def _cost_state(runtime, currency: str = "EUR") -> dict:
 
 def costs(runtime, limit: int = 50, offset: int = 0) -> dict:
     with runtime.database.snapshot():
-        at, _, _ = _context(runtime)
+        at, portfolio, _ = _context(runtime)
         state = _cost_state(runtime)
         deployment_id = getattr(runtime, "deployment_id", "deployment")
         budgets = _rows(runtime, "SELECT * FROM deployment_budget WHERE deployment_id = ?", (deployment_id,))
@@ -452,7 +452,7 @@ def costs(runtime, limit: int = 50, offset: int = 0) -> dict:
                 "synthetic_spend": _amount(state["synthetic"]),
                 "allocated_actual_spend": _amount(state["allocated"]),
                 "allocated_cost_phases": {key: _amount(value) for key, value in state["allocated_phases"].items()},
-                "simulated": True,
+                "simulated": portfolio["mode"] == "paper",
                 "simulated_trading_separate": True,
                 "remaining_allowance": _amount(remaining),
                 "uncertain_reservations": sum(

@@ -388,7 +388,8 @@
     const profile = lifecycle?.pause_profile || "RUNNING";
     write("[data-runtime-mode]", `${label(service.mode || "paper")} · ${service.mode === "live" && ready.live_available ? "Protected live startup eligible; final admission repeats before effects" : "Live disabled"}`);
     write("[data-runtime-status]", `Service ${label(service.status || "IDLE")}. AI ${ready.ai_available ? "available" : "unavailable or paused"}. Portfolio ${label(profile)}.${service.error_type ? ` Last failure: ${text(service.error_type)}.` : ""}`);
-    write("[data-runtime-prerequisites]", list(ready.reasons).join(" ") || "Owner prerequisites satisfied for this configured mode.");
+    const prerequisiteReasons = [...list(ready.reasons), ...(service.mode === "live" ? list(ready.live_reasons) : [])];
+    write("[data-runtime-prerequisites]", prerequisiteReasons.join(" ") || "Owner prerequisites satisfied for this configured mode.");
     const cycle = lifecycle?.optimisation;
     write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. Automatic scheduling disabled.` : "Optimisation: no requested cycle recorded. Automatic scheduling disabled.");
     const usage = lifecycle?.ai_usage;

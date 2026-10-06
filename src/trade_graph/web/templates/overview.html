@@ -2,7 +2,7 @@
 {% from 'macros.html' import metric, money, value, badge, empty, data_tree %}
 {% block title %}Overview{% endblock %}
 {% block heading %}Portfolio overview{% endblock %}
-{% block description %}Virtual capital, trading performance and real operating expenses, with their valuation basis.{% endblock %}
+{% block description %}{{ 'Live allocation, trading performance and real operating expenses, with their valuation basis.' if operating_mode == 'live' else 'Virtual capital, trading performance and real operating expenses, with their valuation basis.' }}{% endblock %}
 {% block content %}
 {% set currency = data.get('reporting_currency', currency|default('EUR')) %}
 {% set performance = data.get('performance', {}) %}
@@ -10,17 +10,19 @@
 {% set capital = data.get('allocated_capital', {}) %}
 {% set current = data.get('current_value', {}) %}
 {% set flows = data.get('external_flows', {}) %}
+{% set live = operating_mode == 'live' %}
+{% set capital_kind = 'actual' if live else 'simulated' %}
 {% if data.get('provisional', provisional|default(false)) or valuation.get('provisional') %}<div class="notice notice-warning" role="status"><strong>Provisional financial result.</strong> Valuation, operating expenses or reconciliation evidence is incomplete. Native balances remain visible in <a href="/trading">Trading</a>.</div>{% endif %}
 {% if data.get('degraded') %}<div class="notice notice-danger"><strong>Degraded operations.</strong> Review uncertain orders and reconciliation before increasing exposure.</div>{% endif %}
 <section class="metrics" aria-label="Financial summary">
-  {{ metric('Allocated virtual capital', capital.get('reporting_amount'), currency, 'Opening capital valued on its recorded FX basis.', 'simulated') }}
-  {{ metric('Current simulated portfolio value', data.get('equity', equity|default(none)), currency, 'Cash and positions; not earned cash.', 'simulated') }}
-  {{ metric('Simulated trading P&L', performance.get('trading_pnl'), currency, 'Includes incurred trading fees.', 'simulated') }}
-  {{ metric('Simulated net-economic P&L', performance.get('net_economic_pnl'), currency, 'After allocated actual operating expenses.', 'simulated') }}
-  {{ metric('Actual operating spend', data.get('actual_spend', spend|default(none)), data.get('actual_spend_currency', 'EUR'), 'Real-money expense; separate from virtual capital.', 'actual') }}
+  {{ metric('Allocated live capital' if live else 'Allocated virtual capital', capital.get('reporting_amount'), currency, 'Opening capital valued on its recorded FX basis.', capital_kind) }}
+  {{ metric('Current live portfolio value' if live else 'Current simulated portfolio value', data.get('equity', equity|default(none)), currency, 'Cash and positions; not earned cash.', capital_kind) }}
+  {{ metric('Trading P&L' if live else 'Simulated trading P&L', performance.get('trading_pnl'), currency, 'Includes incurred trading fees.', capital_kind) }}
+  {{ metric('Net-economic P&L' if live else 'Simulated net-economic P&L', performance.get('net_economic_pnl'), currency, 'After allocated actual operating expenses.', capital_kind) }}
+  {{ metric('Actual operating spend', data.get('actual_spend', spend|default(none)), data.get('actual_spend_currency', 'EUR'), 'Real-money expense; separate from allocated trading capital.' if live else 'Real-money expense; separate from virtual capital.', 'actual') }}
 </section>
 <div class="grid-two">
-  <section class="panel"><div class="panel-heading"><h2 class="panel-title">Simulated performance</h2>{{ badge('Simulated') }}</div>
+  <section class="panel"><div class="panel-heading"><h2 class="panel-title">{{ 'Live account performance' if live else 'Simulated performance' }}</h2>{{ badge('Live records' if live else 'Simulated') }}</div>
     <dl class="key-values">
       {% for label, amount in [('Realized trading result', performance.get('realized')), ('Unrealized trading result', performance.get('unrealized')), ('Incurred trading fees', performance.get('trading_fees', {}).get('reporting_amount')), ('Allocated actual operating expenses', performance.get('allocated_actual_operating')), ('Operating expenses embedded in ledger', performance.get('embedded_operating')), ('Net external flows', flows.get('net_reporting'))] %}<div class="key-value"><dt>{{ label }}</dt><dd>{{ money(amount, currency) }}</dd></div>{% endfor %}
     </dl>

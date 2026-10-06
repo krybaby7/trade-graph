@@ -82,9 +82,13 @@ def create_app(runtime) -> FastAPI:
 
     def render(request: Request, name: str, data: dict):
         csrf = csrf_for_token(runtime.database, request.state.token) if request.state.auth_mechanism == "cookie" else ""
+        portfolio = runtime.database.execute(
+            "SELECT mode FROM portfolios WHERE portfolio_id = ?", (runtime.portfolio_id,)
+        ).fetchone()
+        operating_mode = "live" if portfolio and portfolio["mode"] == "live" else "paper"
         return TEMPLATES.TemplateResponse(request, f"{name}.html", {
             "data": redact(data), "role": request.state.role, "csrf": csrf, "page": name,
-            "auth_mechanism": request.state.auth_mechanism,
+            "auth_mechanism": request.state.auth_mechanism, "operating_mode": operating_mode,
         })
 
     def overview_data():
@@ -304,6 +308,7 @@ def create_app(runtime) -> FastAPI:
             data = configuration(runtime)
             data["health"] = project_health(runtime, authenticated=True)
             data["live_prerequisites"] = data["health"]["live_prerequisites"]
+            data["lifecycle"] = service_controller(runtime).status()
             return render(request, "owner", data)
 
     register_controls(app, runtime, identity, owner_write)

@@ -25,8 +25,10 @@
   </div>
 
   {% set lifecycle = data.get('lifecycle', {}) %}
+  {% set runtime_ready = lifecycle.get('prerequisites', {}) %}
+  {% set runtime_reasons = runtime_ready.get('reasons', []) + (runtime_ready.get('live_reasons', []) if operating_mode == 'live' else []) %}
   <section class="mc-panel mc-runtime-controls" aria-labelledby="runtime-controls-title">
-    <div class="mc-panel-heading"><div><p class="mc-kicker">Owner operation</p><h2 id="runtime-controls-title">Trading and Optimisation</h2><p>Start or attach to one service. Optimisation runs one bounded cycle only when you request it.</p></div><span class="mc-outline-tag" data-runtime-mode>Paper · Live disabled</span></div>
+    <div class="mc-panel-heading"><div><p class="mc-kicker">Owner operation</p><h2 id="runtime-controls-title">Trading and Optimisation</h2><p>Start or attach to one service. Optimisation runs one bounded cycle only when you request it.</p></div><span class="mc-outline-tag" data-runtime-mode>{{ operating_mode|capitalize }} · {{ 'Protected live startup eligible; final admission repeats before effects' if operating_mode == 'live' and runtime_ready.get('live_available') else 'Live disabled' }}</span></div>
     <p class="mc-small-note" data-runtime-status>Service {{ lifecycle.get('service', {}).get('status', 'IDLE')|replace('_', ' ') }}. AI availability is checked separately.</p>
     <div class="mc-runtime-actions">
       <button class="mc-button" type="button" data-service-action="start-trading" disabled>Start Trading</button>
@@ -34,7 +36,7 @@
       <button class="mc-button" type="button" data-service-action="pause" disabled>Pause AI · keep protection</button>
       <button class="mc-button" type="button" data-service-action="stop-service" disabled>Stop safely</button>
     </div>
-    <p data-runtime-prerequisites>Controls become available after the dashboard connects.</p>
+    <p data-runtime-prerequisites>{{ runtime_reasons|join(' ') or 'Controls become available after the dashboard connects.' }}</p>
     <p class="mc-small-note">Pause keeps reconciliation and protection running. Stop safely stops a flat account; an account with orders or positions enters manage-only and its service continues. Use Owner controls for verified flatten or resume.</p>
     <p class="mc-small-note" data-optimisation-status>Optimisation: no requested cycle recorded. Automatic scheduling is disabled.</p>
     <p class="mc-small-note" data-ai-usage>Subscription quota and usage: unknown. Virtual capital and real operating expenses remain separate.</p>
