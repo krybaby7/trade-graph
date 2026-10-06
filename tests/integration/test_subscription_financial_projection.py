@@ -3,6 +3,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
 from tests.integration.test_dashboard_financial import _receipt, _runtime
 from tests.test_dashboard_pages import render
 from tests.unit.test_subscription_adapter import request
@@ -100,3 +101,100 @@ def test_costs_template_keeps_subscription_unknowns_separate_from_recorded_api_e
     assert "Recorded actual operating spend" in page
     assert "Shared subscription fees are not recorded as zero" in page
     assert "claude_subscription" in page
+
+
+@pytest.mark.parametrize("state", ["DISPATCHED", "FAILED", "UNCERTAIN"])
+def test_unknown_subscription_journal_states_keep_economics_unresolved(tmp_path, state):
+    runtime = _runtime(tmp_path)
+    journal = SubscriptionJournal(runtime.database, runtime.clock)
+    journal.begin("interrupted-subscription", request(), "claude_subscription", {})
+    if state != "DISPATCHED":
+        result = ModelResult(ok=False, failure="timeout_uncertain" if state == "UNCERTAIN" else "validation",
+                             message="synthetic retained failure or interrupted dispatch")
+        journal.save("interrupted-subscription", result, state)
+    costs = financial.costs(runtime)
+    assert costs["provisional"] and costs["subscription"]["unknown_inference_costs"] == 1
+    assert costs["subscription"]["records"][0]["state"] == state
+    assert financial.overview(runtime)["performance"]["net_economic_pnl"] is None
+    assert costs["actual_spend"] == "0" and runtime.budget.remaining("deployment") == Decimal("10")
+
+
+@pytest.mark.parametrize("provider,digest,present,expected", [
+    ("claude_subscription", "a" * 64, False, "unknown"),
+    (None, "a" * 64, False, "unknown"),
+    (None, None, True, "unknown"),
+    (None, None, False, "not_recorded"),
+])
+def test_actual_protected_dashboard_retains_subscription_fee_evidence(
+    tmp_path, monkeypatch, provider, digest, present, expected,
+):
+    import hashlib
+
+    from tests.integration.test_protected_department_graph import GRAPH
+
+    from trade_graph.adapters.models.subscription import SubscriptionConfig
+    from trade_graph.application.subscription_profile import SubscriptionAdmission
+    from trade_graph.application.subscription_runtime import SubscriptionRuntimeConfig
+    from trade_graph.dashboard import dashboard_runtime
+    from trade_graph.kernel.runtime_manifest import ProtectedRuntimeManifest, protected_package_sha256
+
+    fixture = _runtime(tmp_path)
+    manifest = ProtectedRuntimeManifest(
+        schema_version=1, protected_package_sha256=protected_package_sha256(), deployment_id="deployment",
+        approved_source_sha256=(hashlib.sha256(GRAPH.encode()).hexdigest(),),
+        operations=("submit_decision", "invoke_model", "apply_role_result"),
+    )
+    monkeypatch.setattr("trade_graph.application.deployment_runtime._owner_bundle",
+                        lambda directory: (manifest, GRAPH, b"synthetic-owner-key-not-a-real-credential"))
+    config = SubscriptionRuntimeConfig(subscription=SubscriptionConfig(
+        provider=provider, model="claude-sonnet-5-5", enabled=False)) if provider else None
+    admission = SubscriptionAdmission(config, None, {
+        "ready": False, "selected_provider": provider, "cost_status": "unknown",
+        "blockers": ["synthetic blocked native login or refused profile"],
+    }, digest)
+    calls = []
+
+    def admitted(directory):
+        calls.append("admission")
+        return admission
+
+    monkeypatch.setattr("trade_graph.application.subscription_profile.load_subscription_profile", admitted)
+    monkeypatch.setattr("trade_graph.application.subscription_profile.subscription_profile_unchanged",
+                        lambda directory, digest: True)
+
+    def no_config(directory, name, maximum_bytes):
+        raise FileNotFoundError("synthetic absent optional paper configuration")
+
+    monkeypatch.setattr("trade_graph.kernel.deployment_image.read_owner_file", no_config)
+    owner = tmp_path / "owner"
+    if present:
+        owner.mkdir(mode=0o700)
+        (owner / "subscription-profile.json").write_text("synthetic refused profile, no credentials")
+    runtime = dashboard_runtime(fixture.database.path, protected_owner=owner)
+    assert not hasattr(runtime, "subscription_provider")
+    assert runtime.database.execute("SELECT COUNT(*) FROM subscription_invocations").fetchone()[0] == 0
+    costs = financial.costs(runtime)
+    assert costs["subscription"]["shared_fee_allocation_status"] == expected
+    assert costs["provisional"] is (expected == "unknown")
+    economic = financial.overview(runtime)["performance"]["net_economic_pnl"]
+    assert economic is None if expected == "unknown" else economic == "0"
+    assert costs["subscription"]["unknown_inference_costs"] == 0
+    assert costs["actual_spend"] == "0" and runtime.ledger.books(runtime.portfolio_id).cash["EUR"] == Decimal("100")
+    assert calls == ["admission"]  # Projection consumes captured readonly readiness, never probes a CLI.
+    assert runtime.database.execute("SELECT COUNT(*) FROM graph_service_runs").fetchone()[0] == 0
+    runtime.database.close()
+
+
+def test_unavailable_existing_readiness_is_conservative_without_constructing_a_service(tmp_path):
+    from types import SimpleNamespace
+
+    runtime = _runtime(tmp_path)
+
+    def unavailable():
+        raise OSError("synthetic local readonly metadata unavailable")
+
+    runtime.service_controller = SimpleNamespace(prerequisites=unavailable)
+    costs = financial.costs(runtime)
+    assert costs["subscription"]["shared_fee_allocation_status"] == "unknown"
+    assert costs["provisional"] and financial.overview(runtime)["performance"]["net_economic_pnl"] is None
+    assert runtime.database.execute("SELECT COUNT(*) FROM graph_service_runs").fetchone()[0] == 0

@@ -15,6 +15,7 @@ from trade_graph.api.security import redact
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import utc_iso
+from trade_graph.domain.errors import TradeGraphError
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import FxRate, Mark, mark_equity
 
@@ -239,7 +240,23 @@ def _subscription_cost_state(runtime, at: str) -> dict:
         record["inference_dispatched"] = record["cost_status"] != "not_incurred" and record["state"] != "BLOCKED"
         unknown += not record["synthetic"] and record["inference_dispatched"] and record["cost_status"] == "unknown"
     selected = getattr(runtime, "subscription_provider", None)
-    shared_pending = (selected in {"codex_subscription", "claude_subscription"}
+    admission = getattr(runtime, "subscription_admission", None)
+    declared = bool(getattr(admission, "profile_sha256", None) or getattr(admission, "config", None))
+    # Protected dashboards already own a local, readonly readiness callback that
+    # captures admission. Consume it without constructing a controller, loading
+    # profiles, probing a CLI or touching broker/worker lifecycle methods here.
+    controller = getattr(runtime, "service_controller", None)
+    prerequisites = getattr(controller, "prerequisites", None)
+    if callable(prerequisites):
+        try:
+            ready = prerequisites()
+            if type(ready) is not dict:
+                raise ValueError("readonly readiness metadata is unavailable")
+            selected = ready.get("selected_provider") or selected
+            declared = declared or ready.get("subscription_declared") is True
+        except (OSError, ValueError, TypeError, TradeGraphError):
+            declared = True  # Metadata failure cannot establish resolved zero fees.
+    shared_pending = (declared or selected in {"codex_subscription", "claude_subscription"}
                       or any(not record["synthetic"] for record in records))
     return {"records": records, "unknown_inference_costs": unknown,
             "shared_fee_allocation_status": "unknown" if shared_pending else "not_recorded",

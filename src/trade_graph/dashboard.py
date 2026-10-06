@@ -98,6 +98,16 @@ def _subscription_prerequisites(protected_owner):
     from trade_graph.application.subscription_profile import load_subscription_profile, subscription_profile_unchanged
 
     admission = load_subscription_profile(protected_owner)
+    declared = admission.config is not None or admission.profile_sha256 is not None
+    # A refused or unreadable existing profile still declares subscription use.
+    # Capture existence once without opening the profile or following symlinks.
+    try:
+        (protected_owner / "subscription-profile.json").lstat()
+        declared = True
+    except FileNotFoundError:
+        pass
+    except OSError:
+        declared = True
 
     def status():
         current = subscription_profile_unchanged(protected_owner, admission.profile_sha256)
@@ -106,6 +116,7 @@ def _subscription_prerequisites(protected_owner):
         if not current:
             reasons = ["Protected subscription profile changed; restart after owner review. Management continues."]
         return {"ai_available": ready, "selected_provider": admission.status.get("selected_provider"),
+                "subscription_declared": declared,
                 "reasons": reasons, "subscription": admission.status}
 
     return status
