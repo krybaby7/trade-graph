@@ -125,6 +125,10 @@ def test_rejected_domains_never_resolve_or_dial(scope, host):
     _request(headers=b"Host: claude.ai:443\r\n"),
     _request(headers=b" Folded: disallowed\r\n"),
     _request(headers=b"X-Secret: synthetic\r\n"),
+    _request(headers=b"Accept: application/json\r\n"),
+    _request(headers=b"Accept: */*, application/json\r\n"),
+    _request(headers=b"Accept: \r\n"),
+    _request(headers=b"Accept: */*\r\nAccept: */*\r\n"),
 ])
 def test_connect_rejects_ambiguous_requests_credentials_and_bodies(raw_request):
     headers, _, calls, _ = asyncio.run(_run_request(raw_request))
@@ -433,3 +437,45 @@ def test_checked_address_fallback_handles_unreachable_ipv6_without_new_dns_or_ho
             await server.wait_closed()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("host", ["api.kraken.com", "api.frankfurter.dev"])
+def test_actual_httpx_market_transport_connect_headers_match_strict_admission(host):
+    import httpx
+
+    from trade_graph.adapters.market.public import HttpxTextTransport
+
+    async def scenario():
+        captured = []
+
+        async def capture(reader, writer):
+            try:
+                captured.append(await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 2))
+                # Reject locally before TLS: no DNS, upstream socket or API data.
+                writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        server = await asyncio.start_server(capture, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        transport = HttpxTextTransport(timeout=2, proxy=f"http://127.0.0.1:{port}", trust_env=False)
+        try:
+            with pytest.raises(httpx.ProxyError):
+                await asyncio.to_thread(transport.get_text, f"https://{host}/synthetic-probe")
+            assert captured == [f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\nAccept: */*\r\n\r\n".encode()]
+            assert _proxy()._connect_host(captured[0], _proxy().MARKET_HOSTS) == host
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fixed_accept_wildcard_preserves_checked_tls_relay():
+    headers, body, calls, observed = asyncio.run(_run_request(
+        _request("api.kraken.com", headers=b"Accept: */*\r\n"), scope="market", hello=_hello("api.kraken.com")))
+    assert headers == b"HTTP/1.1 200 Connection Established\r\n\r\n"
+    assert body == b"opaque-encrypted-response" and observed == [_hello("api.kraken.com")]
+    assert calls == [("resolve", "api.kraken.com"), ("dial", "1.1.1.1", 443)]

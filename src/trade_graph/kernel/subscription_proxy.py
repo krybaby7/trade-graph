@@ -89,10 +89,12 @@ def _connect_host(payload: bytes, allowed: frozenset[str]) -> str:
             if not name or name != name.strip() or not name.isascii():
                 raise _Refused(400)
             name = name.lower()
-            if name not in {"host", "connection", "proxy-connection", "user-agent"} or name in headers:
+            if name not in {"host", "connection", "proxy-connection", "user-agent", "accept"} or name in headers:
                 raise _Refused(400)
             value = value.strip(" ")
             if not value or len(value) > 1024 or any(ord(c) < 32 or ord(c) > 126 for c in value):
+                raise _Refused(400)
+            if name == "accept" and value != "*/*":
                 raise _Refused(400)
             headers[name] = value
         if headers.get("host", "").lower() != target.lower():
