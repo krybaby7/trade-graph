@@ -19,8 +19,13 @@ def profile_files(tmp_path, provider="claude_subscription"):
     (tmp_path / "subscription-isolation.json").write_bytes(raw)
     profile = {"schema_version": 1, "runtime": {"subscription": {"provider": provider, "model": model,
                        "enabled": True}}, "native_binary": "/usr/local/bin/claude", "native_sha256": "a" * 64,
-               "official_login_file": "/native-login/.credentials.json", "extra_usage_disabled": True,
+               "official_login_file": ("/native-login/auth.json" if provider == "codex_subscription"
+                                       else "/native-login/.credentials.json"), "extra_usage_disabled": True,
                "isolation_evidence_sha256": hashlib.sha256(raw).hexdigest()}
+    if provider == "codex_subscription":
+        profile["model_catalog_file"] = "codex-model-catalog.json"
+        (tmp_path / "codex-model-catalog.json").write_text(json.dumps({"models":[{"slug":model,
+            "shell_type":"disabled","apply_patch_tool_type":None,"experimental_supported_tools":[]}]}))
     (tmp_path / "subscription-profile.json").write_text(json.dumps(profile))
     return profile
 
@@ -38,10 +43,14 @@ def trusted_files(monkeypatch, tmp_path):
 
     def metadata(config, pin, login, **kwargs):
         metadata_calls.append((config.provider, pin.sha256, str(login)))
-        return {"provider": config.provider, "cli_version": "2.1.285", "ready": True, "blockers": [],
-                "quota": {}, "authentication": "subscription", "isolation": "linux-bubblewrap"}
+        return {"provider": config.provider,
+                "cli_version": "0.160.1" if config.provider == "codex_subscription" else "2.1.285",
+                "ready": True, "blockers": [],
+                "quota": {}, "authentication": "chatgpt" if config.provider == "codex_subscription" else "subscription",
+                "isolation": "linux-bubblewrap"}
 
     monkeypatch.setattr(module, "probe_isolated_claude", metadata)
+    monkeypatch.setattr(module, "probe_isolated_codex", metadata, raising=False)
     return metadata_calls
 
 
@@ -69,13 +78,13 @@ def test_native_profile_binds_exact_binary_login_and_immutable_roles(tmp_path, m
     assert "native-login" not in json.dumps(admission.status)
 
 
-def test_codex_profile_never_uses_claude_or_invokes_native_inference(tmp_path, monkeypatch):
+def test_codex_profile_uses_official_chatgpt_auth_mount_without_inference(tmp_path, monkeypatch):
     profile_files(tmp_path, "codex_subscription")
     calls = trusted_files(monkeypatch, tmp_path)
     admission = load_subscription_profile(tmp_path)
-    assert not admission.status["ready"] and admission.adapter is None and not calls
+    assert admission.status["ready"] and admission.adapter is not None
+    assert calls == [("codex_subscription", "a" * 64, "/native-login/auth.json")]
     assert admission.status["selected_provider"] == "codex_subscription"
-    assert "retries" in " ".join(admission.status["blockers"])
 
 
 def test_changed_isolation_proof_is_not_replaced_by_boolean(tmp_path, monkeypatch):
@@ -118,3 +127,52 @@ def test_missing_egress_admission_blocks_before_native_auth_or_inference(tmp_pat
     monkeypatch.setattr(module, 'verify_subscription_egress', denied)
     admission = load_subscription_profile(tmp_path)
     assert not admission.status['ready'] and admission.adapter is None and not calls
+
+
+def test_only_independently_ready_fallback_profile_is_enabled_and_hash_binds_it(tmp_path, monkeypatch):
+    from trade_graph.application.subscription_profile import subscription_profile_unchanged
+    profile=profile_files(tmp_path)
+    fallback=tmp_path / "fallback-codex"
+    fallback.mkdir()
+    profile_files(fallback,"codex_subscription")
+    profile["fallback_profiles"]=["fallback-codex"]
+    (tmp_path/"subscription-profile.json").write_text(json.dumps(profile))
+    trusted_files(monkeypatch,tmp_path)
+    admission=load_subscription_profile(tmp_path)
+    assert admission.status["ready"] and len(admission.adapter.fallbacks)==1
+    assert admission.status["application_automatic_fallback"]
+    assert subscription_profile_unchanged(tmp_path,admission.profile_sha256)
+    (fallback/"subscription-profile.json").write_text('{}')
+    assert not subscription_profile_unchanged(tmp_path,admission.profile_sha256)
+
+
+def test_unready_fallback_is_reported_without_blocking_ready_primary(tmp_path, monkeypatch):
+    profile=profile_files(tmp_path)
+    profile["fallback_profiles"]=["missing-route"]
+    (tmp_path/"subscription-profile.json").write_text(json.dumps(profile))
+    trusted_files(monkeypatch,tmp_path)
+    admission=load_subscription_profile(tmp_path)
+    assert admission.status["ready"] and not admission.adapter.fallbacks
+    assert not admission.status["fallback_routes"][0]["ready"]
+
+
+def test_codex_quota_owner_evidence_is_sanitized(tmp_path, monkeypatch):
+    profile=profile_files(tmp_path,"codex_subscription")
+    profile["quota_evidence_file"]="subscription-quota.json"
+    (tmp_path/"subscription-profile.json").write_text(json.dumps(profile))
+    (tmp_path/"subscription-quota.json").write_text(json.dumps({"remaining_percent":76,
+        "ordinary_usage_allowed":True,"credits_balance":"0","private_account":"excluded"}))
+    trusted_files(monkeypatch,tmp_path)
+    admission=load_subscription_profile(tmp_path)
+    assert admission.status["ready"] and admission.status["quota"]["remaining_percent"]==76
+    assert "private_account" not in json.dumps(admission.status)
+
+
+def test_codex_catalog_must_remove_all_filesystem_tools_before_admission(tmp_path,monkeypatch):
+    profile_files(tmp_path,"codex_subscription")
+    calls=trusted_files(monkeypatch,tmp_path)
+    (tmp_path / "codex-model-catalog.json").write_text(json.dumps({"models":[{"slug":"gpt-6.1-sol",
+        "shell_type":"disabled","apply_patch_tool_type":"freeform","experimental_supported_tools":[]}]}))
+    admission=load_subscription_profile(tmp_path)
+    assert not admission.status["ready"] and not admission.adapter
+    assert not calls

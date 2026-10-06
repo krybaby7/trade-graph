@@ -63,12 +63,12 @@ def adapter(executor, readiness=None):
                                readiness or ready(), executor)
 
 
-def test_codex_builtin_retry_blocker_cannot_be_overridden():
+def test_codex_supported_subscription_retry_route_is_admitted():
     status = assess_subscription(SubscriptionConfig(provider="codex_subscription", model="gpt-6.1-sol", enabled=True),
         cli_version="0.160.1", authentication="chatgpt", quota={"remaining_percent": 80},
         extra_usage_disabled=True, isolation_ready=True, native_linux=True)
-    assert not status.ready
-    assert any("built-in" in blocker and "retry" in blocker for blocker in status.blockers)
+    assert status.ready
+    assert not status.blockers
 
 
 def test_claude_admission_requires_native_login_no_extra_usage_and_recent_cli():
@@ -166,18 +166,18 @@ def test_pre_cancel_does_not_dispatch(journal):
     assert journal.row("cancelled")["cost_status"] == "not_incurred"
 
 
-def test_claude_supported_controls_disable_all_retry_repair_tools_and_fallback():
+def test_claude_normal_controls_use_configured_turns_and_retries():
     command = claude_command("/cli/claude", request())
-    assert command[command.index("--max-turns") + 1] == "1"
+    assert command[command.index("--max-turns") + 1] == "8"
     assert command[command.index("--tools") + 1] == ""
     assert "--fallback-model" not in command
     settings = json.loads(command[command.index("--settings") + 1])
     assert settings["availableModels"] == [request().model]
     assert settings["fallbackModel"] == []
     environment = claude_environment(1000)
-    assert environment["CLAUDE_CODE_MAX_RETRIES"] == "0"
-    assert environment["MAX_STRUCTURED_OUTPUT_RETRIES"] == "1"
-    assert environment["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] == "0"
+    assert environment["CLAUDE_CODE_MAX_RETRIES"] == "2"
+    assert environment["MAX_STRUCTURED_OUTPUT_RETRIES"] == "3"
+    assert environment["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] == "2"
     assert environment["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1"
     assert not any(key in environment for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "PATH"))
 
@@ -235,7 +235,7 @@ def test_quota_wrong_types_are_dropped_without_raising():
     assert sanitize_quota({"source": {"token": "hidden"}, "used_percent": True}) == {}
 
 
-def test_error_array_quota_message_stops_new_ai_and_extra_turns_are_rejected(journal):
+def test_error_array_quota_message_stops_new_ai_and_normal_multiple_turns_are_valid(journal):
     errored = CliOutcome(stdout='{"type":"result","is_error":true,"subtype":"error_during_execution",'
         '"errors":["You have hit your limit"]}', exit_code=1)
     assert adapter(Executor(errored)).invoke(request(), invocation_id="one", journal=journal).failure == "rate_limit"
@@ -243,7 +243,7 @@ def test_error_array_quota_message_stops_new_ai_and_extra_turns_are_rejected(jou
         '"structured_output":{"note":"x"},"modelUsage":{"claude-sonnet-5-5":{"inputTokens":7,"outputTokens":9}}}',
         exit_code=0)
     result = parse_claude_outcome(extra_turns, request())
-    assert result.failure == "validation" and result.usage.billed_output_tokens == 9
+    assert result.ok and result.usage.billed_output_tokens == 9
 
 
 def test_unreviewed_model_alias_is_rejected_before_launch(journal):
@@ -273,3 +273,121 @@ def test_another_invocation_identity_cannot_replay_the_same_subscription_task(jo
     with pytest.raises(StaleState, match="task already"):
         model.invoke(request(), invocation_id="second", journal=journal)
     assert executor.calls == 1
+
+
+def test_normal_subscription_limits_are_configurable():
+    config = SubscriptionConfig(model="gpt-6.1-sol", maximum_seconds=1200, maximum_output_tokens=32768,
+        maximum_turns=16, maximum_output_bytes=4194304, application_max_attempts=4, cli_transport_retries=3)
+    assert config.maximum_seconds == 1200 and config.maximum_turns == 16
+
+
+def test_codex_structured_jsonl_validates_payload_and_retains_real_usage():
+    req = request().model_copy(update={"provider":"openai", "model":"gpt-6.1-sol"})
+    outcome = CliOutcome(stdout='\n'.join([
+        json.dumps({"type":"thread.started","thread_id":"private-thread"}),
+        json.dumps({"type":"item.completed","item":{"type":"agent_message","text":'{"note":"public"}'}}),
+        json.dumps({"type":"turn.completed","usage":{"input_tokens":13,"cached_input_tokens":3,"output_tokens":9}}),
+    ]), exit_code=0)
+    from trade_graph.adapters.models import subscription
+    result = subscription.parse_codex_outcome(outcome, req)
+    assert result.ok and result.payload == {"note":"public"}
+    assert result.usage.uncached_input_tokens == 10 and result.usage.cache_read_tokens == 3
+    assert result.provider_model is None  # CLI JSONL does not attest an actual model.
+    command = subscription.codex_command("/cli/runner", req)
+    assert "--json" in command and "--output-schema" in command and "--ignore-user-config" in command
+    assert "forced_login_method=\"chatgpt\"" in command
+
+
+def test_codex_uncertain_completion_and_tool_execution_are_not_success():
+    req = request().model_copy(update={"provider":"openai", "model":"gpt-6.1-sol"})
+    partial = CliOutcome('{"type":"turn.started"}', 0)
+    from trade_graph.adapters.models import subscription
+    assert subscription.parse_codex_outcome(partial, req).failure == "timeout_uncertain"
+    tool = CliOutcome('\n'.join([json.dumps({"type":"item.completed","item":{
+        "type":"command_execution", "command":"cat private"}}), json.dumps({"type":"turn.completed"})]),0)
+    assert subscription.parse_codex_outcome(tool, req).failure == "validation"
+
+
+def test_known_terminal_transient_failure_retries_with_separate_receipts(journal):
+    class Transient:
+        calls=0
+        def execute(self, req, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return CliOutcome('{"type":"result","is_error":true,"result":"Service unavailable",'
+                    '"modelUsage":{"claude-sonnet-5-5":{"inputTokens":3,"outputTokens":1}}}',1)
+            return Executor().outcome
+    executor=Transient()
+    result=adapter(executor).invoke(request(),invocation_id="retry",journal=journal)
+    assert result.ok and executor.calls == 2
+    rows=journal.database.execute("SELECT * FROM subscription_attempts ORDER BY attempt_index").fetchall()
+    assert [row["state"] for row in rows] == ["FAILED","COMPLETED"]
+    assert journal.row("retry")["state"] == "COMPLETED"
+    assert json.loads(journal.row("retry")["usage_json"])["uncached_input_tokens"] == 10
+    assert adapter(executor).invoke(request(),invocation_id="retry",journal=journal).ok
+    assert executor.calls == 2
+
+
+def test_verified_subscription_fallback_records_both_models_and_all_known_usage(journal):
+    primary=adapter(Executor(CliOutcome('{"type":"result","is_error":true,"result":"service unavailable",'
+        '"modelUsage":{"claude-sonnet-5-5":{"inputTokens":3,"outputTokens":1}}}',1)))
+    class Codex:
+        calls=0
+        def execute(self, req, **kwargs):
+            self.calls += 1
+            assert req.model == "gpt-6.1-sol" and req.provider == "openai"
+            return CliOutcome('\n'.join([json.dumps({"type":"item.completed","item":{
+                "type":"agent_message","text":'{"note":"fallback public"}'}}),json.dumps({
+                "type":"turn.completed","model":"gpt-6.1-sol","usage":{"input_tokens":7,"output_tokens":9}})]),0)
+    status=SubscriptionReadiness("codex_subscription","0.160.1",True,(),{},"chatgpt","linux-bubblewrap")
+    config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True,
+        allowed_context_keys={"research":["market"]})
+    fallback=SubscriptionAdapter(config,status,Codex())
+    model=SubscriptionAdapter(primary.config,primary.readiness,primary.executor,fallbacks=(fallback,))
+    result=model.invoke(request(),invocation_id="fallback",journal=journal)
+    assert result.ok and result.provider_model == "gpt-6.1-sol"
+    assert result.usage.uncached_input_tokens == 10
+    rows=journal.database.execute(
+        "SELECT provider,requested_model FROM subscription_attempts ORDER BY attempt_index").fetchall()
+    assert [(row[0],row[1]) for row in rows] == [
+        ("claude_subscription","claude-sonnet-5-5"),("codex_subscription","gpt-6.1-sol")]
+
+
+def test_each_retry_reauthorizes_and_missing_usage_stays_unknown(journal):
+    calls=[]
+    def authorize():
+        calls.append(True)
+        if len(calls)>1:
+            raise ValueError("owner pause")
+    executor=Executor(CliOutcome('{"type":"result","is_error":true,"result":"service unavailable"}',1))
+    result=adapter(executor).invoke(request(),invocation_id="guard",journal=journal,before_attempt=authorize)
+    assert result.failure == "validation" and executor.calls == 1 and len(calls)==2
+    assert journal.row("guard")["usage_json"] is None
+    assert journal.database.execute("SELECT COUNT(*) FROM subscription_attempts").fetchone()[0] == 1
+
+
+def test_codex_department_web_search_uses_supported_tool_with_bounded_observed_usage(journal):
+    from trade_graph.adapters.models import subscription
+    config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True,
+        allowed_context_keys={"research":["market"]},department_tools={"research":["web_search"]},
+        maximum_tool_calls=16)
+    req=request().model_copy(update={"provider":"openai","model":"gpt-6.1-sol","max_tool_calls":16})
+    outcome=CliOutcome('\n'.join([json.dumps({"type":"item.completed","item":{
+        "id":"search1","type":"web_search","query":"public crypto"}}),json.dumps({
+        "type":"item.completed","item":{"type":"agent_message","text":'{"note":"public"}'}}),
+        json.dumps({"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":9}})]),0)
+    status=SubscriptionReadiness("codex_subscription","0.160.1",True,(),{},"chatgpt","linux-bubblewrap")
+    result=SubscriptionAdapter(config,status,Executor(outcome)).invoke(req,invocation_id="search",journal=journal)
+    assert result.ok and result.usage.tool_units==1
+    command=subscription.codex_command("/cli/runner",req)
+    assert 'web_search="live"' in command
+    assert 'features.shell_tool=false' in command and 'features.view_image=false' in command
+
+
+def test_engineer_distinct_commissioned_generation_ids_can_dispatch(journal):
+    config=SubscriptionConfig(provider="claude_subscription",model="claude-sonnet-5-5",enabled=True,
+        allowed_context_keys={"engineer":["market"]})
+    model=SubscriptionAdapter(config,ready(),Executor())
+    req=request().model_copy(update={"role":"engineer"})
+    assert model.invoke(req,invocation_id="generation1",journal=journal).ok
+    assert model.invoke(req,invocation_id="generation2",journal=journal).ok

@@ -1,8 +1,8 @@
-"""One-attempt subscription inference with protected admission and durable recovery.
+"""Configurable subscription inference with protected admission and durable recovery.
 
 This path never constructs provider HTTP or receives authentication tokens. CLI
-login stays inside an owner-provisioned native Linux installation. Codex admission
-is closed while its built-in provider retries cannot be disabled officially.
+login stays inside an owner-provisioned native Linux installation. Known terminal
+failures can retry or use independently admitted subscription fallback routes.
 Subscription receipts are separate from API expenses and virtual paper equity.
 """
 
@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -35,16 +36,23 @@ MAX_OUTPUT_BYTES = 262_144
 _PRIVATE_KEYS = frozenset({"credentials", "api_key", "authorization", "auth_token", "database", "owner_policy",
                           "private_account", "kraken_credentials", "private_key", "ssh_key"})
 _QUOTA_KEYS = frozenset({"remaining_percent", "used_percent", "window_duration_mins", "resets_at", "credits_balance",
-                        "source", "observed_at", "weekly", "five_hour"})
+                        "source", "observed_at", "weekly", "five_hour", "ordinary_usage_allowed"})
 
 
 class SubscriptionConfig(ContractModel):
     provider: SubscriptionProvider = "codex_subscription"
     model: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
     enabled: bool = False
-    maximum_seconds: int = Field(default=120, ge=1, le=300)
-    maximum_output_tokens: int = Field(default=4096, ge=1, le=16_384)
+    maximum_seconds: int = Field(default=600, ge=1, le=3600)
+    maximum_output_tokens: int = Field(default=16_384, ge=1, le=131_072)
+    maximum_turns: int = Field(default=8, ge=1, le=128)
+    maximum_output_bytes: int = Field(default=2_097_152, ge=16_384, le=16_777_216)
+    application_max_attempts: int = Field(default=3, ge=1, le=10)
+    cli_transport_retries: int = Field(default=2, ge=0, le=10)
+    cli_structured_output_attempts: int = Field(default=3, ge=1, le=10)
     allowed_context_keys: dict[str, list[str]] = Field(default_factory=dict)
+    department_tools: dict[str, list[Literal["web_search"]]] = Field(default_factory=dict)
+    maximum_tool_calls: int = Field(default=16, ge=0, le=128)
 
 
 @dataclass(frozen=True)
@@ -56,14 +64,18 @@ class SubscriptionReadiness:
     quota: dict
     authentication: str
     isolation: str
+    application_max_attempts: int = 3
+    fallback_enabled: bool = False
 
     def public_status(self) -> dict:
         return {"provider": self.provider, "cli_version": self.cli_version, "ready": self.ready,
                 "blockers": list(self.blockers), "quota": sanitize_quota(self.quota),
                 "authentication": self.authentication, "isolation": self.isolation,
                 "billing_kind": "subscription", "actual_cost_native": None, "cost_status": "unknown",
-                "application_automatic_retry": False, "application_automatic_fallback": False,
-                "provider_zero_retry_admitted": self.ready}
+                "application_automatic_retry": self.application_max_attempts > 1,
+                "application_max_attempts": self.application_max_attempts,
+                "application_automatic_fallback": self.fallback_enabled,
+                "provider_limits_admitted": self.ready}
 
 
 def sanitize_quota(quota: dict) -> dict:
@@ -80,6 +92,8 @@ def sanitize_quota(quota: dict) -> dict:
                 continue
             if value is None:
                 result[key] = None
+            elif key == "ordinary_usage_allowed" and type(value) is bool:
+                result[key] = value
             elif key in {"remaining_percent", "used_percent"}:
                 if type(value) in (int, float) and 0 <= value <= 100 and math.isfinite(value):
                     result[key] = value
@@ -116,16 +130,17 @@ def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authent
     if not config.enabled:
         blockers.append("subscription inference is disabled by protected runtime configuration")
     if config.provider == "codex_subscription":
-        blockers.append("Codex built-in openai provider retry defaults cannot be disabled "
-                        "through supported configuration")
         if authentication != "chatgpt":
             blockers.append("official ChatGPT subscription login is not established")
+        numbers = tuple(int(value) for value in re.findall(r"\d+", cli_version)[:3])
+        if len(numbers) != 3 or numbers < (0, 160, 1):
+            blockers.append("Codex CLI 0.160.1 or later is required for the verified native execution controls")
     else:
         if authentication != "subscription":
             blockers.append("official Claude subscription login is not established")
         numbers = tuple(int(value) for value in re.findall(r"\d+", cli_version)[:3])
         if len(numbers) != 3 or numbers < (2, 1, 285):
-            blockers.append("Claude Code 2.1.285 or later is required for documented nonstream timeout retry control")
+            blockers.append("Claude Code 2.1.285 or later is required for documented native execution controls")
     if not native_linux:
         blockers.append("native Linux CLI required; Windows/WSL interop executables are refused")
     if not extra_usage_disabled:
@@ -133,10 +148,11 @@ def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authent
     if not isolation_ready:
         blockers.append("owner-pinned Linux filesystem/process isolation has not passed its host probe")
     clean = sanitize_quota(quota)
-    if _quota_exhausted(clean):
+    if _quota_exhausted(clean) or clean.get("ordinary_usage_allowed") is False:
         blockers.append("subscription quota exhausted; new AI work is paused")
     return SubscriptionReadiness(config.provider, cli_version, not blockers, tuple(blockers), clean,
-                                 authentication, "linux-bubblewrap" if isolation_ready else "unavailable")
+                                 authentication, "linux-bubblewrap" if isolation_ready else "unavailable",
+                                 config.application_max_attempts)
 
 
 def _quota_exhausted(quota: dict) -> bool:
@@ -188,7 +204,7 @@ class SubscriptionJournal:
                 return result
             existing_task = self.database.execute("SELECT invocation_id FROM subscription_invocations WHERE task_id=?",
                                                   (request.task_id,)).fetchone()
-            if existing_task is not None:
+            if existing_task is not None and request.role != "engineer":
                 raise StaleState("subscription task already has a persisted invocation; no new attempt permitted")
             now = utc_iso(self.clock.now())
             self.database.execute("""INSERT INTO subscription_invocations
@@ -207,6 +223,24 @@ class SubscriptionJournal:
                  result.usage.model_dump_json() if result.usage else None,
                  "unknown" if dispatched else "not_incurred", utc_iso(self.clock.now()), invocation_id))
 
+    def begin_attempt(self, invocation_id: str, index: int, request: ModelRequest, provider: str) -> str:
+        attempt_id = f"{invocation_id}:attempt:{index}"
+        binding = hashlib.sha256((provider + request.model_dump_json()).encode()).hexdigest()
+        now = utc_iso(self.clock.now())
+        with self.database.immediate():
+            self.database.execute("""INSERT INTO subscription_attempts
+                (attempt_id,invocation_id,attempt_index,request_hash,provider,requested_model,state,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,'DISPATCHED',?,?)""",
+                (attempt_id, invocation_id, index, binding, provider, request.model, now, now))
+        return attempt_id
+
+    def save_attempt(self, attempt_id: str, result: ModelResult, state: str) -> None:
+        with self.database.immediate():
+            self.database.execute("""UPDATE subscription_attempts SET state=?,result_json=?,actual_model=?,
+                usage_json=?,updated_at=? WHERE attempt_id=?""",
+                (state, result.model_dump_json(), result.provider_model,
+                 result.usage.model_dump_json() if result.usage else None, utc_iso(self.clock.now()), attempt_id))
+
     def pause_ai(self, provider: str, quota: dict) -> None:
         with self.database.immediate():
             self.database.execute("""INSERT INTO subscription_provider_state
@@ -217,14 +251,17 @@ class SubscriptionJournal:
 
 
 class SubscriptionAdapter:
-    """Exactly one protected CLI invocation. Validation never starts a repair call."""
+    """Durable bounded attempts; unknown dispatches are never automatically replayed."""
 
     def __init__(self, config: SubscriptionConfig, readiness: SubscriptionReadiness,
-                 executor: SubscriptionExecutor) -> None:
+                 executor: SubscriptionExecutor, *, fallbacks: tuple[SubscriptionAdapter, ...] = ()) -> None:
         self.config, self.readiness, self.executor = config.model_copy(deep=True), readiness, executor
+        if any(not route.readiness.ready for route in fallbacks):
+            raise ValueError("fallback subscription routes must be independently admitted")
+        self.fallbacks = tuple(fallbacks)
 
     def invoke(self, request: ModelRequest, *, invocation_id: str, journal: SubscriptionJournal,
-               cancel_event: Event | None = None) -> ModelResult:
+               cancel_event: Event | None = None, before_attempt: Callable[[], None] | None = None) -> ModelResult:
         previous = journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
         if previous is not None:
             return previous
@@ -248,32 +285,67 @@ class SubscriptionAdapter:
                                  or "subscription admission is disabled")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
-        # Readiness cannot bypass Codex's known unsupported zero-retry route.
-        if self.config.provider == "codex_subscription":
-            result = ModelResult(ok=False, failure="unsupported", message="Codex built-in retries cannot be disabled")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
-            return result
         if cancel_event and cancel_event.is_set():
-            result = ModelResult(ok=False, failure="temporary", message="subscription task cancelled before dispatch")
+            result = ModelResult(ok=False, failure="temporary",
+                                     message="subscription task cancelled before dispatch")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
-        try:
-            outcome = self.executor.execute(request, cancel_event=cancel_event)
-            result = parse_claude_outcome(outcome, request)
-        except Exception:
-            # Process failure after persisted dispatch is ambiguous and is never retried.
-            result = ModelResult(ok=False, failure="timeout_uncertain", message="subscription dispatch outcome unknown")
-        if result.failure == "rate_limit":
-            journal.pause_ai(self.config.provider, self.readiness.quota)
+        results = []
+        routes = (self, *self.fallbacks)
+        route_index = 0
+        for attempt in range(1, self.config.application_max_attempts + 1):
+            route = routes[route_index]
+            effective = request.model_copy(update={
+                "provider": "openai" if route.config.provider == "codex_subscription" else "anthropic",
+                "model": route.config.model,
+                "timeout_seconds": min(request.timeout_seconds, route.config.maximum_seconds),
+                "max_output_tokens": min(request.max_output_tokens, route.config.maximum_output_tokens)})
+            try:
+                route._validate_request(effective)
+                if before_attempt:
+                    before_attempt()
+            except Exception:
+                result = ModelResult(ok=False, failure="validation",
+                                     message="subscription attempt authorization refused")
+                break
+            if cancel_event and cancel_event.is_set():
+                result = ModelResult(ok=False, failure="temporary",
+                                     message="subscription task cancelled before dispatch")
+                break
+            attempt_id = journal.begin_attempt(invocation_id, attempt, effective, route.config.provider)
+            try:
+                outcome = route.executor.execute(effective, cancel_event=cancel_event)
+                parser = parse_codex_outcome if route.config.provider == "codex_subscription" else parse_claude_outcome
+                result = parser(outcome, effective, maximum_turns=route.config.maximum_turns,
+                                maximum_output_bytes=route.config.maximum_output_bytes)
+            except Exception:
+                result = ModelResult(ok=False, failure="timeout_uncertain",
+                                     message="subscription dispatch outcome unknown")
+            state = "COMPLETED" if result.ok else "UNCERTAIN" if result.failure == "timeout_uncertain" else "FAILED"
+            journal.save_attempt(attempt_id, result, state)
+            results.append(result)
+            if result.failure == "rate_limit":
+                journal.pause_ai(route.config.provider, route.readiness.quota)
+            if result.ok or result.failure == "timeout_uncertain":
+                break
+            if (result.failure in {"credentials", "rate_limit", "unsupported", "temporary"}
+                    and route_index + 1 < len(routes)):
+                route_index += 1
+            elif result.failure != "temporary":
+                break
+        aggregate = aggregate_usage(results)
+        result = result.model_copy(update={"usage": aggregate})
         state = "COMPLETED" if result.ok else "UNCERTAIN" if result.failure == "timeout_uncertain" else "FAILED"
-        journal.save(invocation_id, result, state)
+        journal.save(invocation_id, result, state, dispatched=bool(results))
         return result
 
     def _validate_request(self, request: ModelRequest) -> None:
         expected = "openai" if self.config.provider == "codex_subscription" else "anthropic"
         if (request.provider != expected or request.model != self.config.model or request.synthetic
                 or lookup_capabilities(expected, request.model) is None
-                or request.max_tool_calls != 0
+                or request.max_tool_calls < 0 or request.max_tool_calls > self.config.maximum_tool_calls
+                or request.max_tool_calls and (self.config.provider != "codex_subscription"
+                    or self.config.department_tools.get(request.role) != ["web_search"])
                 or not 1 <= request.max_output_tokens <= self.config.maximum_output_tokens
                 or not 1 <= request.timeout_seconds <= self.config.maximum_seconds):
             raise ValueError("subscription request bounds or provider mismatch")
@@ -309,7 +381,8 @@ class SubscriptionAdapter:
                 pending.extend(item)
 
 
-def parse_claude_outcome(outcome: CliOutcome, request: ModelRequest) -> ModelResult:
+def parse_claude_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_turns: int = 8,
+                         maximum_output_bytes: int = 2_097_152) -> ModelResult:
     if outcome.stopped:
         return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted")
     usage, provider_model = None, None
@@ -322,7 +395,7 @@ def parse_claude_outcome(outcome: CliOutcome, request: ModelRequest) -> ModelRes
                 result[key] = value
             return result
 
-        if len(outcome.stdout.encode()) > MAX_OUTPUT_BYTES:
+        if len(outcome.stdout.encode()) > maximum_output_bytes:
             raise ValueError("subscription output bound exceeded")
         document = json.loads(outcome.stdout, object_pairs_hook=unique,
                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite value")))
@@ -355,8 +428,9 @@ def parse_claude_outcome(outcome: CliOutcome, request: ModelRequest) -> ModelRes
                                message="subscription quota exhausted" if quota_error else "subscription CLI failed")
         if not isinstance(models, dict) or list(models) != [request.model] or usage is None:
             raise ValueError("actual model missing, changed, or more than one model invoked")
-        if "num_turns" in document and (type(document["num_turns"]) is not int or document["num_turns"] != 1):
-            raise ValueError("only one agentic turn is permitted")
+        if "num_turns" in document and (type(document["num_turns"]) is not int
+                                        or not 1 <= document["num_turns"] <= maximum_turns):
+            raise ValueError("agentic turn count exceeds configured bounds")
         payload = document.get("structured_output")
         if not isinstance(payload, dict):
             raise ValueError("structured output is missing")
@@ -370,10 +444,13 @@ def parse_claude_outcome(outcome: CliOutcome, request: ModelRequest) -> ModelRes
                            usage=usage, provider_model=provider_model)
 
 
-def claude_environment(maximum_output_tokens: int) -> dict[str, str]:
+def claude_environment(maximum_output_tokens: int, config: SubscriptionConfig | None = None) -> dict[str, str]:
     """Fresh environment; API keys, gateway overrides and watchdog are never inherited."""
-    return {"CLAUDE_CODE_MAX_RETRIES": "0", "MAX_STRUCTURED_OUTPUT_RETRIES": "1",
-            "CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES": "0", "CLAUDE_CODE_MAX_TURNS": "1",
+    limits = config or SubscriptionConfig(model="unselected")
+    return {"CLAUDE_CODE_MAX_RETRIES": str(limits.cli_transport_retries),
+            "MAX_STRUCTURED_OUTPUT_RETRIES": str(limits.cli_structured_output_attempts),
+            "CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES": str(limits.cli_transport_retries),
+            "CLAUDE_CODE_MAX_TURNS": str(limits.maximum_turns),
             "CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1", "CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK": "1",
             "CLAUDE_CODE_DISABLE_MODEL_ACCESS_FALLBACK": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1",
@@ -386,10 +463,116 @@ def claude_environment(maximum_output_tokens: int) -> dict[str, str]:
             "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"}
 
 
-def claude_command(binary: str, request: ModelRequest) -> list[str]:
+def claude_command(binary: str, request: ModelRequest, config: SubscriptionConfig | None = None) -> list[str]:
+    limits = config or SubscriptionConfig(model=request.model)
     settings = {"switchModelsOnFlag": False, "availableModels": [request.model], "fallbackModel": []}
-    return [binary, "-p", "--restricted", "--safe-mode", "--output-format", "json", "--max-turns", "1",
+    return [binary, "-p", "--restricted", "--safe-mode", "--output-format", "json",
+            "--max-turns", str(limits.maximum_turns),
             "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
             "--setting-sources", "", "--settings", json.dumps(settings), "--no-session-persistence",
             "--model", request.model, "--json-schema", json.dumps(request.output_schema),
             "--system-prompt", request.instructions]
+
+
+def aggregate_usage(results: list[ModelResult]) -> ModelUsage | None:
+    """Missing usage in any dispatched attempt leaves the aggregate unknown."""
+    if not results or any(result.usage is None for result in results):
+        return None
+    fields = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "billed_output_tokens",
+              "reasoning_tokens", "tool_units")
+    return ModelUsage(**{field: sum(getattr(result.usage, field) for result in results) for field in fields})
+
+
+def codex_command(binary: str, request: ModelRequest, *, schema_path: str = "/request/schema.json") -> list[str]:
+    """Official noninteractive subscription invocation; no shell or ambient configuration."""
+    settings = {"forced_login_method": "chatgpt", "model_provider": "openai",
+                "web_search": "live" if request.max_tool_calls else "disabled",
+                "features.shell_tool": False, "features.unified_exec": False, "features.apps": False,
+                "features.view_image": False, "features.code_mode": False,
+                "features.code_mode_only": False, "features.code_mode_host": False,
+                "model_catalog_json": "/request/model-catalog.json",
+                "agents.enabled": False, "features.multi_agent_v2": False,
+                "history.persistence": "none", "hide_agent_reasoning": True,
+                "model_reasoning_summary": "none", "analytics.enabled": False, "feedback.enabled": False}
+    command = [binary, "exec", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+               "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", schema_path,
+               "--model", request.model]
+    for key, value in settings.items():
+        command += ["-c", f"{key}={json.dumps(value)}"]
+    return [*command, "-"]
+
+
+def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_turns: int = 8,
+                        maximum_output_bytes: int = 2_097_152) -> ModelResult:
+    """Validate final JSONL without retaining reasoning, tool transcripts or identifiers."""
+    if outcome.stopped:
+        return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted")
+    usage, actual_model, payload_text = None, None, None
+    completed, failed, tool_observed, search_ids = 0, False, False, set()
+    try:
+        if len(outcome.stdout.encode()) > maximum_output_bytes:
+            raise ValueError("subscription output bound exceeded")
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate provider JSON key")
+                value[key] = item
+            return value
+        for line in outcome.stdout.splitlines():
+            if not line.strip():
+                continue
+            event = json.loads(line, object_pairs_hook=unique,
+                parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite value")))
+            _bounded_json(event)
+            kind = event.get("type")
+            if event.get("model") is not None:
+                if event["model"] != request.model:
+                    raise ValueError("provider model changed")
+                actual_model = event["model"]
+            if kind == "item.completed":
+                item = event.get("item", {})
+                if item.get("type") == "agent_message":
+                    payload_text = item.get("text")
+                elif item.get("type") == "web_search":
+                    search_ids.add(item.get("id", f"search-{len(search_ids)}"))
+                elif item.get("type") in {"command_execution", "file_change", "mcp_tool_call"}:
+                    tool_observed = True
+            elif kind == "turn.completed":
+                completed += 1
+                counters = event.get("usage", {})
+                if (isinstance(counters, dict) and all(type(counters.get(key, 0)) is int and
+                    0 <= counters.get(key, 0) <= 100_000_000 for key in
+                    ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"))
+                    and "input_tokens" in counters and "output_tokens" in counters
+                    and counters.get("cached_input_tokens", 0) <= counters["input_tokens"]):
+                    current = ModelUsage(
+                        uncached_input_tokens=counters["input_tokens"] - counters.get("cached_input_tokens", 0),
+                        cache_read_tokens=counters.get("cached_input_tokens", 0),
+                        billed_output_tokens=counters["output_tokens"],
+                        reasoning_tokens=counters.get("reasoning_output_tokens", 0))
+                    usage = (aggregate_usage([ModelResult(ok=True, usage=usage), ModelResult(ok=True, usage=current)])
+                             if usage else current)
+            elif kind in {"turn.failed", "error"}:
+                failed = True
+        if tool_observed or len(search_ids) > request.max_tool_calls or completed > maximum_turns:
+            raise ValueError("unsupported tool execution or turn bound exceeded")
+        if usage is not None:
+            usage = usage.model_copy(update={"tool_units": len(search_ids)})
+        if failed or outcome.exit_code != 0 or outcome.error_category:
+            quota = outcome.error_category == "quota" or any(word in outcome.stdout.lower() for word in
+                ("rate_limit", "usage_limit", "usage limit", "quota exhausted", "hit your limit"))
+            return ModelResult(ok=False, failure="rate_limit" if quota else "temporary", usage=usage,
+                provider_model=actual_model,
+                message="subscription quota exhausted" if quota else "subscription CLI failed")
+        if not completed:
+            return ModelResult(ok=False, failure="timeout_uncertain", usage=usage,
+                provider_model=actual_model, message="subscription terminal outcome missing")
+        payload = json.loads(payload_text, object_pairs_hook=unique)
+        if not isinstance(payload, dict):
+            raise ValueError("structured output missing")
+        _validate_schema(payload, request.output_schema)
+        return ModelResult(ok=True, payload=payload, usage=usage, provider_model=actual_model)
+    except (ValueError, TypeError, KeyError, AttributeError, SchemaError, ValidationError, Unresolvable):
+        return ModelResult(ok=False, failure="validation", message="invalid structured subscription output",
+                           usage=usage, provider_model=actual_model)

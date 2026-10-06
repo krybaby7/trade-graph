@@ -20,6 +20,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +34,7 @@ from trade_graph.adapters.models.subscription import (
     assess_subscription,
     claude_command,
     claude_environment,
+    codex_command,
 )
 from trade_graph.contracts.models import ModelRequest
 
@@ -69,13 +71,20 @@ class NativeCliPin:
 
 class LinuxFilesystemBoundary:
     def __init__(self, pin: NativeCliPin, *, share_network: bool, credential_file: Path | None = None,
-                 environment: dict[str, str] | None = None, proxy_url: str | None = None) -> None:
+                 environment: dict[str, str] | None = None, proxy_url: str | None = None,
+                 provider: str = "claude_subscription", schema_file: Path | None = None,
+                 model_catalog_file: Path | None = None) -> None:
         self.pin, self.share_network, self.credential_file = pin, share_network, credential_file
+        self.provider, self.schema_file, self.model_catalog_file = provider, schema_file, model_catalog_file
+        if provider not in {"claude_subscription", "codex_subscription"}:
+            raise ValueError("unsupported subscription boundary provider")
         self.proxy_url = validate_proxy_url(proxy_url) if proxy_url is not None else None
         if self.proxy_url is not None and not share_network:
             raise ValueError("offline subscription boundary cannot enable a proxy")
         self.environment = dict(environment or {})
-        if set(self.environment) - set(claude_environment(1)):
+        allowed_environment = (set(claude_environment(1)) if provider == "claude_subscription"
+                               else {"CODEX_DISABLE_UPDATE_CHECK"})
+        if set(self.environment) - allowed_environment:
             raise ValueError("subscription child environment is outside the fixed allowlist")
 
     def command(self, arguments: list[str]) -> list[str]:
@@ -97,19 +106,35 @@ class LinuxFilesystemBoundary:
                     "--setenv", "HOME", "/home/runner", "--setenv", "PATH", "/nonexistent",
                     "--setenv", "LANG", "C.UTF-8", "--setenv", "CLAUDE_CONFIG_DIR", "/home/runner/.claude",
                     "--dir", "/home/runner/.claude", "--chdir", "/workspace"]
+        if self.provider == "codex_subscription":
+            command += ["--dir", "/home/runner/.codex", "--setenv", "CODEX_HOME", "/home/runner/.codex"]
+        if self.schema_file is not None:
+            schema = self.schema_file
+            if schema.is_symlink() or not schema.is_file() or schema.stat().st_mode & 0o077:
+                raise ValueError("private controller schema file required")
+            command += ["--dir", "/request", "--ro-bind", str(schema.resolve()), "/request/schema.json"]
+        if self.model_catalog_file is not None:
+            catalog = self.model_catalog_file
+            if catalog.is_symlink() or not catalog.is_file() or catalog.stat().st_mode & 0o022:
+                raise ValueError("non-writable controller model catalog required")
+            command += ["--dir", "/request", "--ro-bind", str(catalog.resolve()), "/request/model-catalog.json"]
         if self.share_network:
             for path in ("/etc/ssl/certs", "/etc/resolv.conf", "/etc/nsswitch.conf", "/etc/hosts"):
                 if Path(path).exists():
                     command += ["--ro-bind", path, path]
         if self.credential_file is not None:
             credential = self.credential_file
-            if (credential.is_symlink() or not credential.is_file() or credential.name != ".credentials.json"
+            if (credential.is_symlink() or not credential.is_file()
+                    or credential.name != ("auth.json" if self.provider == "codex_subscription"
+                                            else ".credentials.json")
                     or str(credential.resolve()).startswith("/mnt/")):
-                raise ValueError("one official native Claude login file is required; symlinks refused")
+                raise ValueError("one official native subscription login file is required; symlinks refused")
             metadata = credential.stat()
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
                 raise ValueError("official subscription login file must have private permissions")
-            command += ["--ro-bind", str(credential.resolve()), "/home/runner/.claude/.credentials.json"]
+            destination = ("/home/runner/.codex/auth.json" if self.provider == "codex_subscription"
+                           else "/home/runner/.claude/.credentials.json")
+            command += ["--ro-bind", str(credential.resolve()), destination]
         for key, value in self.environment.items():
             command += ["--setenv", key, value]
         if self.proxy_url is not None:
@@ -117,7 +142,8 @@ class LinuxFilesystemBoundary:
         return [*command, "/cli/runner", *arguments]
 
     def run(self, arguments: list[str], payload: bytes, *, maximum_seconds: float,
-            cancel_event: Event | None = None) -> CliOutcome:
+            cancel_event: Event | None = None, maximum_output_bytes: int = MAX_OUTPUT_BYTES,
+            metadata: bool = False) -> CliOutcome:
         """Bound both pipes; kill the namespace parent on cancellation/deadline."""
         command = self.command(arguments)
         output = {"stdout": bytearray(), "stderr": bytearray()}
@@ -155,7 +181,7 @@ class LinuxFilesystemBoundary:
                                 selector.unregister(key.fileobj)
                             else:
                                 output[key.data].extend(chunk)
-                                if sum(map(len, output.values())) > MAX_OUTPUT_BYTES:
+                                if sum(map(len, output.values())) > maximum_output_bytes:
                                     stopped = "output_limit"
                                     break
                     if stopped:
@@ -178,7 +204,8 @@ class LinuxFilesystemBoundary:
         stderr = output["stderr"].decode("utf-8", errors="replace").lower()
         quota_words = ("rate_limit", "rate limit", "usage limit", "quota exhausted", "hit your limit")
         category = "quota" if process.returncode and any(word in stderr for word in quota_words) else ""
-        return CliOutcome(bytes(output["stdout"][:MAX_OUTPUT_BYTES]).decode("utf-8", errors="replace"),
+        raw = output["stdout"] + output["stderr"] if metadata else output["stdout"]
+        return CliOutcome(bytes(raw[:maximum_output_bytes]).decode("utf-8", errors="replace"),
                           process.returncode, stopped, category)
 
 
@@ -199,20 +226,42 @@ def validate_proxy_url(value: str) -> str:
 
 
 class LinuxSubscriptionExecutor:
-    def __init__(self, pin: NativeCliPin, credential_file: Path, *, proxy_url: str) -> None:
+    def __init__(self, pin: NativeCliPin, credential_file: Path, *, proxy_url: str,
+                 config: SubscriptionConfig | None = None, model_catalog_file: Path | None = None) -> None:
         if not pin.require_root_owner:
             raise ValueError("production subscription executor requires a protected root-owned CLI pin")
         pin.verify()
         self.pin, self.credential_file = pin, credential_file
+        selected = config or SubscriptionConfig(provider="claude_subscription", model="unselected")
+        self.config = selected.model_copy(deep=True)
+        self.model_catalog_file = model_catalog_file
+        if self.config.provider == "codex_subscription" and model_catalog_file is None:
+            raise ValueError("Codex requires a protected model catalog removing filesystem-capable tools")
         self.proxy_url = validate_proxy_url(proxy_url)
 
     def execute(self, request: ModelRequest, *, cancel_event: Event | None = None) -> CliOutcome:
+        if self.config.provider == "codex_subscription":
+            with tempfile.TemporaryDirectory(prefix="trade-graph-schema-") as directory:
+                schema = Path(directory) / "schema.json"
+                schema.write_text(json.dumps(request.output_schema), encoding="utf-8")
+                schema.chmod(0o600)
+                boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
+                    proxy_url=self.proxy_url, provider=self.config.provider, schema_file=schema,
+                    model_catalog_file=self.model_catalog_file)
+                payload = (request.instructions + "\nPublic departmental context:\n" +
+                           json.dumps(request.context, allow_nan=False)).encode()
+                return boundary.run(codex_command("/cli/runner", request)[1:], payload,
+                    maximum_seconds=request.timeout_seconds,
+                            maximum_output_bytes=self.config.maximum_output_bytes,
+                    cancel_event=cancel_event)
         boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
-                                            environment=claude_environment(request.max_output_tokens),
+                                            environment=claude_environment(request.max_output_tokens, self.config),
                                             proxy_url=self.proxy_url)
-        arguments = claude_command("/cli/runner", request)[1:]
+        arguments = claude_command("/cli/runner", request, self.config)[1:]
         return boundary.run(arguments, json.dumps(request.context, allow_nan=False).encode(),
-                            maximum_seconds=request.timeout_seconds, cancel_event=cancel_event)
+                            maximum_seconds=request.timeout_seconds,
+                            maximum_output_bytes=self.config.maximum_output_bytes,
+                            cancel_event=cancel_event)
 
 
 def _metadata_command(command: list[str], **kwargs) -> CliOutcome:
@@ -220,7 +269,7 @@ def _metadata_command(command: list[str], **kwargs) -> CliOutcome:
         # Status commands never start threads/turns. Do not inherit any API keys.
         outcome = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False,
                                  env={"HOME": str(Path.home()), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, **kwargs)
-        return CliOutcome(outcome.stdout[:16_384], outcome.returncode)
+        return CliOutcome((outcome.stdout + outcome.stderr)[:16_384], outcome.returncode)
     except (OSError, subprocess.TimeoutExpired):
         return CliOutcome("", 1)
 
@@ -298,6 +347,29 @@ def probe_isolated_claude(config: SubscriptionConfig, pin: NativeCliPin, credent
             authentication = "subscription"
     except (ValueError, TypeError, AttributeError):
         pass
+    status = assess_subscription(config, cli_version=version, authentication=authentication, quota=quota or {},
+        extra_usage_disabled=extra_usage_disabled, isolation_ready=isolation_verified,
+        native_linux=True).public_status()
+    status["native_cli_present"] = True
+    status["inference_attempts"] = 0
+    status["credential_mount_checked"] = True
+    return status
+
+
+def probe_isolated_codex(config: SubscriptionConfig, pin: NativeCliPin, credential_file: Path, *,
+                         extra_usage_disabled: bool = False, quota: dict | None = None,
+                         isolation_verified: bool = False) -> dict:
+    """Official version/login metadata inside the same opaque native auth mount."""
+    if config.provider != "codex_subscription" or not pin.require_root_owner:
+        raise ValueError("isolated Codex preflight requires a protected native Codex pin")
+    boundary = LinuxFilesystemBoundary(pin, share_network=False, credential_file=credential_file,
+                                        provider="codex_subscription")
+    version_result = boundary.run(["--version"], b"", maximum_seconds=10, metadata=True)
+    match = re.search(r"\b\d+\.\d+\.\d+\b", version_result.stdout)
+    version = match[0] if match and version_result.exit_code == 0 else "unavailable"
+    auth = boundary.run(["-c", 'forced_login_method="chatgpt"', "login", "status"],
+                        b"", maximum_seconds=10, metadata=True)
+    authentication = "chatgpt" if auth.exit_code == 0 and "Logged in using ChatGPT" in auth.stdout else "none"
     status = assess_subscription(config, cli_version=version, authentication=authentication, quota=quota or {},
         extra_usage_disabled=extra_usage_disabled, isolation_ready=isolation_verified,
         native_linux=True).public_status()
