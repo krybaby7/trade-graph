@@ -403,8 +403,8 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
             or (host.get("PortBindings") or {}) != expected_ports
             or (config.get("ExposedPorts") or {}) != expected_exposed
             or host.get("Links") or host.get("VolumesFrom")
-            or host.get("Sysctls") or host.get("MaskedPaths") != image_default_masked_paths()
-            or host.get("ReadonlyPaths") != image_default_readonly_paths()
+            or host.get("Sysctls") or not same_protected_paths(host.get("MaskedPaths"), image_default_masked_paths())
+            or not same_protected_paths(host.get("ReadonlyPaths"), image_default_readonly_paths())
             or host.get("Ulimits") != [{"Name": "core", "Hard": 0, "Soft": 0}]):
         raise PermissionError("protected container resource/capability/egress configuration mismatch")
     mounts = container.get("Mounts", [])
@@ -425,6 +425,12 @@ def _environment(values) -> dict[str, str]:
             raise PermissionError("duplicate image environment variable")
         result[name] = content
     return result
+
+
+def same_protected_paths(actual, expected: list[str]) -> bool:
+    """Docker versions may reorder paths; require every exact path once."""
+    return (type(actual) is list and all(type(path) is str for path in actual)
+            and len(actual) == len(expected) and set(actual) == set(expected))
 
 
 def image_default_masked_paths() -> list[str]:

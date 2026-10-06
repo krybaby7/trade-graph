@@ -212,7 +212,8 @@ def test_subscription_boot_dispatches_only_bounded_phase_and_check_never_invokes
     monkeypatch.setattr(deployment_image, "assert_boot_environment", lambda: deployment().runtime_manifest)
     monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory: value)
     monkeypatch.setattr(subscription_smoke, "run_subscription_smoke",
-                        lambda database, owner, *, phase: calls.append((database, owner, phase)) or {"phase": phase, "status": "SUCCEEDED"})
+                        lambda database, owner, *, phase: calls.append((database, owner, phase))
+                        or {"phase": phase, "status": "SUCCEEDED"})
     assert deployment_image.main(["check-subscription"]) == 0
     assert calls == [] and '\"live_authorization\":false' in capsys.readouterr().out
     from pathlib import Path
@@ -315,3 +316,16 @@ def test_bounded_entrypoint_exit_reports_unsuccessful_operation(monkeypatch, cap
     monkeypatch.setattr(subscription_smoke, "run_subscription_smoke", lambda *_a, **_k: {"status": status})
     assert deployment_image.main(["research-subscription"]) == 1
     assert status in capsys.readouterr().out
+
+
+def test_docker_sorted_protected_paths_keep_exact_membership_admission(monkeypatch):
+    spec, image, container, network, proxy = subscription_inspection(monkeypatch)
+    for target in (container, proxy):
+        for name in ("MaskedPaths", "ReadonlyPaths"):
+            target["HostConfig"][name].reverse()
+    deployment_image.verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"],
+        action="check-subscription", network=network, proxy=proxy)
+    proxy["HostConfig"]["MaskedPaths"][0] = proxy["HostConfig"]["MaskedPaths"][1]
+    with pytest.raises(PermissionError):
+        deployment_image.verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"],
+            action="check-subscription", network=network, proxy=proxy)
