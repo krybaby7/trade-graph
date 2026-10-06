@@ -110,7 +110,8 @@ def test_subscription_cannot_reuse_funded_live_or_ordinary_launch():
             spec.create_arguments(name="trade-graph-wrong", action=action)
 
 
-@pytest.mark.parametrize("action", ["boot-subscription", "check-subscription", "research-subscription"])
+@pytest.mark.parametrize("action", ["boot-subscription", "check-subscription",
+                                    "research-subscription", "manage-subscription"])
 def test_subscription_launch_keeps_unprivileged_boundary_and_exact_seccomp_path(action):
     ordinary = deployment()
     value = profile()
@@ -329,3 +330,18 @@ def test_docker_sorted_protected_paths_keep_exact_membership_admission(monkeypat
     with pytest.raises(PermissionError):
         deployment_image.verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"],
             action="check-subscription", network=network, proxy=proxy)
+
+
+def test_management_entrypoint_has_no_auth_admission_or_bounded_model_phase(monkeypatch, capsys):
+    from trade_graph.application import subscription_management, subscription_smoke
+    from trade_graph.kernel import subscription_network
+    value = profile()
+    calls = []
+    trust_files(monkeypatch, value)
+    monkeypatch.setattr(deployment_image, "assert_boot_environment", lambda: deployment().runtime_manifest)
+    monkeypatch.setattr(subscription_network, "load_subscription_network_profile", lambda _directory: value)
+    monkeypatch.setattr(subscription_smoke, "run_subscription_smoke", lambda *_a, **_k: pytest.fail("model phase"))
+    monkeypatch.setattr(subscription_management, "run_subscription_management",
+                        lambda *_a, **_k: calls.append("management") or {"mode": "MANAGE_ONLY"})
+    assert deployment_image.main(["manage-subscription"]) == 0
+    assert calls == ["management"] and "MANAGE_ONLY" in capsys.readouterr().out

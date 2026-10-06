@@ -266,7 +266,7 @@ class ProtectedDeploymentSpec:
             raise ValueError("bounded deployment container name required")
         if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
                           "boot-live", "check-live", "boot-live-dashboard", "boot-subscription",
-                          "check-subscription", "research-subscription"}:
+                          "check-subscription", "research-subscription", "manage-subscription"}:
             raise ValueError("deployment command must be a fixed protected entrypoint")
         funded = action in {"boot-funded", "check-funded"}
         if funded != (self.funded_profile is not None):
@@ -274,7 +274,8 @@ class ProtectedDeploymentSpec:
         live = action in {"boot-live", "check-live", "boot-live-dashboard"}
         if live != (self.live_profile is not None):
             raise ValueError("live launch requires an explicit separately pinned network profile")
-        subscription = action in {"boot-subscription", "check-subscription", "research-subscription"}
+        subscription = action in {"boot-subscription", "check-subscription",
+                                  "research-subscription", "manage-subscription"}
         if subscription != (self.subscription_profile is not None):
             raise ValueError("subscription launch requires an explicit separate network profile")
         dashboard = action == "boot-live-dashboard"
@@ -327,7 +328,8 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     live = action in {"boot-live", "check-live", "boot-live-dashboard"}
     if live != (spec.live_profile is not None):
         raise PermissionError("live container requires exact separate network profile")
-    subscription = action in {"boot-subscription", "check-subscription", "research-subscription"}
+    subscription = action in {"boot-subscription", "check-subscription",
+                                  "research-subscription", "manage-subscription"}
     if subscription != (spec.subscription_profile is not None):
         raise PermissionError("subscription container requires exact separate network profile")
     dashboard = action == "boot-live-dashboard"
@@ -378,7 +380,7 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
                             **{name: "" for name in PROXY_VARIABLES}}
     if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
                        "boot-live", "check-live", "boot-live-dashboard", "boot-subscription",
-                          "check-subscription", "research-subscription"}
+                          "check-subscription", "research-subscription", "manage-subscription"}
             or container.get("Image") != spec.image.image_id
             or container.get("State", {}).get("Running") is not False
             or container.get("State", {}).get("Status") != "created"
@@ -472,7 +474,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded",
                                          "boot-live", "check-live", "boot-live-dashboard",
-                                         "boot-subscription", "check-subscription", "research-subscription"))
+                                         "boot-subscription", "check-subscription",
+                                         "research-subscription", "manage-subscription"))
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -482,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(canonical_json(build_seal(json.loads(args.inputs.read_bytes()))) + "\n")
         return 0
     manifest = assert_boot_environment()
-    if args.action in {"boot-subscription", "check-subscription", "research-subscription"}:
+    if args.action in {"boot-subscription", "check-subscription", "research-subscription", "manage-subscription"}:
         from trade_graph.kernel.subscription_network import (
             load_subscription_network_profile,
             load_subscription_seccomp,
@@ -504,6 +507,12 @@ def main(argv: list[str] | None = None) -> int:
             print(canonical_json({"status": "subscription_paper_profile_prepared", "profile_sha256": profile.sha256,
                                   "intended_host_verified": False, "live_authorization": False,
                                   "paid_authorization": False, "inference_attempts": 0}))
+            return 0
+        if args.action == "manage-subscription":
+            from trade_graph.application.subscription_management import run_subscription_management
+
+            result = run_subscription_management(Path(STATE_MOUNT) / "trade_graph.sqlite", directory)
+            print(canonical_json(result))
             return 0
         from trade_graph.application.subscription_smoke import run_subscription_smoke
 
