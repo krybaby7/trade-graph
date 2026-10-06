@@ -1,5 +1,8 @@
 # 00 — Product, scope and defaults
 
+**Owner update, 2026-10-06:** Optimisation is manual only. Start Optimisation requests one bounded review/improvement cycle; periodic, artifact-scheduled and automatically delegated Optimisation are disabled in the installed service. Ordinary departments continue automatically when a single subscription route is admitted. New startup controls do not authorize separately billed model APIs, extra usage, retries or fallback. Protected acceptance/deployment and separate live commissioning remain required.
+
+
 ## Objective and updated capital
 
 Trade Graph is an autonomous organisation, not an ensemble that chats continuously. Its objective is net economic performance in EUR: trading results after friction minus attributable AI and operating costs. Show portfolio movement, cash flows and expenses separately. Profitability is a hypothesis to test.
@@ -33,7 +36,7 @@ Excluded from R1: leverage, derivatives, margin borrowing, on-chain signing, DEX
 - Virtual balance USD10,000; reporting EUR. Real paid calls disabled until owner configuration. The lean illustration retains an optional EUR5/month expense ceiling with EUR1 reserved inside that total for priority reasoning. This is a proposed example, not spending permission or a requirement to fund the system forever at EUR5. Stronger-model/more-active profiles need their own reviewed budget.
 - Paper maximum gross exposure 80%, one-asset exposure 50%, no leverage. These are changeable owner envelope examples, not proven safe settings. Leader sizing and experiments fit within them. A stop cannot guarantee a maximum loss through price gaps.
 - One-hour features and four-hour routine Trader opportunities, targeting six calls/day; material events may wake it sooner within its budget. Software monitoring and protective management continue between model calls. A larger virtual balance does not itself justify more model calls.
-- Daily market research, reused strategy research, twice-weekly evidence-gated Learning, weekly Optimisation and weekly Leader review plus startup/material exceptions. These are Leader-adjustable defaults.
+- Daily market research, reused strategy research, twice-weekly evidence-gated Learning and weekly Leader review plus startup/material exceptions. Optimisation runs one bounded cycle only on an owner request; the Leader cannot schedule it automatically. Other departmental frequencies remain Leader-adjustable defaults.
 - Illustrative two small engineering tasks/month, each bounded by actual spend and task-step limits. Not a permanent prohibition on more useful engineering when the owner funds it.
 - UTC storage timestamps; configurable display timezone. Preserve native units and reporting FX provenance.
 

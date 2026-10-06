@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-06",
-  "status_note": "2026-10-05: all 26 linked workspaces audited with no omitted source/docs/tests. Round4 verified source 153c6a5 retains 2544 passing full tests and 464 mapped / all 40 cases; GitHub integration publication independently verified at 48fecba. CI timeout corrected 20 to 45 minutes; publication documentation follows the published implementation. Acceptance stays 17 done / 4 in progress / 2 blocked; no paid/private/live/production authority. GitHub Actions API status unavailable (Forbidden).",
+  "status_note": "2026-10-06: source 09160e4 implements subscription/controller/live-capable slices with credential-free checks; subscription operationally blocked, live disabled/uncommissioned. No inference or private Kraken request. Acceptance unchanged; full-suite/postflight pending.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -225,8 +225,8 @@
     },
     "T17": {
       "status": "in_progress",
-      "owner": "codex-agent:next_operations",
-      "branch": "codex/t17-next-2026-10-04",
+      "owner": "codex-startup-integration",
+      "branch": "codex/start-controls-2026-10-06",
       "evidence": [
         "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
         "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
@@ -242,7 +242,9 @@
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: exact service-unit/configuration/process/package binding and actual paper lost-ack/restart proof integrated; author 195 tests and final installed two-process proof passed, one fill/attempt, owner pause and drained leases retained. Actual systemd/intended host remains unverified.",
         "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
-        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: protected subscription adapter and six-role startup tested; Codex retries/native Claude login/intended-image provider egress/isolation block actual inference and continuous paper acceptance."
       ],
       "remaining": "Owner-designated installation, approved public connectivity/current model routes/prices, separate real funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Exact service binding and local process restart proof are implemented.",
       "execution_state": "idle",
@@ -273,8 +275,8 @@
     },
     "T19": {
       "status": "in_progress",
-      "owner": "codex-agent:next_native_accounting",
-      "branch": "codex/t19-next-2026-10-04",
+      "owner": "codex-startup-integration",
+      "branch": "codex/start-controls-2026-10-06",
       "evidence": [
         "KrakenLiveBroker and protected REST transport normalize metadata/balances/native fees/order IDs/statuses/precise bounded history, preserve uncertainty and default to read-only/disabled orders. No withdrawal method.",
         "Protected execution scopes dispatch/reconciliation/cancel/replace by venue/account/mode, ingests global chronology once, uses deterministic FIFO and retains incomplete-account health across restart. Missing fees, malformed/unowned history and late replay requirements refuse increases.",
@@ -289,7 +291,9 @@
         "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
         "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
         "2026-10-06: codex-orchestrator claims a scoped T19 public asset-catalog compatibility bugfix on codex/fix-kraken-one-character-assets-2026-10-06, based on clean owner checkpoint 5f7225e. Retained redacted failure is instruments/ValidationFailure after Assets only; retained public catalog contains legitimate one-character codes. Existing 104 adapter tests passed before changes. No private requests or T19 acceptance completion authorized.",
-        "2026-10-06: scoped catalog compatibility fix verified: one-character asset names/altnames and USD_CREDIT normalize without expanding BTC/USD pair selection. 29 added synthetic cases include invalid syntax/type/length/readiness and disabled-write controls; 264 relevant tests passed. Full retained public Assets replay plus actual public AssetPairs GET passed using production Decimal decoding, with no private requests. Ruff, planning and repository hygiene passed; independent source review found no blockers. Private retained evidence and runtime hashes/modes stayed unchanged. Full T19 acceptance and owner-authority gates remain open."
+        "2026-10-06: scoped catalog compatibility fix verified: one-character asset names/altnames and USD_CREDIT normalize without expanding BTC/USD pair selection. 29 added synthetic cases include invalid syntax/type/length/readiness and disabled-write controls; 264 relevant tests passed. Full retained public Assets replay plus actual public AssetPairs GET passed using production Decimal decoding, with no private requests. Ruff, planning and repository hygiene passed; independent source review found no blockers. Private retained evidence and runtime hashes/modes stayed unchanged. Full T19 acceptance and owner-authority gates remain open.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: protected live startup/dashboard/native Resume pass scripted conformance. No private requests, orders or explicit live commissioning. T17 credentialed acceptance remains pending."
       ],
       "remaining": "Eligible least-privilege actual native venue/account conformance and complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Signed fees/rebates, correction and paper fee holds are implemented; larger replay beyond 4,096 rows / 8 MiB, finer execution ties and late fee-only amendments remain contract work.",
       "execution_state": "idle",
@@ -319,8 +323,8 @@
     },
     "T21": {
       "status": "in_progress",
-      "owner": "codex-agent:next_deployment",
-      "branch": "codex/t21-next-2026-10-04",
+      "owner": "codex-startup-integration",
+      "branch": "codex/start-controls-2026-10-06",
       "evidence": [
         "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
         "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
@@ -332,7 +336,9 @@
         "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
         "Round4: root 0014 / 0016 financial checkpoint/budget origins and concrete full streaming history/local witness, pre-provider/post-settlement publication and optional strict provider proxy preparation integrated. 353 author,87 independent finance,125 independent funded and209 root integration tests passed; 49 direct privilege/network attacks refused. Final frozen-source offline image proof passed; intended host/funded operation remains unverified.",
         "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
-        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged."
       ],
       "remaining": "Actual intended-host/image/distribution admission and repeated adversarial/recovery proof there; external whole-host rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transitions. Provider profile needs separately reviewed public market/FX routing plus actual routes/prices/keys/funding/network policy; scans capped 1 million rows / 512 MiB / 5 seconds and long Ledger projections not incremental.",
       "execution_state": "idle",
@@ -748,7 +754,7 @@
       "Historical authenticated read-only observation recorded using redacted retained evidence; no new private account request"
     ],
     "acceptance_transition": false,
-    "pending": "T17–T22 acceptance, funded/forward economics, full venue conformance, intended-host/protected-image and live authorization unchanged",
+    "pending": "T17\u2013T22 acceptance, funded/forward economics, full venue conformance, intended-host/protected-image and live authorization unchanged",
     "guide": "docs/KRAKEN-PRICE-HISTORY.md",
     "publication": {
       "target_branch": "codex/orchestrator-takeover-2026-10-04",

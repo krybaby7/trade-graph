@@ -219,7 +219,7 @@
       "dependencies": [
         "T16"
       ],
-      "evidence_summary": "Software preparation exists; genuine provider, public-data and intended-host evidence is pending."
+      "evidence_summary": "Subscription/controller tested; no real inference. Native login, protected provider egress and intended-image commissioning remain blocked."
     },
     {
       "id": "T18",
@@ -243,7 +243,7 @@
         "T16",
         "T17"
       ],
-      "evidence_summary": "Adapter preparation exists; authenticated Kraken conformance is pending."
+      "evidence_summary": "Protected live startup, reconciliation and queued owner Resume pass scripted tests. Actual Kraken conformance/live commissioning pending."
     },
     {
       "id": "T20",
@@ -267,7 +267,7 @@
         "T14",
         "T16"
       ],
-      "evidence_summary": "Local isolation evidence exists; intended-host verification and broader grants remain pending."
+      "evidence_summary": "Actual WSL process/file isolation tests pass. Credentialed intended-image boundary, provider egress and broader grants remain pending."
     },
     {
       "id": "T22",

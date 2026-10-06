@@ -1,4 +1,85 @@
-# Implementation status — crypto continuation and recorded checkpoints
+# Implementation status — owner startup controls and recorded checkpoints
+
+## Current owner startup implementation — 2026-10-06
+
+Source **09160e4**, branch `codex/start-controls-2026-10-06`, based on clean WSL
+checkpoint `937437e708bda23a0286de7d9c10fa4e6de9b219`. This section supersedes the
+older preflight limitations below. The independent Windows checkout is preserved.
+
+- **Dashboard/controller implemented:** Start Trading starts or attaches to one
+  locked service; Start Optimisation queues one bounded owner cycle. Automatic
+  scheduling and pending automatic descendants are disabled. Starts, failures,
+  quota blocks and interruption recovery are durable and visible. Pause keeps
+  protection active; nonflat Stop retains management until verified flat.
+- **Subscription adapter implemented/tested, operationally blocked:** all six roles
+  use one provider/model, one journaled invocation per task, local structured
+  validation, deadlines/cancellation and no retry/repair/fallback. Actual WSL
+  namespace tests deny synthetic private files and host access. Invalid/changed
+  subscription admission blocks AI while deterministic management continues.
+- **Protected live path implemented/tested, disabled and not commissioned:** exact
+  image/config/account/owner admission precedes credential construction. Limits,
+  durable attempts, uncertain reconciliation and duplicate suppression remain
+  protected. Live Resume queues locally; only the exclusive worker can apply it
+  after whole-account reconciliation/current grant checks. It cannot create authority.
+
+**Research model/result: none; inference attempts: 0.** Windows Codex 0.125.0
+uses ChatGPT login, but current official 0.160.1 retains built-in request/stream
+retries 4/5 without a supported zero-retry override. No update solves that blocker.
+Windows Claude 2.1.280 is logged out; documented controls need native 2.1.285+.
+Neither native WSL CLI is installed. Official native login, disabled extra usage/
+credits/purchases, root-pinned CLI and actual intended-image isolation remain
+required. A subscription-specific protected provider-egress assembly is also
+**not implemented/verified**: standard image networking is off and live egress
+permits Kraken/FX. Login alone cannot commission the route. See
+[subscription evidence and official sources](docs/SUBSCRIPTION-ADAPTER.md).
+
+Read-only official Codex app-server metadata during this task reported weekly
+**91% remaining / 9% used**, reset **2026-10-12 16:25:16 UTC**; shorter-window data
+was unavailable and credits were `0`. The exact observation time was not retained.
+This Windows snapshot does not establish WSL admission or Research usage. Claude
+quota and subscription fee/preparation/model cost attribution remain **unknown,
+not free**. Real expenses, live allocation and USD10,000 virtual paper capital
+with EUR reporting remain separate.
+
+Public history was **not refreshed**. Retained coverage: 168 completed hourly
+candles each BTC/USD and ETH/USD, 2026-09-29 14:00 through 2026-10-06 14:00 UTC,
+zero gaps at collection; current freshness is not claimed. Separately billed model
+calls, purchases, private Kraken requests, real orders and withdrawals: **0**.
+No continuous paper AI operation or live authorization occurred.
+
+Verification: 245 startup/subscription/isolation/controller tests and 48 final
+integration/dashboard tests passed. Independent review covered startup and 18 new
+live Resume tests with no remaining critical issue. Source/tests Ruff, JavaScript
+syntax, 23-task DAG and ten planning tests passed. The offline wheel installs with
+locked dependencies and passes installed imports/0018/manual-scheduling/CLI checks;
+one disposable deterministic paper tick created no orders, subscription calls or
+expense receipts. Full suite is running from 09160e4; no pass is claimed yet.
+A new protected image was not built or commissioned. Historical image evidence
+does not certify this source. See [verification](docs/reviews/2026-10-06-start-controls.md).
+
+From `/home/adami/trade-graph`:
+
+```bash
+uv run --frozen trade-graph dashboard --database runtime/trade_graph.sqlite --session-file runtime/owner-session.json
+uv run --frozen trade-graph subscription-status --provider codex
+uv run --frozen trade-graph subscription-status --provider claude
+uv run --frozen trade-graph run --mode paper --database runtime/trade_graph.sqlite --once
+```
+
+Open `http://127.0.0.1:8000/progress` using the existing private owner session.
+Start Trading currently supplies deterministic paper management; AI/Optimisation
+stay unavailable until protected subscription admission. `--once` is a bounded
+deterministic paper tick. Protected live commands/provisioning are documented in
+[the commissioning guide](docs/LIVE-STARTUP-COMMISSIONING.md).
+
+Next: native Claude login/disabled extras, approved provider egress and actual
+intended-image isolation, then exactly one refreshed public Research diagnostic.
+Continuous paper evaluation is a separate gate. Live additionally needs actual
+read/trade-only Kraken provisioning, whole-account/uncertainty/restart/alert
+verification, independent signed reviews, separate real allocation/loss allowance,
+current protected image and explicit owner live grant. T17–T22 acceptance is
+unchanged. Tests, Research inference, continuous paper and live operation remain
+separate evidence. Installation postflight/final checkpoint pending; no push.
 
 **Owner continuation focus, 2026-10-05:** finish the existing crypto paper
 operation and forward evaluation. Read [the reassessed next steps](docs/CRYPTO-NEXT-STEPS.md).

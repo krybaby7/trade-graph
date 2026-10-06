@@ -1,5 +1,8 @@
 # 09 — Dashboard, configuration and operational runbooks
 
+**Owner update, 2026-10-06:** Optimisation is manual only. Start Optimisation requests one bounded review/improvement cycle; periodic, artifact-scheduled and automatically delegated Optimisation are disabled in the installed service. Ordinary departments continue automatically when a single subscription route is admitted. New startup controls do not authorize separately billed model APIs, extra usage, retries or fallback. Protected acceptance/deployment and separate live commissioning remain required.
+
+
 ## Dashboard
 
 Start with a responsive server-rendered interface backed by FastAPI. Server projections calculate money; do not duplicate authoritative arithmetic in the browser. Every value carries native units, EUR valuation basis, timestamp and provisional/stale status. The default account is USD10,000 virtual with EUR reporting, not EUR100.

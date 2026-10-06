@@ -1,5 +1,8 @@
 # 02 — Graph execution, departmental contracts and tools
 
+**Owner update, 2026-10-06:** Optimisation is manual only. Start Optimisation requests one bounded review/improvement cycle; periodic, artifact-scheduled and automatically delegated Optimisation are disabled in the installed service. Ordinary departments continue automatically when a single subscription route is admitted. New startup controls do not authorize separately billed model APIs, extra usage, retries or fallback. Protected acceptance/deployment and separate live commissioning remain required.
+
+
 ## Event-driven organisation
 
 Use durable application events and tasks rather than agents passing unrestricted chat transcripts. The scheduler is ordinary software. It runs maintenance continuously, checks persisted due times, coalesces related events and invokes a short graph only when useful. Each graph ends; organisational cycles continue through new persisted tasks. The financial ledger and execution service do not depend on a model remaining available.
@@ -49,7 +52,7 @@ Default task bounds: three delegation levels, twelve descendants per root task, 
 | Trader | Decision interval, material research, invalidation trigger, mandate change, actionable order issue | Four-hour routine opportunities, target six calls/day; coalesce related events, five-minute ordinary debounce | Decision record and zero or more typed intents |
 | Research | Daily market refresh, approaching expiry of a relied-on finding, Leader assignment, materially new event | One daily dossier initially; reuse strategy research until invalidated | Findings and testable strategy proposals |
 | Learning | Sufficient new comparable decisions/outcomes or a material incident | Twice-weekly check, run a model only with useful evidence; incident review can be earlier | Lesson revisions, hypotheses and validation proposals |
-| Optimisation | Accumulated usage/latency/errors or meaningful budget anomaly | Weekly review; urgent anomalies notify via software first | Workflow/cost improvement proposals |
+| Optimisation | Explicit owner Start Optimisation request with accumulated usage/latency/error evidence | One bounded cycle per request; automatic periodic/delegated scheduling disabled; urgent anomalies notify via software | Workflow/cost improvement proposals under protected acceptance/deployment |
 | Leader | Startup, scheduled digest, material incident, completed improvement awaiting activation | Weekly routine review plus bounded exceptions | Mandate/config changes, tasks, pause profile, activation decision |
 | Engineer | Authorised task with budget and permitted change class | On demand only | Actual versioned patch/artifact, tests, attestation and summary |
 | Secretary | New reports, tasks, deadlines, priority events | Software at event time; synthesis is opt-in and charged | Digest, routing, overdue/blocked work, escalation |
