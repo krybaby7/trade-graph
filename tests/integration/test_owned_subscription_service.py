@@ -147,3 +147,19 @@ def test_declared_subscription_startup_refuses_api_credentials_and_no_model_fall
     with pytest.raises(AuthorityDenied, match="refuses API"):
         ProtectedDeploymentBinding(runtime, tmp_path / "owner", api_keys={"openai": "synthetic-fixture-only"})
     assert not cli.requests
+
+
+def test_verified_temporary_subscription_block_can_recover_without_restarting_service(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    flow, runtime, binding, service, cli, _ = subscription_service(tmp_path, monkeypatch)
+    admission = binding.subscription_admission
+    ready = admission.adapter.readiness
+    admission.adapter.readiness = replace(ready, ready=False, blockers=("temporary native login unavailable",))
+    admission.adapter.readiness_probe = lambda: ready
+    binding.subscription_admission = replace(admission, status={**admission.status, "ready": False})
+    task = flow.add("research")
+    result = asyncio.run(service.run(max_ticks=1))
+    assert not result["failures"] and result["completed"] == 1
+    assert flow.row(task)["status"] == "SUCCEEDED"
+    assert binding.ready() and len(cli.requests) == 1

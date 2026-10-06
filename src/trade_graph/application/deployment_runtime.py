@@ -86,7 +86,7 @@ class ProtectedDeploymentBinding:
         if not self.subscription_declared:
             return self._subscription_current()
         admission = self.subscription_admission
-        if (not self._subscription_current() or not admission.adapter or not admission.status.get("ready")
+        if (not self._subscription_current() or not admission.adapter
                 or not self.runtime.model_handlers):
             return False
         return self.runtime.model_handlers.router.readiness(self.runtime.portfolio_id)["ready"]
@@ -95,7 +95,7 @@ class ProtectedDeploymentBinding:
         from trade_graph.application.subscription_runtime import assemble_subscription_handlers
 
         admission = self.subscription_admission
-        if not self._subscription_current() or not admission.adapter or not admission.status.get("ready"):
+        if not self._subscription_current() or not admission.adapter:
             self.runtime.handlers = {}
             return {}
         runtime = self.runtime
