@@ -155,14 +155,17 @@ def test_codex_empty_input_parser_refuses_before_authentication_or_inference():
 
 def catalog():
     return {"models": [{"slug": "gpt-6.1-sol", "shell_type": "disabled", "apply_patch_tool_type": None,
-        "experimental_supported_tools": [], "include_apps_usage_instructions": False,
-        "include_plugin_usage_instructions": False, "include_skills_usage_instructions": False}]}
+        "experimental_supported_tools": [], "tool_mode": "direct", "node_repl_disabled": True,
+        "supports_search_tool": False, "multi_agent_version": None, "multi_agent_reasoning_effort": None,
+        "include_apps_usage_instructions": True, "include_plugin_usage_instructions": True,
+        "include_skills_usage_instructions": True}]}
 
 
 @pytest.mark.parametrize("field,value", [
     ("slug", "different-model"), ("shell_type", "shell_command"), ("apply_patch_tool_type", "freeform"),
-    ("experimental_supported_tools", ["filesystem"]), ("include_apps_usage_instructions", True),
-    ("include_plugin_usage_instructions", True), ("include_skills_usage_instructions", True),
+    ("experimental_supported_tools", ["filesystem"]), ("tool_mode", "code_mode"),
+    ("node_repl_disabled", False), ("supports_search_tool", True),
+    ("multi_agent_version", "v2"), ("multi_agent_reasoning_effort", "high"),
 ])
 def test_codex_catalog_cannot_retain_filesystem_patch_or_plugin_capabilities(field, value):
     module = probe()
@@ -201,3 +204,33 @@ def test_probe_verifies_configured_normal_limits_instead_of_one_turn_zero_retrie
         assert observed[0]["environment"]["CLAUDE_CODE_MAX_TURNS"] == "24"
         assert observed[0]["environment"]["CLAUDE_CODE_MAX_RETRIES"] == "4"
         assert observed[0]["environment"]["MAX_STRUCTURED_OUTPUT_RETRIES"] == "5"
+
+
+@pytest.mark.parametrize("field", ["apply_patch_tool_type", "multi_agent_version", "multi_agent_reasoning_effort"])
+def test_codex_catalog_requires_explicit_null_tool_control_fields(field):
+    module = probe()
+    document = catalog()
+    document["models"][0].pop(field)
+    assert not module.catalog_document_verified(document, "gpt-6.1-sol")
+
+
+def test_codex_probe_refuses_missing_image_generation_disable(monkeypatch, tmp_path):
+    from trade_graph.adapters.models.subscription import SubscriptionConfig
+    module = probe()
+    original = module.codex_command
+    def command(*args, **kwargs):
+        arguments = original(*args, **kwargs)
+        index = next(i for i, value in enumerate(arguments) if value.startswith("features.image_generation="))
+        return arguments[:index - 1] + arguments[index + 1:]
+    class Boundary:
+        def __init__(self, *args, **kwargs):
+            pass
+        def command(self, arguments):
+            return ["/cli/runner", *arguments]
+    monkeypatch.setattr(module, "codex_command", command)
+    monkeypatch.setattr(module, "LinuxFilesystemBoundary", Boundary)
+    monkeypatch.setattr(module, "bounded_parser_diagnostic", lambda *_a: pytest.fail("unsafe parser command"))
+    public_catalog = tmp_path / "models.json"
+    public_catalog.write_text(json.dumps(catalog()))
+    assert not module.tool_configuration_verified(None, "\n".join(module.CODEX_REQUIRED_FLAGS),
+        config=SubscriptionConfig(provider="codex_subscription", model="gpt-6.1-sol"), catalog=public_catalog)

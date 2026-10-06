@@ -234,11 +234,12 @@ def catalog_document_verified(document: dict, model: str) -> bool:
     models = document.get("models") if type(document) is dict else None
     return bool(type(models) is list and len(models) == 1 and type(models[0]) is dict
         and models[0].get("slug") == model and models[0].get("shell_type") == "disabled"
-        and models[0].get("apply_patch_tool_type") is None
+        and "apply_patch_tool_type" in models[0] and models[0]["apply_patch_tool_type"] is None
         and models[0].get("experimental_supported_tools") == []
-        and all(models[0].get(name) is False for name in (
-            "include_apps_usage_instructions", "include_plugin_usage_instructions",
-            "include_skills_usage_instructions")))
+        and models[0].get("tool_mode") == "direct" and models[0].get("node_repl_disabled") is True
+        and models[0].get("supports_search_tool") is False
+        and "multi_agent_version" in models[0] and models[0]["multi_agent_version"] is None
+        and "multi_agent_reasoning_effort" in models[0] and models[0]["multi_agent_reasoning_effort"] is None)
 
 
 def verify_catalog(path: Path, sha256: str, model: str) -> None:
@@ -286,9 +287,10 @@ def tool_configuration_verified(native: NativeCliPin, help_text: str, *, config:
             expected = {"forced_login_method": "chatgpt", "model_provider": "openai",
                 "web_search": "live" if request.max_tool_calls else "disabled",
                 "model_catalog_json": "/request/model-catalog.json", "agents.enabled": False,
-                "history.persistence": "none"}
-            for name in ("shell_tool", "unified_exec", "apps", "view_image", "code_mode", "code_mode_only",
-                         "code_mode_host", "multi_agent_v2"):
+                "history.persistence": "none", "tools.update_plan.enabled": False,
+                "tools.experimental_request_user_input.enabled": False}
+            for name in ("shell_tool", "unified_exec", "apps", "view_image", "image_generation", "code_mode",
+                         "code_mode_only", "code_mode_host", "multi_agent_v2", "plugins", "shell_snapshot"):
                 expected["features." + name] = False
             if (any(settings.get(name) != value for name, value in expected.items())
                     or command[command.index("--sandbox") + 1] != "read-only"
