@@ -382,6 +382,7 @@ def test_codex_department_web_search_uses_supported_tool_with_bounded_observed_u
     command=subscription.codex_command("/cli/runner",req)
     assert 'web_search="live"' in command
     assert 'features.shell_tool=false' in command and 'features.view_image=false' in command
+    assert 'features.image_generation=false' in command
 
 
 def test_engineer_distinct_commissioned_generation_ids_can_dispatch(journal):
@@ -449,3 +450,28 @@ def test_readiness_metadata_refresh_is_cached_and_never_invokes_inference(journa
     assert len(statuses)==1 and executor.calls==0
     model.refresh_readiness(force=True)
     assert len(statuses)==2 and executor.calls==0
+
+
+def test_durable_terminal_attempt_recovers_parent_result_without_any_model_replay(journal):
+    req=request()
+    journal.begin("recovered",req,"claude_subscription",{})
+    first=journal.begin_attempt("recovered",1,req,"claude_subscription")
+    from trade_graph.contracts.models import ModelResult, ModelUsage
+    journal.save_attempt(first,ModelResult(ok=False,failure="temporary",
+        usage=ModelUsage(uncached_input_tokens=3,billed_output_tokens=1)),"FAILED")
+    final=journal.begin_attempt("recovered",2,req,"claude_subscription")
+    journal.save_attempt(final,parse_claude_outcome(Executor().outcome,req),"COMPLETED")
+    executor=Executor()
+    result=adapter(executor).invoke(req,invocation_id="recovered",journal=journal)
+    assert result.ok and result.usage.uncached_input_tokens==10 and executor.calls==0
+    assert journal.row("recovered")["state"]=="COMPLETED"
+
+
+def test_dispatched_attempt_without_terminal_result_recovers_as_uncertain(journal):
+    req=request()
+    journal.begin("ambiguous",req,"claude_subscription",{})
+    attempt=journal.begin_attempt("ambiguous",1,req,"claude_subscription")
+    result=journal.recover_result("ambiguous")
+    assert result.failure=="timeout_uncertain" and result.usage is None
+    row=journal.database.execute("SELECT * FROM subscription_attempts WHERE attempt_id=?",(attempt,)).fetchone()
+    assert row["state"]=="UNCERTAIN" and row["cost_status"]=="unknown"

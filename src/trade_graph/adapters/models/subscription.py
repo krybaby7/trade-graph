@@ -200,12 +200,7 @@ class SubscriptionJournal:
             if row:
                 if row["request_hash"] != binding:
                     raise StaleState("subscription invocation identity reused with a different request")
-                if row["result_json"]:
-                    return ModelResult.model_validate_json(row["result_json"])
-                result = ModelResult(ok=False, failure="timeout_uncertain",
-                    message="prior subscription dispatch has no durable response; no replay permitted")
-                self.save(invocation_id, result, "UNCERTAIN")
-                return result
+                return self.recover_result(invocation_id)
             existing_task = self.database.execute("SELECT invocation_id FROM subscription_invocations WHERE task_id=?",
                                                   (request.task_id,)).fetchone()
             if existing_task is not None and request.role != "engineer":
@@ -218,6 +213,31 @@ class SubscriptionJournal:
                 (invocation_id, binding, request.task_id, request.root_task_id, request.role, request.run_id,
                  request.system_version_id, provider, request.model, json.dumps(sanitize_quota(quota)), now, now))
         return None
+
+    def recover_result(self, invocation_id: str) -> ModelResult | None:
+        """Recover terminal receipts after a crash without replaying any dispatch."""
+        with self.database.immediate():
+            row = self.row(invocation_id)
+            if row is None:
+                return None
+            if row["result_json"]:
+                return ModelResult.model_validate_json(row["result_json"])
+            attempts = self.database.execute(
+                "SELECT * FROM subscription_attempts WHERE invocation_id=? ORDER BY attempt_index",
+                (invocation_id,)).fetchall()
+            if attempts and all(attempt["state"] in {"COMPLETED", "FAILED"} and attempt["result_json"]
+                                for attempt in attempts):
+                results = [ModelResult.model_validate_json(attempt["result_json"]) for attempt in attempts]
+                result = results[-1].model_copy(update={"usage": aggregate_usage(results)})
+                self.save(invocation_id, result, "COMPLETED" if result.ok else "FAILED")
+                return result
+            result = ModelResult(ok=False, failure="timeout_uncertain",
+                message="prior subscription dispatch has no durable response; no replay permitted")
+            for attempt in attempts:
+                if attempt["state"] == "DISPATCHED" or not attempt["result_json"]:
+                    self.save_attempt(attempt["attempt_id"], result, "UNCERTAIN")
+            self.save(invocation_id, result, "UNCERTAIN")
+            return result
 
     def save(self, invocation_id: str, result: ModelResult, state: str, *, dispatched: bool = True) -> None:
         with self.database.immediate():
@@ -543,7 +563,7 @@ def codex_command(binary: str, request: ModelRequest, *, schema_path: str = "/re
     settings = {"forced_login_method": "chatgpt", "model_provider": "openai",
                 "web_search": "live" if request.max_tool_calls else "disabled",
                 "features.shell_tool": False, "features.unified_exec": False, "features.apps": False,
-                "features.view_image": False, "features.code_mode": False,
+                "features.view_image": False, "features.image_generation": False, "features.code_mode": False,
                 "features.plugins": False, "features.shell_snapshot": False,
                 "tools.update_plan.enabled": False, "tools.experimental_request_user_input.enabled": False,
                 "features.code_mode_only": False, "features.code_mode_host": False,

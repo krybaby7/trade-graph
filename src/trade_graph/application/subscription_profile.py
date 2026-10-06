@@ -211,7 +211,7 @@ def load_subscription_profile(protected_owner: Path, *, _depth: int = 0) -> Subs
                                      for item in fallback_admissions]
         status["application_automatic_fallback"] = bool(fallbacks)
         status["ready"] = config.subscription.enabled and (readiness.ready
-                            or any(item.status["ready"] for item in fallback_admissions))
+                            or any(route.config.enabled and route.readiness.ready for route in fallbacks))
         def refresh_readiness():
             observed = probe(config.subscription, pin, login, **probe_arguments)
             return assess_subscription(config.subscription, cli_version=observed["cli_version"],
