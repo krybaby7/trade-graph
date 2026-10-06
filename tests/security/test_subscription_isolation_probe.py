@@ -128,3 +128,76 @@ def test_parser_diagnostic_refuses_timeout_and_output_flood():
     for code in ["import time; time.sleep(2)", "print('x'*9000)"]:
         boundary = SimpleNamespace(command=lambda args, code=code: [sys.executable, "-I", "-c", code])
         assert module.bounded_parser_diagnostic(boundary, [], maximum_seconds=0.1, maximum_bytes=64) == (-1, "")
+
+
+def test_codex_help_controls_are_exec_specific_and_complete():
+    module = probe()
+    help_text = "\n".join(flag + " <argument>" for flag in module.CODEX_REQUIRED_FLAGS)
+    assert module.supports_required_flags(help_text, "codex_subscription")
+    for flag in module.CODEX_REQUIRED_FLAGS:
+        assert not module.supports_required_flags(help_text.replace(flag + " ", flag + "-other "),
+                                                 "codex_subscription")
+
+
+def test_codex_empty_input_parser_refuses_before_authentication_or_inference():
+    module = probe()
+    accepted = (1, "No prompt provided via stdin.\n")
+    rejected = (2, "error: unexpected argument '--trade-graph-invalid-probe-flag' found\n\n"
+        "  tip: to pass '--trade-graph-invalid-probe-flag' as a value, use "
+        "'-- --trade-graph-invalid-probe-flag'\n\n"
+        "Usage: codex exec [OPTIONS] [PROMPT]\n"
+        "       codex exec [OPTIONS] <COMMAND> [ARGS]\n\n"
+        "For more information, try '--help'.\n")
+    assert module.parser_controls_verified(accepted, rejected, "codex_subscription")
+    assert not module.parser_controls_verified((0, "help output"), rejected, "codex_subscription")
+    assert not module.parser_controls_verified((1, "credentials missing"), rejected, "codex_subscription")
+
+
+def catalog():
+    return {"models": [{"slug": "gpt-6.1-sol", "shell_type": "disabled", "apply_patch_tool_type": None,
+        "experimental_supported_tools": [], "include_apps_usage_instructions": False,
+        "include_plugin_usage_instructions": False, "include_skills_usage_instructions": False}]}
+
+
+@pytest.mark.parametrize("field,value", [
+    ("slug", "different-model"), ("shell_type", "shell_command"), ("apply_patch_tool_type", "freeform"),
+    ("experimental_supported_tools", ["filesystem"]), ("include_apps_usage_instructions", True),
+    ("include_plugin_usage_instructions", True), ("include_skills_usage_instructions", True),
+])
+def test_codex_catalog_cannot_retain_filesystem_patch_or_plugin_capabilities(field, value):
+    module = probe()
+    document = catalog()
+    assert module.catalog_document_verified(document, "gpt-6.1-sol")
+    document["models"][0][field] = value
+    assert not module.catalog_document_verified(document, "gpt-6.1-sol")
+
+
+@pytest.mark.parametrize("provider", ["codex_subscription", "claude_subscription"])
+def test_probe_verifies_configured_normal_limits_instead_of_one_turn_zero_retries(monkeypatch, tmp_path, provider):
+    from trade_graph.adapters.models.subscription import SubscriptionConfig
+    module = probe()
+    observed = []
+    class Boundary:
+        def __init__(self, native, **kwargs):
+            observed.append(kwargs)
+        def command(self, arguments):
+            return ["/cli/runner", *arguments]
+    monkeypatch.setattr(module, "LinuxFilesystemBoundary", Boundary)
+    accepted = (1, "No prompt provided via stdin.\n") if provider == "codex_subscription" else (
+        1, "Error: Input must be provided either through stdin or as a prompt argument when using --print\n")
+    monkeypatch.setattr(module, "bounded_parser_diagnostic", lambda _boundary, args:
+        (2, "synthetic negative") if "--trade-graph-invalid-probe-flag" in args else accepted)
+    monkeypatch.setattr(module, "parser_controls_verified", lambda actual, rejected, *_a:
+        actual == accepted and rejected == (2, "synthetic negative"))
+    config = SubscriptionConfig(provider=provider, model="gpt-6.1-sol" if provider == "codex_subscription"
+        else "claude-sonnet-5-5", maximum_turns=24, cli_transport_retries=4, cli_structured_output_attempts=5,
+        department_tools={"research": ["web_search"]} if provider == "codex_subscription" else {})
+    public_catalog = tmp_path / "models.json"
+    public_catalog.write_text(json.dumps(catalog()))
+    required = module.CODEX_REQUIRED_FLAGS if provider == "codex_subscription" else module.REQUIRED_FLAGS
+    assert module.tool_configuration_verified(None, "\n".join(required), config=config, catalog=public_catalog)
+    assert observed[0]["share_network"] is False and observed[0].get("credential_file") is None
+    if provider == "claude_subscription":
+        assert observed[0]["environment"]["CLAUDE_CODE_MAX_TURNS"] == "24"
+        assert observed[0]["environment"]["CLAUDE_CODE_MAX_RETRIES"] == "4"
+        assert observed[0]["environment"]["MAX_STRUCTURED_OUTPUT_RETRIES"] == "5"

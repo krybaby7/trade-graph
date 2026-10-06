@@ -9,7 +9,9 @@ settings on the host. Mount only a synthetic canary read-only at
 The adversarial ELF interpreter receives a test-only read-only stdlib bind in
 addition to the production bwrap flags. The real native CLI is separately checked
 under the unchanged production boundary. tools_disabled verifies native flag
-support and the exact tool/MCP-disabled command, without model inference.
+support and the production host-tool boundary, without model inference.
+Server-side web search may remain configured for a department; no filesystem,
+shell, patch, credential or external MCP capability is granted to model output.
 CONNECT probes close before TLS, so no provider/exchange API requests are sent.
 """
 
@@ -32,10 +34,16 @@ import tempfile
 import time
 from pathlib import Path
 
-from trade_graph.adapters.models.subscription import claude_command, claude_environment
+from trade_graph.adapters.models.subscription import (
+    SubscriptionConfig,
+    claude_command,
+    claude_environment,
+    codex_command,
+)
 from trade_graph.adapters.models.subscription_process import LinuxFilesystemBoundary, NativeCliPin
 from trade_graph.contracts.models import ModelRequest
 from trade_graph.kernel.runtime_manifest import protected_package_sha256
+from trade_graph.kernel.subscription_proxy import PROVIDER_HOSTS
 
 FILESYSTEM_CHECKS = frozenset({"private_files_denied", "windows_mounts_denied",
                               "host_proc_denied", "api_environment_denied"})
@@ -44,6 +52,8 @@ CHECKS = FILESYSTEM_CHECKS | {"descendants_killed", "tools_disabled", "direct_eg
 REQUIRED_FLAGS = frozenset({"--restricted", "--safe-mode", "--tools", "--disallowedTools",
     "--strict-mcp-config", "--mcp-config", "--setting-sources", "--settings",
     "--no-session-persistence", "--json-schema"})
+CODEX_REQUIRED_FLAGS = frozenset({"--json", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+    "--skip-git-repo-check", "--sandbox", "--output-schema", "--model", "--config"})
 CANARY = b"SYNTHETIC_ONLY_SUBSCRIPTION_BOUNDARY_CANARY\n"
 WINDOWS_CANARY = Path("/mnt/c/trade-graph-probe-canary")
 ENV_NAMES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KRAKEN_API_KEY", "KRAKEN_API_SECRET",
@@ -94,13 +104,22 @@ def validate_network(address: str, provider_port: int, market_port: int) -> None
         raise ValueError("exact reviewed private proxy and separate ports required")
 
 
-def supports_required_flags(help_text: str) -> bool:
-    return all(re.search(r"(?:^|\s)" + re.escape(flag) + r"(?=\s|,|=|$)", help_text)
-               for flag in REQUIRED_FLAGS)
+def supports_required_flags(help_text: str, provider: str = "claude_subscription") -> bool:
+    required = CODEX_REQUIRED_FLAGS if provider == "codex_subscription" else REQUIRED_FLAGS
+    return all(re.search(r"(?:^|\s)" + re.escape(flag) + r"(?=\s|,|=|$)", help_text) for flag in required)
 
 
 
-def parser_controls_verified(accepted: tuple[int, str], rejected: tuple[int, str]) -> bool:
+def parser_controls_verified(accepted: tuple[int, str], rejected: tuple[int, str],
+                             provider: str = "claude_subscription") -> bool:
+    if provider == "codex_subscription":
+        return (accepted == (1, "No prompt provided via stdin.\n")
+            and rejected == (2, "error: unexpected argument '--trade-graph-invalid-probe-flag' found\n\n"
+                "  tip: to pass '--trade-graph-invalid-probe-flag' as a value, use "
+                "'-- --trade-graph-invalid-probe-flag'\n\n"
+                "Usage: codex exec [OPTIONS] [PROMPT]\n"
+                "       codex exec [OPTIONS] <COMMAND> [ARGS]\n\n"
+                "For more information, try '--help'.\n"))
     # --help short-circuits unknown-option checking in pinned Claude 2.1.292.
     # Empty input reaches an offline fixed guard only after valid option parsing.
     return (accepted == (1, "Error: Input must be provided either through stdin or as a prompt argument "
@@ -211,25 +230,84 @@ def namespace_exists(namespace: str) -> bool:
     return False
 
 
-def tool_configuration_verified(native: NativeCliPin, help_text: str) -> bool:
-    if not supports_required_flags(help_text):
+def catalog_document_verified(document: dict, model: str) -> bool:
+    models = document.get("models") if type(document) is dict else None
+    return bool(type(models) is list and len(models) == 1 and type(models[0]) is dict
+        and models[0].get("slug") == model and models[0].get("shell_type") == "disabled"
+        and models[0].get("apply_patch_tool_type") is None
+        and models[0].get("experimental_supported_tools") == []
+        and all(models[0].get(name) is False for name in (
+            "include_apps_usage_instructions", "include_plugin_usage_instructions",
+            "include_skills_usage_instructions")))
+
+
+def verify_catalog(path: Path, sha256: str, model: str) -> None:
+    if (path.is_symlink() or not path.is_file() or not path.is_absolute()
+            or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+            or path.stat().st_uid != 0 or path.stat().st_mode & 0o022 or path.stat().st_size > 262144):
+        raise ValueError("pinned root-controlled public model catalog required")
+    for parent in path.parents:
+        if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o022:
+            raise ValueError("model catalog ancestors must be root-controlled")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != sha256 or not catalog_document_verified(json.loads(raw), model):
+        raise ValueError("model catalog identity or host-tool controls differ from owner pin")
+
+
+def tool_configuration_verified(native: NativeCliPin, help_text: str, *, config: SubscriptionConfig | None = None,
+                                catalog: Path | None = None) -> bool:
+    configured = config or SubscriptionConfig(provider="claude_subscription", model="claude-sonnet-5-5")
+    provider = configured.provider
+    if not supports_required_flags(help_text, provider):
         return False
+    tools = configured.department_tools.get("research", [])
     request = ModelRequest(role="research", task_id="synthetic-probe", root_task_id="synthetic-probe",
-        run_id="synthetic-probe", system_version_id="synthetic-probe", provider="anthropic",
-        model="claude-sonnet-5-5", instructions="Command inspection only; do not dispatch.",
-        context={}, output_schema={"type": "object"}, schema_name="SyntheticProbe",
-        max_output_tokens=16, max_tool_calls=0, timeout_seconds=10)
-    arguments = claude_command("/cli/runner", request)[1:]
-    boundary = LinuxFilesystemBoundary(native, share_network=False, environment=claude_environment(16))
+        run_id="synthetic-probe", system_version_id="synthetic-probe",
+        provider="openai" if provider == "codex_subscription" else "anthropic", model=configured.model,
+        instructions="Command inspection only; do not dispatch.", context={}, output_schema={"type": "object"},
+        schema_name="SyntheticProbe", max_output_tokens=configured.maximum_output_tokens,
+        max_tool_calls=configured.maximum_tool_calls if tools else 0, timeout_seconds=configured.maximum_seconds)
+    if provider == "codex_subscription":
+        if catalog is None or not catalog_document_verified(json.loads(catalog.read_bytes()), request.model):
+            return False
+        with tempfile.TemporaryDirectory(prefix="tg-probe-schema-") as directory:
+            schema = Path(directory) / "schema.json"
+            schema.write_text(json.dumps(request.output_schema), encoding="utf-8")
+            schema.chmod(0o600)
+            arguments = codex_command("/cli/runner", request)[1:]
+            boundary = LinuxFilesystemBoundary(native, share_network=False, provider=provider,
+                schema_file=schema, model_catalog_file=catalog)
+            command = boundary.command(arguments)
+            settings = {}
+            for index, value in enumerate(command[:-1]):
+                if value == "-c":
+                    name, encoded = command[index + 1].split("=", 1)
+                    settings[name] = json.loads(encoded)
+            expected = {"forced_login_method": "chatgpt", "model_provider": "openai",
+                "web_search": "live" if request.max_tool_calls else "disabled",
+                "model_catalog_json": "/request/model-catalog.json", "agents.enabled": False,
+                "history.persistence": "none"}
+            for name in ("shell_tool", "unified_exec", "apps", "view_image", "code_mode", "code_mode_only",
+                         "code_mode_host", "multi_agent_v2"):
+                expected["features." + name] = False
+            if (any(settings.get(name) != value for name, value in expected.items())
+                    or command[command.index("--sandbox") + 1] != "read-only"
+                    or command[command.index("--output-schema") + 1] != "/request/schema.json"):
+                return False
+            accepted = bounded_parser_diagnostic(boundary, arguments)
+            rejected = bounded_parser_diagnostic(boundary, [*arguments, "--trade-graph-invalid-probe-flag"])
+        return parser_controls_verified(accepted, rejected, provider)
+    arguments = claude_command("/cli/runner", request, configured)[1:]
+    environment = claude_environment(request.max_output_tokens, configured)
+    boundary = LinuxFilesystemBoundary(native, share_network=False, environment=environment, provider=provider)
     command = boundary.command(arguments)
     for name, expected in {"--tools": "", "--disallowedTools": "mcp__*", "--mcp-config": '{"mcpServers":{}}',
-                           "--setting-sources": "", "--max-turns": "1"}.items():
+                           "--setting-sources": "", "--max-turns": str(configured.maximum_turns)}.items():
         if command[command.index(name) + 1] != expected:
             return False
-    environment = claude_environment(16)
-    if (environment["CLAUDE_CODE_MAX_RETRIES"] != "0"
-            or environment["MAX_STRUCTURED_OUTPUT_RETRIES"] != "1"
-            or environment["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] != "0"):
+    if (environment["CLAUDE_CODE_MAX_RETRIES"] != str(configured.cli_transport_retries)
+            or environment["MAX_STRUCTURED_OUTPUT_RETRIES"] != str(configured.cli_structured_output_attempts)
+            or environment["CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES"] != str(configured.cli_transport_retries)):
         return False
     accepted = bounded_parser_diagnostic(boundary, arguments)
     rejected = bounded_parser_diagnostic(boundary, [*arguments, "--trade-graph-invalid-probe-flag"])
@@ -241,9 +319,16 @@ def tool_configuration_verified(native: NativeCliPin, help_text: str) -> bool:
             and "--restricted" in command and "--safe-mode" in command)
 
 
-def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provider_port: int, market_port: int) -> dict:
+def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provider_port: int, market_port: int, *,
+              config: SubscriptionConfig | None = None, catalog: Path | None = None, catalog_sha256: str = "") -> dict:
     """Only fixed synthetic paths are read. No login or runtime database is opened."""
     validate_network(proxy_ip, provider_port, market_port)
+    configured = config or SubscriptionConfig(provider="claude_subscription", model="claude-sonnet-5-5")
+    provider = configured.provider
+    if provider == "codex_subscription":
+        if catalog is None:
+            raise ValueError("Codex public model catalog required")
+        verify_catalog(catalog, catalog_sha256, configured.model)
     checks = {name: False for name in CHECKS}
     blockers = []
     if sys.platform != "linux" or os.getuid() != 10001 or os.getgid() != 10001:
@@ -253,13 +338,16 @@ def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provid
     native.verify()
     if WINDOWS_CANARY.is_symlink() or WINDOWS_CANARY.read_bytes() != CANARY:
         raise ValueError("exact synthetic Windows mount canary required")
-    native_boundary = LinuxFilesystemBoundary(native, share_network=False, environment=claude_environment(16))
+    environment = (claude_environment(configured.maximum_output_tokens, configured)
+                   if provider == "claude_subscription" else {"CODEX_DISABLE_UPDATE_CHECK": "1"})
+    native_boundary = LinuxFilesystemBoundary(native, share_network=False, environment=environment, provider=provider)
     version = native_boundary.run(["--version"], b"", maximum_seconds=10)
-    help_result = native_boundary.run(["--help"], b"", maximum_seconds=10)
+    help_result = native_boundary.run(["exec", "--help"] if provider == "codex_subscription" else ["--help"],
+                                      b"", maximum_seconds=10)
     version_ok = version.exit_code == 0 and not version.stopped and re.search(
         r"(?<![0-9.])" + re.escape(expected_version) + r"(?![0-9.])", version.stdout)
     checks["tools_disabled"] = bool(version_ok and help_result.exit_code == 0 and not help_result.stopped
-        and tool_configuration_verified(native, help_result.stdout))
+        and tool_configuration_verified(native, help_result.stdout, config=configured, catalog=catalog))
     if not checks["tools_disabled"]:
         blockers.append("native offline version/help or exact tool configuration refused")
 
@@ -318,11 +406,11 @@ def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provid
 
     for name, port, admitted, denied in (
         ("provider_route_restricted", provider_port,
-         ("api.anthropic.com", "claude.ai", "platform.claude.com"),
+         tuple(sorted(PROVIDER_HOSTS)),
          ("api.kraken.com", "api.frankfurter.dev", "api.openai.com", "example.com", "169.254.169.254")),
         ("market_route_restricted", market_port,
          ("api.kraken.com", "api.frankfurter.dev"),
-         ("api.anthropic.com", "claude.ai", "platform.claude.com", "example.com", "127.0.0.1")),
+         (*sorted(PROVIDER_HOSTS), "example.com", "127.0.0.1")),
     ):
         try:
             # Close every admitted CONNECT before any TLS bytes/provider request.
@@ -338,7 +426,11 @@ def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provid
     return {"schema_version": 1, "kind": "credential-free-actual-image-observations", "checks": checks,
             "blockers": blockers, "admission_proof": proof, "inference_attempts": 0,
             "provider_api_requests": 0, "exchange_api_requests": 0, "live_authorization": False,
-            "paid_authorization": False, "tools_evidence": "native-help-production-command-and-offline-parser-controls",
+            "paid_authorization": False, "provider": provider,
+            "configured_limits": configured.model_dump(exclude={"allowed_context_keys"}),
+            "provider_proxy_hosts": sorted(PROVIDER_HOSTS),
+            "model_catalog_sha256": catalog_sha256 or None,
+            "tools_evidence": "native-help-production-host-tool-command-and-offline-parser-controls",
             "test_only_stdlib_bind": True, "probe_only_synthetic_windows_mount": True,
             "production_docker_spec_verification": "separate-required-without-probe-fixture-mounts",
             "native_version_exit_code": version.exit_code, "native_help_exit_code": help_result.exit_code,
@@ -349,16 +441,38 @@ def run_probe(native: NativeCliPin, expected_version: str, proxy_ip: str, provid
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--native-binary", type=Path, default=Path("/opt/trade-graph/claude"))
+    parser.add_argument("--provider", choices=["claude_subscription", "codex_subscription"],
+                        default="claude_subscription")
+    parser.add_argument("--model")
+    parser.add_argument("--catalog", type=Path)
+    parser.add_argument("--catalog-sha256", default="")
+    parser.add_argument("--maximum-seconds", type=int, default=600)
+    parser.add_argument("--maximum-output-tokens", type=int, default=16384)
+    parser.add_argument("--maximum-turns", type=int, default=8)
+    parser.add_argument("--maximum-output-bytes", type=int, default=2097152)
+    parser.add_argument("--cli-transport-retries", type=int, default=2)
+    parser.add_argument("--cli-structured-output-attempts", type=int, default=3)
+    parser.add_argument("--web-search", action="store_true")
+    parser.add_argument("--native-binary", type=Path)
     parser.add_argument("--native-sha256", required=True)
-    parser.add_argument("--expected-version", default="2.1.292")
+    parser.add_argument("--expected-version")
     parser.add_argument("--proxy-ip", required=True)
     parser.add_argument("--provider-port", type=int, default=8080)
     parser.add_argument("--market-port", type=int, default=8081)
     args = parser.parse_args(argv)
     try:
-        result = run_probe(NativeCliPin(args.native_binary, args.native_sha256), args.expected_version,
-                           args.proxy_ip, args.provider_port, args.market_port)
+        is_codex = args.provider == "codex_subscription"
+        configured = SubscriptionConfig(provider=args.provider, model=args.model or (
+            "gpt-6.1-sol" if is_codex else "claude-sonnet-5-5"), maximum_seconds=args.maximum_seconds,
+            maximum_output_tokens=args.maximum_output_tokens, maximum_turns=args.maximum_turns,
+            maximum_output_bytes=args.maximum_output_bytes, cli_transport_retries=args.cli_transport_retries,
+            cli_structured_output_attempts=args.cli_structured_output_attempts,
+            department_tools={"research": ["web_search"]} if args.web_search else {})
+        binary = args.native_binary or Path("/opt/trade-graph/codex" if is_codex else "/opt/trade-graph/claude")
+        result = run_probe(NativeCliPin(binary, args.native_sha256),
+                           args.expected_version or ("0.160.1" if is_codex else "2.1.292"),
+                           args.proxy_ip, args.provider_port, args.market_port, config=configured,
+                           catalog=args.catalog, catalog_sha256=args.catalog_sha256)
     except (OSError, ValueError, TypeError):
         print(json.dumps({"kind": "credential-free-actual-image-observations", "admission_proof": None,
                           "blockers": ["actual image/probe prerequisites refused"], "inference_attempts": 0}))
