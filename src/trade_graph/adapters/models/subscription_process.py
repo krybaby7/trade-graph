@@ -50,6 +50,11 @@ class NativeCliPin:
         metadata = binary.stat()
         if self.require_root_owner and (metadata.st_uid != 0 or metadata.st_mode & 0o022):
             raise ValueError("CLI binary must be pinned in a root-owned non-writable installation")
+        if self.require_root_owner:
+            for parent in binary.parents:
+                parent_metadata = parent.stat()
+                if parent_metadata.st_uid != 0 or parent_metadata.st_mode & 0o022:
+                    raise ValueError("CLI parent directories must be root-owned and non-writable")
         with binary.open("rb") as stream:
             if stream.read(4) != b"\x7fELF":
                 raise ValueError("native ELF CLI binary required")
@@ -240,4 +245,38 @@ def native_subscription_status(provider: str) -> dict:
     config = SubscriptionConfig(provider=f"{provider}_subscription", model="unselected")
     status = probe_subscription(config)
     status["requested_model"] = None
+    return status
+
+
+def probe_isolated_claude(config: SubscriptionConfig, pin: NativeCliPin, credential_file: Path, *,
+                         extra_usage_disabled: bool = False, quota: dict | None = None,
+                         isolation_verified: bool = False) -> dict:
+    """Read version/login inside the exact executor mount, without a model request.
+
+    The caller must separately supply protected host-isolation evidence before
+    admission; metadata success alone cannot attest the whole host boundary.
+    """
+    if config.provider != "claude_subscription" or not pin.require_root_owner:
+        raise ValueError("isolated Claude preflight requires a protected native Claude pin")
+    boundary = LinuxFilesystemBoundary(pin, share_network=False, credential_file=credential_file,
+                                        environment=claude_environment(1))
+    version_result = boundary.run(["--version"], b"", maximum_seconds=10)
+    match = re.search(r"\b\d+\.\d+\.\d+\b", version_result.stdout)
+    version = match[0] if match and version_result.exit_code == 0 else "unavailable"
+    auth = boundary.run(["--restricted", "--safe-mode", "--setting-sources", "", "auth", "status"], b"",
+                        maximum_seconds=10)
+    authentication = "none"
+    try:
+        metadata = json.loads(auth.stdout)
+        if (auth.exit_code == 0 and metadata.get("loggedIn") is True and metadata.get("authMethod") == "claude.ai"
+                and metadata.get("apiProvider") == "firstParty" and metadata.get("subscriptionType")):
+            authentication = "subscription"
+    except (ValueError, TypeError, AttributeError):
+        pass
+    status = assess_subscription(config, cli_version=version, authentication=authentication, quota=quota or {},
+        extra_usage_disabled=extra_usage_disabled, isolation_ready=isolation_verified,
+        native_linux=True).public_status()
+    status["native_cli_present"] = True
+    status["inference_attempts"] = 0
+    status["credential_mount_checked"] = True
     return status

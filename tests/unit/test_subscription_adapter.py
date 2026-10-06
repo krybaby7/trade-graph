@@ -252,3 +252,14 @@ def test_unreviewed_model_alias_is_rejected_before_launch(journal):
     model = SubscriptionAdapter(config, ready(), executor)
     result = model.invoke(request().model_copy(update={"model": "sonnet"}), invocation_id="alias", journal=journal)
     assert result.failure == "validation" and executor.calls == 0
+
+
+def test_known_exhausted_preflight_persists_quota_pause_before_readiness_rejection(journal):
+    config = SubscriptionConfig(provider="claude_subscription", model="claude-sonnet-5-5", enabled=True,
+                                allowed_context_keys={"research": ["market"]})
+    status = assess_subscription(config, cli_version="2.1.285", authentication="subscription",
+        quota={"weekly": {"used_percent": 100}}, extra_usage_disabled=True, isolation_ready=True, native_linux=True)
+    executor = Executor()
+    result = SubscriptionAdapter(config, status, executor).invoke(request(), invocation_id="exhausted", journal=journal)
+    assert result.failure == "rate_limit" and executor.calls == 0
+    assert journal.provider_status("claude_subscription")["ai_paused"]

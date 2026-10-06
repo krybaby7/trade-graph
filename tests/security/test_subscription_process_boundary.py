@@ -12,6 +12,7 @@ from trade_graph.adapters.models.subscription import CliOutcome, SubscriptionCon
 from trade_graph.adapters.models.subscription_process import (
     LinuxFilesystemBoundary,
     NativeCliPin,
+    probe_isolated_claude,
     probe_subscription,
 )
 
@@ -102,3 +103,48 @@ def test_native_cli_probe_never_invokes_model_and_excludes_identifiers(monkeypat
     assert status["authentication"] == "subscription"
     assert "private" not in json.dumps(status)
     assert not status["ready"]
+
+
+def test_root_owned_cli_under_writable_parent_is_refused(tmp_path):
+    # The parent check precedes reading/hashing binary bytes. A controlled stat
+    # substitution models a root-owned file dropped in a user-writable directory.
+    binary = tmp_path / "cli"
+    shutil.copyfile(Path("/usr/bin/python3").resolve(), binary)
+    original_stat = Path.stat
+
+    def stat_result(path, *args, **kwargs):
+        result = original_stat(path, *args, **kwargs)
+        if path == binary:
+            values = list(result)
+            values[4] = 0
+            values[0] &= ~0o022
+            return os.stat_result(values)
+        return result
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(Path, "stat", stat_result)
+        with pytest.raises(ValueError, match="parent"):
+            NativeCliPin(binary, hashlib.sha256(binary.read_bytes()).hexdigest()).verify()
+
+
+def test_production_claude_preflight_uses_same_auth_mount_and_no_inference(tmp_path, monkeypatch):
+    credentials = tmp_path / ".credentials.json"
+    credentials.write_text('{"fixture":"synthetic only"}')
+    credentials.chmod(0o600)
+    commands = []
+
+    def fake_run(boundary, arguments, payload, **kwargs):
+        commands.append(boundary.command(arguments))
+        if "--version" in arguments:
+            return CliOutcome("2.1.285", 0)
+        return CliOutcome('{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty",'
+                          '"subscriptionType":"max"}', 0)
+
+    monkeypatch.setattr(LinuxFilesystemBoundary, "run", fake_run)
+    protected_pin = NativeCliPin(Path("/usr/bin/python3").resolve(), system_python().sha256)
+    config = SubscriptionConfig(provider="claude_subscription", model="claude-sonnet-5-5", enabled=True)
+    status = probe_isolated_claude(config, protected_pin, credentials, extra_usage_disabled=True,
+                                  isolation_verified=True)
+    assert status["authentication"] == "subscription" and status["ready"]
+    assert len(commands) == 2 and all("-p" not in command for command in commands)
+    assert all(str(credentials) in command for command in commands)

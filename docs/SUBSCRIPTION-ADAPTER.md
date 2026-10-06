@@ -68,6 +68,11 @@ native CLI metadata without selecting a model, opening a thread or invoking
 inference. `probe_subscription(config)` supports a protected selected-model
 configuration. Unknown quota fields remain unknown. Metadata fields are bounded
 and account identifiers, tokens and arbitrary provider messages are excluded.
+Production commissioning uses `probe_isolated_claude` to check the exact pinned
+binary and credential mount that the executor will use. A default host-home
+login check cannot establish a different mounted login. Native binary parent
+directories must also be root-owned and non-writable. Independent protected host
+isolation evidence remains required; metadata success alone does not supply it.
 
 ## Native Claude executor and isolation
 

@@ -231,6 +231,14 @@ class SubscriptionAdapter:
                                  message="subscription request outside protected bounds")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
+        if self.readiness.provider == self.config.provider and (
+            journal.provider_status(self.config.provider)["ai_paused"] or _quota_exhausted(self.readiness.quota)
+        ):
+            journal.pause_ai(self.config.provider, self.readiness.quota)
+            result = ModelResult(ok=False, failure="rate_limit",
+                                 message="subscription quota exhausted; new AI work paused")
+            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
+            return result
         if not self.config.enabled or not self.readiness.ready or self.readiness.provider != self.config.provider:
             result = ModelResult(ok=False, failure="credentials", message="; ".join(self.readiness.blockers)[:500]
                                  or "subscription admission is disabled")
@@ -239,11 +247,6 @@ class SubscriptionAdapter:
         # Readiness cannot bypass Codex's known unsupported zero-retry route.
         if self.config.provider == "codex_subscription":
             result = ModelResult(ok=False, failure="unsupported", message="Codex built-in retries cannot be disabled")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
-            return result
-        if journal.provider_status(self.config.provider)["ai_paused"] or _quota_exhausted(self.readiness.quota):
-            result = ModelResult(ok=False, failure="rate_limit",
-                                 message="subscription quota exhausted; new AI work paused")
             journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
         if cancel_event and cancel_event.is_set():
