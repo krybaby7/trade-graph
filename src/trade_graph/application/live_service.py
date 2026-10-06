@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal, localcontext
 
+from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
 from trade_graph.domain.errors import AuthorityDenied, ValidationFailure
 from trade_graph.domain.money import parse_decimal
@@ -36,6 +37,10 @@ class LiveService(PaperService):
                          subscription_provider=getattr(runtime, "subscription_provider", None))
 
     def _recover_live(self):
+        # The shared startup hook runs while this service owns the actual DB
+        # inode flock. Receipt recovery fences uncertain owner requests; it
+        # never repeats effects or infers that their prior effects were erased.
+        recover_owner_commands(self.runtime)
         lifecycle = self.runtime.lifecycle
         # The OS flock is held before the first financial/lifecycle mutation.
         prior = self.database.execute("SELECT 1 FROM live_pilot_grants WHERE authorization_id=?",

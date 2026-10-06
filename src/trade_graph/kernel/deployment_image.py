@@ -238,14 +238,19 @@ class ProtectedDeploymentSpec:
     def create_arguments(self, *, name: str, action: str = "boot") -> list[str]:
         if type(name) is not str or not re.fullmatch(r"trade-graph-[a-z0-9-]{1,64}", name):
             raise ValueError("bounded deployment container name required")
-        if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded", "boot-live", "check-live"}:
+        if action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
+                          "boot-live", "check-live", "boot-live-dashboard"}:
             raise ValueError("deployment command must be a fixed protected entrypoint")
         funded = action in {"boot-funded", "check-funded"}
         if funded != (self.funded_profile is not None):
             raise ValueError("funded-paper launch requires an explicit separately pinned profile")
-        live = action in {"boot-live", "check-live"}
+        live = action in {"boot-live", "check-live", "boot-live-dashboard"}
         if live != (self.live_profile is not None):
             raise ValueError("live launch requires an explicit separately pinned network profile")
+        dashboard = action == "boot-live-dashboard"
+        if dashboard and self.live_profile.dashboard_host_port is None:
+            raise ValueError("live dashboard publication requires its explicit owner profile pin")
+        publication = ["--publish", f"127.0.0.1:{self.live_profile.dashboard_host_port}:8000/tcp"] if dashboard else []
         for path in (self.owner_directory, self.state_directory):
             if not path.is_absolute() or ".." in path.parts or "," in str(path) or "\n" in str(path):
                 raise ValueError("unambiguous absolute mount paths required")
@@ -253,7 +258,7 @@ class ProtectedDeploymentSpec:
         profile = self.live_profile if live else self.funded_profile
         network = profile.network_id if profile is not None else "none"
         return ["docker", "create", "--name", name, "--platform", PLATFORM, *environment,
-                "--user", f"{UID}:{GID}", "--read-only", "--network", network, "--cap-drop", "ALL",
+                "--user", f"{UID}:{GID}", "--read-only", "--network", network, *publication, "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges", "--pids-limit", "64", "--memory", "512m",
                 "--memory-swap", "512m", "--cpus", "1", "--ulimit", "core=0:0", "--init",
                 "--tmpfs", f"/tmp:{TMPFS}", "--mount",
@@ -286,9 +291,15 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     funded = action in {"boot-funded", "check-funded"}
     if funded != (spec.funded_profile is not None):
         raise PermissionError("funded-paper container requires exact separate profile")
-    live = action in {"boot-live", "check-live"}
+    live = action in {"boot-live", "check-live", "boot-live-dashboard"}
     if live != (spec.live_profile is not None):
         raise PermissionError("live container requires exact separate network profile")
+    dashboard = action == "boot-live-dashboard"
+    if dashboard and spec.live_profile.dashboard_host_port is None:
+        raise PermissionError("live dashboard publication is not explicitly approved")
+    expected_ports = ({"8000/tcp": [{"HostIp": "127.0.0.1",
+                                      "HostPort": str(spec.live_profile.dashboard_host_port)}]} if dashboard else {})
+    expected_exposed = {"8000/tcp": {}} if dashboard else image["Config"].get("ExposedPorts", {})
     profile = spec.live_profile if live else spec.funded_profile
     expected_network = profile.network_id if profile is not None else "none"
     if funded:
@@ -318,7 +329,8 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
         raise PermissionError("created protected container network configuration is not the exact approved profile")
     expected_environment = {**_environment(image["Config"].get("Env")),
                             **{name: "" for name in PROXY_VARIABLES}}
-    if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded", "boot-live", "check-live"}
+    if (action not in {"boot", "probe", "check-boot", "boot-funded", "check-funded",
+                       "boot-live", "check-live", "boot-live-dashboard"}
             or container.get("Image") != spec.image.image_id
             or container.get("State", {}).get("Running") is not False
             or container.get("State", {}).get("Status") != "created"
@@ -340,7 +352,9 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
             or host.get("DeviceCgroupRules") or host.get("GroupAdd") or host.get("Runtime") != "runc"
             or host.get("AutoRemove") is not False or host.get("OomKillDisable") is not False
             or host.get("PublishAllPorts") is not False
-            or host.get("PortBindings") or host.get("Links") or host.get("VolumesFrom")
+            or (host.get("PortBindings") or {}) != expected_ports
+            or (config.get("ExposedPorts") or {}) != expected_exposed
+            or host.get("Links") or host.get("VolumesFrom")
             or host.get("Sysctls") or host.get("MaskedPaths") != image_default_masked_paths()
             or host.get("ReadonlyPaths") != image_default_readonly_paths()
             or host.get("Ulimits") != [{"Name": "core", "Hard": 0, "Soft": 0}]):
@@ -403,7 +417,7 @@ def assert_boot_environment(*, mountinfo: Path = Path("/proc/self/mountinfo")) -
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("seal", "boot", "check-boot", "probe", "boot-funded", "check-funded",
-                                         "boot-live", "check-live"))
+                                         "boot-live", "check-live", "boot-live-dashboard"))
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -413,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(canonical_json(build_seal(json.loads(args.inputs.read_bytes()))) + "\n")
         return 0
     manifest = assert_boot_environment()
-    if args.action in {"boot-live", "check-live"}:
+    if args.action in {"boot-live", "check-live", "boot-live-dashboard"}:
         from trade_graph.kernel.live_network import load_live_network_profile
         from trade_graph.live_runtime import (
             live_configuration_digest,
@@ -434,6 +448,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         from trade_graph.cli import main as cli_main
 
+        if args.action == "boot-live-dashboard":
+            if profile.dashboard_host_port is None:
+                raise PermissionError("live dashboard publication is not explicitly approved")
+            return cli_main(["dashboard", "--mode", "live", "--database", f"{STATE_MOUNT}/trade_graph.sqlite",
+                             "--protected-owner", OWNER_MOUNT, "--session-file", f"{STATE_MOUNT}/owner-session.json",
+                             "--protected-network-bind", "--port", "8000"])
         return cli_main(["run", "--mode", "live", "--database", f"{STATE_MOUNT}/trade_graph.sqlite",
                          "--protected-owner", OWNER_MOUNT])
     if args.action in {"boot-funded", "check-funded"}:

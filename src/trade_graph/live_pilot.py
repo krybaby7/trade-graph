@@ -397,7 +397,9 @@ class ProtectedPilotLifecycle:
                                       (self.scope.portfolio_id,)).fetchone()
         # An older grant cannot replace current owner management semantics,
         # including cancel-all or a pause that forbids new protective orders.
-        if pause is not None and pause["originator"] == "owner" and pause["profile"] != "RUNNING":
+        # System/Leader emergency management must not be weakened on restart.
+        if (pause is not None and pause["profile"] != "RUNNING"
+                and (pause["originator"] == "owner" or pause["profile"] in {"FLATTEN", "CANCEL_ALL", "STOPPED"})):
             return
         self.database.execute(
             """INSERT INTO pause_states

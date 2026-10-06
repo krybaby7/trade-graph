@@ -10,7 +10,7 @@ import ipaddress
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from trade_graph.kernel.runtime_manifest import document_sha256
 
@@ -35,6 +35,7 @@ class PreparedLiveNetworkProfile(BaseModel):
     proxy_ipv4: str
     proxy_port: int = Field(ge=1024, le=65535)
     proxy_review_sha256: Fingerprint
+    dashboard_host_port: StrictInt | None = Field(default=None, ge=1024, le=65535)
 
     @field_validator("proxy_ipv4")
     @classmethod

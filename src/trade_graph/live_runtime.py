@@ -99,6 +99,30 @@ class _AdmissionDatabase:
         self.connection.close()
 
 
+def _scoped_live_database(path: Path, scope: LivePilotScope) -> _AdmissionDatabase:
+    """Refuse foreign journals before credentials, migration or transport."""
+    if path.is_symlink() or not path.is_file():
+        raise AuthorityDenied("live startup blocked: separate_live_database_required")
+    path = path.resolve()
+    if path.parent.stat().st_mode & 0o077:
+        raise AuthorityDenied("live startup blocked: private_live_storage_required")
+    database = None
+    try:
+        database = _AdmissionDatabase(path)
+        rows = database.execute("SELECT portfolio_id,mode FROM portfolios LIMIT 2").fetchall()
+        if len(rows) != 1 or rows[0]["portfolio_id"] != scope.portfolio_id or rows[0]["mode"] != "live":
+            raise AuthorityDenied("live startup blocked: exact_single_live_portfolio_required")
+        return database
+    except sqlite3.DatabaseError:
+        if database is not None:
+            database.close()
+        raise AuthorityDenied("live startup blocked: existing_live_schema_required") from None
+    except BaseException:
+        if database is not None:
+            database.close()
+        raise
+
+
 def assemble_live_runtime(path: Path, *, portfolio_id: str | None = None, config: LiveRuntimeConfig | None = None,
                           protected_owner: Path | None = None, clock=None):
     """Create no transport, read no exchange key, and mutate no DB on refusal."""
@@ -112,27 +136,20 @@ def assemble_live_runtime(path: Path, *, portfolio_id: str | None = None, config
             or portfolio_id is not None and portfolio_id != config.scope.portfolio_id):
         raise AuthorityDenied("live startup blocked: exact_owner_live_scope_required")
     commission = PinnedLiveCommission(protected_owner, config.commission_sha256)
+    database = _scoped_live_database(path, config.scope)
     try:
-        profile = commission.load()
-        protected_raw = read_owner_file(protected_owner, "live-config.json", 262144)
-        if (LiveRuntimeConfig.model_validate_json(protected_raw) != config
-                or live_configuration_digest(config) != profile.live_config_sha256):
-            raise AuthorityDenied("live startup blocked: owner_configuration_pin_mismatch")
-        issuer_keys = {issuer: read_owner_file(protected_owner, f"readiness-{issuer}.key", 64)
-                       for issuer in ("owner", "eligibility", "venue", "operations", "economics")}
-        readiness = PinnedReadinessSource(config.readiness_path, config.readiness_bundle_sha256, issuer_keys)
-        clock = clock or SystemClock()
-        if path.is_symlink() or not path.is_file():
-            raise AuthorityDenied("live startup blocked: separate_live_database_required")
-        path = path.resolve()
-        if path.parent.is_symlink() or path.parent.stat().st_mode & 0o077:
-            raise AuthorityDenied("live startup blocked: private_live_storage_required")
-        database = _AdmissionDatabase(path)
-    except (ValueError, OSError):
-        raise AuthorityDenied("live startup blocked: protected_commission_unprovisioned_or_invalid") from None
-    try:
-        if database.execute("SELECT 1 FROM portfolios WHERE mode!='live' LIMIT 1").fetchone():
-            raise AuthorityDenied("live startup blocked: dedicated_live_database_required")
+        try:
+            profile = commission.load()
+            protected_raw = read_owner_file(protected_owner, "live-config.json", 262144)
+            if (LiveRuntimeConfig.model_validate_json(protected_raw) != config
+                    or live_configuration_digest(config) != profile.live_config_sha256):
+                raise AuthorityDenied("live startup blocked: owner_configuration_pin_mismatch")
+            issuer_keys = {issuer: read_owner_file(protected_owner, f"readiness-{issuer}.key", 64)
+                           for issuer in ("owner", "eligibility", "venue", "operations", "economics")}
+            readiness = PinnedReadinessSource(config.readiness_path, config.readiness_bundle_sha256, issuer_keys)
+            clock = clock or SystemClock()
+        except (ValueError, OSError):
+            raise AuthorityDenied("live startup blocked: protected_commission_unprovisioned_or_invalid") from None
         upstream = LiveUpstreamSources(commission=commission)
         admission = evaluate_live_readiness(database, clock, scope=config.scope, source=readiness, upstream=upstream)
         previously_admitted = commission.admitted(database, config.scope,
@@ -149,6 +166,7 @@ def assemble_live_runtime(path: Path, *, portfolio_id: str | None = None, config
             if model_config.paid_calls_enabled:
                 raise AuthorityDenied("live startup blocked: separately_billed_model_calls_forbidden")
         database.close()
+        path = path.resolve()
         database = Database(path)
         # Exchange credentials are read only after verified production admission.
         key, secret = commission.credentials()
@@ -210,17 +228,21 @@ def live_startup_prerequisites(path: Path, *, config_path: Path | None = None,
         config = load_live_runtime_config(config_path or protected_owner / "live-config.json")
         if not config.live_enabled:
             raise AuthorityDenied("owner_live_enablement_missing")
-        if not config.commission_sha256 or not config.scope:
+        if (not config.commission_sha256 or not config.scope or config.scope.venue != "kraken"
+                or not config.readiness_path or not config.readiness_bundle_sha256):
             raise AuthorityDenied("exact_owner_live_scope_required")
         commission = PinnedLiveCommission(protected_owner, config.commission_sha256)
         profile = commission.load()
+        if (config != load_live_runtime_config(protected_owner / "live-config.json")
+                or live_configuration_digest(config) != profile.live_config_sha256):
+            raise AuthorityDenied("owner_configuration_pin_mismatch")
         from trade_graph.kernel.live_commission import assert_live_process_boundary
 
         assert_live_process_boundary(protected_owner, profile.runtime_manifest_sha256)
-        if path.is_symlink() or not path.is_file():
-            raise AuthorityDenied("separate_live_database_required")
+        database = _scoped_live_database(path, config.scope)
+        database.close()
         return {"ready": True, "mode": "live", "status": "requires_final_service_admission",
-                "credentialed_verification": "independently reviewed; repeated before startup"}
+                "credentialed_verification": "not performed by dashboard; repeated before startup"}
     except (AuthorityDenied, ValueError, OSError):
         return {"ready": False, "mode": "live", "status": "blocked",
                 "reason": "protected owner commission, live allocation/authorization and actual host/account "
@@ -259,14 +281,10 @@ def assemble_live_dashboard_runtime(path: Path, *, portfolio_id: str | None = No
         raise AuthorityDenied("live dashboard configuration differs from owner scope")
     if path.is_symlink() or not path.is_file() or path.parent.stat().st_mode & 0o077:
         raise AuthorityDenied("live dashboard requires existing private financial storage")
+    admission = _scoped_live_database(path, config.scope)
+    admission.close()
     database = Database(path.resolve())
     try:
-        row = database.execute("SELECT mode FROM portfolios WHERE portfolio_id=?",
-                               (config.scope.portfolio_id,)).fetchone()
-        if row is None or row[0] != "live" or database.execute(
-            "SELECT 1 FROM portfolios WHERE mode!='live' LIMIT 1",
-        ).fetchone():
-            raise AuthorityDenied("live dashboard requires a dedicated live financial journal")
         clock = SystemClock()
         ledger = Ledger(database, clock)
         execution = Execution(database, ledger, clock, _DashboardBroker(), venue="kraken",
