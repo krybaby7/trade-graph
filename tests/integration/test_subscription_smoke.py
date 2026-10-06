@@ -318,3 +318,72 @@ def test_public_feed_cannot_use_ambient_or_unreviewed_proxy(smoke_flow, monkeypa
         run(h)
     assert h.cli.requests == []
     assert h.setup.db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def test_diagnostic_retains_measured_missing_public_history_coverage(smoke_flow):
+    h = smoke_flow
+    assert run(h)["status"] == "SUCCEEDED"
+    history = h.cli.requests[0].context["market"]["BTC/USD"]["history"]
+    assert history["source"] == "kraken_public_ohlc" and history["candle_ids"] == []
+    assert history["features"]["pullback_depth"]["status"] == "insufficient_history"
+    assert history["features"]["pullback_depth"]["available_candles"] == 0
+    assert len(history["features"]["pullback_depth"]["missing_close_times_utc"]) == 20
+
+
+def test_diagnostic_and_normal_cycle_supply_same_completed_public_strategy_history(smoke_flow):
+    from tests.integration.test_history_contexts import _candles
+
+    from trade_graph.application.price_history import HistoryStore
+    h = smoke_flow
+    candles = [candle.model_copy(update={"available_at_utc": candle.close_time_utc})
+               for candle in _candles(h.setup)]
+    HistoryStore(h.setup.db).save(candles)
+    assert run(h)["status"] == "SUCCEEDED"
+    assert run(h, "cycle")["status"] == "SUCCEEDED"
+    histories = [request.context["market"]["BTC/USD"]["history"] for request in h.cli.requests]
+    assert histories[0] == histories[1] == histories[2]
+    history = histories[0]
+    assert len(history["candle_ids"]) == 20 and history["provenance"]["retained_candle_count"] == 20
+    assert set(history["values"]) == {"hourly_return", "four_hour_drift", "pullback_depth"}
+    assert all(feature["status"] == "ready" and not feature["missing_close_times_utc"]
+               for feature in history["features"].values())
+
+
+@pytest.mark.parametrize("refresh_fails", [False, True])
+def test_trader_refreshes_public_feed_after_slow_research(smoke_flow, monkeypatch, refresh_fails):
+    from trade_graph.application.paper_service import PaperService
+    from trade_graph.domain.clock import utc_iso
+    from trade_graph.kernel import subscription_network
+    h = smoke_flow
+    calls, advanced = [], []
+    def poll():
+        calls.append(h.setup.clock.now())
+        if refresh_fails and len(calls) == 3:
+            raise OSError("synthetic public refresh outage")
+        return [Observation(observation_id=f"public-refresh-{len(calls)}", venue="paper", symbol="BTC/USD",
+            event_time_utc=h.setup.clock.now(), available_at_utc=h.setup.clock.now(), bid="99", ask="100",
+            kind="quote", source="kraken_public_rest:paper_reference:receipt_time")]
+    h.runtime.public_feed = SimpleNamespace(poll=poll,
+        transport=SimpleNamespace(proxy="http://172.28.0.2:8081", trust_env=False))
+    monkeypatch.setattr(subscription_network, "load_subscription_network_profile",
+        lambda _owner: SimpleNamespace(market_proxy_url="http://172.28.0.2:8081"))
+    assert run(h)["status"] == "SUCCEEDED"
+    original_wait = PaperService._wait_for_work
+    async def slow_research(service, task, **kwargs):
+        result = await original_wait(service, task, **kwargs)
+        if len(h.cli.requests) == 2 and not advanced:
+            advanced.append(True)
+            h.setup.clock.advance(121)
+        return result
+    monkeypatch.setattr(PaperService, "_wait_for_work", slow_research)
+    result = run(h, "cycle")
+    assert len(calls) == 3 and result["status"] == ("FAILED" if refresh_fails else "SUCCEEDED")
+    if refresh_fails:
+        assert [request.role for request in h.cli.requests] == ["research", "research"]
+    else:
+        assert h.cli.requests[-1].role == "trader"
+        quote = h.cli.requests[-1].context["market"]["BTC/USD"]["observation"]
+        assert quote["event_time_utc"].replace("Z", "+00:00") == h.setup.clock.now().isoformat()
+        assert h.cli.requests[-1].context["as_of"] == utc_iso(h.setup.clock.now())
+        assert h.cli.requests[-1].context["market"]["BTC/USD"]["fresh"]
+    assert h.setup.office.execution.profile(h.setup.pid) == "MANAGE_ONLY"

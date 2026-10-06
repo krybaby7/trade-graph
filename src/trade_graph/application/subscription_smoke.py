@@ -97,7 +97,7 @@ def _public_request(runtime, admission, task_id: str, service: PaperService, lea
         if public_history:
             sources.append({"source_ref": history["source_ref"], "kind": "historical_features", "document": history})
             data["features"].update(history["values"])
-        else:
+        elif history["source"] != "kraken_public_ohlc":
             data["history"] = None
     if not sources:
         raise AuthorityDenied("public market inputs are missing; no diagnostic inference permitted")
@@ -213,6 +213,20 @@ def _pause_cycle(runtime) -> None:
                                 "Bounded subscription smoke finished; manage existing paper orders and positions.")
 
 
+async def _refresh_public_feed(service: PaperService) -> None:
+    if service.public_feed is None:
+        return
+    service._feed_task = asyncio.create_task(asyncio.to_thread(service._thread_call, service.public_feed.poll))
+    maintenance_errors = []
+    try:
+        _, failure = await service._consume_feed(service._feed_task, maintenance_errors=maintenance_errors)
+        if failure or maintenance_errors:
+            raise AuthorityDenied("public feed unavailable; no further subscription inference permitted")
+    finally:
+        if service._feed_task.done():
+            service._feed_task = None
+
+
 async def _operate(runtime, protected_owner: Path, admission, phase: str) -> dict:
     roles = _PHASE_ROLES[phase]
     def prepare():
@@ -245,15 +259,7 @@ async def _operate(runtime, protected_owner: Path, admission, phase: str) -> dic
             management, failures = await service._offload(service._management)
             if failures:
                 raise AuthorityDenied("paper reconciliation unavailable; no subscription task permitted")
-            if service.public_feed is not None:
-                service._feed_task = asyncio.create_task(
-                    asyncio.to_thread(service._thread_call, service.public_feed.poll))
-                try:
-                    _, failure = await service._consume_feed(service._feed_task, maintenance_errors=[])
-                    if failure:
-                        raise AuthorityDenied("public feed unavailable; no subscription inference permitted")
-                finally:
-                    service._feed_task = None
+            await _refresh_public_feed(service)
             with runtime.database.immediate():
                 root_id = _new_task(runtime, admission.profile_sha256, phase, "research")
                 runtime.ledger._activity(runtime.portfolio_id, "subscription_smoke_intent", {
@@ -271,6 +277,8 @@ async def _operate(runtime, protected_owner: Path, admission, phase: str) -> dic
                     _, failures = await service._offload(service._management)
                     if failures:
                         raise AuthorityDenied("paper reconciliation unavailable before subscription task")
+                    if role == "trader":
+                        await _refresh_public_feed(service)
                     task_id = root_id if role == "research" else _new_task(runtime, admission.profile_sha256,
                                                                           phase, role, parent_id=root_id)
                     lease = _lease_exact(runtime, service, task_id)
