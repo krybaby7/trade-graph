@@ -373,6 +373,9 @@ def main(argv: list[str] | None = None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if path.parent.stat().st_mode & 0o077:
             parser.error("paper runtime storage requires a private directory with mode 0700")
+        if path.exists() and (not path.is_file() or path.stat().st_mode & 0o077):
+            parser.error("existing paper database must be a private regular file; "
+                         "existing bytes and modes are preserved")
         try:
             capital = Decimal(args.capital)
             if not capital.is_finite() or capital <= 0:
@@ -489,7 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             ).fetchone()[0] - initial_decisions
             paid_enabled = runtime.paid_calls_enabled and runtime.execution.authority.active_policy().paid_calls_enabled
         except (ValueError, LookupError, OSError, RuntimeError, TradeGraphError) as exc:
-            _record_start_failure(args.database, args.service_run_id, type(exc).__name__)
+            if args.command == "run":
+                _record_start_failure(args.database, args.service_run_id, type(exc).__name__)
             parser.error(f"paper operation failed ({type(exc).__name__}); "
                          "use doctor to inspect private runtime readiness")
         finally:

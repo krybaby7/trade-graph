@@ -173,3 +173,23 @@ def test_protected_dashboard_bind_is_not_a_public_host_option():
         main(["dashboard", "--protected-network-bind"])
     with pytest.raises(SystemExit):
         build_parser().parse_args(["dashboard", "--host", "0.0.0.0"])
+
+
+def test_initialization_refuses_shared_existing_sqlite_without_changing_it(tmp_path):
+    import hashlib
+    import sqlite3
+
+    import pytest
+
+    from trade_graph.cli import main
+
+    path = tmp_path / "existing.sqlite"
+    with sqlite3.connect(path) as database:
+        database.execute("CREATE TABLE retained(value TEXT)")
+        database.execute("INSERT INTO retained VALUES ('synthetic retained evidence')")
+    path.chmod(0o644)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(SystemExit):
+        main(["init", "--database", str(path)])
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+    assert path.stat().st_mode & 0o777 == 0o644
