@@ -484,3 +484,19 @@ def test_service_stop_fences_an_owner_resume_already_reconciling(tmp_path):
     assert runtime.execution.profile(runtime.portfolio_id) == "STOPPED"
     rows = runtime.database.execute("SELECT action FROM dashboard_command_evidence").fetchall()
     assert {row[0] for row in rows} == {"resume", "service-stop"}
+
+
+def test_reused_service_object_records_a_new_boot_without_rewriting_completed_run(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    service = PaperService(runtime.database, runtime.execution, schedule_intervals={})
+
+    async def scenario():
+        await service.run(max_ticks=1)
+        first = service.service_run_id
+        await service.run(max_ticks=1)
+        assert service.service_run_id != first
+        rows = runtime.database.execute("SELECT run_id,status FROM graph_service_runs ORDER BY rowid").fetchall()
+        assert len(rows) == 2 and {row["status"] for row in rows} == {"STOPPED"}
+        assert rows[0]["run_id"] == first
+
+    asyncio.run(scenario())

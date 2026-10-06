@@ -125,6 +125,7 @@ class PaperService:
         self._shutdown_failures: list[str] = []
         self._run_error_type: str | None = None
         self._last_tick_failures: tuple[str, ...] = ()
+        self._boot_completed = False
         self._lease_lock = threading.Lock()
         self._execution_lock = threading.RLock()
         self._feed_failed = public_feed is not None
@@ -184,6 +185,12 @@ class PaperService:
         await asyncio.shield(self._start_task)
 
     async def _start(self) -> None:
+        if self._boot_completed:
+            # A new boot has a new durable identity. Completed launch requests
+            # remain attached to their original terminal record.
+            self.service_run_id = None
+        self._run_error_type = None
+        self._last_tick_failures = ()
         self._stop_requested.clear()
         self._acquire()
         self._shutdown_failures = []
@@ -695,6 +702,7 @@ class PaperService:
             except Exception as exc:
                 errors.append(exc)
             self._stopping = False
+            self._boot_completed = True
         if errors:
             for error in errors[1:]:
                 errors[0].add_note("Additional shutdown error: " + type(error).__name__)
