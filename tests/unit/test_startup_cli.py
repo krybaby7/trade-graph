@@ -68,3 +68,24 @@ def test_cli_failed_start_records_sanitized_failure_before_worker(tmp_path, monk
     assert row["status"] == "FAILED"
     assert row["error_type"] == "ValueError"
     db.close()
+
+
+def test_subscription_status_is_read_only_and_requires_no_model(monkeypatch, capsys):
+    import json
+
+    from trade_graph.cli import main
+
+    calls = []
+
+    def status(provider):
+        calls.append(provider)
+        return {"provider": "codex_subscription", "ready": False, "selected_model": None,
+                "quota": {"weekly": {"remaining_percent": 91}}, "cost_status": "unknown"}
+
+    monkeypatch.setattr("trade_graph.adapters.models.subscription_process.native_subscription_status", status)
+    assert main(["subscription-status", "--provider", "codex"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert calls == ["codex"]
+    assert result["ready"] is False
+    assert result["selected_model"] is None
+    assert result["cost_status"] == "unknown"

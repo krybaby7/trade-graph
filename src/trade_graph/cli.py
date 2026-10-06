@@ -44,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--database", default="runtime/trade_graph.sqlite")
     doctor.add_argument("--portfolio-id")
     doctor.add_argument("--config")
+    subscription = sub.add_parser("subscription-status", help="read-only native subscription CLI metadata")
+    subscription.add_argument("--provider", choices=["codex", "claude"], default="codex")
     dashboard = sub.add_parser("dashboard")
     dashboard.add_argument("--database", default="runtime/trade_graph.sqlite")
     dashboard.add_argument("--portfolio-id")
@@ -215,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
             f"capital={CAPITAL} {CAPITAL_CURRENCY} reporting={REPORTING_CURRENCY} "
             f"paid_calls_enabled={PAID_CALLS_ENABLED} live_enabled={LIVE_ENABLED}"
         )
+        return 0
+    if args.command == "subscription-status":
+        from trade_graph.adapters.models.subscription_process import native_subscription_status
+
+        print(json.dumps(native_subscription_status(args.provider)))
         return 0
     if args.command == "kraken-read-only":
         try:
