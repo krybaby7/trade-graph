@@ -132,7 +132,9 @@ withdrawals: **0**. Public history was not refreshed by this adapter work.
 config, protected_runtime=..., workspace_root=..., adapter=...)` supplies all six
 real roles through the same confined mutable graph request/application protocol.
 `SubscriptionRuntimeConfig` fixes exactly one provider and exact model for the
-run. Each role receives only its immutable role-specific context allowlist;
+run. Departmental profiles include all six role allowlists; a partial Research
+profile cannot claim every department is ready. Each role receives only its
+immutable role-specific context allowlist;
 owner policy, budget controls, credentials, provider routes and database paths
 stay in the trusted parent. Mutable routing artifacts cannot change the selected
 subscription route. Output effects still pass existing authority, generation,
@@ -189,3 +191,9 @@ stages, durable result recovery, cancellation, quota pauses, unknown receipts,
 new-ID replay refusal and one-attempt Engineer behavior. The profile tests prove
 missing/unprotected/changed/boot-refused profiles fail closed and never invoke
 inference. They do not confer credentialed native CLI or live verification.
+
+Research, Learning and Optimisation journal envelopes retain the persisted
+portfolio mode. Live Optimisation may analyze and record proposals; commissioned
+Engineer changes remain paper-scoped under existing acceptance checks and require
+separate owner-pinned promotion to a live deployment. No live artifact authority
+was widened by the subscription composition.

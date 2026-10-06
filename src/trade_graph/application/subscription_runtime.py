@@ -45,6 +45,8 @@ class SubscriptionRuntimeConfig(ContractModel):
     @model_validator(mode="after")
     def fixed_context_allowlist(self):
         configured = self.subscription.allowed_context_keys
+        if configured and set(configured) != set(ROLE_CONTEXT_KEYS):
+            raise ValueError("departmental subscription context allowlist requires all six roles")
         if any(role not in ROLE_CONTEXT_KEYS or not set(keys).issubset(ROLE_CONTEXT_KEYS[role])
                for role, keys in configured.items()):
             raise ValueError("subscription role context exceeds the protected allowlist")
@@ -110,6 +112,14 @@ class SubscriptionGateway:
 
 
 class SubscriptionDepartmentMixin:
+    def _envelope(self, task: dict) -> dict:
+        envelope = ResearchHandler._envelope(self, task)
+        portfolio = self.database.execute("SELECT mode FROM portfolios WHERE portfolio_id=?",
+                                          (task["portfolio_id"],)).fetchone()
+        if portfolio is None:
+            raise AuthorityDenied("subscription journal requires a persisted portfolio")
+        return {**envelope, "mode": portfolio["mode"]}
+
     def _eligible(self, task: dict, *, compare: bool = True) -> None:
         row = self.scheduler.leased_row(task["_lease"])
         if task["role"] not in self.allowed_roles:

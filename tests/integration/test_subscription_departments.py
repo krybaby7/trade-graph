@@ -295,3 +295,22 @@ def test_new_subscription_invocation_id_cannot_repeat_a_task_after_persisted_out
     assert len(cli.requests) == 1
     assert setup.db.execute("SELECT COUNT(*) FROM subscription_invocations WHERE task_id=?",
                             (identity,)).fetchone()[0] == 1
+
+
+def test_departmental_subscription_profile_requires_all_six_context_roles():
+    with pytest.raises(ValueError, match="all six"):
+        SubscriptionRuntimeConfig(subscription=SubscriptionConfig(provider="claude_subscription",
+            model="claude-sonnet-5-5", allowed_context_keys={"research": ["market"]}))
+
+
+@pytest.mark.parametrize("role", ["research", "learning", "optimisation"])
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_subscription_journal_envelope_retains_the_persisted_portfolio_mode(tmp_path, role, mode):
+    setup, _protected, cli = flow(tmp_path)
+    setup.db.execute("UPDATE portfolios SET mode=? WHERE portfolio_id=?", (mode, setup.pid))
+    handler = setup.assembly.handlers[role].build({"provider": "anthropic", "model": "claude-sonnet-5-5"})
+    task = {"task_id": "mode-task", "root_task_id": "mode-root", "portfolio_id": setup.pid,
+            "snapshot_id": "mode-snapshot", "system_version_id": setup.baseline,
+            "snapshot": {"evidence_refs": []}}
+    assert handler._envelope(task)["mode"] == mode
+    assert not cli.requests and not setup.transport.calls
