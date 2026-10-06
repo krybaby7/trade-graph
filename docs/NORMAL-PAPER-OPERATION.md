@@ -60,6 +60,14 @@ support the original structured business contract. Authentication failure,
 exhausted allowance and unsupported configuration are technical outcomes to
 report. Never switch silently to API billing, paid extras or an unverified route.
 
+## Current owner hold
+
+The latest owner instruction is to finish preparation and **not start the graph**
+until explicit green light tomorrow morning. The dashboard-only service may run.
+The active MANAGE_ONLY owner hold must be resumed through the existing owner
+control when that authorization arrives; do not auto-start or schedule a future
+start. No open paper order/position currently needs a management worker.
+
 ## Normal launch and dashboard
 
 Use the installed owner launcher with its pinned image, private state mount,
@@ -116,12 +124,16 @@ multiplied each tick. Existing mandate authority is reused; a forced Leader
 initialization or per-trade committee is unnecessary. A valid hold/no-trade is a
 normal outcome, and a model/provider failure is never relabeled as a hold.
 
-Subscription adapter defaults are 600 seconds, 16,384 output tokens, eight CLI
-turns and 2 MiB captured output per dispatch. Application dispatch attempts default
-to three. Supported CLI transport and structured-output retries have separate
-configuration; the Claude adapter defaults to two transport retries and three
-structured-output attempts. Provider capabilities determine which CLI limits are
-available. Configuration may reduce these limits without creating a universal
+The subscription profile defaults to 600 seconds, a requested 16,384 output
+tokens, eight turns and 2 MiB captured output per dispatch. Application dispatch
+attempts default to three. Native Codex 0.160.1 enforces the process wall-clock
+and captured-byte boundaries through the executor; its CLI has no supported
+output-token or turn cap. Turn validation occurs after completion. Its documented
+built-in defaults allow four request retries and five stream retries; the generic
+Claude retry settings do not override those Codex defaults. The Claude adapter
+has supported controls and defaults to two transport retries and three
+structured-output attempts. Report these distinctions rather than claiming every
+profile field limits native Codex usage. Configuration does not impose a universal
 one-generation or Research-only policy. Department tools use the supported,
 owner-approved interface; provider-side research does not grant host shell,
 credential-file, private network or protected database access. The current installed

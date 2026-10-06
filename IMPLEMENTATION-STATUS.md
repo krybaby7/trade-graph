@@ -1,3 +1,50 @@
+# Normal paper preparation complete; graph awaiting owner start — 2026-10-07
+
+The latest owner instruction is **do not start the graph**; wait for an explicit
+green light tomorrow morning. The prepared normal paper dashboard is available at
+<http://127.0.0.1:8000>. At 2026-10-06 23:16:50 UTC it reports **STOPPED**, zero
+active graph services, MANAGE_ONLY owner hold, AI available and live unavailable.
+A web server running is not a graph run. No start or scheduled model work occurred.
+
+Source **fbed4be**, integration branch `codex/normal-paper-2026-10-07`, preserves
+original `e36e447`, both original databases, owner settings and private evidence.
+[Normal operating evidence](docs/reviews/2026-10-07-normal-paper-operation.md) and
+[normal runbook](docs/NORMAL-PAPER-OPERATION.md) supersede diagnostic limits below;
+older sections are retained historical records, not current operating policy.
+
+- Native WSL **Codex 0.160.1**, ChatGPT subscription, configured **gpt-6.1-sol**:
+  actual authentication/account metadata, ordinary allowance, credential refresh
+  directory, protected provider egress and final-image process isolation verified.
+  No interactive login is currently required. The configured model has not run.
+- Normal departmental scheduling/recurring Optimisation, supported native retries,
+  configurable application attempts and independently verified subscription fallback
+  are implemented. No mandatory diagnostic, one-cycle cap or postcycle pause.
+  The current owner hold remains authoritative. Claude is installed but signed out;
+  no fallback route is currently configured/admitted. Billed APIs/extras remain off.
+- Public refresh at **2026-10-06 23:09:42 UTC**: BTC/USD and ETH/USD each have
+  **168 completed hourly candles**, Sep 29 23:00 through Oct 6 23:00 UTC, zero gaps.
+  Captured quotes were 0.792074s / 0.378020s old; ECB USD/EUR **0.88739**, dated
+  Oct 6, retrieved at 23:09:42 UTC. Data ages while stopped and must refresh at start.
+- Research/model/application attempts **0**, Trader decisions **0**, proposed orders
+  **0**, paper fills **0**. No validated Research or legitimate model no-trade result
+  exists yet. Existing **USD10,000** virtual cash remains intact, no open positions
+  or orders; dashboard valuation EUR8873.9. Trading/net economic PnL and shared
+  subscription cost remain unknown/null. Paper orders will be **local Trade Graph
+  simulations**, not Kraken-hosted orders. No private Kraken request occurred.
+- Final source focused verification includes 126 usage/adapter/profile/departments
+  checks and the final 129 receipt/pricing/adapter regressions; overlapping runs are
+  not summed. Ruff, planning checks, actual nine-boundary image probes and strict
+  production container inspection pass. No unrelated full-suite prerequisite added.
+  Exact private quota/runtime receipts and original evidence remain outside Git.
+
+No primary subscription connection blocker remains. Hosted research-search result
+integration and a signed-in compatible fallback are missing optional capabilities;
+short-window capacity, auto-reload setting, attributable usage and costs remain
+unknown. These are disclosed rather than fabricated or relabeled as zero. The
+remaining actual normal graph/Research/Trader evidence awaits the owner's start.
+
+---
+
 # First actual Kraken-data paper cycle — 2026-10-07
 
 **Operating milestone pending owner subscription login.** Tested source `643f185`,

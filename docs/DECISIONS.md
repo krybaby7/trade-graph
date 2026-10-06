@@ -121,3 +121,19 @@ None prevents offline development. Mark credentialed verification pending when c
   Codex zero-retry blockers are historical, not a present owner restriction.
   [Final-image evidence](reviews/2026-10-07-first-paper-cycle.md) gates this paper
   route separately from subscription login, financial acceptance and live authority.
+
+
+- **D96 (2026-10-07, latest owner instruction):** Normal local Windows/WSL paper
+  operation supersedes D92/D95 and the first-cycle diagnostic operating policy.
+  Enable configured departmental schedules and recurring Optimisation, normal
+  supported CLI retries, bounded configurable application attempts and compatible
+  independently verified existing-subscription fallback. Remove a prerequisite
+  Research diagnostic, mandatory first-cycle pause and one-generation policy.
+  Reuse the existing portfolio/mandate without funding an API budget. Retain
+  structured contracts, truthful unknown subscription costs, protected credential
+  boundaries, persistent attempt receipts and order-state reconciliation. Real
+  trading, API billing, paid extras and purchases remain unauthorized. Native
+  Codex quota/credit metadata establishes actual included capacity; a
+  Claude-specific extra-usage checkbox cannot substitute for that evidence.
+  [Normal operating runbook](NORMAL-PAPER-OPERATION.md) records supported limits
+  and genuine missing capabilities. Historical diagnostic evidence remains intact.
