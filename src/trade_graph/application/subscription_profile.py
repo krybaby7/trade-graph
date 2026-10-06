@@ -22,7 +22,38 @@ from trade_graph.kernel.deployment_image import assert_boot_environment, read_ow
 from trade_graph.kernel.runtime_manifest import protected_package_sha256
 
 _CHECKS = frozenset({"private_files_denied", "windows_mounts_denied", "host_proc_denied",
-                     "api_environment_denied", "descendants_killed", "tools_disabled"})
+                     "api_environment_denied", "descendants_killed", "tools_disabled",
+                     "direct_egress_denied", "provider_route_restricted", "market_route_restricted"})
+
+
+def _profile_digest(directory: Path, raw: bytes) -> str:
+    digest = hashlib.sha256(raw)
+    for name in ("subscription-network-profile.json", "subscription-isolation.json", "subscription-seccomp.json"):
+        digest.update(name.encode() + b"\0")
+        try:
+            digest.update(read_owner_file(directory, name, 262144))
+        except FileNotFoundError:
+            digest.update(b"missing")
+    return digest.hexdigest()
+
+
+def verify_subscription_egress(directory: Path, profile, manifest):
+    from trade_graph.kernel.subscription_network import (
+        load_subscription_network_profile,
+        load_subscription_seccomp,
+        validate_subscription_configuration,
+    )
+
+    network = load_subscription_network_profile(directory)
+    validate_subscription_configuration(network, manifest, read_owner_file(directory, "paper-config.json", 262144))
+    load_subscription_seccomp(directory, network)
+    boundary = Path("/usr/bin/bwrap")
+    metadata = boundary.stat()
+    if (network.native_cli_sha256 != profile.native_sha256 or metadata.st_uid != 0
+            or metadata.st_mode & 0o022
+            or hashlib.sha256(boundary.read_bytes()).hexdigest() != network.boundary_sha256):
+        raise PermissionError("subscription CLI/boundary differs from protected network assembly")
+    return network
 
 
 class PreparedSubscriptionProfile(ContractModel):
@@ -73,7 +104,7 @@ def load_subscription_profile(protected_owner: Path) -> SubscriptionAdmission:
     digest = None
     try:
         raw = read_owner_file(protected_owner, "subscription-profile.json", 32768)
-        digest = hashlib.sha256(raw).hexdigest()
+        digest = _profile_digest(protected_owner, raw)
         profile = PreparedSubscriptionProfile.model_validate(json.loads(raw, object_pairs_hook=_unique))
         config = profile.runtime
         if config.subscription.provider == "codex_subscription":
@@ -81,7 +112,8 @@ def load_subscription_profile(protected_owner: Path) -> SubscriptionAdmission:
                             profile_sha256=digest)
         # Read-only owner files alone do not prove confinement of a credentialed
         # application process: require the established image boot boundary too.
-        assert_boot_environment()
+        manifest = assert_boot_environment()
+        network = verify_subscription_egress(protected_owner, profile, manifest)
         proof_raw = read_owner_file(protected_owner, "subscription-isolation.json", 32768)
         if hashlib.sha256(proof_raw).hexdigest() != profile.isolation_evidence_sha256:
             raise PermissionError("independent isolation proof changed")
@@ -110,7 +142,8 @@ def load_subscription_profile(protected_owner: Path) -> SubscriptionAdmission:
                   "inference_attempts": 0, "profile_sha256": digest}
         if not readiness.ready:
             return SubscriptionAdmission(config, None, status, digest)
-        adapter = SubscriptionAdapter(config.subscription, readiness, LinuxSubscriptionExecutor(pin, login))
+        adapter = SubscriptionAdapter(config.subscription, readiness,
+            LinuxSubscriptionExecutor(pin, login, proxy_url=network.proxy_url))
         return SubscriptionAdmission(config, adapter, status, digest)
     except FileNotFoundError:
         return _blocked(config, "protected subscription profile/native login/isolation evidence is not provisioned",
@@ -130,7 +163,7 @@ def subscription_profile_unchanged(protected_owner: Path, profile_sha256: str | 
         return False
     try:
         raw = read_owner_file(protected_owner, "subscription-profile.json", 32768)
-        return hashlib.sha256(raw).hexdigest() == profile_sha256
+        return _profile_digest(protected_owner, raw) == profile_sha256
     except FileNotFoundError:
         return False
     except (OSError, ValueError, TradeGraphError):

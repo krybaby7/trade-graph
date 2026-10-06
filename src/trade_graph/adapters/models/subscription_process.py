@@ -10,6 +10,7 @@ file is read by the trusted CLI; application code never opens its contents.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -23,6 +24,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
+from urllib.parse import urlsplit
 
 from trade_graph.adapters.models.subscription import (
     MAX_OUTPUT_BYTES,
@@ -67,8 +69,11 @@ class NativeCliPin:
 
 class LinuxFilesystemBoundary:
     def __init__(self, pin: NativeCliPin, *, share_network: bool, credential_file: Path | None = None,
-                 environment: dict[str, str] | None = None) -> None:
+                 environment: dict[str, str] | None = None, proxy_url: str | None = None) -> None:
         self.pin, self.share_network, self.credential_file = pin, share_network, credential_file
+        self.proxy_url = validate_proxy_url(proxy_url) if proxy_url is not None else None
+        if self.proxy_url is not None and not share_network:
+            raise ValueError("offline subscription boundary cannot enable a proxy")
         self.environment = dict(environment or {})
         if set(self.environment) - set(claude_environment(1)):
             raise ValueError("subscription child environment is outside the fixed allowlist")
@@ -107,6 +112,8 @@ class LinuxFilesystemBoundary:
             command += ["--ro-bind", str(credential.resolve()), "/home/runner/.claude/.credentials.json"]
         for key, value in self.environment.items():
             command += ["--setenv", key, value]
+        if self.proxy_url is not None:
+            command += ["--setenv", "HTTPS_PROXY", self.proxy_url]
         return [*command, "/cli/runner", *arguments]
 
     def run(self, arguments: list[str], payload: bytes, *, maximum_seconds: float,
@@ -175,16 +182,34 @@ class LinuxFilesystemBoundary:
                           process.returncode, stopped, category)
 
 
+def validate_proxy_url(value: str) -> str:
+    """No ambient proxy, credentials, DNS, loopback or metadata destinations."""
+    try:
+        parsed = urlsplit(value)
+        address = ipaddress.IPv4Address(parsed.hostname or "")
+        if (parsed.scheme != "http" or parsed.username or parsed.password or parsed.path
+                or parsed.query or parsed.fragment or parsed.port is None or not 1024 <= parsed.port <= 65535
+                or not address.is_private or address.is_loopback or address.is_link_local
+                or address.is_multicast or address.is_unspecified
+                or value != f"http://{address}:{parsed.port}"):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError("exact protected private subscription proxy required") from None
+    return value
+
+
 class LinuxSubscriptionExecutor:
-    def __init__(self, pin: NativeCliPin, credential_file: Path) -> None:
+    def __init__(self, pin: NativeCliPin, credential_file: Path, *, proxy_url: str) -> None:
         if not pin.require_root_owner:
             raise ValueError("production subscription executor requires a protected root-owned CLI pin")
         pin.verify()
         self.pin, self.credential_file = pin, credential_file
+        self.proxy_url = validate_proxy_url(proxy_url)
 
     def execute(self, request: ModelRequest, *, cancel_event: Event | None = None) -> CliOutcome:
         boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
-                                            environment=claude_environment(request.max_output_tokens))
+                                            environment=claude_environment(request.max_output_tokens),
+                                            proxy_url=self.proxy_url)
         arguments = claude_command("/cli/runner", request)[1:]
         return boundary.run(arguments, json.dumps(request.context, allow_nan=False).encode(),
                             maximum_seconds=request.timeout_seconds, cancel_event=cancel_event)

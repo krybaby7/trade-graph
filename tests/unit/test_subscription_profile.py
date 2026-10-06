@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from types import SimpleNamespace
 
 from trade_graph.application.subscription_profile import load_subscription_profile
 from trade_graph.kernel.runtime_manifest import protected_package_sha256
@@ -12,7 +13,8 @@ def profile_files(tmp_path, provider="claude_subscription"):
     evidence = {"schema_version": 1, "kind": "actual-linux-boundary",
                 "native_cli_sha256": "a" * 64, "protected_package_sha256": protected_package_sha256(),
                 "checks": ["private_files_denied", "windows_mounts_denied", "host_proc_denied",
-                           "api_environment_denied", "descendants_killed", "tools_disabled"]}
+                           "api_environment_denied", "descendants_killed", "tools_disabled",
+                           "direct_egress_denied", "provider_route_restricted", "market_route_restricted"]}
     raw = json.dumps(evidence).encode()
     (tmp_path / "subscription-isolation.json").write_bytes(raw)
     profile = {"schema_version": 1, "runtime": {"subscription": {"provider": provider, "model": model,
@@ -26,9 +28,12 @@ def profile_files(tmp_path, provider="claude_subscription"):
 def trusted_files(monkeypatch, tmp_path):
     import trade_graph.application.subscription_profile as module
     monkeypatch.setattr(module, "read_owner_file", lambda directory, name, limit: (directory / name).read_bytes())
-    monkeypatch.setattr(module, "assert_boot_environment", lambda: None)
+    monkeypatch.setattr(module, "assert_boot_environment", lambda: SimpleNamespace(
+        sha256='m' * 64, deployment_id='deployment', protected_package_sha256=protected_package_sha256()))
     monkeypatch.setattr(module.NativeCliPin, "verify", lambda pin: pin.binary)
-    monkeypatch.setattr(module.LinuxSubscriptionExecutor, "__init__", lambda instance, pin, login: None)
+    monkeypatch.setattr(module.LinuxSubscriptionExecutor, "__init__", lambda instance, pin, login, **kwargs: None)
+    monkeypatch.setattr(module, "verify_subscription_egress", lambda *args: SimpleNamespace(
+        proxy_url='http://172.30.0.2:8080'))
     metadata_calls = []
 
     def metadata(config, pin, login, **kwargs):
@@ -102,3 +107,14 @@ def test_extra_usage_disable_is_a_strict_owner_boolean(tmp_path, monkeypatch):
     (tmp_path / "subscription-profile.json").write_text(json.dumps(profile))
     admission = load_subscription_profile(tmp_path)
     assert not admission.status["ready"] and admission.adapter is None and not calls
+
+
+def test_missing_egress_admission_blocks_before_native_auth_or_inference(tmp_path, monkeypatch):
+    import trade_graph.application.subscription_profile as module
+    profile_files(tmp_path)
+    calls = trusted_files(monkeypatch, tmp_path)
+    def denied(*args):
+        raise PermissionError('protected egress unavailable')
+    monkeypatch.setattr(module, 'verify_subscription_egress', denied)
+    admission = load_subscription_profile(tmp_path)
+    assert not admission.status['ready'] and admission.adapter is None and not calls
