@@ -307,7 +307,7 @@ class LeaderHandler(GatewayRole):
             task_id=task["task_id"],
             root_task_id=task["root_task_id"],
             portfolio_id=task["portfolio_id"],
-            mode="paper",
+            mode=self.office.execution.mode,
             system_version_id=task["system_version_id"],
             evidence_refs=reply.evidence_refs,
             trace_id=task["task_id"],
@@ -471,7 +471,8 @@ class LeaderHandler(GatewayRole):
         mandate = self.office.execution.authority.active_mandate(pid)
         active = self.guard(pid)["active"]
         if (
-            not active
+            self.office.execution.mode != "paper"
+            or not active
             or active["artifact_hash"] != change.baseline_hash
             or change.expires_at_utc <= self.clock.now()
             or change.portfolio_id != pid
