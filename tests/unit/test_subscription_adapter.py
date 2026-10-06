@@ -65,7 +65,8 @@ def adapter(executor, readiness=None):
 
 def test_codex_supported_subscription_retry_route_is_admitted():
     status = assess_subscription(SubscriptionConfig(provider="codex_subscription", model="gpt-6.1-sol", enabled=True),
-        cli_version="0.160.1", authentication="chatgpt", quota={"remaining_percent": 80},
+        cli_version="0.160.1", authentication="chatgpt",
+        quota={"remaining_percent":80,"ordinary_usage_allowed":True,"credits_balance":"0"},
         extra_usage_disabled=True, isolation_ready=True, native_linux=True)
     assert status.ready
     assert not status.blockers
@@ -475,3 +476,14 @@ def test_dispatched_attempt_without_terminal_result_recovers_as_uncertain(journa
     assert result.failure=="timeout_uncertain" and result.usage is None
     row=journal.database.execute("SELECT * FROM subscription_attempts WHERE attempt_id=?",(attempt,)).fetchone()
     assert row["state"]=="UNCERTAIN" and row["cost_status"]=="unknown"
+
+
+@pytest.mark.parametrize("quota",[{}, {"remaining_percent":80},
+    {"ordinary_usage_allowed":True,"credits_balance":"1","remaining_percent":80},
+    {"ordinary_usage_allowed":False,"credits_balance":"0","remaining_percent":80}])
+def test_codex_cannot_use_claude_extra_usage_boolean_to_bypass_actual_subscription_allowance(quota):
+    config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True)
+    status=assess_subscription(config,cli_version="0.160.1",authentication="chatgpt",quota=quota,
+        extra_usage_disabled=True,isolation_ready=True,native_linux=True)
+    assert not status.ready
+    assert "subscription-only allowance is not verified; paid extras remain unauthorized" in status.blockers

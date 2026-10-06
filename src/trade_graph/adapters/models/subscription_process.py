@@ -28,6 +28,7 @@ from pathlib import Path
 from threading import Event
 from urllib.parse import urlsplit
 
+from trade_graph.adapters.models.providers import _wire_schema
 from trade_graph.adapters.models.subscription import (
     MAX_OUTPUT_BYTES,
     CliOutcome,
@@ -256,7 +257,7 @@ class LinuxSubscriptionExecutor:
         if self.config.provider == "codex_subscription":
             with tempfile.TemporaryDirectory(prefix="trade-graph-schema-") as directory:
                 schema = Path(directory) / "schema.json"
-                schema.write_text(json.dumps(request.output_schema), encoding="utf-8")
+                schema.write_text(json.dumps(_wire_schema(request.output_schema, provider="openai")), encoding="utf-8")
                 schema.chmod(0o600)
                 boundary = LinuxFilesystemBoundary(self.pin, share_network=True, credential_file=self.credential_file,
                     proxy_url=self.proxy_url, provider=self.config.provider, schema_file=schema,

@@ -164,12 +164,14 @@ def test_codex_preflight_and_executor_use_opaque_official_auth_and_isolated_sche
         if "status" in arguments:
             return CliOutcome("Logged in using ChatGPT",0)
         assert b"Summarize" in payload and b'"market"' in payload
-        assert boundary.schema_file.read_text() == '{"type": "object"}'
+        assert json.loads(boundary.schema_file.read_text()) == {"type":"object","properties":{},
+            "additionalProperties":False,"required":[]}
         return CliOutcome('{"type":"turn.completed"}',0)
     monkeypatch.setattr(LinuxFilesystemBoundary,"run",fake_run)
     pin=NativeCliPin(Path("/usr/bin/python3").resolve(),system_python().sha256)
     config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True)
-    status=module.probe_isolated_codex(config,pin,credentials,extra_usage_disabled=True,isolation_verified=True)
+    status=module.probe_isolated_codex(config,pin,credentials,extra_usage_disabled=True,isolation_verified=True,
+        quota={"ordinary_usage_allowed":True,"credits_balance":"0","remaining_percent":75})
     assert status["ready"] and status["authentication"] == "chatgpt"
     assert all("/home/runner/.codex/auth.json" in command for command in commands)
     catalog=tmp_path / "catalog.json"
@@ -251,3 +253,46 @@ def test_malformed_or_hanging_quota_metadata_is_bounded_and_unknown(tmp_path):
     started=time.monotonic()
     assert probe_codex_account_quota(Boundary(),maximum_seconds=0.2)=={}
     assert time.monotonic()-started < 3
+
+
+def test_native_codex_receives_recursive_strict_wire_schema_without_changing_domain_contract(tmp_path,monkeypatch):
+    from copy import deepcopy
+
+    from trade_graph.adapters.models import subscription_process as module
+    from trade_graph.application.runtime_departments import ResearchReply
+    from trade_graph.contracts.models import ModelRequest
+    credentials=tmp_path/"auth.json"
+    credentials.write_text('{"fixture":"synthetic only"}')
+    credentials.chmod(0o600)
+    catalog=tmp_path/"catalog.json"
+    catalog.write_text('{"models":[]}')
+    catalog.chmod(0o600)
+    original=ResearchReply.model_json_schema()
+    snapshot=deepcopy(original)
+    captured=[]
+    def fake_run(boundary,arguments,payload,**kwargs):
+        captured.append(json.loads(boundary.schema_file.read_text()))
+        return CliOutcome('{"type":"turn.completed"}',0)
+    monkeypatch.setattr(LinuxFilesystemBoundary,"run",fake_run)
+    pin=NativeCliPin(Path("/usr/bin/python3").resolve(),system_python().sha256)
+    config=SubscriptionConfig(provider="codex_subscription",model="gpt-6.1-sol",enabled=True)
+    executor=module.LinuxSubscriptionExecutor(pin,credentials,proxy_url="http://172.30.0.2:8080",config=config,
+                                             model_catalog_file=catalog)
+    req=ModelRequest(role="research",task_id="t",root_task_id="r",run_id="s",system_version_id="v",
+        provider="openai",model=config.model,instructions="Summarize",context={"market":{}},
+        output_schema=original,schema_name="ResearchReply",max_output_tokens=16384,max_tool_calls=0,timeout_seconds=600)
+    executor.execute(req)
+    def verify(node):
+        if isinstance(node,dict):
+            if node.get("type")=="object":
+                assert node["required"]==list(node["properties"])
+                assert node["additionalProperties"] is False
+            assert "default" not in node
+            for value in node.values():
+                verify(value)
+        elif isinstance(node,list):
+            for value in node:
+                verify(value)
+    verify(captured[0])
+    assert "findings" in captured[0]["required"] and "findings" not in original["required"]
+    assert original==snapshot and req.output_schema==snapshot

@@ -147,7 +147,8 @@ def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authent
     clean = sanitize_quota(quota)
     ordinary_codex_only = (config.provider == "codex_subscription" and clean.get("ordinary_usage_allowed") is True
                           and clean.get("credits_balance") == "0" and not _quota_exhausted(clean))
-    if not extra_usage_disabled and not ordinary_codex_only:
+    if ((config.provider == "codex_subscription" and not ordinary_codex_only)
+            or (config.provider == "claude_subscription" and not extra_usage_disabled)):
         blockers.append("subscription-only allowance is not verified; paid extras remain unauthorized")
     if not isolation_ready:
         blockers.append("owner-pinned Linux filesystem/process isolation has not passed its host probe")

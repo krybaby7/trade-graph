@@ -48,7 +48,9 @@ def trusted_files(monkeypatch, tmp_path):
         return {"provider": config.provider,
                 "cli_version": "0.160.1" if config.provider == "codex_subscription" else "2.1.285",
                 "ready": True, "blockers": [],
-                "quota": {}, "authentication": "chatgpt" if config.provider == "codex_subscription" else "subscription",
+                "quota": {"ordinary_usage_allowed":True,"credits_balance":"0","remaining_percent":75}
+                    if config.provider == "codex_subscription" else {},
+                "authentication": "chatgpt" if config.provider == "codex_subscription" else "subscription",
                 "isolation": "linux-bubblewrap"}
 
     monkeypatch.setattr(module, "probe_isolated_claude", metadata)
@@ -165,6 +167,9 @@ def test_codex_quota_owner_evidence_is_sanitized(tmp_path, monkeypatch):
     (tmp_path/"subscription-quota.json").write_text(json.dumps({"remaining_percent":76,
         "ordinary_usage_allowed":True,"credits_balance":"0","private_account":"excluded"}))
     trusted_files(monkeypatch,tmp_path)
+    import trade_graph.application.subscription_profile as module
+    monkeypatch.setattr(module,"probe_isolated_codex",lambda *args,**kwargs:{
+        "cli_version":"0.160.1","authentication":"chatgpt","quota":{}})
     admission=load_subscription_profile(tmp_path)
     assert admission.status["ready"] and admission.status["quota"]["remaining_percent"]==76
     assert "private_account" not in json.dumps(admission.status)
