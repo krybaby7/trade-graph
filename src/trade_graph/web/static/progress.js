@@ -390,6 +390,9 @@
     write("[data-runtime-status]", `Service ${label(service.status || "IDLE")}. AI ${ready.ai_available ? "available" : "unavailable or paused"}. Portfolio ${label(profile)}.${service.error_type ? ` Last failure: ${text(service.error_type)}.` : ""}`);
     const prerequisiteReasons = [...list(ready.reasons), ...(service.mode === "live" ? list(ready.live_reasons) : [])];
     write("[data-runtime-prerequisites]", prerequisiteReasons.join(" ") || "Owner prerequisites satisfied for this configured mode.");
+    const resume = lifecycle?.live_resume;
+    write("[data-live-resume-status]", resume ? `Live Resume ${text(resume.request_id)}: ${label(resume.status)}. ${text(resume.reason)} Deadline ${time(resume.deadline_at)}.` :
+      "No queued live Resume. Use Owner controls to request reconciliation and resume within current live authority.");
     const cycle = lifecycle?.optimisation;
     write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. Automatic scheduling disabled.` : "Optimisation: no requested cycle recorded. Automatic scheduling disabled.");
     const usage = lifecycle?.ai_usage;

@@ -38,6 +38,7 @@
     </div>
     <p data-runtime-prerequisites>{{ runtime_reasons|join(' ') or 'Controls become available after the dashboard connects.' }}</p>
     <p class="mc-small-note">Pause keeps reconciliation and protection running. Stop safely stops a flat account; an account with orders or positions enters manage-only and its service continues. Use Owner controls for verified flatten or resume.</p>
+    {% if operating_mode == "live" %}<p class="mc-small-note" data-live-resume-status>No queued live Resume. Use Owner controls to request reconciliation and resume within current authority.</p>{% endif %}
     <p class="mc-small-note" data-optimisation-status>Optimisation: no requested cycle recorded. Automatic scheduling is disabled.</p>
     <p class="mc-small-note" data-ai-usage>Subscription quota and usage: unknown. Virtual capital and real operating expenses remain separate.</p>
     <p class="mc-check-feedback" data-service-feedback role="status" aria-live="polite"></p>

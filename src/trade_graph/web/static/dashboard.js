@@ -74,7 +74,9 @@
         !Number.isSafeInteger(output.revision) || output.revision < 0) return false;
     const command = form.dataset.command;
     if (command === "pause") return typeof output.profile === "string" && typeof output.achieved === "string";
-    if (command === "resume") return typeof output.profile === "string" && output.reconciled === true;
+    if (command === "resume") return typeof output.profile === "string" && output.reconciled === true ||
+      typeof output.request_id === "string" && ["QUEUED", "SUCCEEDED", "FAILED", "CANCELLED"].includes(output.status) &&
+      typeof output.reason === "string";
     if (command === "budgets") return typeof output.total === "string";
     if (command === "config") return output.policy !== null && typeof output.policy === "object" && !Array.isArray(output.policy);
     if (form.hasAttribute("data-leader-task")) return typeof output.task_id === "string" && Boolean(output.task_id);
@@ -146,6 +148,12 @@
       const body = await jsonResponse(response);
       if (!response.ok) throw new Error(detail(body));
       ownerRevision = integer(body.revision, "Owner revision");
+      const resume = body.lifecycle?.live_resume;
+      const resumeStatus = document.querySelector("[data-live-resume-status]");
+      if (resumeStatus) resumeStatus.textContent = resume ?
+        `Live Resume ${resume.request_id}: ${resume.status}. ${resume.reason || ""} Deadline ${resume.deadline_at || "unknown"}.` :
+        "No queued live Resume. Protection continues under the current management profile.";
+      if (resume?.status === "QUEUED") setTimeout(() => { if (!ownerBusy && !document.hidden) void loadOwner(false); }, 5000);
       document.querySelector("[data-owner-revision]").textContent = String(ownerRevision);
       document.querySelector("[data-owner-profile]").textContent = body.pause?.profile || "No persisted pause";
       document.querySelector("[data-owner-paid]").textContent = body.policy?.paid_calls_enabled ? "Enabled" : "Disabled";
@@ -213,7 +221,9 @@
         if (!completedReceipt(output, form)) throw new Error("No authoritative command receipt was returned.");
         const revisionNote = output.revision === undefined ? "" : ` Revision ${output.revision}.`;
         if (form.dataset.command === "pause") result(form, `Management profile: ${output.profile || body.profile}. Achieved state: ${output.achieved || "not reported"}.${revisionNote}`);
-        else if (form.dataset.command === "resume") result(form, `Reconciled state: ${output.profile || "RUNNING"}.${revisionNote}`);
+        else if (form.dataset.command === "resume") result(form, output.status ?
+          `Live Resume ${output.status}: ${output.reason}.${revisionNote} Follow the saved status below.` :
+          `Reconciled state: ${output.profile || "RUNNING"}.${revisionNote}`, ["FAILED", "CANCELLED"].includes(output.status));
         else if (form.hasAttribute("data-leader-task")) {
           form.dataset.revision = String(output.revision);
           result(form, `Task persisted: ${output.task_id || "see task journal"}.${revisionNote} Refresh to view the assignment.`);
