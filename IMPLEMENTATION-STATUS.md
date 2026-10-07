@@ -5,6 +5,11 @@ Existing owner controls reconciled/resumed the hold and started one normal paper
 service at 08:12:48 UTC. The graph and loopback dashboard are running; normal
 future schedules remain enabled. There is no mandatory one-cycle stop.
 
+The owner's [manual review schedule and fresh-context prompts](docs/PAPER-REVIEW-SCHEDULE-2026-10-07.md)
+cover 7 October 12:30/16:30/20:30 local, optional bedtime, and 8 October 12:30.
+This documentation starts no review job, model work or runtime change and records
+no additional operating results.
+
 The first actual operating results are recorded in the
 [morning evidence review](docs/reviews/2026-10-07-morning-paper-operation.md).
 The active protected source remains **`6bf6697`**. New source `c056faf` adds
