@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-06",
+  "tasks": [
+    {
+      "id": "T00",
+      "title": "Bootstrap typed project and test toolchain",
+      "status": "done",
+      "description": "Set up the Python project and repeatable development tools.",
+      "phase": "P0",
+      "dependencies": [],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T01",
+      "title": "Define domain contracts and authority",
+      "status": "done",
+      "description": "Define the information agents exchange and who may control money.",
+      "phase": "P0",
+      "dependencies": [
+        "T00"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T02",
+      "title": "Persist business state, journal and outbox",
+      "status": "done",
+      "description": "Keep durable records that survive restarts and support recovery.",
+      "phase": "P0",
+      "dependencies": [
+        "T01"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T03",
+      "title": "Build native ledger and EUR performance",
+      "status": "done",
+      "description": "Track balances, trading fees, expenses and portfolio results in EUR.",
+      "phase": "P0",
+      "dependencies": [
+        "T02"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T04",
+      "title": "Implement public market snapshots and replay",
+      "status": "done",
+      "description": "Collect timestamped prices and replay observations without future information.",
+      "phase": "P1",
+      "dependencies": [
+        "T01",
+        "T02"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T05",
+      "title": "Implement paper broker and fill assumptions",
+      "status": "done",
+      "description": "Simulate orders with explicit fill and cost assumptions for software testing.",
+      "phase": "P1",
+      "dependencies": [
+        "T03",
+        "T04"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T06",
+      "title": "Implement OpenAI and Anthropic adapters",
+      "status": "done",
+      "description": "Connect the same agent contracts to OpenAI and Anthropic.",
+      "phase": "P1",
+      "dependencies": [
+        "T01"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T07",
+      "title": "Enforce expense budgets and usage receipts",
+      "status": "done",
+      "description": "Limit real API expenses and record actual or uncertain usage.",
+      "phase": "P1",
+      "dependencies": [
+        "T02",
+        "T03",
+        "T06"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T08",
+      "title": "Implement reliable execution and pause profiles",
+      "status": "done",
+      "description": "Handle orders, cancellations, uncertainty and pauses without duplicate trades.",
+      "phase": "P1",
+      "dependencies": [
+        "T02",
+        "T03",
+        "T05"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T09",
+      "title": "Build durable graph scheduling and context",
+      "status": "done",
+      "description": "Schedule agent work and recover unfinished tasks safely.",
+      "phase": "P2",
+      "dependencies": [
+        "T02",
+        "T07",
+        "T08"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T10",
+      "title": "Implement Research and autonomous Trader",
+      "status": "done",
+      "description": "Let Research gather evidence and Trader make decisions within its mandate.",
+      "phase": "P2",
+      "dependencies": [
+        "T04",
+        "T08",
+        "T09"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T11",
+      "title": "Implement Learning and Optimisation",
+      "status": "done",
+      "description": "Review decisions and test improvements against evidence and costs.",
+      "phase": "P2",
+      "dependencies": [
+        "T07",
+        "T10"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T12",
+      "title": "Implement Leader and software Secretary",
+      "status": "done",
+      "description": "Let Leader coordinate work while software Secretary schedules and records it.",
+      "phase": "P2",
+      "dependencies": [
+        "T09",
+        "T10",
+        "T11"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T13",
+      "title": "Implement isolated artifact Engineer",
+      "status": "done",
+      "description": "Let Engineer propose bounded artifacts that independent checks must verify.",
+      "phase": "P3",
+      "dependencies": [
+        "T07",
+        "T12"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T14",
+      "title": "Activate versions and roll back safely",
+      "status": "done",
+      "description": "Activate tested artifacts and roll back without deleting financial history.",
+      "phase": "P3",
+      "dependencies": [
+        "T08",
+        "T13"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T15",
+      "title": "Deliver dashboard and owner controls",
+      "status": "done",
+      "description": "Provide private dashboards and owner controls for progress and operations.",
+      "phase": "P3",
+      "dependencies": [
+        "T03",
+        "T07",
+        "T09",
+        "T12",
+        "T14"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T16",
+      "title": "Deliver offline full-loop and fault suite",
+      "status": "done",
+      "description": "Exercise the complete loop and failure recovery without credentials.",
+      "phase": "P4",
+      "dependencies": [
+        "T10",
+        "T11",
+        "T12",
+        "T14",
+        "T15"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T17",
+      "title": "Package R1 and run funded paper soak",
+      "status": "in_progress",
+      "description": "Connect approved public data and a funded AI provider for a real paper-service run.",
+      "phase": "P4",
+      "dependencies": [
+        "T16"
+      ],
+      "evidence_summary": "Subscription/controller tested; no real inference. Native login, protected provider egress and intended-image commissioning remain blocked."
+    },
+    {
+      "id": "T18",
+      "title": "Evaluate forward-paper net economics",
+      "status": "in_progress",
+      "description": "Collect forward results and compare all-in economics against simple baselines.",
+      "phase": "P5",
+      "dependencies": [
+        "T17"
+      ],
+      "evidence_summary": "Evaluation tools exist; genuine untouched forward economic evidence is pending."
+    },
+    {
+      "id": "T19",
+      "title": "Implement conditionally eligible live adapter",
+      "status": "in_progress",
+      "description": "Verify the chosen exchange through authenticated, separately authorized checks.",
+      "phase": "P5",
+      "dependencies": [
+        "T08",
+        "T16",
+        "T17"
+      ],
+      "evidence_summary": "Protected live startup, reconciliation and queued owner Resume pass scripted tests. Actual Kraken conformance/live commissioning pending."
+    },
+    {
+      "id": "T20",
+      "title": "Gate a bounded live pilot",
+      "status": "blocked",
+      "description": "Permit a small real-money trial only after evidence and explicit owner allocation.",
+      "phase": "P5",
+      "dependencies": [
+        "T18",
+        "T19"
+      ],
+      "evidence_summary": "Live pilot remains blocked; test results do not authorize real orders."
+    },
+    {
+      "id": "T21",
+      "title": "Separate protected kernel for broader code",
+      "status": "in_progress",
+      "description": "Verify protected processes and host isolation before broader code authority.",
+      "phase": "P6",
+      "dependencies": [
+        "T14",
+        "T16"
+      ],
+      "evidence_summary": "Actual WSL process/file isolation tests pass. Credentialed intended-image boundary, provider egress and broader grants remain pending."
+    },
+    {
+      "id": "T22",
+      "title": "Extend Engineer to plugins and selected code",
+      "status": "blocked",
+      "description": "Extend Engineer beyond current artifacts only after the additional gates are satisfied.",
+      "phase": "P6",
+      "dependencies": [
+        "T18",
+        "T21"
+      ],
+      "evidence_summary": "Broader Engineer scope remains blocked; current artifact scope is retained."
+    }
+  ]
+}

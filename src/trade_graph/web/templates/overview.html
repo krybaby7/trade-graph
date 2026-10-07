@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import metric, money, value, badge, empty, data_tree %}
+{% block title %}Overview{% endblock %}
+{% block heading %}Portfolio overview{% endblock %}
+{% block description %}{{ 'Live allocation, trading performance and real operating expenses, with their valuation basis.' if operating_mode == 'live' else 'Virtual capital, trading performance and real operating expenses, with their valuation basis.' }}{% endblock %}
+{% block content %}
+{% set currency = data.get('reporting_currency', currency|default('EUR')) %}
+{% set performance = data.get('performance', {}) %}
+{% set valuation = data.get('valuation', {}) %}
+{% set capital = data.get('allocated_capital', {}) %}
+{% set current = data.get('current_value', {}) %}
+{% set flows = data.get('external_flows', {}) %}
+{% set live = operating_mode == 'live' %}
+{% set capital_kind = 'actual' if live else 'simulated' %}
+{% if data.get('provisional', provisional|default(false)) or valuation.get('provisional') %}<div class="notice notice-warning" role="status"><strong>Provisional financial result.</strong> Valuation, operating expenses or reconciliation evidence is incomplete. Native balances remain visible in <a href="/trading">Trading</a>.</div>{% endif %}
+{% if data.get('degraded') %}<div class="notice notice-danger"><strong>Degraded operations.</strong> Review uncertain orders and reconciliation before increasing exposure.</div>{% endif %}
+<section class="metrics" aria-label="Financial summary">
+  {{ metric('Allocated live capital' if live else 'Allocated virtual capital', capital.get('reporting_amount'), currency, 'Opening capital valued on its recorded FX basis.', capital_kind) }}
+  {{ metric('Current live portfolio value' if live else 'Current simulated portfolio value', data.get('equity', equity|default(none)), currency, 'Cash and positions; not earned cash.', capital_kind) }}
+  {{ metric('Trading P&L' if live else 'Simulated trading P&L', performance.get('trading_pnl'), currency, 'Includes incurred trading fees.', capital_kind) }}
+  {{ metric('Net-economic P&L' if live else 'Simulated net-economic P&L', performance.get('net_economic_pnl'), currency, 'After allocated actual operating expenses.', capital_kind) }}
+  {{ metric('Actual operating spend', data.get('actual_spend', spend|default(none)), data.get('actual_spend_currency', 'EUR'), 'Real-money expense; separate from allocated trading capital.' if live else 'Real-money expense; separate from virtual capital.', 'actual') }}
+</section>
+<div class="grid-two">
+  <section class="panel"><div class="panel-heading"><h2 class="panel-title">{{ 'Live account performance' if live else 'Simulated performance' }}</h2>{{ badge('Live records' if live else 'Simulated') }}</div>
+    <dl class="key-values">
+      {% for label, amount in [('Realized trading result', performance.get('realized')), ('Unrealized trading result', performance.get('unrealized')), ('Incurred trading fees', performance.get('trading_fees', {}).get('reporting_amount')), ('Allocated actual operating expenses', performance.get('allocated_actual_operating')), ('Operating expenses embedded in ledger', performance.get('embedded_operating')), ('Net external flows', flows.get('net_reporting'))] %}<div class="key-value"><dt>{{ label }}</dt><dd>{{ money(amount, currency) }}</dd></div>{% endfor %}
+    </dl>
+    <p class="small muted">Spread and slippage explain execution; they are not deducted again from equity-based P&amp;L.</p>
+    {% if performance.get('trading_fees', {}).get('native') %}<details class="disclosure"><summary>Native trading fees and historical FX basis</summary>{{ data_tree(performance.trading_fees) }}</details>{% endif %}
+    {% if data.get('cost_views') %}<details class="disclosure"><summary>All-in, setup and recurring operating cost views ({{ currency }})</summary>{{ data_tree(data.cost_views) }}</details>{% endif %}
+  </section>
+  <section class="panel"><div class="panel-heading"><h2 class="panel-title">Capital and benchmark</h2></div>
+    <dl class="key-values"><div class="key-value"><dt>Native opening capital</dt><dd>{% for item in capital.get('native', []) %}<span class="native-list">{{ money(item) }}</span>{% else %}{{ value(none) }}{% endfor %}</dd></div><div class="key-value"><dt>Cash valuation</dt><dd>{{ money(current.get('cash'), currency) }}</dd></div><div class="key-value"><dt>Inventory valuation</dt><dd>{{ money(current.get('inventory'), currency) }}</dd></div><div class="key-value"><dt>Declared benchmark</dt><dd>{{ value(data.get('benchmark', {}).get('kind')) }}</dd></div><div class="key-value"><dt>Benchmark value</dt><dd>{{ money(data.get('benchmark', {}).get('value'), currency) }}</dd></div><div class="key-value"><dt>FX movement</dt><dd>{{ money(data.get('benchmark', {}).get('fx_pnl'), currency) }}</dd></div><div class="key-value"><dt>Strategy alpha</dt><dd>{{ money(data.get('benchmark', {}).get('strategy_alpha'), currency) }}</dd></div><div class="key-value"><dt>Observed trading drawdown</dt><dd>{{ money(data.get('drawdown', {}).get('value'), currency) }}{% if data.get('drawdown', {}).get('reason') %}<span class="small muted"> · {{ data.drawdown.reason }}</span>{% endif %}</dd></div></dl>
+    {% if data.get("drawdown") %}<details class="disclosure"><summary>Drawdown observations and valuation basis</summary>{{ data_tree(data.drawdown) }}</details>{% endif %}
+  </section>
+</div>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">Valuation evidence</h2><span class="small muted">{{ valuation.get('as_of', data.get('as_of', 'Timestamp unavailable')) }}</span></div>
+  {% if valuation.get('marks') %}<div class="table-wrap"><table class="data-table"><caption>Position marks</caption><thead><tr><th>Asset</th><th>Mark</th><th>Source</th><th>Observed at</th><th>Freshness</th></tr></thead><tbody>{% for mark in valuation.marks %}<tr><td>{{ mark.get('asset') }}</td><td>{{ money(mark.get('mark'), mark.get('quote_currency', '')) }}</td><td>{{ value(mark.get('source')) }}</td><td>{{ value(mark.get('observed_at')) }}</td><td>{{ badge('Stale', 'warning') if mark.get('stale') else badge('Recorded') }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  {% if valuation.get('fx') %}<div class="table-wrap"><table class="data-table"><caption>FX observations used for reporting</caption><thead><tr><th>Pair</th><th>Rate</th><th>Source / basis</th><th>Observed at</th><th>Freshness</th></tr></thead><tbody>{% for fx in valuation.fx %}<tr><td>{{ fx.get('base_currency', fx.get('base', fx.get('from_currency', ''))) }} / {{ fx.get('quote_currency', fx.get('quote', fx.get('to_currency', currency))) }}</td><td>{{ value(fx.get('rate')) }}</td><td>{{ value(fx.get('source')) }} · {{ value(fx.get('kind')) }}</td><td>{{ value(fx.get('observed_at', fx.get('at'))) }}</td><td>{{ badge('Stale', 'warning') if fx.get('stale') else badge('Recorded') }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  {% if not valuation.get('marks') and not valuation.get('fx') %}{{ empty('No valuation observations are recorded for this projection. Unavailable amounts are not treated as zero.') }}{% endif %}
+</section>
+<section class="panel"><div class="panel-heading"><h2 class="panel-title">External capital flows</h2></div>{% if flows.get('items') %}<div class="table-wrap"><table class="data-table"><thead><tr><th>Kind</th><th>Native amount</th><th>Reporting amount</th><th>At</th></tr></thead><tbody>{% for item in flows['items'] %}<tr><td>{{ item.get('kind') }}</td><td>{{ money(item.get('amount'), item.get('asset', '')) }}</td><td>{{ money(item.get('reporting_amount'), currency) }}</td><td>{{ value(item.get('at')) }}</td></tr>{% endfor %}</tbody></table></div>{% else %}{{ empty('No external capital flows are recorded.') }}{% endif %}</section>
+{% endblock %}

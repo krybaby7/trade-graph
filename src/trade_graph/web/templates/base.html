@@ -1,0 +1,38 @@
+{% set data = data|default({}, true) %}
+{% set page = page|default('overview') %}
+{% set role = role|default('reader') %}
+{% set operating_mode = operating_mode|default('paper') %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if role in ['owner', 'leader'] and csrf|default('') and auth_mechanism|default('cookie') == 'cookie' %}<meta name="csrf-token" content="{{ csrf }}">{% endif %}
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Overview{% endblock %} · Trade Graph</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <script src="/static/dashboard.js" defer></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Trade Graph overview"><span class="brand-mark" aria-hidden="true">TG</span><span class="brand-copy">Trade Graph<small>{{ 'Live account operations' if operating_mode == 'live' else 'Paper operations' }}</small></span></a>
+    <nav class="site-nav" aria-label="Main navigation">
+      {% for name, label, path in [('progress', 'Mission Control', '/progress'), ('overview', 'Overview', '/'), ('trading', 'Trading', '/trading'), ('organization', 'Organisation', '/organization'), ('costs', 'Costs', '/costs'), ('changes', 'Improvements', '/changes')] %}
+      <a class="nav-link{% if page == name %} active{% endif %}" href="{{ path }}"{% if page == name %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+      {% if role == 'owner' %}<a class="nav-link{% if page == 'owner' %} active{% endif %}" href="/owner"{% if page == 'owner' %} aria-current="page"{% endif %}>Owner controls</a>{% endif %}
+    </nav>
+    <div class="header-actions"><span class="badge neutral">{{ 'Live scope' if operating_mode == 'live' else 'Paper' }}</span><button class="icon-button" type="button" data-theme-toggle aria-label="Change colour theme">Theme</button></div>
+  </header>
+  <main id="main" class="shell">
+    <div class="page-heading"><div><p class="eyebrow">{% block eyebrow %}Portfolio journal{% endblock %}</p><h1>{% block heading %}Overview{% endblock %}</h1><p class="muted">{% block description %}Server-calculated projections from the durable journal.{% endblock %}</p></div>
+      <div class="metadata-list"><span class="badge neutral">{{ role|capitalize }} access</span>{% if data.get('as_of') %}<span class="small muted">As of <time>{{ data.as_of }}</time></span>{% endif %}</div>
+    </div>
+    {% block content %}{% endblock %}
+    <footer class="page-footer">{% if operating_mode == 'live' %}This page shows the scoped live account journal. Displaying records does not grant live authority.{% else %}Paper results are simulated.{% endif %} Actual operating expenses use a separate real-money allowance. Paid calls and live trading remain subject to protected owner policy.</footer>
+  </main>
+</body>
+</html>

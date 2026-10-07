@@ -1,8 +1,16 @@
 # 09 — Dashboard, configuration and operational runbooks
 
+**Owner update, 2026-10-07:** Normal local paper operation supersedes the earlier diagnostic and manual-only restrictions. Enable configured departmental schedules and Optimisation, ordinary configurable execution limits, supported retries and compatible verified existing-subscription fallback. A first Research success or single paper cycle is not a startup gate, and the service does not pause automatically after its first cycle. Preserve accounting, contract validation, credential isolation and order reconciliation. Separately billed APIs, paid extras, purchases and real-money trading remain disabled. Paper operation is independent of live commissioning. See [the normal paper runbook](NORMAL-PAPER-OPERATION.md).
+
+
 ## Dashboard
 
 Start with a responsive server-rendered interface backed by FastAPI. Server projections calculate money; do not duplicate authoritative arithmetic in the browser. Every value carries native units, EUR valuation basis, timestamp and provisional/stale status. The default account is USD10,000 virtual with EUR reporting, not EUR100.
+
+**Mission Control:** the interactive department map, evidence-based implementation
+milestones, runtime activity and Kraken test tracker at `/progress`. See
+[setup and evidence labels](MISSION-CONTROL.md). Project completion, local
+rehearsals, public API results and future account/real-order acceptance remain distinct.
 
 **Overview:** allocated/current portfolio value, external flows, realized/unrealized results, trading fees, AI/other costs, net economic performance, drawdown and declared benchmark. Show simulated trading results, simulated net-economic results after allocated real expenses, and actual real-money spend distinctly. Separate setup/recurring views without excluding attributable costs from all-in performance.
 
@@ -18,20 +26,27 @@ Start with a responsive server-rendered interface backed by FastAPI. Server proj
 
 ## Target API
 
-These are implementation targets, not currently running endpoints:
+These endpoints are implemented by the dashboard application. The standalone paper dashboard serves them
+locally, alongside the separate continuous paper service described in [operations.md](operations.md):
 
 ```text
 GET  /api/v1/overview
 GET  /api/v1/positions
 GET  /api/v1/orders
 GET  /api/v1/tasks
+GET  /api/v1/decisions
 GET  /api/v1/decisions/{id}
 GET  /api/v1/research
 GET  /api/v1/lessons
 GET  /api/v1/costs
 GET  /api/v1/changes
+GET  /api/v1/changes/{id}
 GET  /api/v1/events
 GET  /api/v1/health
+GET  /api/v1/service
+POST /api/v1/owner/start-trading
+POST /api/v1/owner/start-optimisation
+POST /api/v1/owner/stop-service
 POST /api/v1/owner/budgets
 POST /api/v1/owner/config
 POST /api/v1/owner/pause
@@ -43,17 +58,24 @@ POST /api/v1/leader/activate
 
 Use authenticated role/owner identities, pagination, redaction, request/idempotency IDs and optimistic revision checks. Events may use authenticated SSE. Owner resume cannot bypass reconciliation; Leader cannot lift an owner halt. Graph editing cannot invent new capabilities. Bind loopback by default; remote access requires authenticated TLS/private access and CSRF protection for cookie-based write sessions.
 
+The local browser login uses a persisted private owner session; cookie writes require CSRF. Owner policy and
+budget writes share one deployment revision and durable command identity. Persisted routing consumes only
+approved immutable price cards; an Engineer needs an explicitly granted routing class and commission.
+Live enablement remains unavailable. Service startup recovers interrupted local owner commands from durable
+effect evidence; ambiguous outcomes require owner review. Emergency manage-only remains available while
+ordinary writes wait for recovery. Browser retries keep the original command ID and exact values.
+
 ## Configuration and secrets
 
 Owner policy lives separately from agent-editable artifacts, with a hash/revision and restricted writer. It defines account allocations, expense periods, provider/venue allowlists, exposure bounds, live eligibility and change classes. Leader configuration validates as a subset. Candidate artifacts cannot select a new policy, DB or secret path.
 
-config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Initialization requires an explicit owner-approved real expense allowance. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
+config/defaults.example.json and .env.example contain public examples only. Paid calls and live mode default off. Paper initialization creates no real expense allowance. Separately billed API operation requires a separate owner-approved allowance and explicit owner and runtime paid permission. The authorized subscription paper path uses an authenticated existing plan and its supported limits; it does not require an invented API budget or live-account commissioning. The paper balance is typed amount/currency; the reporting currency is a separate field. Initial USD pairs do not imply USDT/USDC. Preserve FX movement and compare to a USD-cash benchmark in EUR.
 
 Store actual credentials outside Git and model contexts; broker keys belong only to the protected execution/kernel boundary. ChatGPT/coding-agent integrations do not supply deployed credentials automatically. Optional GitHub mirroring uses a separately scoped integration service, never the Engineer's direct access to an owner token.
 
 ## Target startup CLI
 
-Implement equivalent commands, then replace targets with verified instructions in IMPLEMENTATION-STATUS.md:
+The CLI implements these commands. See [operations.md](operations.md) for private storage, configuration and verified recovery procedures:
 
 ```text
 trade-graph init --mode paper --capital 10000 --capital-currency USD --reporting-currency EUR
@@ -64,11 +86,31 @@ trade-graph pause --profile manage-only
 trade-graph backup --destination <private-path>
 trade-graph reconcile
 trade-graph report --format json
+trade-graph soak --mode paper --config <private-file> --duration-seconds <seconds> --report <new-private-file>
 ```
 
 Default startup must not place orders, enable paid calls, purchase infrastructure or use a developer's key without deliberate configuration. Doctor is read-only except an explicitly selected credential probe, whose paid cost is reserved/reported. Preflight checks schema/lease, prices/permissions, model capabilities, market metadata, budget and recovery status.
 
-Currently supplied scripts/check_plan.py, scripts/next_task.py and scripts/cost_model.py only inspect the plan, emit implementation work and calculate examples. They do not implement the future CLI or start a trading process.
+`run` continuously reconciles, manages protection and schedules scoped work; `--once` performs a bounded tick.
+An unconfigured startup assembles no model handlers or external feed. Public data is opt-in. The configured
+subscription paper path admits verified subscription routes and enables normal schedules without a diagnostic
+success prerequisite; separately billed model paths retain their own allowance and paid-permission requirements.
+`soak` records actual, estimated, synthetic and unresolved costs separately. Planning utilities
+`scripts/check_plan.py`, `scripts/next_task.py` and `scripts/cost_model.py` still only inspect the plan.
+
+The T15 local dashboard command is verified:
+
+```bash
+uv run trade-graph init --database runtime/trade_graph.sqlite
+uv run trade-graph dashboard --database runtime/trade_graph.sqlite
+```
+
+Open `http://127.0.0.1:8000/login` and use `session_token` from `runtime/owner-session.json`.
+Keep the database and session file private and outside Git. Initialization creates new directories with mode
+0700; the session file uses 0600. An existing database directory must be private. Serving starts one loopback
+web worker. In the protected subscription dashboard, authenticated Start Trading launches the normal paper
+service as a child in the same protected container; Start Optimisation uses the configured ordinary limits.
+See [NORMAL-PAPER-OPERATION.md](NORMAL-PAPER-OPERATION.md) and IMPLEMENTATION-STATUS.md for operating evidence.
 
 ## Runbooks
 

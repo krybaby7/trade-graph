@@ -1,0 +1,85 @@
+name: Test runtime
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject private runtime data and credentials before artifact publication
+        run: python3 scripts/check_repository_hygiene.py
+      - name: Archive tracked source for reproducible review
+        run: git archive --format=tar HEAD -o /tmp/trade-graph-source.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-${{ github.sha }}
+          path: /tmp/trade-graph-source.tar
+          retention-days: 7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install -U pip uv
+          uv sync --frozen --group dev
+      - name: Prepare locked review environment (no runtime data)
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p /tmp/tg-review
+          UV_PYTHON_INSTALL_DIR=/tmp/tg-review/python uv python install 3.12
+          cp -a .venv/lib/python3.12/site-packages /tmp/tg-review/site-packages
+          cp uv.lock /tmp/tg-review/uv.lock
+          tar -czf /tmp/trade-graph-review-env.tar.gz -C /tmp/tg-review .
+      - name: Retain locked review environment
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-env-${{ github.sha }}
+          path: /tmp/trade-graph-review-env.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+      - name: Retain pinned lint tool for network-restricted review
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-tool-${{ runner.os }}-${{ github.sha }}
+          path: .venv/bin/ruff
+          if-no-files-found: error
+          retention-days: 1
+      - name: Lint
+        run: uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py
+      - name: Unit and integration tests
+        run: uv run pytest --junitxml=runtime-test-results.xml
+        env:
+          TRADE_GRAPH_PAID_CALLS_ENABLED: "false"
+          TRADE_GRAPH_LIVE_ENABLED: "false"
+      - name: Verify mapped offline acceptance gates
+        run: uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-offline-evidence.json
+      - name: Reject credentials and private runtime bytes in generated evidence
+        id: artifact-hygiene
+        if: always()
+        run: |
+          python3 scripts/check_repository_hygiene.py \
+            --artifact runtime-test-results.xml \
+            --artifact /tmp/trade-graph-offline-evidence.json
+      - name: Retain test results
+        if: always() && steps.artifact-hygiene.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ github.sha }}
+          path: runtime-test-results.xml
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Retain synthetic offline acceptance report
+        if: always() && steps.artifact-hygiene.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-acceptance-${{ github.sha }}
+          path: /tmp/trade-graph-offline-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
