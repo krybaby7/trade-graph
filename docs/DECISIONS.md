@@ -137,3 +137,16 @@ None prevents offline development. Mark credentialed verification pending when c
   Claude-specific extra-usage checkbox cannot substitute for that evidence.
   [Normal operating runbook](NORMAL-PAPER-OPERATION.md) records supported limits
   and genuine missing capabilities. Historical diagnostic evidence remains intact.
+
+- **D97 (2026-10-07, owner model selection):** Use only GPT-6.1 Sol, exact model
+  ID `gpt-6.1-sol`, through the existing Codex subscription route for every AI
+  department and retry. This narrows D96: no alternate-model/provider fallback
+  is authorized. The protected primary profile selects `codex_subscription` /
+  `gpt-6.1-sol`, has `fallback_profiles: []`, and retains a catalog containing
+  only that exact model. If this model is unavailable or its allowance is
+  exhausted, pause affected AI work while retaining necessary paper-position
+  management. Keep this personal choice in protected owner configuration,
+  rather than hardcoding it into provider-neutral domain contracts. Preserve
+  requested and actually reported model identities; an unreported identity
+  remains unknown. Recording this choice does not establish a new inference
+  result or prove that the private PC configuration has been updated.

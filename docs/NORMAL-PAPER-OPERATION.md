@@ -39,6 +39,16 @@ its daily rates must not be presented as live exchange quotes.
 
 ## Subscription connection
 
+Owner model selection, 2026-10-07 ([D97](DECISIONS.md)): every AI department and
+retry uses only **GPT-6.1 Sol**, exact ID `gpt-6.1-sol`, through the existing
+Codex subscription. The protected primary profile selects `codex_subscription`
+and `gpt-6.1-sol`, with `fallback_profiles: []`; its protected Codex catalog
+contains only that model. No alternate-model/provider fallback is authorized.
+If the model is unavailable, affected AI work pauses while necessary paper-order
+and position management continues. This is an owner configuration choice, not
+a change to the generic provider-neutral contracts. Verify it on the PC without
+invoking inference merely to inspect configuration.
+
 Use an explicitly configured, native Linux CLI in WSL or the protected Linux
 image. Verified routes use Codex with ChatGPT subscription authentication or
 Claude Code with its supported subscription authentication. The installed native
@@ -54,7 +64,8 @@ authentication tokens, or copy an unrelated user's credential directory. Codex's
 supported credential refresh may write only its private authentication directory;
 it does not give the CLI access to the financial database, owner policy or host.
 
-Compatible configured existing-subscription routes may provide fallback. Each
+The generic runtime supports compatible existing-subscription fallback, but the
+current owner selection above disables it. If the owner changes that choice, each
 route must pass its actual CLI/configuration/authentication/network checks and
 support the original structured business contract. Authentication failure,
 exhausted allowance and unsupported configuration are technical outcomes to

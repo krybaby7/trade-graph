@@ -1,3 +1,16 @@
+# Owner model selection recorded — 2026-10-07
+
+The owner selected **GPT-6.1 Sol only**, exact ID `gpt-6.1-sol`, for all six
+departments and retries through the current Codex subscription. [D97](docs/DECISIONS.md)
+and the [normal operating runbook](docs/NORMAL-PAPER-OPERATION.md) record this
+choice and disable authorization for alternate-model/provider fallback.
+
+The last prepared primary route already selected this model and had no admitted
+fallback. The private PC must verify its protected primary profile, empty fallback
+list and single-model catalog. This documentation-only checkpoint makes no new
+claim about PC configuration, current service state or actual inference results.
+No runtime records, owner files, acceptance states or source behavior changed.
+
 # Normal paper preparation complete; graph awaiting owner start — 2026-10-07
 
 The latest owner instruction is **do not start the graph**; wait for an explicit
