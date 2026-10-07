@@ -1,15 +1,82 @@
-# Owner model selection recorded — 2026-10-07
+# Normal paper operation running — 2026-10-07
+
+The owner authorized morning operation and replaced the overnight start hold.
+Existing owner controls reconciled/resumed the hold and started one normal paper
+service at 08:12:48 UTC. The graph and loopback dashboard are running; normal
+future schedules remain enabled. There is no mandatory one-cycle stop.
+
+The first actual operating results are recorded in the
+[morning evidence review](docs/reviews/2026-10-07-morning-paper-operation.md).
+The active protected source remains **`6bf6697`**. New source `c056faf` adds
+citation guidance and sanitized native diagnostics and passes relevant checks,
+but its image update is blocked by the project's unimplemented financial manifest
+continuity transition. The exact verified prior image/pins were restarted on the
+**current database and witness**, preserving all records. No database rollback or
+additional inference occurred. At 08:50:15 UTC the graph reported RUNNING, a fresh
+heartbeat, AI available and no AI blockers; normal future schedules remain enabled.
+
+- Native WSL Codex 0.160.1 uses ChatGPT subscription authentication. All six AI
+  departments and every retry are pinned to **gpt-6.1-sol**; protected
+  `fallback_profiles: []` and the sole-model catalog were verified. Provider model
+  echo is unavailable; configured/pinned model is not mislabeled as an echo.
+- Fresh weekly metadata is mandatory. Every reported supported window must have
+  **strictly more than 40% remaining** before each dispatch/application retry:
+  **30% reserve + 10 percentage points of headroom**. Missing shorter readings,
+  reporting lag, shared-account consumption and unbounded active-call percentage
+  consumption prevent an exact all-window or post-call floor guarantee.
+  Metadata/model unavailability pauses new AI; management and dashboard continue.
+- Refreshed public Kraken BTC/USD and ETH/USD each have 168 completed hourly
+  candles through Oct 7 08:00 UTC, with zero gaps. Quotes were freshly acquired
+  before AI work. The latest available ECB reference is dated Oct 6; EUR reporting
+  remains provisional. This path makes no private Kraken requests.
+- Research and Trader have completed validated invocations and applied results.
+  Research retained two attributed findings; Trader recorded a legitimate
+  `no_action`. Learning also succeeded. No orders/fills were created, and native
+  accounting/financial tables match the prestart backup. Any paper orders/fills
+  are **local Trade Graph simulations**, not Kraken-hosted orders.
+- Initial Leader work failed on three native attempts. Optimisation inference
+  completed but its applied result failed citation validation. Both remain failed
+  records, with unknown costs; neither is counted as departmental success.
+  A narrow citation-interface fix preserves strict validation but is not deployed.
+  Original native error details were discarded, so their exact cause is still
+  unknown. Deploying both fixes requires the missing protected continuity
+  transition; this is existing project design, not an obsolete diagnostic gate.
+- At the first post-run observation: five invocations, seven application attempts,
+  four completed attempts and three failed attempts. Internal native retry counts,
+  unreported usage fields, attributable shared fees and all-in costs remain unknown.
+  Recorded zero API expenses do not mean subscription work was free.
+- Relevant quota/migration/recovery/dashboard checks passed (218 focused cases at
+  `6bf6697`); the integrated citation/diagnostics follow-up passed 149 selected
+  cases at `2a5cb82`, followed by 164 final selected cases at `c056faf`. The existing
+  manifest-transition refusal regression also passes. Overlapping runs are not
+  summed. Both image probes/production inspections passed; active-image source,
+  running security/network and model policy were reverified after recovery.
+  No unrelated full-suite gate.
+
+Original checkpoint `e36e447`, Windows local changes, original databases, owner
+settings and private evidence are preserved. Sanitized publication uses a new
+fast-forward checkpoint on the established working branches. Exact account
+readings are excluded from current public files; previously published history is
+retained because force-push/history rewriting is not authorized. Main is unchanged.
+Real trading, separately billed APIs, paid extras and purchases remain disabled.
+Earlier dated sections below are retained historical evidence, not current policy.
+
+---
+
+# Historical owner model selection checkpoint — 2026-10-07
 
 The owner selected **GPT-6.1 Sol only**, exact ID `gpt-6.1-sol`, for all six
 departments and retries through the current Codex subscription. [D97](docs/DECISIONS.md)
 and the [normal operating runbook](docs/NORMAL-PAPER-OPERATION.md) record this
 choice and disable authorization for alternate-model/provider fallback.
 
-The last prepared primary route already selected this model and had no admitted
+At that documentation-only checkpoint, the last prepared primary route already selected this model and had no admitted
 fallback. The private PC must verify its protected primary profile, empty fallback
 list and single-model catalog. This documentation-only checkpoint makes no new
 claim about PC configuration, current service state or actual inference results.
 No runtime records, owner files, acceptance states or source behavior changed.
+
+---
 
 # Normal paper preparation complete; graph awaiting owner start — 2026-10-07
 
@@ -87,12 +154,13 @@ supersede the earlier native-install/egress limitations below.
   planning checks pass. All 95 pre-existing private files and progress sidecar
   preserved. Dashboard read evidence retained privately. No private Kraken request,
   purchase, real order or withdrawal. Unknown subscription/preparation/shared costs
-  are not counted as free. Shared Codex capacity 78% weekly remaining is not Claude
-  quota; short-window unavailable (22:23:48 UTC observation).
+  are not counted as free. Shared Codex capacity was observed privately and is not Claude
+  quota; the short-window reading was unavailable.
 
 Functioning commands include the runbook's native version/auth-status checks,
-`PYTHONPATH=src /home/adami/trade-graph/.venv/bin/python -m pytest` with the recorded
-selected tests, and the protected image's `check-subscription`. The credential-free
+`PYTHONPATH=src "$VIRTUAL_ENV/bin/python" -m pytest` from the repository root with
+the reviewed virtual environment activated and the recorded selected tests, and
+the protected image's `check-subscription`. The credential-free
 actual image probes/public transport passed. `research-subscription` and
 `boot-subscription` are implemented/tested bounded phases, **not credentialed
 successes**. Protected operating-state migration and actual inference remain
@@ -138,16 +206,12 @@ required. A subscription-specific protected provider-egress assembly is also
 permits Kraken/FX. Login alone cannot commission the route. See
 [subscription evidence and official sources](docs/SUBSCRIPTION-ADAPTER.md).
 
-Fresh read-only Codex app account metadata at **2026-10-06 19:38:57 UTC** reports
-**84% weekly remaining / 16% used**, reset **2026-10-12 16:25:15 UTC**; shorter-window
-usage is unavailable and credits are `0`. This is shared account capacity, not
-task-level usage or a Research receipt. Earlier official CLI app-server metadata reported
-**91% remaining / 9% used**, reset **2026-10-12 16:25:16 UTC**; shorter-window data
-was unavailable and credits were `0`. The exact observation time was not retained.
-This Windows snapshot does not establish WSL admission or Research usage. Claude
-quota and subscription fee/preparation/model cost attribution remain **unknown,
-not free**. Real expenses, live allocation and USD10,000 virtual paper capital
-with EUR reporting remain separate.
+Read-only official Codex account metadata was observed during that historical
+preparation. Exact account capacity, reset and credit readings are retained
+privately. The shorter-window reading was unavailable. These Windows observations
+did not establish WSL admission or Research usage. Claude quota and subscription
+fee/preparation/model cost attribution remained unknown, not free. Real expenses,
+live allocation and virtual paper capital remained separate.
 
 Public history was **not refreshed**. Retained coverage: 168 completed hourly
 candles each BTC/USD and ETH/USD, 2026-09-29 14:00 through 2026-10-06 14:00 UTC,
@@ -176,7 +240,7 @@ disposable deterministic paper tick created no orders, AI calls or expense recei
 A new protected image was not built or commissioned. Historical image evidence
 does not certify this source. See [verification](docs/reviews/2026-10-06-start-controls.md).
 
-From `/home/adami/trade-graph`:
+From the repository root:
 
 ```bash
 uv run --frozen trade-graph dashboard --database runtime/trade_graph.sqlite --session-file runtime/owner-session.json

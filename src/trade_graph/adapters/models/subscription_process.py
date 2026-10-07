@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import re
 import selectors
@@ -38,6 +39,7 @@ from trade_graph.adapters.models.subscription import (
     claude_environment,
     codex_command,
     sanitize_quota,
+    subscription_failure_diagnostic,
 )
 from trade_graph.contracts.models import ModelRequest
 
@@ -212,13 +214,25 @@ class LinuxFilesystemBoundary:
                     except ProcessLookupError:
                         pass
                 process.wait(timeout=3)
-        # CLI stderr and intermediate transcripts are intentionally not retained.
-        stderr = output["stderr"].decode("utf-8", errors="replace").lower()
+        # Raw stderr and intermediate transcripts are never retained. Failure
+        # diagnostics contain only fixed codes/categories and a verified public
+        # output-schema path, not provider messages, URLs or identifiers.
+        stderr = output["stderr"].decode("utf-8", errors="replace")
+        category, code, path = "", "", ""
+        if process.returncode and self.provider == "codex_subscription":
+            try:
+                schema = json.loads(self.schema_file.read_text()) if self.schema_file else {}
+            except (OSError, ValueError):
+                schema = {}
+            category, code, path = subscription_failure_diagnostic(
+                output["stdout"].decode("utf-8", errors="replace"), stderr, schema=schema)
         quota_words = ("rate_limit", "rate limit", "usage limit", "quota exhausted", "hit your limit")
-        category = "quota" if process.returncode and any(word in stderr for word in quota_words) else ""
+        if category != "invalid_schema" and process.returncode and any(word in stderr.lower() for word in quota_words):
+            category = "quota"
         raw = output["stdout"] + output["stderr"] if metadata else output["stdout"]
         return CliOutcome(bytes(raw[:maximum_output_bytes]).decode("utf-8", errors="replace"),
-                          process.returncode, stopped, category)
+                          process.returncode, stopped, category, process_terminated=True,
+                          error_code=code, schema_path=path)
 
 
 def validate_proxy_url(value: str) -> str:
@@ -401,31 +415,59 @@ def probe_isolated_codex(config: SubscriptionConfig, pin: NativeCliPin, credenti
 
 
 def codex_quota_metadata(result: dict) -> dict:
-    """Keep allowance observations only; drop account IDs, tokens and reset-credit identities."""
+    """Preserve all reported bucket/window readings without account or bucket identifiers."""
     if not isinstance(result, dict):
         return {}
-    limits = result.get("rateLimits")
-    if not isinstance(limits, dict):
+    legacy = result.get("rateLimits")
+    by_limit = result.get("rateLimitsByLimitId")
+    if by_limit is not None and not isinstance(by_limit, dict):
+        return {"metadata_error": True}
+    if isinstance(by_limit, dict) and by_limit:
+        if len(by_limit) > 32 or any(value is not None and not isinstance(value, dict)
+                                     for value in by_limit.values()):
+            return {"metadata_error": True}
+        buckets = [value if value is not None else {} for value in by_limit.values()]
+        prefix = True
+    elif isinstance(legacy, dict):
+        buckets, prefix = [legacy], False
+    else:
         return {}
-    quota = {"source": "codex-app-server", "observed_at": datetime.now(UTC).isoformat()}
+    quota = {"source": "codex-app-server", "observed_at": datetime.now(UTC).isoformat(),
+             "windows": {}, "unavailable_windows": []}
     ordinary = result.get("ordinaryUsageAllowed")
     if type(ordinary) is bool:
         quota["ordinary_usage_allowed"] = ordinary
-    credits = limits.get("credits")
+    credits = legacy.get("credits") if isinstance(legacy, dict) else None
     if isinstance(credits, dict) and isinstance(credits.get("balance"), str):
         quota["credits_balance"] = credits["balance"]
-    for key in ("primary", "secondary"):
-        window = limits.get(key)
-        if not isinstance(window, dict):
-            continue
-        used, duration = window.get("usedPercent"), window.get("windowDurationMins")
-        if type(used) not in (int, float) or not 0 <= used <= 100 or type(duration) is not int:
-            continue
-        name = "weekly" if duration >= 10080 else "five_hour" if duration <= 300 else key
-        if name not in {"weekly", "five_hour"}:
-            continue
-        quota[name] = {"used_percent": used, "remaining_percent": 100 - used,
+    for index, limits in enumerate(buckets, 1):
+        credits = limits.get("credits")
+        if isinstance(credits, dict) and isinstance(credits.get("balance"), str):
+            if "credits_balance" in quota and credits["balance"] != quota["credits_balance"]:
+                quota["metadata_error"] = True
+            else:
+                quota["credits_balance"] = credits["balance"]
+        for key in ("primary", "secondary"):
+            name = f"limit_{index}_{key}" if prefix else key
+            window = limits.get(key)
+            if window is None:
+                quota["windows"][name] = None
+                quota["unavailable_windows"].append(name)
+                continue
+            if not isinstance(window, dict):
+                quota["metadata_error"] = True
+                continue
+            used, duration = window.get("usedPercent"), window.get("windowDurationMins")
+            if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100
+                    or type(duration) is not int or not 1 <= duration <= 525600):
+                quota["metadata_error"] = True
+                continue
+            reading = {"used_percent": used, "remaining_percent": 100 - used,
                        "window_duration_mins": duration, "resets_at": window.get("resetsAt")}
+            quota["windows"][name] = reading
+            alias = "weekly" if duration == 10080 else "five_hour" if duration == 300 else None
+            if alias and alias not in quota:
+                quota[alias] = reading
     return sanitize_quota(quota)
 
 

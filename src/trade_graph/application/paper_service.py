@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import inspect
+import json
 import math
 import os
 import signal
@@ -409,6 +410,26 @@ class PaperService:
                     created += bool(task_id)
         return created
 
+    def _subscription_availability_failure(self, task_id: str) -> bool:
+        """A known provider stop pauses AI without inventing a financial failure."""
+        if self.subscription_provider is None:
+            return False
+        row = self.database.execute("SELECT invocation_id,provider,state,result_json FROM subscription_invocations "
+                                    "WHERE task_id=?", (task_id,)).fetchone()
+        if row is None or row["state"] != "FAILED" or not row["result_json"]:
+            return False
+        result = json.loads(row["result_json"])
+        expected = {"unsupported": "subscription model unavailable", "rate_limit": "subscription quota exhausted"}
+        reason = expected.get(result.get("failure"))
+        if result.get("ok") is not False or reason is None:
+            return False
+        attempt = self.database.execute("SELECT provider FROM subscription_attempts WHERE invocation_id=? "
+                                        "ORDER BY attempt_index DESC LIMIT 1", (row["invocation_id"],)).fetchone()
+        provider = attempt["provider"] if attempt else row["provider"]
+        state = self.database.execute("SELECT ai_paused,reason FROM subscription_provider_state WHERE provider=?",
+                                      (provider,)).fetchone()
+        return bool(state and state["ai_paused"] and state["reason"] == reason)
+
     def _run_role(self) -> int:
         # Run one task at a time; recurring service ticks continue departmental work.
         if self._ai_paused() or (self.runtime_ready and not self.runtime_ready()):
@@ -456,9 +477,21 @@ class PaperService:
             with self._lease_lock:
                 self._active_lease = None
         with self.database.immediate():
-            result = self.database.execute("SELECT status FROM tasks WHERE task_id = ?", (lease.task_id,)).fetchone()
+            result = self.database.execute("SELECT status,output_json FROM tasks WHERE task_id = ?",
+                                           (lease.task_id,)).fetchone()
+            if result["status"] == "QUEUED":
+                if json.loads(result["output_json"] or "{}").get("_subscription_quota_deferred"):
+                    self.execution.ledger._activity(row["portfolio_id"], "subscription_quota_deferred", {
+                        "task_id": lease.task_id, "role": row["role"], "inference_attempts": 0})
+                    return 0
+            availability_stop = (result["status"] == "FAILED"
+                                 and self._subscription_availability_failure(lease.task_id))
+            if availability_stop:
+                self.execution.ledger._activity(row["portfolio_id"], "subscription_ai_paused", {
+                    "task_id": lease.task_id, "role": row["role"], "financial_management_continues": True})
             if result["status"] == "BLOCKED_BUDGET" or (
                 row["role"] == "trader" and result["status"] in {"FAILED", "WAITING_EXTERNAL", "DEAD_LETTER"}
+                and not availability_stop
             ):
                 pause = self.execution.pause(row["portfolio_id"])
                 if not pause or pause["profile"] == "RUNNING":

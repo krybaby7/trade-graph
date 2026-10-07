@@ -6,13 +6,54 @@ import json
 
 from trade_graph.adapters.models.subscription import SubscriptionJournal
 from trade_graph.contracts.models import ModelRequest, ModelResult
+from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.kernel.department_gateway import ProtectedDepartmentGateway
 from trade_graph.kernel.runtime_manifest import document_sha256
 
 
+class SubscriptionQuotaDeferred(Exception):
+    """Trusted zero-dispatch control signal, never a model-authored role result."""
+
+
 class ProtectedSubscriptionGateway(ProtectedDepartmentGateway):
     """The immutable controller owns provider, schema, limits, journal and all effects."""
+
+    def _row(self, invocation_id: str, operation: str):
+        row = super()._row(invocation_id, operation)
+        if row is None or operation != "invoke_model" or row["state"] != "REVOKED":
+            return row
+        response = json.loads(row["response_json"] or "{}")
+        scope = json.loads(row["scope_json"])
+        marker = {"schema_version": 1, "invocation_id": invocation_id, "task_id": scope["task_id"],
+                  "reason": "subscription reserve refused before any dispatch"}
+        if response.get("quota_deferred") != marker:
+            return row
+        if self.database.execute("SELECT 1 FROM subscription_invocations WHERE invocation_id=?",
+                                 (invocation_id,)).fetchone():
+            raise StaleState("quota-deferred plan unexpectedly has a subscription dispatch record")
+        # Retain the revoked plan as evidence. Only this exact protected no-effect
+        # marker permits a fresh snapshot/plan for the same still-pending task.
+        return None
+
+    def _defer_unused_quota_plan(self, invocation_id: str, authorize) -> None:
+        self.manifest.assert_current()
+        with self.database.immediate():
+            if self.database.execute("SELECT 1 FROM subscription_invocations WHERE invocation_id=?",
+                                     (invocation_id,)).fetchone():
+                raise StaleState("a dispatched or retained subscription invocation cannot be quota-deferred")
+            row = super()._row(invocation_id, "invoke_model")
+            if row is None or row["state"] != "APPLIED" or not row["response_json"]:
+                raise StaleState("quota deferral requires the exact completed unused model plan")
+            scope = json.loads(row["scope_json"])
+            self._assert_scope(scope, ModelRequest.model_validate(scope["original_request"]),
+                               scope["billing"], authorize)
+            response = {"original_response": json.loads(row["response_json"]), "quota_deferred": {
+                "schema_version": 1, "invocation_id": invocation_id, "task_id": scope["task_id"],
+                "reason": "subscription reserve refused before any dispatch"}}
+            self.database.execute("UPDATE protected_rpc_requests SET state='REVOKED',response_json=?,updated_at=? "
+                "WHERE request_id=? AND state='APPLIED'",
+                (json.dumps(response, sort_keys=True), utc_iso(self.clock.now()), row["request_id"]))
 
     def _scope(self, request: ModelRequest, billing: dict) -> dict:
         instance = self.financial._instance(self.controller.instance_id)
@@ -111,6 +152,9 @@ class ProtectedSubscriptionGateway(ProtectedDepartmentGateway):
         result = recovered or self.gateway.invoke(effective, **{**kwargs, "authorize": protected_authorize,
                                                                "cancel_event": self.cancelled})
         if not result.ok:
+            if result.failure == "quota_reserve":
+                self._defer_unused_quota_plan(invocation_id, authorize)
+                raise SubscriptionQuotaDeferred("Subscription reserve admission paused this task before dispatch.")
             return result
         self._assert_scope(scope, request, billing, authorize, recovery=dispatched is not None)
         transformed, _ = self._evaluate("apply_role_result", invocation_id, request, billing, authorize,

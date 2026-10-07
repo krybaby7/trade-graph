@@ -22,7 +22,7 @@ from trade_graph.application.trader_workflow import TraderHandler
 from trade_graph.contracts.models import ContractModel, ModelResult
 from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError, ValidationFailure
 from trade_graph.kernel.department_gateway import public_context
-from trade_graph.kernel.subscription_gateway import ProtectedSubscriptionGateway
+from trade_graph.kernel.subscription_gateway import ProtectedSubscriptionGateway, SubscriptionQuotaDeferred
 
 # Immutable per-role keys. Mutable prompts/configuration cannot expand these.
 _COMMON = frozenset({"objective", "evidence_refs", "source_instruction"})
@@ -400,6 +400,10 @@ class SubscriptionRoutedHandler:
             if task["snapshot"].get("model_route") != route:
                 raise AuthorityDenied("persisted subscription route no longer matches the protected profile")
             return self.build(route)(task)
+        except SubscriptionQuotaDeferred as exc:
+            task["_subscription_quota_deferred"] = True
+            return {"_subscription_quota_deferred": True, "_retry_after_seconds": 30,
+                    "reason": str(exc)[:500], "usage_reservations": []}
         except TradeGraphError as exc:
             output = {"_status": "FAILED", "reason": str(exc)[:500], "usage_reservations": []}
             db = self.router.budget.database

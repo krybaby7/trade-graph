@@ -72,6 +72,7 @@ class RoleWorker:
         task["snapshot_id"] = self._snapshot(row, task["snapshot"], version=task["system_version_id"])
         if not getattr(handler, "manages_attempts", False):
             self.scheduler.note_attempt(lease)
+            task["_attempt_noted"] = True
         output = handler(task)
         self._finish_observed(lease, task, output)
 
@@ -79,6 +80,13 @@ class RoleWorker:
         # A crash cannot make a terminal task lose its health sample. External
         # reconciliation/reload happens only after this writer transaction commits.
         with self.scheduler.database.immediate():
+            if task.get("_subscription_quota_deferred"):
+                self.scheduler.leased_row(lease)
+                if task.get("_attempt_noted"):
+                    self.scheduler.database.execute("UPDATE tasks SET attempts_used=attempts_used-1 "
+                        "WHERE task_id=? AND attempts_used>0", (lease.task_id,))
+                self._finish(lease, output)
+                return  # A protected no-dispatch pause is not an artifact failure sample.
             self._finish(lease, output)
             if self.artifact_runtime:
                 self.artifact_runtime.observe(task, output)

@@ -49,6 +49,7 @@ CandidateState = Literal[
     "SUPERSEDED",
 ]
 ModelFailureKind = Literal[
+    "quota_reserve",
     "credentials",
     "unsupported",
     "rate_limit",

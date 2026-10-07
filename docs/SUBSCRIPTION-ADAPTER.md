@@ -9,11 +9,10 @@ automatic provider fallback, application retry or output repair call.
 
 Earlier Windows Codex CLI 0.125.0 evidence verified ChatGPT login. That official
 app-server check used `initialize`, `account/read` with `refreshToken:false`, and
-`account/rateLimits/read` only. The selected CLI account reported 9% used / 91%
-remaining in its 10,080-minute weekly window, reset timestamp 1791822316; its
-shorter window was unavailable and credit balance was `0`. This is shared account
-quota at the check time, not usage attribution to Research. Authentication tokens,
-account identifiers and raw responses were neither extracted nor committed.
+`account/rateLimits/read` only. The selected CLI account returned an official
+weekly allowance observation; its shorter window was unavailable. Exact account readings and reset details are
+private evidence. This shared-account capacity is not usage attribution to
+Research. Authentication tokens, account identifiers and raw responses were neither extracted nor committed.
 
 The final version/authentication recheck still finds Windows Codex 0.125.0, but
 `codex login status` fails parsing the current `ultra` reasoning configuration;
@@ -22,10 +21,10 @@ fails before status is available. Existing configuration/login files were left
 unchanged. Current CLI login is therefore unverified, distinct from the earlier
 successful check. Native WSL discovery finds only Windows interop Codex.
 
-Read-only signed-in Codex app metadata at **2026-10-06 19:38:57 UTC** reports
-**84% weekly remaining / 16% used**, reset **2026-10-12 16:25:15 UTC**. The shorter
-window is unavailable and credit balance is `0`. This shared-account capacity
-does not establish a CLI route, Research usage or subscription fee attribution.
+A later read-only signed-in Codex app metadata check reported available weekly
+allowance, with the shorter window unavailable. Exact account readings, balance,
+reset and observation details remain private. This shared-account capacity does
+not establish a CLI route, Research usage or subscription fee attribution.
 
 The official npm registry reports Codex 0.160.1. Current official documentation
 still prevents overriding built-in provider IDs. Retry settings apply to custom
@@ -117,10 +116,11 @@ remain prerequisites; a Boolean readiness flag is not live authorization.
 
 ## Verification
 
-Run from an isolated WSL checkout with its locked dependencies:
+Run from the root of an isolated WSL checkout with its locked dependencies and
+reviewed virtual environment activated (`VIRTUAL_ENV` set):
 
 ```bash
-PYTHONPATH=src /home/adami/trade-graph/.venv/bin/python -m pytest \
+PYTHONPATH=src "$VIRTUAL_ENV/bin/python" -m pytest \
   tests/unit/test_subscription_adapter.py \
   tests/security/test_subscription_process_boundary.py \
   tests/integration/test_startup_migration.py
@@ -193,7 +193,7 @@ controls remain authoritative; subscription access does not grant live authority
 Additional credential-free verification:
 
 ```bash
-PYTHONPATH=src /home/adami/trade-graph/.venv/bin/python -m pytest \
+PYTHONPATH=src "$VIRTUAL_ENV/bin/python" -m pytest \
   tests/integration/test_subscription_departments.py \
   tests/unit/test_subscription_profile.py
 ```

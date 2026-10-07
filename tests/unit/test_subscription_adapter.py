@@ -513,3 +513,48 @@ def test_model_usage_unknown_fields_are_validated_and_unique():
     usage=ModelUsage(uncached_input_tokens=0,billed_output_tokens=1,
         unreported_fields=["reasoning_tokens","reasoning_tokens"])
     assert usage.unreported_fields==["reasoning_tokens"]
+
+
+@pytest.mark.parametrize("remaining,admitted",[(41,True),(40,False),(30,False),(0,False)])
+def test_quota_reserve_requires_execution_headroom_above_owner_reserve(remaining,admitted):
+    from trade_graph.adapters.models.subscription import quota_reserve_status
+    config=SubscriptionConfig(model="gpt-6.1-sol",quota_policy_enabled=True)
+    now=datetime(2026,10,8,tzinfo=UTC)
+    quota={"ordinary_usage_allowed":True,"credits_balance":"0",
+        "source":"codex-app-server","observed_at":now.isoformat(),
+        "weekly":{"remaining_percent":remaining,"window_duration_mins":10080}}
+    status=quota_reserve_status(config,quota,now=now)
+    assert status["admitted"] is admitted
+    assert status["admission_threshold_remaining_percent"]==40
+    assert status["exact_running_call_consumption_bound"] is False
+
+
+def test_quota_reserve_checks_all_supported_shorter_windows_and_rejects_stale_or_malformed():
+    from trade_graph.adapters.models.subscription import quota_reserve_status
+    config=SubscriptionConfig(model="gpt-6.1-sol",quota_policy_enabled=True)
+    now=datetime(2026,10,8,tzinfo=UTC)
+    quota={"ordinary_usage_allowed":True,"credits_balance":"0",
+        "source":"codex-app-server","observed_at":now.isoformat(),"windows":{
+        "primary":{"remaining_percent":75,"window_duration_mins":10080},
+        "secondary":{"remaining_percent":39,"window_duration_mins":360}}}
+    assert not quota_reserve_status(config,quota,now=now)["admitted"]
+    quota["windows"]["secondary"]["remaining_percent"]=75
+    assert quota_reserve_status(config,quota,now=now)["admitted"]
+    quota["observed_at"]="2026-10-07T00:00:00+00:00"
+    assert not quota_reserve_status(config,quota,now=now)["admitted"]
+    quota["observed_at"]=now.isoformat()
+    quota["metadata_error"]=True
+    assert not quota_reserve_status(config,quota,now=now)["admitted"]
+
+
+def test_quota_reserve_discloses_unavailable_shorter_window_without_claiming_exact_guarantee():
+    from trade_graph.adapters.models.subscription import quota_reserve_status
+    config=SubscriptionConfig(model="gpt-6.1-sol",quota_policy_enabled=True)
+    now=datetime(2026,10,8,tzinfo=UTC)
+    quota={"ordinary_usage_allowed":True,"credits_balance":"0",
+        "source":"codex-app-server","observed_at":now.isoformat(),"windows":{
+        "primary":{"remaining_percent":75,"window_duration_mins":10080},"secondary":None},
+        "unavailable_windows":["secondary"]}
+    status=quota_reserve_status(config,quota,now=now)
+    assert status["admitted"] and status["unavailable_windows"]==["secondary"]
+    assert status["all_provider_windows_observed"] is False

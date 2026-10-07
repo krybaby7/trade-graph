@@ -123,7 +123,7 @@ None prevents offline development. Mark credentialed verification pending when c
   route separately from subscription login, financial acceptance and live authority.
 
 
-- **D96 (2026-10-07, latest owner instruction):** Normal local Windows/WSL paper
+- **D96 (2026-10-07):** Normal local Windows/WSL paper
   operation supersedes D92/D95 and the first-cycle diagnostic operating policy.
   Enable configured departmental schedules and recurring Optimisation, normal
   supported CLI retries, bounded configurable application attempts and compatible
@@ -150,3 +150,23 @@ None prevents offline development. Mark credentialed verification pending when c
   requested and actually reported model identities; an unreported identity
   remains unknown. Recording this choice does not establish a new inference
   result or prove that the private PC configuration has been updated.
+
+- **D98 (2026-10-07, morning owner instruction):** Normal paper startup is
+  authorized after installing and verifying fresh, serialized subscription quota
+  admission. Preserve 30 percentage points of included quota plus 10 points of
+  practical headroom: a fresh weekly reading is required, and every reported native
+  window must have strictly more than 40% remaining before each dispatch or retry.
+  Missing shorter windows are disclosed without independently blocking admission.
+  Disclose unavailable windows,
+  shared-account consumption and unbounded active-call usage; this threshold does
+  not guarantee a 30% balance after a call or across unreported windows. Watch the
+  first normal run and stop new AI at 40% or below, on metadata failure, or after an
+  unexpected single-attempt drop greater than 10 points. Dashboard, deterministic
+  reconciliation and paper-order/position management continue under MANAGE_ONLY.
+  All six AI departments and their retries use **gpt-6.1-sol only**. The protected
+  profile has `fallback_profiles: []`; the pinned catalog contains only that model
+  slug. Unavailability pauses AI instead of selecting an alternate model, provider
+  or separately billed route. This supersedes D96's fallback permission and the
+  overnight start hold. Authorization is separate from actual execution evidence;
+  live trading, paid extras, API billing and purchases remain unauthorized. See the
+  [normal operating runbook](NORMAL-PAPER-OPERATION.md).

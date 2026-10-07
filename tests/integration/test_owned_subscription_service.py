@@ -2,6 +2,8 @@
 
 import asyncio
 import hashlib
+import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +22,7 @@ from trade_graph.application.deployment_runtime import ProtectedDeploymentBindin
 from trade_graph.application.paper_service import PaperService
 from trade_graph.application.subscription_profile import SubscriptionAdmission
 from trade_graph.application.subscription_runtime import SubscriptionRuntimeConfig
+from trade_graph.contracts.models import ModelResult
 from trade_graph.domain.errors import AuthorityDenied
 from trade_graph.kernel.runtime_manifest import ProtectedRuntimeManifest, protected_package_sha256
 
@@ -163,3 +166,198 @@ def test_verified_temporary_subscription_block_can_recover_without_restarting_se
     assert not result["failures"] and result["completed"] == 1
     assert flow.row(task)["status"] == "SUCCEEDED"
     assert binding.ready() and len(cli.requests) == 1
+
+
+def test_predispatch_reserve_pause_defers_trader_and_later_uses_fresh_plan(tmp_path, monkeypatch):
+    flow, runtime, binding, service, cli, _ = subscription_service(tmp_path, monkeypatch)
+    cli.outputs["trader"] = {"action": "hold", "strategy_id": "range-reversion", "rationale": "No edge observed.",
+        "invalidation": "New evidence.", "experiment": False, "evidence_ids": [], "no_action_reason": "No signal."}
+    identity = flow.add("trader")
+    async def scenario():
+        await service.start()
+        adapter = runtime.model_handlers.router.adapter
+        configured = adapter.config.model_copy(update={"quota_policy_enabled": True})
+        adapter.config = runtime.model_handlers.router.config.subscription = configured
+        remaining, blocked = [75], [True]
+        def readiness():
+            return replace(adapter.readiness, quota={"source": "claude-cli",
+                "observed_at": flow.clock.now().isoformat(), "windows": {
+                    "primary": {"window_duration_mins": 10080, "remaining_percent": remaining[0]}}})
+        adapter.readiness_probe = readiness
+        adapter.refresh_readiness(force=True)
+        original = adapter.invoke
+        def invoke(request, **kwargs):
+            remaining[0] = 40 if blocked[0] else 75
+            return original(request, **kwargs)
+        monkeypatch.setattr(adapter, "invoke", invoke)
+        first = await service.tick(wait_roles=True)
+        assert first.management[flow.pid] == "running" and first.completed == 0
+        assert flow.row(identity)["status"] == "QUEUED", flow.row(identity)["output_json"]
+        assert flow.row(identity)["attempts_used"] == 0
+        assert runtime.execution.profile(flow.pid) == "RUNNING"
+        assert not cli.requests
+        assert flow.db.execute("SELECT COUNT(*) FROM subscription_invocations").fetchone()[0] == 0
+        plan = flow.db.execute("SELECT state,response_json FROM protected_rpc_requests "
+            "WHERE json_extract(scope_json,'$.operation')='invoke_model'").fetchone()
+        assert plan["state"] == "REVOKED" and "quota_deferred" in plan["response_json"]
+        blocked[0] = False
+        flow.clock.advance(31)
+        remaining[0] = 75
+        adapter.refresh_readiness(force=True)
+        second = await service.tick(wait_roles=True)
+        assert second.management[flow.pid] == "running"
+        assert flow.row(identity)["status"] == "SUCCEEDED", flow.row(identity)["output_json"]
+        assert flow.row(identity)["attempts_used"] == 1 and len(cli.requests) == 1
+        assert flow.db.execute("SELECT COUNT(*) FROM subscription_attempts").fetchone()[0] == 1
+        assert runtime.execution.profile(flow.pid) == "RUNNING"
+        await service.stop()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure,reason", [
+    ("rate_limit", "subscription quota exhausted"),
+    ("unsupported", "subscription model unavailable"),
+])
+def test_known_subscription_availability_stop_keeps_management_feed_and_heartbeat(
+    tmp_path, monkeypatch, failure, reason,
+):
+    from trade_graph.contracts.models import Observation
+
+    flow, runtime, binding, service, cli, _ = subscription_service(tmp_path, monkeypatch, quota_exhausted=True)
+    first, second = flow.add("trader"), flow.add("research")
+    flow.db.execute("UPDATE tasks SET priority=100 WHERE task_id=?", (first,))
+
+    class Feed:
+        polls = 0
+        def poll(self):
+            self.polls += 1
+            return [Observation(observation_id=f"pause-feed-{self.polls}", venue="paper", symbol="BTC/USD",
+                event_time_utc=flow.clock.now(), available_at_utc=flow.clock.now(),
+                bid="99", ask="100", volume="1", kind="quote", source="synthetic-fixture")]
+        def close(self):
+            pass
+
+    feed = Feed()
+    service.public_feed = feed
+
+    async def scenario():
+        await service.start()
+        adapter = runtime.model_handlers.router.adapter
+        invoke = adapter.invoke
+        def unavailable(request, **kwargs):
+            result = invoke(request, **kwargs)
+            if failure == "unsupported":
+                # Adapter-owned known unsupported-model classification and pause;
+                # no model payload or task output supplies this control signal.
+                result = result.model_copy(update={"failure": failure, "message": reason})
+                journal, invocation_id = kwargs["journal"], kwargs["invocation_id"]
+                journal.save_attempt(invocation_id + ":attempt:1", result, "FAILED")
+                journal.save(invocation_id, result, "FAILED")
+                flow.db.execute("UPDATE subscription_provider_state SET reason=? WHERE provider=?",
+                                (reason, adapter.config.provider))
+            return result
+        monkeypatch.setattr(adapter, "invoke", unavailable)
+        first_tick = await service.tick(wait_roles=True, wait_feed=True)
+        assert first_tick.management[flow.pid] == "running" and first_tick.observations == 1
+        assert flow.row(first)["status"] == "FAILED"
+        assert runtime.execution.profile(flow.pid) == "RUNNING"
+        receipt = flow.db.execute("SELECT * FROM subscription_invocations WHERE task_id=?", (first,)).fetchone()
+        assert receipt["state"] == "FAILED" and receipt["cost_status"] == "unknown"
+        assert json.loads(receipt["result_json"])["failure"] == failure
+        prior_heartbeat = flow.db.execute("SELECT heartbeat_at FROM graph_service_runs").fetchone()[0]
+        flow.clock.advance(1)
+        next_tick = await service.tick(wait_roles=True, wait_feed=True)
+        assert next_tick.completed == 0 and next_tick.management[flow.pid] == "running"
+        assert next_tick.observations == 1 and feed.polls == 2
+        assert flow.row(second)["status"] == "QUEUED" and flow.row(second)["attempts_used"] == 0
+        status = flow.db.execute("SELECT status,heartbeat_at FROM graph_service_runs").fetchone()
+        assert status["status"] == "RUNNING" and status["heartbeat_at"] > prior_heartbeat
+        assert not binding.ready() and len(cli.requests) == 1
+        assert service._started and not service._stop_requested.is_set()
+        assert not flow.transport.calls
+        await service.stop()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("outcome", ["DISPATCHED", "COMPLETED", "FAILED", "UNCERTAIN"])
+def test_reserve_marker_cannot_revoke_or_replay_a_started_subscription_invocation(tmp_path, monkeypatch, outcome):
+    flow, runtime, _binding, service, cli, _ = subscription_service(tmp_path, monkeypatch)
+    identity = flow.add("trader")
+    cli.outputs["trader"] = {"action": "hold", "strategy_id": "range-reversion", "rationale": "No edge observed.",
+        "invalidation": "New evidence.", "experiment": False, "evidence_ids": [], "no_action_reason": "No signal."}
+    if outcome == "FAILED":
+        cli.outputs["trader"] = {"wrong": "schema"}
+    if outcome == "UNCERTAIN":
+        cli.interrupt = True
+
+    async def scenario():
+        await service.start()
+        adapter = runtime.model_handlers.router.adapter
+        invoke = adapter.invoke
+        def invalid_reserve(request, **kwargs):
+            if outcome == "DISPATCHED":
+                kwargs["journal"].begin(kwargs["invocation_id"], request, adapter.config.provider, {})
+                kwargs["journal"].begin_attempt(kwargs["invocation_id"], 1, request, adapter.config.provider)
+            else:
+                invoke(request, **kwargs)
+            return ModelResult(ok=False, failure="quota_reserve", message="incorrect post-dispatch reserve")
+        monkeypatch.setattr(adapter, "invoke", invalid_reserve)
+        tick = await service.tick(wait_roles=True)
+        assert tick.management[flow.pid] == "running"
+        assert flow.row(identity)["status"] == ("WAITING_EXTERNAL" if outcome == "UNCERTAIN" else "FAILED")
+        assert runtime.execution.profile(flow.pid) == "MANAGE_ONLY"
+        row = flow.db.execute("SELECT state FROM subscription_invocations WHERE task_id=?", (identity,)).fetchone()
+        assert row["state"] == outcome
+        assert flow.db.execute("SELECT state FROM protected_rpc_requests WHERE "
+            "json_extract(scope_json,'$.operation')='invoke_model'").fetchone()[0] == "APPLIED"
+        flow.clock.advance(31)
+        await service.tick(wait_roles=True)
+        assert len(cli.requests) == (0 if outcome == "DISPATCHED" else 1)
+        assert flow.db.execute("SELECT COUNT(*) FROM subscription_attempts").fetchone()[0] == 1
+        await service.stop()
+    asyncio.run(scenario())
+
+
+def test_current_reserve_blocks_before_claim_without_stopping_normal_service(tmp_path, monkeypatch):
+    flow, runtime, _binding, service, cli, _ = subscription_service(tmp_path, monkeypatch)
+    identity = flow.add("trader")
+    async def scenario():
+        await service.start()
+        adapter = runtime.model_handlers.router.adapter
+        adapter.config = runtime.model_handlers.router.config.subscription = adapter.config.model_copy(
+            update={"quota_policy_enabled": True})
+        adapter.readiness_probe = lambda: replace(adapter.readiness, quota={"source": "claude-cli",
+            "observed_at": flow.clock.now().isoformat(), "windows": {
+                "primary": {"window_duration_mins": 10080, "remaining_percent": 40}}})
+        adapter.refresh_readiness(force=True)
+        for _ in range(2):
+            tick = await service.tick(wait_roles=True)
+            assert tick.management[flow.pid] == "running" and tick.completed == 0
+            assert flow.row(identity)["status"] == "QUEUED" and flow.row(identity)["attempts_used"] == 0
+        assert runtime.execution.profile(flow.pid) == "RUNNING"
+        assert not cli.requests and not flow.transport.calls
+        assert flow.db.execute("SELECT COUNT(*) FROM subscription_invocations").fetchone()[0] == 0
+        assert flow.db.execute("SELECT COUNT(*) FROM protected_rpc_requests").fetchone()[0] == 0
+        assert service._started and not service._stop_requested.is_set()
+        await service.stop()
+    asyncio.run(scenario())
+
+
+def test_known_provider_stop_preserves_a_concurrent_owner_hold(tmp_path, monkeypatch):
+    flow, runtime, _binding, service, _cli, _ = subscription_service(tmp_path, monkeypatch, quota_exhausted=True)
+    identity = flow.add("trader")
+    async def scenario():
+        await service.start()
+        adapter = runtime.model_handlers.router.adapter
+        invoke = adapter.invoke
+        def owner_hold(request, **kwargs):
+            result = invoke(request, **kwargs)
+            runtime.execution.set_pause(flow.pid, "MANAGE_ONLY", "owner", "Retain this unrelated owner hold.")
+            return result
+        monkeypatch.setattr(adapter, "invoke", owner_hold)
+        await service.tick(wait_roles=True)
+        assert flow.row(identity)["status"] == "FAILED"
+        pause = runtime.execution.pause(flow.pid)
+        assert pause["originator"] == "owner" and pause["reason"] == "Retain this unrelated owner hold."
+        await service.stop()
+    asyncio.run(scenario())

@@ -52,27 +52,27 @@ exclusive service, queued Owner Resume and protected loopback dashboard.
   order intents, subscription invocations and usage receipts. Initial smoke
   harness queried a nonexistent schedule column; its read-only check was corrected
   without repeating the tick. Final storage/financial proof passes.
-  Evidence is retained privately in `/tmp/trade-graph-start-controls-final-b1ca4c5/`.
+  Detailed verification receipts are retained privately outside the repository.
 
 ## Actual evidence and limits
 
 Research model/result **none**, inference attempts **0**. No API billing, purchases,
 private Kraken requests, real orders, withdrawals or live authorization occurred.
 Earlier Windows Codex 0.125.0 official ChatGPT login and read-only app-server quota
-were checked without threads/turns/token extraction. Weekly remaining 91%, used 9%,
-reset 2026-10-12 16:25:16 UTC; shorter window unavailable, credits 0. Exact
-observation time was not retained. Subscription fee/preparation/model cost
-attribution is unknown, not free. Windows Claude 2.1.280 is still logged out on
-the final recheck. No native WSL provider CLI is installed; WSL PATH offers only
+were checked without threads/turns/token extraction. Official metadata reported
+available weekly allowance; the shorter window was unavailable. Exact account
+readings, reset and balance details remain private. The earlier observation time
+was not retained. Subscription fee/preparation/model cost attribution is unknown,
+not free. Windows Claude 2.1.280 is still logged out on the final recheck. No native WSL provider CLI is installed; WSL PATH offers only
 Windows interop Codex. Final Codex `login status` cannot parse the current `ultra`
 reasoning configuration; a per-command `high` override also fails before status.
 Configuration/login files were preserved; current CLI login is unverified,
 distinct from earlier evidence.
 
-Fresh Codex app account usage at 2026-10-06 19:38:57 UTC: weekly remaining 84%,
-used 16%, reset 2026-10-12 16:25:15 UTC; shorter window unavailable, credits 0.
-This shared-account capacity is distinct from task attribution and the earlier
-CLI snapshot. Sanitized metadata is persisted privately and shown on the dashboard.
+A later Codex app metadata check also reported available weekly allowance, with
+the shorter window unavailable. Exact readings, reset, balance and observation
+details are private. This shared-account capacity is distinct from task attribution
+and the earlier CLI snapshot; the retained metadata is available privately.
 
 Current official Codex 0.160.1 retains built-in retries 4/5 and the reserved
 provider restriction. Native Claude >=2.1.285, official subscription login,

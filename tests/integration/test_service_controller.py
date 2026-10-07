@@ -145,7 +145,7 @@ def test_owner_authentication_csrf_validation_and_live_fail_closed(tmp_path):
     page = client.get("/progress")
     assert page.status_code == 200
     assert "Start Trading" in page.text and "Start Optimisation" in page.text
-    assert "Automatic scheduling is disabled" in page.text
+    assert "Automatic Optimisation scheduling is enabled" in page.text
 
 
 def test_paid_api_configuration_is_refused_and_default_is_management_only(tmp_path):
@@ -566,3 +566,20 @@ def test_flat_other_portfolio_cannot_stop_existing_portfolio_protection(tmp_path
         await service.stop()
 
     asyncio.run(scenario())
+
+
+def test_controller_uses_available_fallback_route_instead_of_paused_primary(tmp_path):
+    runtime, _ = runtime_stack(tmp_path)
+    runtime.database.execute("INSERT INTO subscription_provider_state VALUES (?,?,?,?,?)",
+        ("claude_subscription", 1, "subscription quota exhausted", "{}", "2026-10-07T00:00:00Z"))
+    control = ServiceController(runtime, prerequisites=lambda: {**synthetic_ready(),
+        "selected_provider": "claude_subscription", "available_subscription_routes": ["codex_subscription"]})
+    assert control.status()["prerequisites"]["ai_available"] is True
+
+
+@pytest.mark.parametrize("intervals,expected", [(None, True), ({}, False), ({"optimisation": 60}, True)])
+def test_automatic_optimisation_projection_respects_configured_role_schedules(tmp_path, intervals, expected):
+    runtime, _broker = runtime_stack(tmp_path)
+    runtime.config = SimpleNamespace(automatic_schedule=True, optimisation_manual_only=False,
+                                     schedule_intervals=intervals)
+    assert ServiceController(runtime).status()["automatic_optimisation"] is expected

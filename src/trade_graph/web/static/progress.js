@@ -394,10 +394,16 @@
     write("[data-live-resume-status]", resume ? `Live Resume ${text(resume.request_id)}: ${label(resume.status)}. ${text(resume.reason)} Deadline ${time(resume.deadline_at)}.` :
       "No queued live Resume. Use Owner controls to request reconciliation and resume within current live authority.");
     const cycle = lifecycle?.optimisation;
-    write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. Automatic scheduling disabled.` : "Optimisation: no requested cycle recorded. Automatic scheduling disabled.");
+    const scheduleStatus = `Automatic Optimisation scheduling is ${lifecycle?.automatic_optimisation ? "enabled" : "disabled"}.`;
+    write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. ${scheduleStatus}` : `Optimisation: no requested cycle recorded. ${scheduleStatus}`);
     const usage = lifecycle?.ai_usage;
     const providers = list(usage?.providers).map(provider => `${text(provider.provider)}${provider.ai_paused ? " paused" : ""}: ${text(provider.quota)}${provider.reason ? ` (${text(provider.reason)})` : ""}`).join(" · ");
-    write("[data-ai-usage]", `Subscription quota: ${providers || "unknown"}. Unknown usage/cost records: ${count(usage?.unknown_usage_or_cost_records)}. Subscription usage, real expenses and virtual capital remain separate.`);
+    const quotaPolicies = list(usage?.quota_policy_routes).map(route => {
+      if (!route.enabled) return `${text(route.provider)}: reserve policy disabled`;
+      const windows = list(route.readings).map(reading => `${text(reading.window || reading.name)} ${reading.remaining_percent == null ? "unknown" : `${text(reading.remaining_percent)}% remaining`}`).join("; ");
+      return `${text(route.provider)}: ${route.admitted ? "AI admitted" : "AI paused"}; reserve ${text(route.reserve_remaining_percent)}%, execution headroom ${text(route.execution_headroom_percent)}%, requires above ${text(route.admission_threshold_remaining_percent)}% remaining. ${windows} ${list(route.blockers).join(" ")} Missing windows: ${list(route.unavailable_windows).join(", ") || "none reported"}. Running-call consumption and unreported provider windows remain unknown.`;
+    }).join(" · ");
+    write("[data-ai-usage]", `Subscription quota: ${providers || "unknown"}. ${quotaPolicies} Unknown usage/cost records: ${count(usage?.unknown_usage_or_cost_records)}. Subscription usage, real expenses and virtual capital remain separate.`);
     const active = ["STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING", "ATTACHED_EXISTING"].includes(service.status);
     for (const button of all("[data-service-action]")) {
       const action = button.dataset.serviceAction;

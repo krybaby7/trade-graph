@@ -19,7 +19,8 @@ USD10,000 with EUR reporting; it cannot fund model usage or authorize live order
   `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`, following
   [Anthropic's binary verification procedure](https://code.claude.com/docs/en/setup#verify-the-manifest-signature).
 - The separate native login directory
-  `/home/adami/.local/share/trade-graph/claude-login` is empty and signed out.
+  `$HOME/.local/share/trade-graph/claude-login`, under the owner's WSL home,
+  is empty and signed out.
   The clean-environment `auth status` check exits **1**, as documented for a
   signed-out CLI. Windows Claude/Codex logins do not authenticate this directory.
 - The retained public collection contains **168 completed hourly candles per
@@ -38,12 +39,21 @@ USD10,000 with EUR reporting; it cannot fund model usage or authorize live order
 
 ## Owner login and included-usage check
 
-In PowerShell, run this exact command and complete the official browser
-subscription login. The clean environment excludes inherited API keys and
-provider overrides. Do not select Console/API billing.
+In PowerShell, open the owner's WSL shell:
 
 ```powershell
-wsl -d Ubuntu -- env -i HOME=/home/adami PATH=/usr/bin:/bin CLAUDE_CONFIG_DIR=/home/adami/.local/share/trade-graph/claude-login DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 /usr/local/lib/trade-graph/claude-2.1.292 auth login
+wsl -d Ubuntu
+```
+
+Then run this command inside WSL, where `$HOME` is the owner's WSL home, and
+complete the official browser subscription login. The clean environment excludes
+inherited API keys and provider overrides. Do not select Console/API billing.
+
+```sh
+env -i HOME="$HOME" PATH=/usr/bin:/bin \
+  CLAUDE_CONFIG_DIR="$HOME/.local/share/trade-graph/claude-login" \
+  DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+  /usr/local/lib/trade-graph/claude-2.1.292 auth login
 ```
 
 Then use the same command with `auth status` in place of `auth login`.

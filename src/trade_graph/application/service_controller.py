@@ -245,8 +245,20 @@ class ServiceController:
             for row in provider_states
         ]
         selected = ready.get("selected_provider")
-        if any(provider["ai_paused"] and (selected is None or provider["provider"] == selected)
-               for provider in providers):
+        quota_routes = ready.get("subscription", {}).get("quota_policy_routes", [])
+        schedule_intervals = getattr(getattr(self.runtime, "config", None), "schedule_intervals", None)
+        available_routes = ready.get("available_subscription_routes")
+        if available_routes is not None:
+            paused = {provider["provider"] for provider in providers if provider["ai_paused"]}
+            ready = {**ready, "ai_available": bool(ready["ai_available"]
+                and any(provider not in paused for provider in available_routes))}
+            if not ready["ai_available"] and paused:
+                reasons = list(ready.get("reasons", []))
+                reasons.extend(provider["reason"] for provider in providers
+                               if provider["ai_paused"] and provider["reason"] not in reasons)
+                ready = {**ready, "reasons": reasons}
+        elif any(provider["ai_paused"] and (selected is None or provider["provider"] == selected)
+                 for provider in providers):
             ready = {
                 **ready,
                 "ai_available": False,
@@ -275,12 +287,17 @@ class ServiceController:
             "automatic_optimisation": (
                 getattr(getattr(self.runtime, "config", None), "automatic_schedule", True)
                 and not getattr(getattr(self.runtime, "config", None), "optimisation_manual_only", False)
+                and (schedule_intervals is None or "optimisation" in schedule_intervals)
             ),
             "ai_usage": {
                 "providers": providers,
-                "available_quota": "unknown" if not providers else "provider_reported",
+                "available_quota": "provider_reported" if any(route.get("readings") for route in quota_routes)
+                    else "unknown",
                 "unknown_usage_or_cost_records": unresolved,
                 "subscription_separate_from_operating_budget": True,
+                "quota_reserve_policy": ready.get("subscription", {}).get("quota_reserve_policy"),
+                "quota_policy_routes": quota_routes,
+                "quota_admission_blocked": ready.get("subscription", {}).get("quota_admission_blocked", False),
             },
             "position_management": "Reconciliation and protection continue during an AI pause. "
             "Stopping the service is allowed only when flat with no outstanding orders.",

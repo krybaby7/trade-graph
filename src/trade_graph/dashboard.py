@@ -64,7 +64,10 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
         subscription = _subscription_prerequisites(protected_owner)
 
         def prerequisites():
-            return {**subscription(), "paper_available": True, "live_available": False,
+            from trade_graph.adapters.models.subscription import SubscriptionJournal
+
+            return {**subscription(journal=SubscriptionJournal(database, clock)),
+                    "paper_available": True, "live_available": False,
                     "live_reasons": ["Live startup requires separately commissioned protected owner configuration."]}
     path = path.resolve()
     if not path.is_file():
@@ -97,7 +100,7 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
 
 
 def _subscription_prerequisites(protected_owner):
-    """One read-only admission; polling only rechecks immutable owner bytes."""
+    """Retain immutable admission while refreshing supported account metadata."""
     from trade_graph.application.subscription_profile import load_subscription_profile, subscription_profile_unchanged
 
     admission = load_subscription_profile(protected_owner)
@@ -112,15 +115,30 @@ def _subscription_prerequisites(protected_owner):
     except OSError:
         declared = True
 
-    def status():
+    def status(*, journal=None):
+        from trade_graph.domain.errors import TradeGraphError
+
         current = subscription_profile_unchanged(protected_owner, admission.profile_sha256)
-        ready = bool(current and admission.adapter and admission.status.get("ready"))
-        reasons = [] if ready else admission.status.get("blockers", [])
+        observed = admission.status
+        if current and admission.adapter is not None:
+            try:
+                observed = {**admission.status, **admission.adapter.public_status(journal=journal)}
+            except (OSError, ValueError, RuntimeError, TradeGraphError):
+                observed = {**admission.status, "ready": False, "available_subscription_routes": [],
+                    "blockers": ["Subscription readiness refresh unavailable; management continues."]}
+        ready = bool(current and admission.adapter and observed.get("ready"))
+        reasons = [] if ready else list(observed.get("blockers", []))
+        if not ready and observed.get("quota_admission_blocked"):
+            for route in observed.get("quota_policy_routes", []):
+                reasons.extend(reason for reason in route.get("blockers", []) if reason not in reasons)
+                if route.get("provider_admission", {}).get("occupied"):
+                    reasons.append("Subscription inference admission is active or unresolved; management continues.")
         if not current:
             reasons = ["Protected subscription profile changed; restart after owner review. Management continues."]
         return {"ai_available": ready, "selected_provider": admission.status.get("selected_provider"),
                 "subscription_declared": declared,
-                "reasons": reasons, "subscription": admission.status}
+                "available_subscription_routes": observed.get("available_subscription_routes", []),
+                "reasons": reasons, "subscription": observed}
 
     return status
 

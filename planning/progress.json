@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-07",
-  "status_note": "2026-10-07 normal paper preparation verified: native Codex subscription ready, actual final-image isolation/egress pass, current public Kraken/FX collected. Latest owner instruction forbids graph start pending tomorrow green light; zero inference/decisions/orders/fills. Existing financial/private state preserved; acceptance unchanged.",
+  "status_note": "2026-10-07 morning: normal subscription paper graph is RUNNING on verified source 6bf6697 with first actual Research/Trader/Learning applied results. Only gpt-6.1-sol/no fallback; protected 30% reserve plus 10 percentage points headroom. Source fixes c056faf pass 164 focused tests but deployment is blocked by missing financial manifest continuity; exact old image/pins safely restarted on current DB/witness, all failures retained. Live/API billing/extras disabled; unknown usage/costs remain unknown.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -250,12 +250,15 @@
         "2026-10-07 owner-authorized narrow continuation claimed from preserved e36e447: one actual Kraken public-data subscription paper cycle; implementation/testing underway, no new acceptance completion. See docs/superpowers/plans/2026-10-07-first-paper-cycle.md.",
         "2026-10-07: docs/reviews/2026-10-07-first-paper-cycle.md records final actual image/public-data checks and 445 local passing tests at 643f185. Native login absent; zero credentialed inference, no Research/Trader result, no acceptance transition. Original financial/owner state preserved except requested MANAGE_ONLY pause; private evidence excluded from Git.",
         "2026-10-07: owner authorized normal local paper graph, departmental schedules, compatible verified subscription fallback and configurable supported retries/limits; obsolete diagnostic restrictions are superseded. See docs/superpowers/plans/2026-10-07-normal-paper-operation.md. Actual inference not yet established.",
-        "2026-10-07 fbed4be normal paper preparation: Codex0.160.1 ChatGPT auth/allowance and final-image nine-boundary/production checks pass; 168 completed hourly candles per pair/zero gaps and ECB FX refreshed. Dashboard-only STOPPED/AI available/MANAGE_ONLY. Latest owner hold prevents graph start; zero inference/results/orders/fills. 126 and129 overlapping focused regressions pass. See docs/reviews/2026-10-07-normal-paper-operation.md."
+        "2026-10-07 fbed4be normal paper preparation: Codex0.160.1 ChatGPT auth/allowance and final-image nine-boundary/production checks pass; 168 completed hourly candles per pair/zero gaps and ECB FX refreshed. Dashboard-only STOPPED/AI available/MANAGE_ONLY. Latest owner hold prevents graph start; zero inference/results/orders/fills. 126 and129 overlapping focused regressions pass. See docs/reviews/2026-10-07-normal-paper-operation.md.",
+        "2026-10-07 morning continuation claimed bycodex-root oncodex/normal-paper-2026-10-07 from59f5729. Owner authorizes normal start after30%reserve/headroom enforcement and restricts every department/retry togpt-6.1-sol, fallback_profiles empty. Additive0020preservation/schema tests pass at233edc6; existing paper state backed up, public-only refresh performed, no inference/start yet. Plan docs/superpowers/plans/2026-10-07-quota-reserve-paper-start.md.",
+        "2026-10-07 morning: protected source 6bf6697 passed 218 focused checks plus actual intended-image isolation/production inspection. Existing owner resume/start controls began normal local paper service. First actual Research/Trader/Learning invocation and applied results verified; legitimate no_action, no orders/fills, Decimal accounting and financial baseline preserved. Five invocations/seven application attempts include three failed Leader attempts; Optimisation inference completed but applied citation validation failed. Records/cost uncertainty retained. See docs/reviews/2026-10-07-morning-paper-operation.md.",
+        "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained."
       ],
-      "remaining": "Normal local subscription paper execution/Research/Trader evidence awaits explicit owner green light. Primary auth/public egress/intended-image checks pass; API funding, private exchange credentials and live commissioning are not prerequisites for this local path. Optional hosted research tools and Claude fallback remain unconfigured. Broader forward economics/off-host restore/alerts/live acceptance remain separate.",
-      "execution_state": "idle",
-      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
-      "execution_result": "normal_paper_prepared_owner_start_hold"
+      "remaining": "Normal local subscription paper graph is running with actual validated Research/Trader/Learning results. Genuine blockers: deploying tested citation/diagnostic source fixes requires an implemented/tested protected financial manifest continuity transition; initial Leader CLI cause remains unknown and Optimisation failed citation validation. Optional hosted research-search ingestion, unavailable native model/short-window/internal-retry readings and unknown attributable costs remain disclosed. Broader forward economics/off-host recovery/alerts/live acceptance remain separate.",
+      "execution_state": "running",
+      "execution_scope": "owner_authorized_normal_subscription_paper_operation",
+      "execution_result": "running_first_research_trader_results_verified"
     },
     "T18": {
       "status": "in_progress",
@@ -831,13 +834,10 @@
       "Subscription-specific protected provider-egress assembly is unimplemented and unverified."
     ],
     "quota": {
-      "source": "read-only signed-in Codex app shared-account metadata",
-      "observed_at": "2026-10-06T19:38:57Z",
-      "weekly_remaining_percent": 84,
-      "weekly_used_percent": 16,
-      "weekly_reset_at": "2026-10-12T16:25:15Z",
-      "shorter_window": null,
-      "credits_balance": "0"
+      "source": "read-only official shared-account metadata",
+      "exact_readings": "retained privately; excluded from public status",
+      "shorter_window": "unavailable",
+      "billing_evidence": "included subscription and no spendable-credit admission checked without token extraction"
     },
     "usage_cost_attribution": "Unknown, not free; no Research inference receipt or shared-fee settlement is attributed.",
     "preservation": "All 75 main and two progress tables unchanged except additive 0018; all 30 protected contents and modes unchanged; integrity checks pass. Windows local changes untouched; consistent private backups retained.",
@@ -872,5 +872,57 @@
     "api_billing_enabled": false,
     "acceptance_transition": false,
     "publication": "sanitized final documentation checkpoint; remote verification reported separately"
+  },
+  "normal_paper_operation": {
+    "status": "running_with_retained_departmental_failures",
+    "owner": "codex-root",
+    "branch": "codex/normal-paper-2026-10-07",
+    "first_deployed_source": "6bf6697",
+    "original_checkpoint_preserved": "e36e447",
+    "review": "docs/reviews/2026-10-07-morning-paper-operation.md",
+    "provider": "codex_subscription",
+    "model_pinned": "gpt-6.1-sol",
+    "provider_model_echo": null,
+    "fallback_profiles": [],
+    "cli_version": "0.160.1",
+    "authentication": "chatgpt_verified",
+    "quota_policy": {
+      "enabled": true,
+      "reserve_remaining_percent": 30,
+      "execution_headroom_percent": 10,
+      "admission_requires_remaining_percent_strictly_greater_than": 40,
+      "exact_readings": "private",
+      "shorter_window": "unavailable",
+      "exact_all_window_guarantee": false
+    },
+    "graph_started": true,
+    "dashboard_status": "RUNNING",
+    "automatic_schedules": true,
+    "mandatory_one_cycle_stop": false,
+    "initial_invocations": 5,
+    "initial_application_attempts": 7,
+    "research_result": "validated and applied; two attributed findings",
+    "trader_decision": "validated and applied no_action",
+    "learning_result": "validated and applied",
+    "initial_leader_result": "failed after three native attempts; cause unknown",
+    "initial_optimisation_result": "completed inference; applied result failed evidence-membership validation",
+    "orders": 0,
+    "fills": 0,
+    "native_internal_retry_count": null,
+    "usage_cost_attribution": "unknown fields and shared costs remain unknown; exact private receipts excluded",
+    "live_enabled": false,
+    "api_billing_enabled": false,
+    "acceptance_transition": false,
+    "publication": "sanitized final checkpoint; exact remote verification reported separately",
+    "deployed_source": "6bf6697",
+    "tested_update_source": "c056faf",
+    "update_deployed": false,
+    "update_blocker": "protected financial manifest continuity transition is unimplemented",
+    "update_startup_result": "FAILED StaleState before heartbeat; no new inference",
+    "recovery": "exact previous verified image and matching pins; current database/witness retained, no financial rollback",
+    "current_invocations": 5,
+    "current_application_attempts": 7,
+    "newer_retry_executed": false,
+    "source_files_verified_against_active_image": 199
   }
 }

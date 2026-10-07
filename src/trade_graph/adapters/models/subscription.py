@@ -8,24 +8,27 @@ Subscription receipts are separate from API expenses and virtual paper equity.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
 import re
 import time
+import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from threading import Event, Lock
 from typing import Literal, Protocol
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
-from pydantic import Field
+from pydantic import Field, model_validator
 from referencing.exceptions import Unresolvable
 
-from trade_graph.adapters.models.providers import lookup_capabilities
+from trade_graph.adapters.models.providers import _wire_schema, lookup_capabilities
 from trade_graph.application.gateway import _bounded_json, _validate_schema
 from trade_graph.contracts.models import ContractModel, ModelRequest, ModelResult, ModelUsage
 from trade_graph.domain.clock import utc_iso
@@ -37,7 +40,8 @@ MAX_OUTPUT_BYTES = 262_144
 _PRIVATE_KEYS = frozenset({"credentials", "api_key", "authorization", "auth_token", "database", "owner_policy",
                           "private_account", "kraken_credentials", "private_key", "ssh_key"})
 _QUOTA_KEYS = frozenset({"remaining_percent", "used_percent", "window_duration_mins", "resets_at", "credits_balance",
-                        "source", "observed_at", "weekly", "five_hour", "ordinary_usage_allowed"})
+                        "source", "observed_at", "weekly", "five_hour", "ordinary_usage_allowed",
+                        "windows", "unavailable_windows", "metadata_error"})
 
 
 class SubscriptionConfig(ContractModel):
@@ -54,6 +58,16 @@ class SubscriptionConfig(ContractModel):
     allowed_context_keys: dict[str, list[str]] = Field(default_factory=dict)
     department_tools: dict[str, list[Literal["web_search"]]] = Field(default_factory=dict)
     maximum_tool_calls: int = Field(default=16, ge=0, le=128)
+    quota_policy_enabled: bool = False
+    quota_reserve_remaining_percent: int = Field(default=30, ge=0, le=99)
+    quota_execution_headroom_percent: int = Field(default=10, ge=0, le=99)
+    quota_metadata_max_age_seconds: int = Field(default=30, ge=1, le=300)
+
+    @model_validator(mode="after")
+    def _quota_threshold(self):
+        if self.quota_reserve_remaining_percent + self.quota_execution_headroom_percent >= 100:
+            raise ValueError("subscription reserve and execution headroom must total less than 100 percent")
+        return self
 
 
 @dataclass(frozen=True)
@@ -67,6 +81,7 @@ class SubscriptionReadiness:
     isolation: str
     application_max_attempts: int = 3
     fallback_enabled: bool = False
+    quota_policy: dict = dataclass_field(default_factory=dict)
 
     def public_status(self) -> dict:
         return {"provider": self.provider, "cli_version": self.cli_version, "ready": self.ready,
@@ -76,7 +91,12 @@ class SubscriptionReadiness:
                 "application_automatic_retry": self.application_max_attempts > 1,
                 "application_max_attempts": self.application_max_attempts,
                 "application_automatic_fallback": self.fallback_enabled,
-                "provider_limits_admitted": self.ready}
+                "provider_limits_admitted": self.ready, "quota_reserve_policy": self.quota_policy}
+
+
+def _quota_window_name(name) -> bool:
+    return isinstance(name, str) and bool(re.fullmatch(
+        r"(?:primary|secondary|limit_[1-9][0-9]?_(?:primary|secondary))", name))
 
 
 def sanitize_quota(quota: dict) -> dict:
@@ -84,6 +104,30 @@ def sanitize_quota(quota: dict) -> dict:
         result = {}
         for key, value in document.items():
             if key not in _QUOTA_KEYS:
+                continue
+            if key == "windows":
+                if root and isinstance(value, dict):
+                    windows = {}
+                    for name, window in value.items():
+                        if not _quota_window_name(name):
+                            continue
+                        if window is None:
+                            windows[name] = None
+                        elif isinstance(window, dict):
+                            windows[name] = clean_fields(window, root=False)
+                        else:
+                            result["metadata_error"] = True
+                    result[key] = windows
+                else:
+                    result["metadata_error"] = True
+                continue
+            if key == "unavailable_windows":
+                if root and isinstance(value, list):
+                    result[key] = sorted({name for name in value if _quota_window_name(name)})
+                continue
+            if key == "metadata_error":
+                if value is True:
+                    result[key] = True
                 continue
             if key in {"weekly", "five_hour"}:
                 if root and isinstance(value, dict) and (fields := clean_fields(value, root=False)):
@@ -124,6 +168,68 @@ def sanitize_quota(quota: dict) -> dict:
     return clean_fields(quota, root=True)
 
 
+def quota_reserve_status(config: SubscriptionConfig, quota: dict, *, now: datetime | None = None) -> dict:
+    """Admission against observed allowance; a running call has no measured percent bound."""
+    threshold = config.quota_reserve_remaining_percent + config.quota_execution_headroom_percent
+    status = {"enabled": config.quota_policy_enabled, "admitted": not config.quota_policy_enabled,
+        "reserve_remaining_percent": config.quota_reserve_remaining_percent,
+        "execution_headroom_percent": config.quota_execution_headroom_percent,
+        "admission_threshold_remaining_percent": threshold,
+        "metadata_max_age_seconds": config.quota_metadata_max_age_seconds,
+        "exact_running_call_consumption_bound": False, "all_provider_windows_observed": False,
+        "unavailable_windows": [], "readings": [], "blockers": []}
+    if not config.quota_policy_enabled:
+        return status
+    clean = sanitize_quota(quota)
+    blockers = status["blockers"]
+    current = now or datetime.now(UTC)
+    try:
+        observed = datetime.fromisoformat(clean["observed_at"])
+        age = (current - observed).total_seconds()
+        if not 0 <= age <= config.quota_metadata_max_age_seconds:
+            blockers.append("subscription quota metadata is stale or future-dated")
+    except (KeyError, TypeError, ValueError):
+        blockers.append("fresh subscription quota metadata is unavailable")
+    if config.provider == "codex_subscription" and (clean.get("ordinary_usage_allowed") is not True
+                                                   or clean.get("credits_balance") != "0"):
+        blockers.append("ordinary subscription allowance without spendable credits is not verified")
+    expected_source = "codex-app-server" if config.provider == "codex_subscription" else "claude-cli"
+    if clean.get("source") != expected_source or clean.get("metadata_error"):
+        blockers.append("supported subscription quota reading failed or is malformed")
+    windows = clean.get("windows")
+    if not isinstance(windows, dict):
+        windows = {name: clean[name] for name in ("weekly", "five_hour") if name in clean}
+    unavailable = set(clean.get("unavailable_windows", []))
+    weekly_observed = False
+    for name, window in windows.items():
+        if window is None:
+            unavailable.add(name)
+            continue
+        remaining = window.get("remaining_percent")
+        used = window.get("used_percent")
+        duration = window.get("window_duration_mins")
+        if (type(duration) is not int or duration <= 0 or
+                type(remaining) not in (int, float) and type(used) not in (int, float)):
+            blockers.append(f"supported subscription quota window {name} is malformed")
+            continue
+        if remaining is None:
+            remaining = 100 - used
+        if used is not None and remaining != 100 - used:
+            blockers.append(f"supported subscription quota window {name} is inconsistent")
+            continue
+        weekly_observed |= duration == 10080
+        status["readings"].append({"window": name, "window_duration_mins": duration,
+                                   "remaining_percent": remaining})
+        if remaining <= threshold:
+            blockers.append(f"subscription quota window {name} reached reserve admission threshold")
+    if not weekly_observed:
+        blockers.append("weekly subscription quota reading is unavailable")
+    status["unavailable_windows"] = sorted(unavailable)
+    status["all_reported_windows_checked"] = bool(windows) and not blockers
+    status["admitted"] = not blockers
+    return status
+
+
 def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authentication: str, quota: dict,
                         extra_usage_disabled: bool, isolation_ready: bool, native_linux: bool) -> SubscriptionReadiness:
     """Protected-controller metadata only; never accepts evidence from model output."""
@@ -155,9 +261,11 @@ def assess_subscription(config: SubscriptionConfig, *, cli_version: str, authent
     clean = sanitize_quota(quota)
     if _quota_exhausted(clean) or clean.get("ordinary_usage_allowed") is False:
         blockers.append("subscription quota exhausted; new AI work is paused")
+    policy = quota_reserve_status(config, clean)
+    blockers.extend(policy["blockers"])
     return SubscriptionReadiness(config.provider, cli_version, not blockers, tuple(blockers), clean,
                                  authentication, "linux-bubblewrap" if isolation_ready else "unavailable",
-                                 config.application_max_attempts)
+                                 config.application_max_attempts, quota_policy=policy)
 
 
 def _quota_exhausted(quota: dict) -> bool:
@@ -172,10 +280,140 @@ class CliOutcome:
     exit_code: int
     stopped: str = ""
     error_category: str = ""
+    process_terminated: bool = False
+    error_code: str = ""
+    schema_path: str = ""
+
+
+_DIAGNOSTIC_ERROR_CODES = frozenset({
+    "invalid_json_schema", "invalid_response_format", "context_length_exceeded",
+    "model_not_found", "unsupported_model", "model_not_available", "rate_limit_exceeded",
+    "usage_limit_reached", "quota_exceeded", "invalid_api_key", "invalid_authentication",
+})
+
+
+def _diagnostic_schema_path(tokens, schema: dict) -> str:
+    """Only retain a path that resolves in the controller's public output schema."""
+    if not isinstance(tokens, (tuple, list)) or len(tokens) > 32:
+        return ""
+    node, parts = schema, []
+    for token in tokens:
+        if not isinstance(token, (str, int)) or isinstance(token, bool):
+            return ""
+        text = str(token)
+        if not re.fullmatch(r"[A-Za-z0-9_$.-]{1,64}", text):
+            return ""
+        if isinstance(node, dict) and token in node:
+            node = node[token]
+        elif isinstance(node, list) and text.isdecimal() and int(text) < len(node):
+            node = node[int(text)]
+        else:
+            return ""
+        parts.append(text)
+    path = "#" + "".join("/" + part for part in parts)
+    return path if len(path) <= 512 else ""
+
+
+def _diagnostic_pointer(pointer: str, schema: dict) -> str:
+    if pointer == "#":
+        return "#"
+    if not isinstance(pointer, str) or not pointer.startswith("#/"):
+        return ""
+    return _diagnostic_schema_path(pointer[2:].split("/"), schema)
+
+
+def subscription_failure_diagnostic(stdout: str, stderr: str, *, schema: dict) -> tuple[str, str, str]:
+    """Extract fixed failure categories/codes and verified schema paths, never raw text.
+
+    Native error messages may wrap an HTTP JSON error. Only error/turn.failed
+    events and stderr error envelopes are inspected; successful agent output is
+    not failure evidence. Parsing and retained fields have independent bounds.
+    """
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate diagnostic JSON key")
+            value[key] = item
+        return value
+
+    decoder = json.JSONDecoder(object_pairs_hook=unique)
+
+    def documents(text):
+        bounded, cursor = text[-65_536:], 0
+        for _ in range(128):
+            position = bounded.find("{", cursor)
+            if position < 0:
+                break
+            cursor = position + 1
+            try:
+                document, end = decoder.raw_decode(bounded, position)
+                # Consume a decoded envelope as a whole. Nested content in a
+                # successful/non-error event cannot become separate evidence.
+                cursor = end
+                _bounded_json(document)
+            except (ValueError, TypeError, RecursionError):
+                continue
+            yield document
+
+    def inspect(document, depth=0):
+        if (depth > 2 or not isinstance(document, dict)
+                or document.get("type") not in {None, "error", "turn.failed"}):
+            return "", "", ""
+        error = document if document.get("type") == "error" else document.get("error")
+        if not isinstance(error, dict):
+            return "", "", ""
+        code = error.get("code")
+        code = code if isinstance(code, str) and code in _DIAGNOSTIC_ERROR_CODES else ""
+        message = error.get("message", "")
+        invalid_schema = code in {"invalid_json_schema", "invalid_response_format"} or (
+            isinstance(message, str) and re.match(r"Invalid schema for (?:response_format|text[.]format)\b",
+                                                message) is not None)
+        path = ""
+        if isinstance(message, str):
+            context = re.search(r"In context=(\([^\n]{0,2048}?\)),", message)
+            if context:
+                try:
+                    path = _diagnostic_schema_path(ast.literal_eval(context.group(1)), schema)
+                except (ValueError, SyntaxError, RecursionError):
+                    pass
+        if invalid_schema or code:
+            return "invalid_schema" if invalid_schema else "provider_error", code, path
+        if isinstance(message, str):
+            for nested in documents(message):
+                result = inspect(nested, depth + 1)
+                if result[0]:
+                    return result
+        return "", "", ""
+
+    for line in stdout[-65_536:].splitlines():
+        try:
+            event = decoder.decode(line)
+            _bounded_json(event)
+        except (ValueError, TypeError, RecursionError):
+            continue
+        if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
+            result = inspect(event)
+            if result[0]:
+                return result
+    for document in documents(stderr):
+        result = inspect(document)
+        if result[0]:
+            return result
+    return "", "", ""
+
+
+def _diagnostic_message(base: str, code: str, path: str) -> str:
+    details = (["code=" + code] if code else []) + (["schema_path=" + path] if path else [])
+    return base + (" (" + "; ".join(details) + ")" if details else "")
 
 
 class SubscriptionExecutor(Protocol):
     def execute(self, request: ModelRequest, *, cancel_event: Event | None = None) -> CliOutcome: ...
+
+
+class ProviderAdmissionLost(StaleState):
+    """A quota slot or its fresh allowance observation no longer authorizes dispatch."""
 
 
 class SubscriptionJournal:
@@ -248,15 +486,19 @@ class SubscriptionJournal:
                  result.usage.model_dump_json() if result.usage else None,
                  "unknown" if dispatched else "not_incurred", utc_iso(self.clock.now()), invocation_id))
 
-    def begin_attempt(self, invocation_id: str, index: int, request: ModelRequest, provider: str) -> str:
+    def begin_attempt(self, invocation_id: str, index: int, request: ModelRequest, provider: str,
+                      *, admission_lease_id: str | None = None, quota: dict | None = None) -> str:
         attempt_id = f"{invocation_id}:attempt:{index}"
         binding = hashlib.sha256((provider + request.model_dump_json()).encode()).hexdigest()
         now = utc_iso(self.clock.now())
         with self.database.immediate():
+            if admission_lease_id:
+                self.assert_provider_admission(provider, invocation_id, admission_lease_id)
             self.database.execute("""INSERT INTO subscription_attempts
-                (attempt_id,invocation_id,attempt_index,request_hash,provider,requested_model,state,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,'DISPATCHED',?,?)""",
-                (attempt_id, invocation_id, index, binding, provider, request.model, now, now))
+                (attempt_id,invocation_id,attempt_index,request_hash,provider,requested_model,state,created_at,updated_at,quota_json)
+                VALUES (?,?,?,?,?,?,'DISPATCHED',?,?,?)""",
+                (attempt_id, invocation_id, index, binding, provider, request.model, now, now,
+                 json.dumps(sanitize_quota(quota or {}))))
         return attempt_id
 
     def save_attempt(self, attempt_id: str, result: ModelResult, state: str) -> None:
@@ -265,6 +507,51 @@ class SubscriptionJournal:
                 usage_json=?,updated_at=? WHERE attempt_id=?""",
                 (state, result.model_dump_json(), result.provider_model,
                  result.usage.model_dump_json() if result.usage else None, utc_iso(self.clock.now()), attempt_id))
+
+    def acquire_provider_admission(self, provider: str, invocation_id: str, *, maximum_seconds: int) -> str | None:
+        """Serialize dispatch without holding a SQLite writer while the CLI runs."""
+        now = self.clock.now()
+        with self.database.immediate():
+            existing = self.database.execute(
+                "SELECT * FROM subscription_provider_admissions WHERE provider=?", (provider,)).fetchone()
+            if existing is not None:
+                if datetime.fromisoformat(existing["lease_expires_at"]) > now:
+                    return None
+                unresolved = self.database.execute("""SELECT 1 FROM subscription_attempts
+                    WHERE invocation_id=? AND provider=? AND state IN ('DISPATCHED','UNCERTAIN') LIMIT 1""",
+                    (existing["invocation_id"], provider)).fetchone()
+                if unresolved:
+                    return None
+                self.database.execute("DELETE FROM subscription_provider_admissions WHERE provider=?", (provider,))
+            lease_id = str(uuid.uuid4())
+            self.database.execute("""INSERT INTO subscription_provider_admissions
+                (provider,invocation_id,lease_id,lease_expires_at,created_at) VALUES (?,?,?,?,?)""",
+                (provider, invocation_id, lease_id,
+                 utc_iso(now + timedelta(seconds=maximum_seconds + 90)), utc_iso(now)))
+            return lease_id
+
+    def assert_provider_admission(self, provider: str, invocation_id: str, lease_id: str) -> None:
+        row = self.database.execute("SELECT * FROM subscription_provider_admissions WHERE provider=?",
+                                    (provider,)).fetchone()
+        if (row is None or row["lease_id"] != lease_id or row["invocation_id"] != invocation_id
+                or datetime.fromisoformat(row["lease_expires_at"]) <= self.clock.now()):
+            raise ProviderAdmissionLost("subscription provider admission expired or ownership changed")
+
+    def provider_admission_status(self, provider: str) -> dict:
+        row = self.database.execute("SELECT * FROM subscription_provider_admissions WHERE provider=?",
+                                    (provider,)).fetchone()
+        if row is None:
+            return {"occupied": False, "unresolved": False}
+        unresolved = self.database.execute("""SELECT 1 FROM subscription_attempts WHERE invocation_id=?
+            AND provider=? AND state IN ('DISPATCHED','UNCERTAIN') LIMIT 1""",
+            (row["invocation_id"], provider)).fetchone() is not None
+        occupied = unresolved or datetime.fromisoformat(row["lease_expires_at"]) > self.clock.now()
+        return {"occupied": occupied, "unresolved": unresolved, "expires_at": row["lease_expires_at"]}
+
+    def release_provider_admission(self, provider: str, lease_id: str) -> None:
+        with self.database.immediate():
+            self.database.execute("DELETE FROM subscription_provider_admissions WHERE provider=? AND lease_id=?",
+                                  (provider, lease_id))
 
     def refresh_quota(self, provider: str, quota: dict) -> None:
         """Only a newer positive provider observation can lift a quota-derived stop."""
@@ -285,13 +572,13 @@ class SubscriptionJournal:
                 WHERE provider=? AND reason='subscription quota exhausted'""",
                 (json.dumps(clean), utc_iso(self.clock.now()), provider))
 
-    def pause_ai(self, provider: str, quota: dict) -> None:
+    def pause_ai(self, provider: str, quota: dict, *, reason: str = "subscription quota exhausted") -> None:
         with self.database.immediate():
             self.database.execute("""INSERT INTO subscription_provider_state
                 (provider,ai_paused,reason,quota_json,updated_at)
-                VALUES (?,1,'subscription quota exhausted',?,?) ON CONFLICT(provider) DO UPDATE SET
+                VALUES (?,1,?,?,?) ON CONFLICT(provider) DO UPDATE SET
                 ai_paused=1,reason=excluded.reason,quota_json=excluded.quota_json,updated_at=excluded.updated_at""",
-                (provider, json.dumps(sanitize_quota(quota)), utc_iso(self.clock.now())))
+                (provider, reason, json.dumps(sanitize_quota(quota)), utc_iso(self.clock.now())))
 
 
 class SubscriptionAdapter:
@@ -307,17 +594,34 @@ class SubscriptionAdapter:
         self.readiness_probe = readiness_probe
         self._readiness_lock, self._last_readiness = Lock(), float("-inf")
 
-    def refresh_readiness(self, *, force: bool = False, minimum_interval_seconds: float = 60) -> SubscriptionReadiness:
+    def refresh_readiness(self, *, force: bool = False, minimum_interval_seconds: float = 60,
+                          include_fallbacks: bool = True) -> SubscriptionReadiness:
         """Refresh official metadata only, preserving pinned profiles and unknown usage."""
+        if self.config.quota_policy_enabled:
+            minimum_interval_seconds = min(minimum_interval_seconds, self.config.quota_metadata_max_age_seconds / 2)
         with self._readiness_lock:
             if self.readiness_probe and (force or time.monotonic() - self._last_readiness >= minimum_interval_seconds):
                 try:
                     self.readiness = self.readiness_probe()
+                except Exception:
+                    self.readiness = replace(self.readiness, ready=False, quota={},
+                        blockers=("fresh subscription provider metadata is unavailable",),
+                        quota_policy=quota_reserve_status(self.config, {}))
                 finally:
                     self._last_readiness = time.monotonic()
-        for route in self.fallbacks:
-            route.refresh_readiness(force=force, minimum_interval_seconds=minimum_interval_seconds)
+        if include_fallbacks:
+            for route in self.fallbacks:
+                route.refresh_readiness(force=force, minimum_interval_seconds=minimum_interval_seconds)
         return self.readiness
+
+    def _policy_config(self, route: SubscriptionAdapter) -> SubscriptionConfig:
+        if not self.config.quota_policy_enabled:
+            return route.config
+        return route.config.model_copy(update={
+            "quota_policy_enabled": True,
+            "quota_reserve_remaining_percent": self.config.quota_reserve_remaining_percent,
+            "quota_execution_headroom_percent": self.config.quota_execution_headroom_percent,
+            "quota_metadata_max_age_seconds": self.config.quota_metadata_max_age_seconds})
 
     def public_status(self, *, journal: SubscriptionJournal | None = None, refresh: bool = True) -> dict:
         if refresh:
@@ -326,69 +630,157 @@ class SubscriptionAdapter:
         if journal:
             for route in routes:
                 journal.refresh_quota(route.config.provider, route.readiness.quota)
-        available = [route for route in routes if route.config.enabled and route.readiness.ready
+        now = journal.clock.now() if journal else datetime.now(UTC)
+        policies = [{"provider": route.config.provider,
+                     **quota_reserve_status(self._policy_config(route), route.readiness.quota, now=now)}
+                    for route in routes]
+        if journal:
+            for route, policy in zip(routes, policies, strict=True):
+                policy["provider_admission"] = journal.provider_admission_status(route.config.provider)
+                state = journal.provider_status(route.config.provider)
+                policy["provider_ai_paused"] = bool(state["ai_paused"])
+                policy["provider_pause_reason"] = state["reason"]
+        available = [route for route, policy in zip(routes, policies, strict=True)
+                     if route.config.enabled and route.readiness.ready and policy["admitted"]
+                     and not policy.get("provider_admission", {}).get("occupied", False)
                      and (not journal or not journal.provider_status(route.config.provider)["ai_paused"])]
+        quota_blocked = any(policy["enabled"] for policy in policies) and not available
         return {**self.readiness.public_status(), "ready": self.config.enabled and bool(available),
                 "application_automatic_fallback": bool(self.fallbacks),
+                "quota_reserve_policy": policies[0], "quota_policy_routes": policies,
+                "quota_admission_blocked": quota_blocked,
                 "available_subscription_routes": [route.config.provider for route in available]}
-
 
     def invoke(self, request: ModelRequest, *, invocation_id: str, journal: SubscriptionJournal,
                cancel_event: Event | None = None, before_attempt: Callable[[], None] | None = None) -> ModelResult:
+        # A cached generation is recovered before any quota admission or new effect.
+        if journal.row(invocation_id) is not None:
+            return journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
         self.refresh_readiness()
-        previous = journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
-        if previous is not None:
-            return previous
+        policy_enabled = any(self._policy_config(route).quota_policy_enabled for route in (self, *self.fallbacks))
+        started = False
+        if not policy_enabled:
+            previous = journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
+            if previous is not None:
+                return previous
+            started = True
         try:
             self._validate_request(request)
         except (ValueError, SchemaError, ValidationError, Unresolvable):
             result = ModelResult(ok=False, failure="validation",
-                                 message="subscription request outside protected bounds")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
+                                     message="subscription request outside protected bounds")
+            if started:
+                journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
         for route in (self, *self.fallbacks):
             journal.refresh_quota(route.config.provider, route.readiness.quota)
         primary_quota_blocked = (journal.provider_status(self.config.provider)["ai_paused"]
                                  or _quota_exhausted(self.readiness.quota))
-        if primary_quota_blocked:
+        if primary_quota_blocked and not policy_enabled:
             journal.pause_ai(self.config.provider, self.readiness.quota)
-        routes = tuple(route for route in (self, *self.fallbacks) if route.config.enabled and route.readiness.ready
-                       and route.readiness.provider == route.config.provider
-                       and not journal.provider_status(route.config.provider)["ai_paused"]
-                       and not _quota_exhausted(route.readiness.quota))
+        routes = tuple(route for route in (self, *self.fallbacks) if route.config.enabled
+            and route.readiness.provider == route.config.provider
+            and (self._policy_config(route).quota_policy_enabled or route.readiness.ready
+                 and not journal.provider_status(route.config.provider)["ai_paused"]
+                 and not _quota_exhausted(route.readiness.quota)))
         if not self.config.enabled or not routes:
             result = ModelResult(ok=False, failure="rate_limit" if primary_quota_blocked else "credentials",
                 message="subscription quota exhausted; new AI work paused" if primary_quota_blocked
                 else "; ".join(self.readiness.blockers)[:500] or "subscription admission is disabled")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
+            if started:
+                journal.save(invocation_id, result, "BLOCKED", dispatched=False)
             return result
-        if cancel_event and cancel_event.is_set():
-            result = ModelResult(ok=False, failure="temporary",
-                                     message="subscription task cancelled before dispatch")
-            journal.save(invocation_id, result, "BLOCKED", dispatched=False)
-            return result
-        results = []
-        route_index = 0
-        for attempt in range(1, self.config.application_max_attempts + 1):
+        results, route_index = [], 0
+        result = ModelResult(ok=False, failure="quota_reserve", message="subscription quota admission unavailable")
+        while len(results) < self.config.application_max_attempts:
             route = routes[route_index]
             effective = request.model_copy(update={
                 "provider": "openai" if route.config.provider == "codex_subscription" else "anthropic",
                 "model": route.config.model,
                 "timeout_seconds": min(request.timeout_seconds, route.config.maximum_seconds),
                 "max_output_tokens": min(request.max_output_tokens, route.config.maximum_output_tokens)})
+            lease_id, outcome, attempt_id = None, None, None
             try:
                 route._validate_request(effective)
                 if before_attempt:
                     before_attempt()
+                if cancel_event and cancel_event.is_set():
+                    result = ModelResult(ok=False, failure="temporary",
+                                     message="subscription task cancelled before dispatch")
+                    break
+                policy_config = self._policy_config(route)
+                if policy_config.quota_policy_enabled:
+                    lease_id = journal.acquire_provider_admission(route.config.provider, invocation_id,
+                                                                 maximum_seconds=effective.timeout_seconds)
+                    reason = "another subscription provider admission is active or unresolved"
+                    if lease_id:
+                        if route.readiness_probe is None:
+                            reason = "fresh official subscription quota probe is unavailable"
+                        else:
+                            route.refresh_readiness(force=True, include_fallbacks=False)
+                            policy = quota_reserve_status(policy_config, route.readiness.quota, now=journal.clock.now())
+                            journal.refresh_quota(route.config.provider, route.readiness.quota)
+                            if (route.readiness.ready and policy["admitted"]
+                                    and not journal.provider_status(route.config.provider)["ai_paused"]):
+                                reason = ""
+                            else:
+                                reason = ("; ".join(policy["blockers"] or route.readiness.blockers)
+                                          or journal.provider_status(route.config.provider)["reason"]
+                                          or "subscription provider admission is unavailable")
+                    if reason:
+                        if lease_id:
+                            journal.release_provider_admission(route.config.provider, lease_id)
+                            lease_id = None
+                        if results:
+                            result = results[-1]  # A real terminal failure never becomes a quota-only pause.
+                            break
+                        if route_index + 1 < len(routes):
+                            route_index += 1
+                            continue
+                        return ModelResult(ok=False, failure="quota_reserve", message=reason[:500])
+                if cancel_event and cancel_event.is_set():
+                    result = ModelResult(ok=False, failure="temporary",
+                                     message="subscription task cancelled before dispatch")
+                    break
+                if before_attempt and policy_config.quota_policy_enabled:
+                    before_attempt()  # Authority can change while the metadata request is pending.
+                # Fence quota freshness and the exact lease in the transaction that
+                # persists DISPATCHED. A resumed old callback cannot outlive/reuse its lease.
+                with journal.database.immediate():
+                    if cancel_event and cancel_event.is_set():
+                        result = ModelResult(ok=False, failure="temporary",
+                                             message="subscription task cancelled before dispatch")
+                        break
+                    if lease_id:
+                        journal.assert_provider_admission(route.config.provider, invocation_id, lease_id)
+                        fresh = route.readiness
+                        policy = quota_reserve_status(policy_config, fresh.quota, now=journal.clock.now())
+                        if (not fresh.ready or not policy["admitted"]
+                                or journal.provider_status(route.config.provider)["ai_paused"]):
+                            raise ProviderAdmissionLost("subscription provider admission changed before dispatch")
+                    if not started:
+                        previous = journal.begin(invocation_id, request, self.config.provider, self.readiness.quota)
+                        if previous is not None:
+                            if lease_id:
+                                journal.release_provider_admission(route.config.provider, lease_id)
+                            return previous
+                        started = True
+                    attempt_id = journal.begin_attempt(invocation_id, len(results) + 1, effective,
+                                                       route.config.provider, admission_lease_id=lease_id,
+                                                       quota=fresh.quota if lease_id else route.readiness.quota)
+            except ProviderAdmissionLost as exc:
+                if lease_id:
+                    journal.release_provider_admission(route.config.provider, lease_id)
+                    lease_id = None
+                result = results[-1] if results else ModelResult(ok=False, failure="quota_reserve", message=str(exc))
+                break
             except Exception:
+                if lease_id:
+                    journal.release_provider_admission(route.config.provider, lease_id)
+                    lease_id = None
                 result = ModelResult(ok=False, failure="validation",
                                      message="subscription attempt authorization refused")
                 break
-            if cancel_event and cancel_event.is_set():
-                result = ModelResult(ok=False, failure="temporary",
-                                     message="subscription task cancelled before dispatch")
-                break
-            attempt_id = journal.begin_attempt(invocation_id, attempt, effective, route.config.provider)
             try:
                 outcome = route.executor.execute(effective, cancel_event=cancel_event)
                 parser = parse_codex_outcome if route.config.provider == "codex_subscription" else parse_claude_outcome
@@ -400,8 +792,13 @@ class SubscriptionAdapter:
             state = "COMPLETED" if result.ok else "UNCERTAIN" if result.failure == "timeout_uncertain" else "FAILED"
             journal.save_attempt(attempt_id, result, state)
             results.append(result)
+            if lease_id and (result.failure != "timeout_uncertain" or outcome and outcome.process_terminated):
+                journal.release_provider_admission(route.config.provider, lease_id)
+                lease_id = None
             if result.failure == "rate_limit":
                 journal.pause_ai(route.config.provider, route.readiness.quota)
+            elif result.failure == "unsupported":
+                journal.pause_ai(route.config.provider, route.readiness.quota, reason="subscription model unavailable")
             if result.ok or result.failure == "timeout_uncertain":
                 break
             if (result.failure in {"credentials", "rate_limit", "unsupported", "temporary"}
@@ -409,10 +806,12 @@ class SubscriptionAdapter:
                 route_index += 1
             elif result.failure != "temporary":
                 break
-        aggregate = aggregate_usage(results)
-        result = result.model_copy(update={"usage": aggregate})
-        state = "COMPLETED" if result.ok else "UNCERTAIN" if result.failure == "timeout_uncertain" else "FAILED"
-        journal.save(invocation_id, result, state, dispatched=bool(results))
+        if lease_id and attempt_id is None:
+            journal.release_provider_admission(route.config.provider, lease_id)
+        result = result.model_copy(update={"usage": aggregate_usage(results)})
+        if started:
+            state = "COMPLETED" if result.ok else "UNCERTAIN" if result.failure == "timeout_uncertain" else "FAILED"
+            journal.save(invocation_id, result, state, dispatched=bool(results))
         return result
 
     def _validate_request(self, request: ModelRequest) -> None:
@@ -590,6 +989,16 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
         return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted")
     usage, actual_model, payload_text = None, None, None
     completed, failed, tool_observed, search_ids = 0, False, False, set()
+    wire_schema = _wire_schema(request.output_schema, provider="openai")
+    category, error_code, schema_path = subscription_failure_diagnostic(outcome.stdout, "", schema=wire_schema)
+    if outcome.error_category == "invalid_schema":
+        category = "invalid_schema"
+    if outcome.error_code in _DIAGNOSTIC_ERROR_CODES:
+        error_code = outcome.error_code
+        if error_code in {"invalid_json_schema", "invalid_response_format"}:
+            category = "invalid_schema"
+    schema_path = _diagnostic_pointer(outcome.schema_path, wire_schema) or schema_path
+    model_unavailable = error_code in {"model_not_found", "unsupported_model", "model_not_available"}
     turn_usage: list[ModelResult] = []
     try:
         if len(outcome.stdout.encode()) > maximum_output_bytes:
@@ -652,16 +1061,32 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
                 usage = aggregate_usage(turn_usage)
             elif kind in {"turn.failed", "error"}:
                 failed = True
+                error = event.get("error")
+                code = error.get("code") if isinstance(error, dict) else event.get("code")
+                message = error.get("message", "") if isinstance(error, dict) else event.get("message", "")
+                model_unavailable |= code in {"model_not_found", "unsupported_model", "model_not_available"}
+                if isinstance(message, str) and request.model in message and "model" in message.lower():
+                    model_unavailable |= any(phrase in message.lower() for phrase in (
+                        "not available", "not supported", "does not exist", "not found", "unavailable"))
         if tool_observed or len(search_ids) > request.max_tool_calls or completed > maximum_turns:
             raise ValueError("unsupported tool execution or turn bound exceeded")
         if usage is not None:
             usage = usage.model_copy(update={"tool_units": len(search_ids)})
         if failed or outcome.exit_code != 0 or outcome.error_category:
-            quota = outcome.error_category == "quota" or any(word in outcome.stdout.lower() for word in
-                ("rate_limit", "usage_limit", "usage limit", "quota exhausted", "hit your limit"))
-            return ModelResult(ok=False, failure="rate_limit" if quota else "temporary", usage=usage,
-                provider_model=actual_model,
-                message="subscription quota exhausted" if quota else "subscription CLI failed")
+            quota = error_code in {"rate_limit_exceeded", "usage_limit_reached", "quota_exceeded"} or (
+                outcome.error_category == "quota" or any(word in outcome.stdout.lower() for word in
+                    ("rate_limit", "usage_limit", "usage limit", "quota exhausted", "hit your limit")))
+            invalid_schema = category == "invalid_schema"
+            failure = "validation" if invalid_schema else "rate_limit" if quota else (
+                "unsupported" if model_unavailable else "temporary")
+            message = "subscription output schema rejected" if invalid_schema else (
+                "subscription quota exhausted" if quota else "subscription model unavailable"
+                if model_unavailable else "subscription CLI failed")
+            # These fixed availability messages remain compatible with trusted
+            # pause/recovery consumers; other failures retain safe diagnostics.
+            if failure not in {"rate_limit", "unsupported"}:
+                message = _diagnostic_message(message, error_code, schema_path)
+            return ModelResult(ok=False, failure=failure, usage=usage, provider_model=actual_model, message=message)
         if not completed:
             return ModelResult(ok=False, failure="timeout_uncertain", usage=usage,
                 provider_model=actual_model, message="subscription terminal outcome missing")
@@ -671,5 +1096,17 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
         _validate_schema(payload, request.output_schema)
         return ModelResult(ok=True, payload=payload, usage=usage, provider_model=actual_model)
     except (ValueError, TypeError, KeyError, AttributeError, SchemaError, ValidationError, Unresolvable):
-        return ModelResult(ok=False, failure="validation", message="invalid structured subscription output",
+        # A trusted terminal native code remains useful when stdout is malformed.
+        # Never derive this availability control signal from malformed raw text.
+        if category != "invalid_schema" and outcome.exit_code != 0:
+            if model_unavailable:
+                return ModelResult(ok=False, failure="unsupported", message="subscription model unavailable",
+                                   usage=usage, provider_model=actual_model)
+            if error_code in {"rate_limit_exceeded", "usage_limit_reached", "quota_exceeded"}:
+                return ModelResult(ok=False, failure="rate_limit", message="subscription quota exhausted",
+                                   usage=usage, provider_model=actual_model)
+        message = "subscription output schema rejected" if category == "invalid_schema" else (
+            "invalid structured subscription output")
+        return ModelResult(ok=False, failure="validation",
+                           message=_diagnostic_message(message, error_code, schema_path),
                            usage=usage, provider_model=actual_model)

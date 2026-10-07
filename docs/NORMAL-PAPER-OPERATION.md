@@ -6,8 +6,8 @@ the existing database, owner settings, mandate, runtime records and private evid
 The account remains USD10,000 virtual opening capital with EUR reporting. Do not
 initialize or reset it as part of an ordinary start.
 
-This runbook describes implemented behavior and configuration. Actual provider
-attempts, validated results, accounting and dashboard observations belong in
+This runbook describes behavior, configuration and the current owner policy.
+Actual provider attempts, validated results, accounting and dashboard observations belong in
 [IMPLEMENTATION-STATUS.md](../IMPLEMENTATION-STATUS.md) and dated operating evidence;
 configuration and synthetic tests do not establish an actual AI run.
 
@@ -49,11 +49,12 @@ and position management continues. This is an owner configuration choice, not
 a change to the generic provider-neutral contracts. Verify it on the PC without
 invoking inference merely to inspect configuration.
 
-Use an explicitly configured, native Linux CLI in WSL or the protected Linux
-image. Verified routes use Codex with ChatGPT subscription authentication or
-Claude Code with its supported subscription authentication. The installed native
-binaries and model catalog are owner-pinned; Windows login state is not proof
-that the deployed WSL credential directory is authenticated. Consult the official
+Use the explicitly configured, native Linux Codex CLI with ChatGPT subscription
+authentication in the protected Linux image. The installed native binary and model
+catalog are owner-pinned; Windows login state is not proof that the deployed WSL
+credential directory is authenticated. The separate Claude adapter remains
+implemented, but it is not an alternate route for the current owner policy.
+Consult the official
 [Codex CLI reference](https://developers.openai.com/codex/cli/reference),
 [Windows/WSL guidance](https://developers.openai.com/codex/windows) and
 [Claude Code authentication documentation](https://code.claude.com/docs/en/authentication).
@@ -71,13 +72,52 @@ support the original structured business contract. Authentication failure,
 exhausted allowance and unsupported configuration are technical outcomes to
 report. Never switch silently to API billing, paid extras or an unverified route.
 
-## Current owner hold
+## Current owner authorization
 
-The latest owner instruction is to finish preparation and **not start the graph**
-until explicit green light tomorrow morning. The dashboard-only service may run.
-The active MANAGE_ONLY owner hold must be resumed through the existing owner
-control when that authorization arrives; do not auto-start or schedule a future
-start. No open paper order/position currently needs a management worker.
+The earlier instruction to leave the graph stopped overnight is historical. The
+2026-10-07 morning instruction authorizes normal paper startup after the updated
+quota controls and protected configuration are installed and verified. Resume only
+this task's explicit MANAGE_ONLY hold through the existing owner control; unrelated
+owner halts remain in force. This authorization does not establish that startup,
+model dispatch, a decision or a fill has occurred. Record actual operation in the
+status and dated evidence after observing it.
+
+## Quota reserve and watched first run
+
+The morning reserve and startup decision is recorded in [D98](DECISIONS.md).
+
+Keep 30 percentage points of included allowance in reserve and add 10 percentage
+points of practical headroom. Before **every** application dispatch, including an
+application retry, read fresh official native quota metadata while holding the
+exclusive provider admission slot. A fresh weekly reading is required to verify
+the owner's weekly reserve. Admit only when that reading and every other reported
+native quota window have **strictly more than 40% remaining**. Preserve the slot through dispatch and its durable
+outcome so another local invocation cannot pass the same quota check concurrently.
+A stale snapshot, failed metadata refresh or reported remaining allowance at or
+below 40% blocks new AI work. Recheck the same policy before any later retry.
+
+This is a rule for admitting new work, not a guaranteed 30% balance after a call.
+Codex exposes no supported per-call percentage cap. Task complexity, context,
+reasoning, caching and native internal retries affect consumption, and other
+clients can consume the same account allowance. An active turn can continue after
+a provider usage limit. The 10-point cushion is not a measured worst-case bound.
+[Official usage guidance](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan)
+and [pricing](https://learn.chatgpt.com/docs/pricing) describe these limits.
+
+List the windows actually reported. An unavailable weekly reading blocks new AI;
+missing or unavailable shorter windows are disclosed and do not independently
+block admission. Never substitute zero usage or claim a floor across all windows.
+Some plans have no five-hour limit. Native metadata reports current allowance, not a reservation
+for the forthcoming call. See the [official app-server quota contract](https://learn.chatgpt.com/docs/app-server).
+
+Watch the first normal run and inspect a fresh quota observation after each
+attempt. Stop new AI at 40% or below, on metadata failure, or after an unexpected
+single-attempt drop greater than 10 percentage points in any reported window.
+Keep the dashboard, controller, reconciliation and paper-order/position management
+running under MANAGE_ONLY. Retain uncertain dispatched attempts and unknown costs;
+pausing does not undo their consumption or justify replay. A demand for an exact
+30% floor would require withholding inference until a supported provider-side
+hard cap or reservation can enforce it; this practical policy makes no such claim.
 
 ## Normal launch and dashboard
 
@@ -153,7 +193,8 @@ end-to-end result contract in this path yet. Research can use the supplied marke
 and history evidence. This is a missing tool capability to report, not an owner
 policy prohibition on supported departmental tools.
 
-Only known eligible failures may retry or use compatible configured fallback.
+Only known eligible failures may retry, always on gpt-6.1-sol under the current
+owner policy. The protected profile must leave `fallback_profiles` empty.
 A dispatched attempt with an uncertain outcome is retained for reconciliation
 and is not blindly replayed. Record application dispatches in the durable
 subscription attempt journal. CLI-internal provider attempts are a separate count;

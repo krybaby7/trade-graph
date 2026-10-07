@@ -85,14 +85,14 @@ requested pause control changed. No portfolio reset, owner budget/mandate write,
 financial fill or expense mutation occurred. Existing Windows local changes and
 both original checkouts were preserved; implementation used isolated worktrees.
 
-At **2026-10-06 22:23:48 UTC**, read-only Codex account metadata reported **78%
-weekly remaining**, reset **2026-10-12 16:25:15 UTC**; the short window was
-unavailable. This is shared Codex capacity, not Claude quota or a task-cost
-receipt. Claude capacity and subscription cost remain unknown while signed out.
+Read-only official Codex account metadata reported available weekly allowance;
+the short window was unavailable. Exact account readings, reset and observation
+details remain private. This is shared Codex capacity, not Claude quota or a
+task-cost receipt. Claude capacity and subscription cost remain unknown while
+signed out.
 
-Private evidence is retained under the existing runtime's
-`first-paper-cycle-20261007/` directory and root-controlled
-`/opt/trade-graph-subscription/`; none is committed. Receipts retain the earlier
+Detailed evidence is retained privately outside the repository; none of those
+private receipts is committed. Receipts retain the earlier
 failed preparation attempts and final successful checks. The final admission
 probe verifies native/image/egress pins and refuses inference with the official
 login absent and extra-usage verification false.
