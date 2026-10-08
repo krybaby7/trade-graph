@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07",
-  "status_note": "2026-10-07 morning: normal subscription paper graph is RUNNING on verified source 6bf6697 with first actual Research/Trader/Learning applied results. Only gpt-6.1-sol/no fallback; protected 30% reserve plus 10 percentage points headroom. Source fixes c056faf pass 164 focused tests but deployment is blocked by missing financial manifest continuity; exact old image/pins safely restarted on current DB/witness, all failures retained. Live/API billing/extras disabled; unknown usage/costs remain unknown.",
+  "updated_at": "2026-10-08",
+  "status_note": "2026-10-08 owner-authorized focused repair in progress. Authenticated MANAGE_ONLY applied; management, public feeds and dashboard remain running. Consistent private database backup and existing witness/owner files preserved. Historical completion evidence unchanged; continuity transition requires independent review before deployment.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -226,7 +226,7 @@
     },
     "T17": {
       "status": "in_progress",
-      "owner": "codex-root",
+      "owner": "codex-repair-integration",
       "branch": "codex/normal-paper-2026-10-07",
       "evidence": [
         "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
@@ -253,7 +253,8 @@
         "2026-10-07 fbed4be normal paper preparation: Codex0.160.1 ChatGPT auth/allowance and final-image nine-boundary/production checks pass; 168 completed hourly candles per pair/zero gaps and ECB FX refreshed. Dashboard-only STOPPED/AI available/MANAGE_ONLY. Latest owner hold prevents graph start; zero inference/results/orders/fills. 126 and129 overlapping focused regressions pass. See docs/reviews/2026-10-07-normal-paper-operation.md.",
         "2026-10-07 morning continuation claimed bycodex-root oncodex/normal-paper-2026-10-07 from59f5729. Owner authorizes normal start after30%reserve/headroom enforcement and restricts every department/retry togpt-6.1-sol, fallback_profiles empty. Additive0020preservation/schema tests pass at233edc6; existing paper state backed up, public-only refresh performed, no inference/start yet. Plan docs/superpowers/plans/2026-10-07-quota-reserve-paper-start.md.",
         "2026-10-07 morning: protected source 6bf6697 passed 218 focused checks plus actual intended-image isolation/production inspection. Existing owner resume/start controls began normal local paper service. First actual Research/Trader/Learning invocation and applied results verified; legitimate no_action, no orders/fills, Decimal accounting and financial baseline preserved. Five invocations/seven application attempts include three failed Leader attempts; Optimisation inference completed but applied citation validation failed. Records/cost uncertainty retained. See docs/reviews/2026-10-07-morning-paper-operation.md.",
-        "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained."
+        "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained.",
+        "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending."
       ],
       "remaining": "Normal local subscription paper graph is running with actual validated Research/Trader/Learning results. Genuine blockers: deploying tested citation/diagnostic source fixes requires an implemented/tested protected financial manifest continuity transition; initial Leader CLI cause remains unknown and Optimisation failed citation validation. Optional hosted research-search ingestion, unavailable native model/short-window/internal-retry readings and unknown attributable costs remain disclosed. Broader forward economics/off-host recovery/alerts/live acceptance remain separate.",
       "execution_state": "running",
@@ -333,8 +334,8 @@
     },
     "T21": {
       "status": "in_progress",
-      "owner": "codex-startup-integration",
-      "branch": "codex/start-controls-2026-10-06",
+      "owner": "codex-repair-integration",
+      "branch": "codex/normal-paper-2026-10-07",
       "evidence": [
         "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
         "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
@@ -349,7 +350,8 @@
         "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
         "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
         "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged.",
-        "2026-10-06 b1ca4c5: actual WSL namespace isolation and protected source, CLI and controller admission are tested. The current wheel installs offline with frozen dependencies; 58 packages are compatible. A clean WSL fast-forward and dashboard-only restart preserve the session, settings and evidence. Subscription-specific protected provider egress remains unimplemented and unverified. No current protected image or credentialed intended-host admission is claimed."
+        "2026-10-06 b1ca4c5: actual WSL namespace isolation and protected source, CLI and controller admission are tested. The current wheel installs offline with frozen dependencies; 58 packages are compatible. A clean WSL fast-forward and dashboard-only restart preserve the session, settings and evidence. Subscription-specific protected provider egress remains unimplemented and unverified. No current protected image or credentialed intended-host admission is claimed.",
+        "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending."
       ],
       "remaining": "Actual intended-host/image/distribution admission and repeated adversarial/recovery proof there; external whole-host rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transitions. Provider profile needs separately reviewed public market/FX routing plus actual routes/prices/keys/funding/network policy; scans capped 1 million rows / 512 MiB / 5 seconds and long Ledger projections not incremental.",
       "execution_state": "idle",
