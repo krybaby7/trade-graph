@@ -1,3 +1,51 @@
+# Normal paper operation resumed; repaired Trader verified — 2026-10-08
+
+The owner separately authorized normal paper AI on the recovered installation.
+The documented management-to-NORMAL handover completed without replacing the
+database, clearing history or replaying failed work. Authenticated Owner Resume
+returned RUNNING after reconciliation at 17:55:41 UTC. The first existing scheduled
+Trader inference completed at 17:56:02 UTC and its decision persisted at
+17:56:04 UTC: one application attempt produced a validated, persisted `no_action` decision and report using
+fresh, feature-ready inputs and the repaired native/reporting context.
+
+Executable source remains `780dce1`, immutable image
+`sha256:4d0ee615aa0e15d535aa2025422404891ab6acc9fdef6f9ea90d6f99ec9ed1e7`,
+Python 3.12.15 / SQLite 3.53.4. The management subprocess exited gracefully; both
+service leases and inode ownership were released before authenticated Start
+Trading launched one continuous NORMAL worker with the owner pause still in
+force. Financial integrity, foreign keys, protected prefixes and retained
+terminal AI records passed before resume. The accepted eleven known historical
+public/reporting gaps, possible additional reporting loss and the recovery's
+new evaluation period remain explicit.
+
+Fresh official metadata admitted the configured Sol-only route; every dispatch
+and retry retains the strictly-more-than-40% guard, comprising a 30-point reserve
+and 10 points of headroom, with a maximum 30-second metadata age. The shorter
+quota window remains unavailable. Protected `gpt-6.1-sol` selection, empty
+fallback, ordinary included allowance and no spendable credits were verified.
+Configured selection is not a provider model echo. Live trading, separately
+billed APIs and paid extras remain disabled; normal schedules remain enabled.
+
+Retained totals after this Trader task are 16 subscription attempts and 14
+invocations. All prior failures and unknown costs remain. Historical Research
+and Learning successes are retained; repaired Research publication, Leader and
+Optimisation success remain unverified, and Engineer has no actual installation
+run. Completed inference alone is not successful departmental application.
+No order or fill was created by this run. No profitability or broader task
+acceptance claim follows from the successful no-trade decision.
+
+Independent post-task verification through 18:01:30 UTC found one NORMAL worker,
+a current heartbeat, owner RUNNING, a responsive authenticated dashboard and the
+visible historical-gap banner. Protected files/session/database identity and all
+prior attempt/invocation rows remained unchanged. Post-task accounting and a
+consistent private checkpoint passed. Financial reporting remains provisional
+because the preserved history and unknown cost limitations remain.
+
+See [resume evidence and verification limits](docs/reviews/2026-10-08-normal-paper-resume.md).
+The prior MANAGE_ONLY handoff below is historical.
+
+---
+
 # Partial-history recovery deployed; AI remains paused — 2026-10-08
 
 The owner-approved reporting-only recovery is running in a separate private

@@ -82,10 +82,12 @@ owner halts remain in force. This authorization does not establish that startup,
 model dispatch, a decision or a fill has occurred. Record actual operation in the
 status and dated evidence after observing it.
 
-The 2026-10-08 recovery hold supersedes the earlier startup authorization. The
-recovered installation remains in MANAGE_ONLY with AI paused. Recovery and public
-data refresh do not authorize clearing that hold; normal paper AI requires a
-separate explicit owner resume instruction.
+The 2026-10-08 recovery hold superseded the earlier startup authorization.
+A later explicit owner instruction authorized normal paper AI after the supported
+handover and admission checks below. Authenticated Owner Resume succeeded at
+17:55:41 UTC; [dated operating evidence](reviews/2026-10-08-normal-paper-resume.md)
+records the first scheduled result and remaining department verification. Recovery
+or public-data refresh alone does not authorize clearing a later owner hold.
 
 ## Quota reserve and watched first run
 
