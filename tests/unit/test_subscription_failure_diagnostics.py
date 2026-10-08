@@ -193,3 +193,57 @@ def test_stderr_nonerror_event_cannot_promote_nested_agent_content_to_diagnostic
     assert subscription_failure_diagnostic("", raw, schema=SCHEMA) == ("", "", "")
     typed = json.dumps({"type": "item.completed", **error()})
     assert subscription_failure_diagnostic("", typed, schema=SCHEMA) == ("", "", "")
+
+
+@pytest.mark.parametrize("exit_code", [1, 2, -9])
+def test_native_terminal_failure_retains_bounded_exit_and_sanitized_cause_in_receipt(tmp_path, exit_code):
+    database = Database(tmp_path / "native-cause.sqlite")
+    journal = SubscriptionJournal(database, FrozenClock(datetime(2026, 10, 8, tzinfo=UTC)))
+    class Executor:
+        def execute(self, request, *, cancel_event=None):
+            return CliOutcome(json.dumps({"type": "turn.failed", "error": error()["error"]}), exit_code,
+                              process_terminated=True)
+    config = SubscriptionConfig(provider="codex_subscription", model="gpt-6.1-sol", enabled=True,
+        application_max_attempts=1, allowed_context_keys={"leader": ["market"]})
+    readiness = SubscriptionReadiness("codex_subscription", "0.160.1", True, (), {}, "chatgpt", "linux-bubblewrap")
+    result = SubscriptionAdapter(config, readiness, Executor()).invoke(
+        request(), invocation_id="safe-native-cause", journal=journal)
+    assert result.diagnostic.model_dump() == {
+        "native_exit_code": exit_code, "category": "invalid_schema", "error_code": "invalid_json_schema",
+        "schema_path": "#/properties/actions/items/properties/amount"}
+    retained = json.loads(database.execute("SELECT result_json FROM subscription_attempts").fetchone()[0])
+    assert retained["diagnostic"] == result.diagnostic.model_dump()
+    assert "PRIVATE" not in json.dumps(retained) and "private" not in json.dumps(retained)
+    database.close()
+
+
+def test_native_generic_failure_retains_exit_without_guessing_original_cause():
+    result = parse_codex_outcome(CliOutcome('{"type":"turn.failed","error":{"message":"PRIVATE"}}', 2), request())
+    assert result.failure == "temporary" and result.message == "subscription CLI failed"
+    assert result.diagnostic.model_dump() == {
+        "native_exit_code": 2, "category": "native_failure", "error_code": "", "schema_path": ""}
+    assert "PRIVATE" not in result.model_dump_json()
+
+
+def test_native_availability_diagnostic_keeps_exact_control_message_and_exit():
+    result = parse_codex_outcome(
+        CliOutcome("", 1, error_category="provider_error", error_code="model_not_found"), request())
+    assert result.message == "subscription model unavailable"
+    assert result.diagnostic.native_exit_code == 1
+    assert result.diagnostic.error_code == "model_not_found"
+
+
+def test_native_untrusted_diagnostic_fields_and_unbounded_exit_are_not_retained():
+    result = parse_codex_outcome(CliOutcome("not-json", 10**20, error_category="PRIVATE", error_code="PRIVATE",
+                                           schema_path="#/PRIVATE"), request())
+    assert result.diagnostic.native_exit_code is None
+    assert result.diagnostic.category == "invalid_output"
+    assert result.diagnostic.error_code == "" and result.diagnostic.schema_path == ""
+    assert "PRIVATE" not in result.model_dump_json() and "not-json" not in result.model_dump_json()
+
+
+def test_absent_native_diagnostic_does_not_change_legacy_result_serialization():
+    from trade_graph.contracts.models import ModelResult
+    result = ModelResult(ok=True, payload={"actions": []})
+    assert "diagnostic" not in result.model_dump() and "diagnostic" not in result.model_dump_json()
+    assert ModelResult.model_validate_json(result.model_dump_json()).diagnostic is None

@@ -71,6 +71,13 @@ A system version is a composite fingerprint: application commit/build, graph def
 
 **Decision:** action (`enter`, `exit`, `hold`, `adjust_order`, `resize`, `no_action`), target instrument/position/order references, requested sizing in unambiguous units, optional limit/trigger price, time-in-force, execution deadline, concise rationale, supporting evidence, invalidation conditions, expected horizon, strategy/experiment ID, and snapshot/portfolio/mandate revisions. State uncertainty honestly; do not fabricate a numerical success probability. Any multi-leg plan declares dependency/order requirements; R1 normally uses one order per intent.
 
+Research reply citations are field-specific. Top-level `evidence_refs` must copy
+IDs from the snapshot's top-level `evidence_refs`. Every `findings[].source_ref`
+must instead copy one of the persisted `sources[].source_ref` values; a report or
+digest ID in `evidence_refs` alone is ineligible. If no supplied source supports a
+finding, omit it. Software rejects an ineligible source and rolls back the entire
+publication, including any earlier valid finding in the same reply.
+
 **ResearchFinding:** question, claim/summary, source URLs and publisher, publication/event/retrieval times where known, immutable source/excerpt hash, affected instruments, actionable relevance, uncertainty/counterevidence, validity horizon and invalidation triggers. Distinguish unknown publication time from retrieval time. A source refresh creates a new version; it does not rewrite what the Trader saw.
 
 **StrategyProposal:** testable hypothesis, economic mechanism, features with availability times, explicit entry/exit/invalidation and sizing rules, required venue capabilities, estimated turnover/friction, applicable regimes, baseline, validation protocol, and conditions for retiring the hypothesis. Human-trader or AI-system success claims retain provenance and verification status.

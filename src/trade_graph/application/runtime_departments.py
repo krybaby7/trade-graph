@@ -27,9 +27,16 @@ from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import Money, parse_decimal
 
+RESEARCH_SOURCE_CITATION_RULE = (
+    "For each findings[].source_ref, copy one ID verbatim from context.sources[].source_ref "
+    "in the persisted snapshot. A reference in evidence_refs alone is not an eligible finding source. "
+    "Reports and digests may support evidence_refs, but cannot supply findings[].source_ref unless "
+    "also present in sources. If no eligible source supports a finding, omit that finding."
+)
+
 
 class FindingAnalysis(ContractModel):
-    source_ref: str = Field(min_length=1, max_length=128)
+    source_ref: str = Field(min_length=1, max_length=128, description=RESEARCH_SOURCE_CITATION_RULE)
     question: str = Field(min_length=1, max_length=500)
     claim: str = Field(min_length=1, max_length=500)
     counterevidence: str = Field(min_length=1, max_length=1000)
@@ -74,7 +81,12 @@ class ResearchHandler(GatewayRole):
         return {**context, "as_of": utc_iso(as_of), "market": market, "strategy_templates": templates,
                 "active_strategy_templates": active_templates(templates, context["guard"]), "sources": sources,
                 "evidence_refs": list(dict.fromkeys(context["evidence_refs"] + [s["source_ref"] for s in sources])),
-                "analysis_instruction": "Cite supplied sources only. Findings are hypotheses, never trade authority."}
+                "analysis_instruction": RESEARCH_SOURCE_CITATION_RULE +
+                                        " Findings are hypotheses, never trade authority."}
+
+    def instructions(self, task: dict) -> str:
+        instructions = super().instructions(task)
+        return instructions + " " + RESEARCH_SOURCE_CITATION_RULE if task["role"] == "research" else instructions
 
     @atomic
     def apply(self, task: dict, reply: ResearchReply) -> dict:

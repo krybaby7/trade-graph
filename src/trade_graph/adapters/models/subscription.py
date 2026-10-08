@@ -30,7 +30,7 @@ from referencing.exceptions import Unresolvable
 
 from trade_graph.adapters.models.providers import _wire_schema, lookup_capabilities
 from trade_graph.application.gateway import _bounded_json, _validate_schema
-from trade_graph.contracts.models import ContractModel, ModelRequest, ModelResult, ModelUsage
+from trade_graph.contracts.models import ContractModel, ModelDiagnostic, ModelRequest, ModelResult, ModelUsage
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import StaleState
 
@@ -406,6 +406,18 @@ def subscription_failure_diagnostic(stdout: str, stderr: str, *, schema: dict) -
 def _diagnostic_message(base: str, code: str, path: str) -> str:
     details = (["code=" + code] if code else []) + (["schema_path=" + path] if path else [])
     return base + (" (" + "; ".join(details) + ")" if details else "")
+
+
+def _native_diagnostic(outcome: CliOutcome, *, category: str, code: str = "", path: str = "",
+                       schema: dict | None = None) -> ModelDiagnostic:
+    """Sanitize again at the durable result boundary, including scripted outcomes."""
+    exit_code = outcome.exit_code
+    return ModelDiagnostic.model_validate({
+        "native_exit_code": exit_code if type(exit_code) is int and -255 <= exit_code <= 255 else None,
+        "category": category,
+        "error_code": code if isinstance(code, str) and code in _DIAGNOSTIC_ERROR_CODES else "",
+        "schema_path": _diagnostic_pointer(path, schema or {}),
+    })
 
 
 class SubscriptionExecutor(Protocol):
@@ -986,7 +998,8 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
                         maximum_output_bytes: int = 2_097_152) -> ModelResult:
     """Validate final JSONL without retaining reasoning, tool transcripts or identifiers."""
     if outcome.stopped:
-        return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted")
+        return ModelResult(ok=False, failure="timeout_uncertain", message="bounded subscription process interrupted",
+                           diagnostic=_native_diagnostic(outcome, category="interrupted"))
     usage, actual_model, payload_text = None, None, None
     completed, failed, tool_observed, search_ids = 0, False, False, set()
     wire_schema = _wire_schema(request.output_schema, provider="openai")
@@ -999,6 +1012,14 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
             category = "invalid_schema"
     schema_path = _diagnostic_pointer(outcome.schema_path, wire_schema) or schema_path
     model_unavailable = error_code in {"model_not_found", "unsupported_model", "model_not_available"}
+    def failure_result(*, diagnostic_category=None, **fields):
+        safe_category = diagnostic_category or (
+            "invalid_schema" if category == "invalid_schema" else
+            "quota" if fields["failure"] == "rate_limit" else
+            "provider_error" if error_code else "native_failure")
+        return ModelResult(ok=False, **fields, diagnostic=_native_diagnostic(
+            outcome, category=safe_category, code=error_code, path=schema_path, schema=wire_schema))
+
     turn_usage: list[ModelResult] = []
     try:
         if len(outcome.stdout.encode()) > maximum_output_bytes:
@@ -1086,9 +1107,9 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
             # pause/recovery consumers; other failures retain safe diagnostics.
             if failure not in {"rate_limit", "unsupported"}:
                 message = _diagnostic_message(message, error_code, schema_path)
-            return ModelResult(ok=False, failure=failure, usage=usage, provider_model=actual_model, message=message)
+            return failure_result(failure=failure, usage=usage, provider_model=actual_model, message=message)
         if not completed:
-            return ModelResult(ok=False, failure="timeout_uncertain", usage=usage,
+            return failure_result(failure="timeout_uncertain", usage=usage, diagnostic_category="terminal_missing",
                 provider_model=actual_model, message="subscription terminal outcome missing")
         payload = json.loads(payload_text, object_pairs_hook=unique)
         if not isinstance(payload, dict):
@@ -1100,13 +1121,14 @@ def parse_codex_outcome(outcome: CliOutcome, request: ModelRequest, *, maximum_t
         # Never derive this availability control signal from malformed raw text.
         if category != "invalid_schema" and outcome.exit_code != 0:
             if model_unavailable:
-                return ModelResult(ok=False, failure="unsupported", message="subscription model unavailable",
+                return failure_result(failure="unsupported", message="subscription model unavailable",
                                    usage=usage, provider_model=actual_model)
             if error_code in {"rate_limit_exceeded", "usage_limit_reached", "quota_exceeded"}:
-                return ModelResult(ok=False, failure="rate_limit", message="subscription quota exhausted",
+                return failure_result(failure="rate_limit", message="subscription quota exhausted",
                                    usage=usage, provider_model=actual_model)
         message = "subscription output schema rejected" if category == "invalid_schema" else (
             "invalid structured subscription output")
-        return ModelResult(ok=False, failure="validation",
+        return failure_result(failure="validation",
+                           diagnostic_category="invalid_schema" if category == "invalid_schema" else "invalid_output",
                            message=_diagnostic_message(message, error_code, schema_path),
                            usage=usage, provider_model=actual_model)

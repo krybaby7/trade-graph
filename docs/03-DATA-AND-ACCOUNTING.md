@@ -73,6 +73,15 @@ Store `base`, `quote`, decimal rate, source, observed time, valid-as-of time, re
 
 Use current venue bid/ask or a declared mark convention for trading inventory. Do not assume that a stablecoin is always worth one USD. Missing/stale FX or market data makes economic totals provisional and blocks new exposure when the execution freshness rule is violated. Reserve foreign-currency spending with an owner-approved conservative conversion buffer; do not accept an unbounded EUR obligation because the latest reference rate is unavailable.
 
+Trader snapshots scope `portfolio.reporting_valuation` to its named reporting
+currency, equity amount and stale/provisional valuation flags. These flags do not
+establish uncertainty in native cash, inventory or order status. Native cash,
+inventory and reservations are exact persisted ledger projections at the snapshot
+time. `execution_state` and `open_orders` separately expose retained order
+uncertainty and bounded-list truncation; neither the local ledger projection nor
+an empty bounded order list proves current venue reconciliation. Deterministic
+freshness, valuation and execution authorization checks remain authoritative.
+
 Never silently revalue historical native expenses with today's FX rate. Corrections and invoice adjustments append records. Views can offer a restated analytical series, but retain the original valuation basis and version.
 
 ## Paid-resource ledger and budgets

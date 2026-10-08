@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_serializer, model_validator
 
 from trade_graph.domain.money import Money, Quantity, parse_decimal
 
@@ -701,6 +701,18 @@ class ModelRequest(ContractModel):
     synthetic: bool = False
 
 
+class ModelDiagnostic(ContractModel):
+    """Bounded native failure facts. Provider text and identifiers are never fields."""
+
+    native_exit_code: int | None = Field(default=None, ge=-255, le=255, strict=True)
+    category: Literal["invalid_schema", "provider_error", "quota", "native_failure", "invalid_output",
+                      "interrupted", "terminal_missing"]
+    error_code: Literal["", "invalid_json_schema", "invalid_response_format", "context_length_exceeded",
+                        "model_not_found", "unsupported_model", "model_not_available", "rate_limit_exceeded",
+                        "usage_limit_reached", "quota_exceeded", "invalid_api_key", "invalid_authentication"] = ""
+    schema_path: str = Field(default="", max_length=512, pattern=r"^(?:|#(?:/[A-Za-z0-9_$.-]{1,64}){0,32})$")
+
+
 class ModelResult(ContractModel):
     ok: bool
     payload: dict[str, Any] | None = None
@@ -711,6 +723,14 @@ class ModelResult(ContractModel):
     provider_model: str | None = None
     elapsed_ms: int = 0
     raw_redacted: str = ""
+    diagnostic: ModelDiagnostic | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_diagnostic(self, handler):
+        result = handler(self)
+        if self.diagnostic is None:
+            result.pop("diagnostic", None)
+        return result
 
 
 class PriceCard(ContractModel):
