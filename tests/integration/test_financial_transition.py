@@ -442,3 +442,52 @@ def test_approval_expiry_during_complete_scan_refuses_before_commit(tmp_path, mo
         transition.apply(approval)
     assert db.execute("SELECT count(*) FROM protected_financial_transitions").fetchone()[0] == 0
     assert old.financial.history.ready(portfolio)
+
+
+def test_expiry_crossing_between_seal_check_and_created_at_rolls_back(tmp_path, monkeypatch):
+    db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    approval = approval_for(target, old.financial)
+    witness = target.history.path.read_bytes()
+    checkpoints = db.execute("SELECT count(*) FROM protected_financial_checkpoints").fetchone()[0]
+    instance_query = "SELECT * FROM protected_runtime_instances WHERE instance_id='protected-test'"
+    instance = dict(db.execute(instance_query).fetchone())
+    real_now, real_retain = clock.now, target.history.retain
+    armed, crossed = [], []
+    def retain_then_arm(*args, **kwargs):
+        result = real_retain(*args, **kwargs)
+        armed.append(True)
+        return result
+    def cross_immediately_after_guard():
+        instant = real_now()
+        if armed and not crossed:
+            clock.advance(601)
+            crossed.append(True)
+        return instant
+    monkeypatch.setattr(target.history, "retain", retain_then_arm)
+    monkeypatch.setattr(clock, "now", cross_immediately_after_guard)
+    with pytest.raises(AuthorityDenied, match="expired"):
+        operator(target).apply(approval)
+    assert crossed
+    assert db.execute("SELECT count(*) FROM protected_financial_transitions").fetchone()[0] == 0
+    assert db.execute("SELECT count(*) FROM protected_financial_checkpoints").fetchone()[0] == checkpoints
+    assert dict(db.execute(instance_query).fetchone()) == instance
+    assert target.history.path.read_bytes() == witness
+    assert old.financial.history.ready(portfolio) and not target.history.ready(portfolio)
+
+
+def test_expiry_during_final_receipt_authentication_rolls_back(tmp_path, monkeypatch):
+    from trade_graph.kernel import financial_transition
+    db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    approval = approval_for(target, old.financial)
+    witness = target.history.path.read_bytes()
+    original = financial_transition.transition_mac
+    def authenticate_then_expire(*args, **kwargs):
+        result = original(*args, **kwargs)
+        clock.advance(601)
+        return result
+    monkeypatch.setattr(financial_transition, "transition_mac", authenticate_then_expire)
+    with pytest.raises(AuthorityDenied, match="expired"):
+        operator(target).apply(approval)
+    assert db.execute("SELECT count(*) FROM protected_financial_transitions").fetchone()[0] == 0
+    assert target.history.path.read_bytes() == witness
+    assert old.financial.history.ready(portfolio) and not target.history.ready(portfolio)

@@ -299,11 +299,13 @@ class FinancialManifestTransition:
                     links.append({"portfolio_id": pid, "from_scope": before_scope,
                         "from_checkpoint_sha256": document_sha256(before), "to_scope": self.history._scope(pid),
                         "to_checkpoint_sha256": document_sha256(after)})
-                if self.financial.clock.now() >= parse_utc(approval["expires_at"]):
+                sealed_at = self.financial.clock.now()
+                expires_at = parse_utc(approval["expires_at"])
+                if sealed_at >= expires_at:
                     raise AuthorityDenied("owner financial continuity approval expired before commit")
                 payload = {"schema_version": 1, "operation_id": approval["operation_id"],
                     "approval": copy.deepcopy(approval), "approval_sha256": document_sha256(approval),
-                    "source_witness": witness, "links": links, "created_at": utc_iso(self.financial.clock.now())}
+                    "source_witness": witness, "links": links, "created_at": utc_iso(sealed_at)}
                 raw = canonical_json(payload)
                 if len(raw.encode()) > MAXIMUM_TRANSITION_BYTES:
                     raise StaleState("complete financial transition receipt exceeds bound")
@@ -327,6 +329,11 @@ class FinancialManifestTransition:
                     connection.execute("""UPDATE protected_rpc_requests SET state='REVOKED',updated_at=?
                         WHERE state='ISSUED' AND json_extract(scope_json,'$.manifest_sha256')=?""",
                         (payload["created_at"], digest))
+                # Timestamp and authorization share one seal instant. Expiry
+                # during JSON/MAC work or controller revocation rolls back the
+                # entire writer before its COMMIT/publication interval begins.
+                if self.financial.clock.now() >= expires_at:
+                    raise AuthorityDenied("owner financial continuity approval expired before commit")
             self.history._write_witness(directory, destination_witness(payload))
             return self._result(payload)
 
