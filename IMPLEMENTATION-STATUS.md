@@ -41,6 +41,13 @@ prior attempt/invocation rows remained unchanged. Post-task accounting and a
 consistent private checkpoint passed. Financial reporting remains provisional
 because the preserved history and unknown cost limitations remain.
 
+Final observation at 18:07:12 UTC confirmed RUNNING and current 18:00 UTC
+features, with 80% reported weekly allowance. An intermittent recovery-panel
+verification warning was traced to cross-process witness-lock contention;
+a direct retry verified the same accepted gap, and full integrity/FK checks
+passed. The final overview displayed the gap banner again. This display limitation
+is retained in the evidence rather than hidden by a state or history change.
+
 See [resume evidence and verification limits](docs/reviews/2026-10-08-normal-paper-resume.md).
 The prior MANAGE_ONLY handoff below is historical.
 

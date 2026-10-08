@@ -100,6 +100,15 @@ no account reset. Financial reporting remains provisional because historical
 reporting and unknown cost limitations remain visible; native accounting checks
 passed. No current blocking runtime error was found.
 
+A later recovery-panel read briefly returned verification unavailable because
+another protected controller held the financial-witness lock. A direct retry at
+18:06:22 UTC verified the same accepted incident; full integrity and foreign keys
+still passed. Final observation at 18:07:12 UTC confirmed the gap banner, one
+NORMAL worker, fresh heartbeat, owner RUNNING, current completed 18:00 UTC
+features and 80% reported weekly allowance. No new runtime failure event, order
+or fill was recorded. The intermittent recovery-panel warning is a display
+limitation; financial history and controls were not changed to hide it.
+
 ## Department evidence and remaining verification
 
 The retained history and new Trader result distinguish completed inference from
