@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and export a complete pinned image with an offline Docker build.
 
-Only reviewed wheel acquisition uses the network. Both image stages install with
+Only reviewed wheel/SQLite source acquisition uses the network. Installation uses
 --require-hashes/--no-index and the actual build uses --network none. Output is a
 private reviewable image/archive pin, not an owner approval or a publication.
 """
@@ -9,6 +9,8 @@ private reviewable image/archive pin, not an owner approval or a publication.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
 import os
 import re
@@ -16,6 +18,8 @@ import shutil
 import ssl
 import subprocess
 import tarfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 from trade_graph.kernel.deployment_image import (
@@ -27,6 +31,111 @@ from trade_graph.kernel.deployment_image import (
 from trade_graph.kernel.runtime_manifest import canonical_json, document_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The same probe records the runtime during sealing and independently checks the
+# exact content-addressed image afterward. /proc maps proves Python actually
+# loaded the pinned native library; importing a substitute Python module cannot
+# satisfy this check. This script never opens the installation database.
+SQLITE_RUNTIME_PROBE = '''from pathlib import Path
+import hashlib
+import json
+import platform
+import sqlite3
+import sys
+
+path = Path(sys.argv[1])
+document = json.loads(path.read_bytes())
+expected = document["sqlite_source"]
+with sqlite3.connect(":memory:") as connection:
+    source_id = connection.execute("select sqlite_source_id()").fetchone()[0]
+    options = sorted(row[0] for row in connection.execute("pragma compile_options"))
+    integrity = connection.execute("pragma integrity_check").fetchall()
+libraries = {line.split()[-1] for line in Path("/proc/self/maps").read_text().splitlines()
+             if "libsqlite3.so" in line}
+library = Path("/usr/local/lib/libsqlite3.so.0")
+if (sqlite3.sqlite_version != expected["version"] or source_id != expected["source_id"]
+        or libraries != {str(library)} or library.is_symlink()
+        or not library.is_file() or sqlite3.threadsafety != 3
+        or "THREADSAFE=1" not in options or integrity != [("ok",)]
+        or sys.version_info[:2] != (3, 12)):
+    raise PermissionError("Python did not load the reviewed SQLite runtime")
+record = {"version": sqlite3.sqlite_version, "source_id": source_id,
+          "library_path": str(library),
+          "library_sha256": hashlib.sha256(library.read_bytes()).hexdigest(),
+          "compile_options": options, "python_version": platform.python_version(),
+          "libc": list(platform.libc_ver())}
+if sys.argv[2:] == ["--record"]:
+    if "sqlite_runtime" in document:
+        raise PermissionError("SQLite runtime identity is already recorded")
+    document["sqlite_runtime"] = record
+    path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\\n")
+elif sys.argv[2:] or document.get("sqlite_runtime") != record:
+    raise PermissionError("sealed SQLite runtime differs from the loaded native library")
+print(json.dumps(record, sort_keys=True, separators=(",", ":")))
+'''
+
+
+def stage_sqlite_source(context: Path, inputs: dict, *, archive: Path | None = None) -> dict:
+    """Acquire an exact official amalgamation; stage only verified C/header bytes.
+
+    The build itself remains offline. An explicitly supplied archive is supported
+    for offline acquisition and is subject to the same independent checks.
+    No archive extraction API is used and no shell/build scripts are admitted.
+    """
+    policy = inputs.get("sqlite")
+    required = {"version", "source_id", "archive_url", "archive_sha256", "archive_sha3_256",
+                "amalgamation_sha3_256", "compiler_image"}
+    if (type(policy) is not dict or set(policy) != required
+            or any(type(value) is not str for value in policy.values())
+            or not re.fullmatch(r"3\.[0-9]{1,2}\.[0-9]{1,2}", policy["version"])
+            or not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9a-f]{64}",
+                                policy["source_id"])
+            or not re.fullmatch(r"python@sha256:[0-9a-f]{64}", policy["compiler_image"])
+            or any(not re.fullmatch(r"[0-9a-f]{64}", policy[name])
+                   for name in ("archive_sha256", "archive_sha3_256", "amalgamation_sha3_256"))):
+        raise ValueError("exact reviewed SQLite source and compiler identities required")
+    major, minor, patch = (int(part) for part in policy["version"].split("."))
+    root = f"sqlite-amalgamation-{major}{minor:02d}{patch:02d}00"
+    if policy["archive_url"] != f"https://sqlite.org/{policy['source_id'][:4]}/{root}.zip":
+        raise ValueError("exact official version-specific SQLite archive URL required")
+    maximum = 16 * 1024 * 1024
+    if archive is None:
+        with urllib.request.urlopen(policy["archive_url"], context=ssl.create_default_context(),
+                                    timeout=60) as response:
+            if response.geturl() != policy["archive_url"]:
+                raise ValueError("SQLite acquisition redirected away from the reviewed URL")
+            raw = response.read(maximum + 1)
+    else:
+        if (not archive.is_absolute() or archive.is_symlink() or not archive.is_file()
+                or archive.resolve() != archive or not 0 < archive.stat().st_size <= maximum):
+            raise ValueError("bounded absolute SQLite archive without links required")
+        raw = archive.read_bytes()
+    if (not 0 < len(raw) <= maximum or hashlib.sha256(raw).hexdigest() != policy["archive_sha256"]
+            or hashlib.sha3_256(raw).hexdigest() != policy["archive_sha3_256"]):
+        raise ValueError("SQLite archive differs from reviewed SHA256/SHA3-256")
+    with zipfile.ZipFile(io.BytesIO(raw)) as bundle:
+        members = bundle.infolist()
+        allowed = {root + "/"} | {root + "/" + name for name in ("sqlite3.c", "sqlite3.h", "sqlite3ext.h", "shell.c")}
+        if (len({item.filename for item in members}) != len(members)
+                or any(item.filename not in allowed or item.file_size > maximum
+                       or item.external_attr >> 16 & 0o170000 == 0o120000 for item in members)):
+            raise ValueError("SQLite archive contains unexpected or linked members")
+        sources = {name: bundle.read(root + "/" + name) for name in ("sqlite3.c", "sqlite3.h")}
+    if hashlib.sha3_256(sources["sqlite3.c"]).hexdigest() != policy["amalgamation_sha3_256"]:
+        raise ValueError("SQLite amalgamation differs from the official release hash")
+    for source in sources.values():
+        for name, value in (("SQLITE_VERSION", policy["version"]), ("SQLITE_SOURCE_ID", policy["source_id"])):
+            found = re.findall(rb"^#define\s+" + name.encode() + rb'\s+"([^"\n]+)"', source, re.MULTILINE)
+            if found != [value.encode()]:
+                raise ValueError("SQLite source version/commitment differs from reviewed release")
+    target = context / "sqlite-source"
+    target.mkdir()
+    for name, source in sources.items():
+        (target / name).write_bytes(source)
+    probe = context / "verify-sqlite-runtime.py"
+    probe.write_text(SQLITE_RUNTIME_PROBE)
+    return {"sqlite_source": policy, "sqlite_source_sha256": directory_sha256(target),
+            "sqlite_runtime_probe_sha256": file_sha256(probe)}
 
 
 def run(arguments: list[str], *, output: bool = False) -> str:
@@ -163,7 +272,8 @@ def subscription_dockerfile(original: bytes, *, enabled: bool, codex: bool = Fal
     return original.replace(marker, additions.encode() + marker)
 
 
-def build(output: Path, *, subscription_tools: Path | None = None) -> DeploymentImagePin:
+def build(output: Path, *, subscription_tools: Path | None = None,
+          sqlite_source: Path | None = None) -> DeploymentImagePin:
     if not output.is_absolute() or output.exists():
         raise ValueError("choose a fresh absolute private build output directory")
     output.mkdir(parents=True, mode=0o700)
@@ -178,6 +288,7 @@ def build(output: Path, *, subscription_tools: Path | None = None) -> Deployment
         raise ValueError("reviewed digest-only base and hash-pinned build backend required")
     native_inputs = ({} if subscription_tools is None
                      else stage_subscription_tools(subscription_tools, context, inputs))
+    sqlite_inputs = stage_sqlite_source(context, inputs, archive=sqlite_source)
     requirements = context / "requirements.txt"
     requirements.write_text(run(["uv", "export", "--locked", "--offline", "--no-dev", "--no-emit-project",
                                 "--format", "requirements-txt"], output=True) + "\n")
@@ -228,7 +339,7 @@ def build(output: Path, *, subscription_tools: Path | None = None) -> Deployment
                        "acquisition_ca_sha256": file_sha256(context / "acquisition-ca.pem"),
                        "wheelhouse_sha256": directory_sha256(wheelhouse),
                        "source_sha256": directory_sha256(source),
-                       "dockerfile_sha256": file_sha256(context / "Dockerfile"), **native_inputs}
+                       "dockerfile_sha256": file_sha256(context / "Dockerfile"), **native_inputs, **sqlite_inputs}
     (context / "build-inputs.json").write_text(canonical_json(retained_inputs) + "\n")
     # Feed exact normalized tar bytes, avoiding BuildKit's local directory sync
     # heuristic reusing same-size files after normalized mtimes across builds.
@@ -249,6 +360,7 @@ def build(output: Path, *, subscription_tools: Path | None = None) -> Deployment
     with context_archive.open("rb") as stream:
         subprocess.run(["docker", "build", "--network", "none", "--platform", inputs["platform"],
                         "--build-arg", f"BASE_IMAGE={inputs['base_image']}", "--build-arg",
+                        f"SQLITE_COMPILER_IMAGE={inputs['sqlite']['compiler_image']}", "--build-arg",
                         f"SOURCE_DATE_EPOCH={inputs['source_date_epoch']}", "--iidfile", str(image_file), "-"],
                        stdin=stream, cwd=ROOT, check=True, timeout=600)
     image_id = image_file.read_text().strip()
@@ -261,6 +373,15 @@ def build(output: Path, *, subscription_tools: Path | None = None) -> Deployment
     seal = json.loads(raw_seal)
     if any(seal.get(name) != value for name, value in retained_inputs.items()):
         raise PermissionError("built image did not retain the reviewed inputs")
+    # Re-execute the probe in the immutable final image and compare actual
+    # library bytes, version, source ID and compile options against its seal.
+    runtime = json.loads(run(["docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
+                              "--security-opt", "no-new-privileges", "--entrypoint", "python", image_id,
+                              "-I", "-B", "-c", SQLITE_RUNTIME_PROBE, "/opt/trade-graph/image-seal.json"],
+                             output=True))
+    if seal.get("sqlite_runtime") != runtime:
+        raise PermissionError("built image SQLite library differs from its seal")
+    (output / "sqlite-runtime.json").write_text(canonical_json(runtime) + "\n")
     (output / "image-seal.json").write_text(canonical_json(seal) + "\n")
     archive = output / "protected-image.tar"
     run(["docker", "image", "save", "--output", str(archive), image_id])
@@ -283,8 +404,10 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--subscription-tools", type=Path,
                         help="reviewed native Claude and base-matching Debian package input directory")
+    parser.add_argument("--sqlite-source", type=Path,
+                        help="optional already acquired official SQLite archive; all reviewed hashes remain mandatory")
     args = parser.parse_args()
-    pin = build(args.output, subscription_tools=args.subscription_tools)
+    pin = build(args.output, subscription_tools=args.subscription_tools, sqlite_source=args.sqlite_source)
     print(canonical_json({"image_id": pin.image_id, "archive_sha256": pin.archive_sha256,
                           "build_directory": str(args.output), "owner_approval": False,
                           "intended_host_verified": False}))

@@ -1,3 +1,49 @@
+# Non-destructive recovery audited; continuity gap keeps installation stopped — 2026-10-08
+
+The owner explicitly authorized a separate private recovery copy and a supported
+recovery path. Originals remain unchanged: damaged database and any surviving
+sidecars, original witness, protected owner files/keys, healthy backup, incident
+evidence and previous image. A private preservation manifest verified all copied
+file hashes. AI remains paused; live trading, separately billed APIs and paid
+extras remain disabled.
+
+The newest verified healthy backup passes full SQLite integrity and foreign-key
+checks. Native journal postings balance using Decimal; the retained paper account
+has no orders or fills. All 15 attempts and 13 invocations match retained incident
+evidence, including failures and unknown usage/costs. The existing witness MAC,
+scope, checkpoint and committed prefixes verify without creating fresh authority.
+
+Continuity is **not** verified after the backup cutoff. Independent raw-page and
+official SQLite recovery-tool checks found at least seven post-backup valuation identities
+whose full payloads are absent, plus four missing public-observation payloads.
+Exact identities and page/row evidence remain private; damaged trees cannot prove that these are the only lost rows. Recoverable newer marks,
+FX and observations are preserved separately as unpromoted evidence. A header
+repair or successful SELECT over a damaged tree is not an authoritative recovery.
+
+No recovery approval was installed, no witness was resealed, no database was
+switched, no AI task was replayed, and no dashboard/management service was restarted.
+The actual deployed image remains the previous image from source 6bf6697; its
+dashboard container is stopped. The registered operating checkout remains
+first-paper-cycle, branch codex/normal-paper-2026-10-07. Recovery integration is
+on codex/paper-recovery-20261008, verified source e2bae96; test/build evidence is recorded in
+[the recovery review](docs/reviews/2026-10-08-paper-recovery.md).
+
+Source checks passed: 173 financial regressions, nine independently written regression cases, and an independent 150-case recovery/checkpoint/transition/budget/locking selection. An immutable candidate image using SQLite 3.53.4 passed actual reserved-lock retention, descriptor lifetime, single-owner exclusion and 1,000 concurrent WAL commits on isolated WSL ext4 storage, followed by full integrity and foreign-key checks. The original installation was never mounted for these checks. This is candidate-image evidence, not a deployment or production acceptance.
+
+Windows reports healthy storage and WSL ext4 has available space with no matching
+kernel I/O/filesystem errors. Detailed hardware counters are unavailable. These
+observations do not establish the corruption cause, which remains **unknown**.
+
+The next operational step is locating authentic complete payloads for the missing
+records in another backup or retained evidence. After continuity is proven, use
+the reviewed authenticated identity recovery, then manifest transition, then one
+MANAGE_ONLY management/dashboard worker and public-data validation. AI still
+requires a later explicit authenticated owner resume and fresh quota admission.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
 # Repair checkpoint; deployment blocked by storage corruption — 2026-10-08
 
 The authenticated owner MANAGE_ONLY control was applied before repair work and

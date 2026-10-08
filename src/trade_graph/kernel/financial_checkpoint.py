@@ -24,7 +24,7 @@ from time import monotonic
 
 from trade_graph.adapters.engineering.artifact_files import open_directory
 from trade_graph.adapters.engineering.process import run_bounded
-from trade_graph.domain.clock import parse_utc
+from trade_graph.domain.clock import parse_utc, utc_iso
 from trade_graph.domain.errors import StaleState
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import Books, Expense, Lot
@@ -157,7 +157,8 @@ class FinancialHistoryCheckpoint:
                 os.close(lock)
             os.close(directory)
 
-    def _read_witness(self, directory: int) -> dict | None:
+    def _read_witness(self, directory: int, *, recovery_source_identity: list[int] | None = None) -> dict | None:
+        """Normal reads require this inode; offline recovery may authenticate an explicit old identity."""
         try:
             descriptor = os.open(self.path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
                                  | os.O_CLOEXEC, dir_fd=directory)
@@ -180,10 +181,12 @@ class FinancialHistoryCheckpoint:
                 raise StaleState("protected financial witness envelope refused")
             payload = document["payload"]
             expected = {"schema_version", "database_identity", "scopes"}
-            if type(payload) is dict and payload.get("schema_version") == 2:
+            if type(payload) is dict and payload.get("schema_version") in {2, 3}:
                 expected.add("transitions")
+            if type(payload) is dict and payload.get("schema_version") == 3:
+                expected.add("recoveries")
             if (type(payload) is not dict or set(payload) != expected
-                    or type(payload["schema_version"]) is not int or payload["schema_version"] not in {1, 2}
+                    or type(payload["schema_version"]) is not int or payload["schema_version"] not in {1, 2, 3}
                     or type(payload["scopes"]) is not dict
                     or len(payload["scopes"]) > 128 or type(document["authentication"]) is not str
                     or not hmac.compare_digest(document["authentication"], self._mac(payload))):
@@ -193,7 +196,14 @@ class FinancialHistoryCheckpoint:
                     or any(type(item) is not str or len(item) != 64 for item in transitions)
                     or len(set(transitions)) != len(transitions)):
                 raise StaleState("protected financial witness transition chain refused")
-            if payload["database_identity"] != self._database_identity():
+            recoveries = payload.get("recoveries", [])
+            if (type(recoveries) is not list or len(recoveries) > 128
+                    or any(type(item) is not str or len(item) != 64 for item in recoveries)
+                    or len(set(recoveries)) != len(recoveries)):
+                raise StaleState("protected financial witness recovery chain refused")
+            expected_identity = (self._database_identity() if recovery_source_identity is None
+                                 else recovery_source_identity)
+            if payload["database_identity"] != expected_identity:
                 raise StaleState("protected financial database identity changed")
             if any(scope not in payload["scopes"] for scope in self._highwater):
                 raise StaleState("protected financial witness omitted observed highwater")
@@ -237,7 +247,8 @@ class FinancialHistoryCheckpoint:
             except FileNotFoundError:
                 pass
 
-    def verified_scopes(self, witness: dict | None, *, allow_pending=False) -> tuple[dict, dict]:
+    def verified_scopes(self, witness: dict | None, *, allow_pending=False,
+                        allow_pending_recovery=False) -> tuple[dict, dict]:
         """Authenticate every retained scope and the complete owner transition chain."""
         scopes = {}
         if witness:
@@ -270,6 +281,9 @@ class FinancialHistoryCheckpoint:
         from trade_graph.kernel.financial_transition import verify_transition_chain
 
         edges = verify_transition_chain(self, witness, scopes, allow_pending=allow_pending)
+        from trade_graph.kernel.financial_recovery import verify_recovery_chain
+
+        verify_recovery_chain(self, witness, allow_pending=allow_pending_recovery)
         return scopes, edges
 
     def previous(self, portfolio_id: str, directory: int) -> tuple[dict | None, dict | None]:
@@ -387,6 +401,12 @@ class FinancialHistoryCheckpoint:
                            "subscription_attempts": {"actual_model", "state", "result_json", "usage_json",
                                                      "actual_cost_native", "updated_at"}}
         previous_commitments = previous["tables"] if previous else {}
+        from trade_graph.kernel.financial_recovery import append_only_commitments, recovered_prefixes
+
+        recovery_commitments, terminal_rows, append_only = recovered_prefixes(self, portfolio_id, budget=budget)
+        if append_only:
+            append_only_commitments(self.database, portfolio_id, previous=append_only, budget=budget)
+        retained_commitments = [previous_commitments, *recovery_commitments]
         for name, (table, condition, parameters, order) in queries.items():
             budget.check()
             # Trusted fixed schema only; these values never originate in child
@@ -394,13 +414,16 @@ class FinancialHistoryCheckpoint:
             columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})")]
             size = "+".join(f"coalesce(length(CAST({column} AS BLOB)),0)" for column in columns)
             digest, count, byte_count = hashlib.sha256(), 0, 0
-            identity_digest, identity_prefix = hashlib.sha256(), None
-            old = previous_commitments.get(name)
-            old_count = old["rows"] if old and name in immutable else None
-            prefix = digest.hexdigest() if old_count == 0 else None
-            identity_count = (old["rows"] if old and name in identity_fields and "identity_sha256" in old else None)
-            if identity_count == 0:
-                identity_prefix = identity_digest.hexdigest()
+            identity_digest = hashlib.sha256()
+            old_rows = [item[name] for item in retained_commitments if name in item]
+            immutable_rows = [item for item in old_rows if name in immutable]
+            identity_rows = [item for item in old_rows if name in identity_fields and "identity_sha256" in item]
+            immutable_counts = {item["rows"] for item in immutable_rows}
+            identity_counts = {item["rows"] for item in identity_rows}
+            prefixes = {0: digest.hexdigest()}
+            identity_prefixes = {0: identity_digest.hexdigest()}
+            retained_terminals = terminal_rows.get(name, {})
+            seen_terminals = set()
             maximum = (f"CASE WHEN kind='fill_chronological_replay' THEN {MAXIMUM_CORRECTION_BYTES} "
                        f"ELSE {MAXIMUM_ROW_BYTES} END" if name == "ledger" else str(MAXIMUM_ROW_BYTES))
             query = f"SELECT *, CASE WHEN ({size})>({maximum}) THEN 1 ELSE 0 END AS _oversized " \
@@ -417,11 +440,17 @@ class FinancialHistoryCheckpoint:
                                          and document["kind"] == "fill_chronological_replay" else MAXIMUM_ROW_BYTES)
                 digest.update(encoded + b"\0")
                 count, byte_count = count + 1, byte_count + len(encoded)
+                if retained_terminals:
+                    identity = document["invocation_id" if name == "subscription_invocations" else "attempt_id"]
+                    if identity in retained_terminals:
+                        if hashlib.sha256(encoded).hexdigest() != retained_terminals[identity]:
+                            raise StaleState("protected recovered terminal subscription record changed")
+                        seen_terminals.add(identity)
                 if name in identity_fields:
                     identity_digest.update(canonical_json({key: value for key, value in document.items()
                         if key not in identity_fields[name]}).encode() + b"\0")
-                    if count == identity_count:
-                        identity_prefix = identity_digest.hexdigest()
+                    if count in identity_counts:
+                        identity_prefixes[count] = identity_digest.hexdigest()
                 if name not in {"marks", "fx", "price_cards"}:
                     for timestamp in ("created_at", "effective_at", "started_at", "finished_at"):
                         if timestamp in document and document[timestamp] is not None:
@@ -431,8 +460,8 @@ class FinancialHistoryCheckpoint:
                             except (ValueError, TypeError):
                                 raise StaleState(
                                     "protected known financial source timestamp is invalid or future") from None
-                if count == old_count:
-                    prefix = digest.hexdigest()
+                if count in immutable_counts:
+                    prefixes[count] = digest.hexdigest()
                 if name == "ledger":
                     if document["sequence"] != source_count + 1:
                         raise StaleState("protected financial source sequence is incomplete")
@@ -447,10 +476,14 @@ class FinancialHistoryCheckpoint:
                     source_count += 1
             if name == "ledger" and deferred:
                 raise StaleState("protected ledger has a dangling deferred native fill")
-            if old_count is not None and (count < old_count or prefix != old["sha256"]):
+            if any(count < item["rows"] or prefixes.get(item["rows"]) != item["sha256"]
+                   for item in immutable_rows):
                 raise StaleState("protected committed financial prefix changed or disappeared")
-            if identity_count is not None and (count < identity_count or identity_prefix != old["identity_sha256"]):
+            if any(count < item["rows"] or identity_prefixes.get(item["rows"]) != item["identity_sha256"]
+                   for item in identity_rows):
                 raise StaleState("protected original financial effect identity changed or disappeared")
+            if seen_terminals != set(retained_terminals):
+                raise StaleState("protected recovered terminal subscription record disappeared")
             commitments[name] = {"rows": count, "bytes": byte_count, "sha256": digest.hexdigest()}
             if name in identity_fields:
                 commitments[name]["identity_sha256"] = identity_digest.hexdigest()
@@ -704,6 +737,15 @@ class FinancialHistoryCheckpoint:
             with self.witness_lock() as directory:
                 previous, _ = self.previous(portfolio_id, directory)
                 self.financial.origins.verify_all()
+                if previous is not None and self.database.execute(
+                        "SELECT 1 FROM protected_financial_recoveries LIMIT 1").fetchone():
+                    portfolio = self.database.execute("SELECT * FROM portfolios WHERE portfolio_id=?",
+                                                      (portfolio_id,)).fetchone()
+                    state = {"portfolio": dict(portfolio),
+                        "policy": self.financial.authority.active_policy().model_dump(mode="json"),
+                        "mandate": self.financial.authority.active_mandate(portfolio_id).model_dump(mode="json"),
+                        "snapshot_at": utc_iso(self.financial.clock.now())}
+                    self.scan(portfolio_id, state, previous=previous)
                 return previous is not None
         except (OSError, StaleState, ValueError):
             return False

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-08",
-  "status_note": "2026-10-08 repair source verified: 363 integrated regressions and 108 independent continuity checks pass; sanitized checkpoint prepared. Authenticated MANAGE_ONLY was confirmed before subsequent authoritative database corruption stopped worker/dashboard. Damaged current files/witness/settings and a verified consistent hold-time backup are preserved privately. No restore, transition application, deployment, fresh repaired Research/Trader verification or resume; storage recovery decision and reviewed SQLite runtime remain required. Historical acceptance unchanged.",
+  "status_note": "Owner-authorized non-destructive recovery audited: originals retained, healthy backup integrity/FK/Decimal accounting and exact 15 attempts/13 invocations verified. At least seven newer valuation payloads and four public observation payloads are specifically missing; broader damaged-tree interval cannot be proven complete. No switch, recovery approval, restart, AI replay or resume. Authenticated identity recovery source and SQLite 3.53.4 candidate image independently tested; 173 financial regressions, nine independent regressions, independent150-case selection and actual 1,000-WAL-commit ext4 locks passed. Historical acceptance unchanged.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -335,8 +335,8 @@
     },
     "T21": {
       "status": "in_progress",
-      "owner": "codex-repair-integration",
-      "branch": "codex/normal-paper-2026-10-07",
+      "owner": "codex-recovery-integration",
+      "branch": "codex/paper-recovery-20261008",
       "evidence": [
         "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
         "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
@@ -353,7 +353,8 @@
         "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged.",
         "2026-10-06 b1ca4c5: actual WSL namespace isolation and protected source, CLI and controller admission are tested. The current wheel installs offline with frozen dependencies; 58 packages are compatible. A clean WSL fast-forward and dashboard-only restart preserve the session, settings and evidence. Subscription-specific protected provider egress remains unimplemented and unverified. No current protected image or credentialed intended-host admission is claimed.",
         "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
-        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md."
+        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
+        "2026-10-08: tested authenticated database recovery preserves original witness scopes and explicitly binds a new inode, source manifests/deployment, complete state and retained attempt/mark/FX prefixes. Independent150-case source checks and actual pinned SQLite3.53.4 candidate-image ext4 lock/1,000-WAL-commit checks pass. Actual installation remains stopped because newer financial payloads are missing; no production acceptance or recovery promotion."
       ],
       "remaining": "Current installation storage recovery and reviewed SQLite runtime; actual repaired intended-host/image admission and independent financial transition/deployment proof. Owner-approved manifest transition source is implemented with synthetic evidence; actual application pending. External whole-host rollback anchor, protected key rotation and generic interrupted-checkpoint recovery remain separate gates. No paid/live authority.",
       "execution_state": "idle",

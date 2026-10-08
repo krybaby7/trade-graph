@@ -1,4 +1,14 @@
 ARG BASE_IMAGE
+ARG SQLITE_COMPILER_IMAGE
+FROM ${SQLITE_COMPILER_IMAGE} AS sqlite_builder
+ARG SOURCE_DATE_EPOCH
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+WORKDIR /sqlite-source
+COPY sqlite-source /sqlite-source
+RUN mkdir /built-sqlite && \
+    gcc -O2 -fPIC -shared -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE \
+    -Wl,-soname,libsqlite3.so.0 -o /built-sqlite/libsqlite3.so.0 sqlite3.c -lpthread -ldl -lm
+
 FROM ${BASE_IMAGE} AS wheel_builder
 ARG SOURCE_DATE_EPOCH
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1
@@ -12,16 +22,20 @@ RUN python -m pip wheel --no-index --no-deps --no-build-isolation --wheel-dir=/b
 FROM ${BASE_IMAGE}
 ARG SOURCE_DATE_EPOCH
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY --from=sqlite_builder /built-sqlite/libsqlite3.so.0 /usr/local/lib/libsqlite3.so.0
+RUN ldconfig
 COPY wheelhouse /wheelhouse
 COPY requirements.txt /requirements.txt
 RUN python -m pip install --no-index --no-cache-dir --no-compile --require-hashes --find-links=/wheelhouse -r /requirements.txt
 COPY --from=wheel_builder /built /built
 RUN python -m pip install --no-index --no-cache-dir --no-compile --no-deps /built/*.whl
 COPY build-inputs.json /build-inputs.json
+COPY verify-sqlite-runtime.py /verify-sqlite-runtime.py
 RUN mkdir -p /opt/trade-graph /var/lib/trade-graph /run/trade-graph-owner && \
     chown 10001:10001 /var/lib/trade-graph && chmod 0700 /var/lib/trade-graph && \
+    python -I -B /verify-sqlite-runtime.py /build-inputs.json --record && \
     python -I -B -m trade_graph.kernel.deployment_image seal --inputs /build-inputs.json --output /opt/trade-graph/image-seal.json && \
-    rm -rf /wheelhouse /built /requirements.txt /build-inputs.json
+    rm -rf /wheelhouse /built /requirements.txt /build-inputs.json /verify-sqlite-runtime.py
 USER 10001:10001
 WORKDIR /var/lib/trade-graph
 ENTRYPOINT ["python", "-I", "-B", "-m", "trade_graph.kernel.deployment_image"]

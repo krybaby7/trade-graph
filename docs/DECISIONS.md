@@ -193,3 +193,13 @@ None prevents offline development. Mark credentialed verification pending when c
   neither it nor the old runtime's SQLite version proves the corruption cause.
   Leader's original native CLI cause also remains unknown. No new AI, paid call,
   live order or quota admission is claimed while the installation is stopped.
+
+- **D101 (2026-10-08, owner-authorized non-destructive recovery):** Preservation
+  retains original damaged bytes/history and permits a separate verified recovery
+  copy. A new inode requires the dedicated [authenticated recovery](FINANCIAL-RECOVERY.md),
+  not the original-inode manifest transition or fresh witness initialization.
+  Retain all witness scopes/checkpoints and recovered attempt prefixes, original
+  unknown costs and owner MANAGE_ONLY. Missing newer financial payloads block
+  promotion and restart. The repaired image uses hash-pinned official SQLite
+  3.53.4; storage checks and a reproduced locking defect do not establish the
+  original corruption cause.

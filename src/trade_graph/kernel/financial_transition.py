@@ -111,7 +111,7 @@ def _checkpoint(history, checkpoint_id):
 
 def destination_witness(payload):
     witness = copy.deepcopy(payload["source_witness"])
-    witness["schema_version"] = 2
+    witness["schema_version"] = 3 if "recoveries" in witness else 2
     witness["transitions"] = [*witness.get("transitions", []), document_sha256(payload)]
     for link in payload["links"]:
         witness["scopes"][link["to_scope"]] = {
