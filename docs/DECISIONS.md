@@ -203,3 +203,16 @@ None prevents offline development. Mark credentialed verification pending when c
   promotion and restart. The repaired image uses hash-pinned official SQLite
   3.53.4; storage checks and a reproduced locking defect do not establish the
   original corruption cause.
+
+
+- **D102 (2026-10-08, explicit owner reporting-gap acceptance):** Personal paper
+  recovery may record proven missing historical public-price/reporting observations
+  without manufacturing payloads or claiming complete history. Independently
+  verified financial/AI state, unknown usage/costs, original witness commitments,
+  old run and account totals remain mandatory. Bind exact gaps, conservative
+  interval, remaining uncertainty and a fresh evaluation boundary into the
+  authenticated identity-recovery receipt; then transition the manifest. The
+  legacy witness's historical proof limits remain explicit. Run one MANAGE_ONLY
+  worker and dashboard in the same protected application container to retain the
+  strict dedicated-network invariant. Normal paper AI requires a later explicit
+  owner instruction and management-to-normal handover before Owner Resume.

@@ -32,6 +32,13 @@ APPROVAL_FIELDS = {"schema_version", "operation_id", "source_database_identity",
                    "source_scopes", "complete_state", "portfolio_states", "witness_differences", "proof_limitations",
                    "incident_evidence_sha256", "authority_fences", "recovered_financial_commitments",
                    "terminal_subscription_rows", "append_only_rows", "expires_at"}
+PARTIAL_APPROVAL_FIELDS = APPROVAL_FIELDS | {"history_incident"}
+
+
+def _approval_shape(approval):
+    return (type(approval) is dict and type(approval.get("schema_version")) is int
+        and ((approval["schema_version"] == 1 and set(approval) == APPROVAL_FIELDS)
+             or (approval["schema_version"] == 2 and set(approval) == PARTIAL_APPROVAL_FIELDS)))
 
 
 def _identity(value):
@@ -67,8 +74,7 @@ def load_recovery(history, row):
                 "schema_version", "operation_id", "approval", "approval_sha256", "source_witness",
                 "committed_state", "created_at"}
                 or type(payload["schema_version"]) is not int or payload["schema_version"] != 1
-                or type(approval) is not dict or set(approval) != APPROVAL_FIELDS
-                or type(approval["schema_version"]) is not int or approval["schema_version"] != 1
+                or not _approval_shape(approval)
                 or payload["operation_id"] != row["operation_id"]
                 or payload["operation_id"] != approval["operation_id"]
                 or payload["approval_sha256"] != row["approval_sha256"]
@@ -90,8 +96,12 @@ def load_recovery(history, row):
                 or approval["deployment_id"] != manifest.deployment_id
                 or not hmac.compare_digest(row["authentication"], recovery_mac(history, payload))):
             raise ValueError
+        if approval["schema_version"] == 2:
+            from trade_graph.kernel.recovery_history import validate_history_incident
+
+            validate_history_incident(approval["history_incident"], now=parse_utc(payload["created_at"]))
         return payload
-    except (ValueError, TypeError, KeyError, RecursionError):
+    except (ValueError, TypeError, KeyError, RecursionError, AuthorityDenied):
         raise StaleState("protected financial recovery authentication refused") from None
 
 
@@ -287,7 +297,7 @@ class FinancialDatabaseRecovery:
                 return self._inspect_locked(directory=directory, **kwargs)
 
     def _inspect_locked(self, *, source_database_identity, source_manifests, operation_id, incident_evidence_sha256,
-                        expires_at, directory, allow_pending=False):
+                        expires_at, directory, allow_pending=False, history_incident=None):
         self.financial.manifest.assert_current()
         if (self.database.connection.in_transaction or not _identity(source_database_identity)
                 or source_database_identity == self.history._database_identity()
@@ -340,8 +350,17 @@ class FinancialDatabaseRecovery:
                 differences[pid], states[pid] = changes, scan["state_sha256"]
                 recovered[pid] = scan["tables"]
                 append_only[pid] = append_only_commitments(self.database, pid)
+            incident = None
+            if history_incident is not None:
+                from trade_graph.kernel.recovery_history import prior_period, validate_history_incident
+
+                incident = validate_history_incident(history_incident, now=self.financial.clock.now())
+                incident = validate_history_incident(incident, now=self.financial.clock.now(),
+                    database=self.database, expected_previous_period=prior_period(self.history,
+                        incident["portfolio_id"], witness=witness, exclude_operation=operation_id,
+                        proposed_incident=incident))
             snapshot = complete_state(self.database)
-            return json.loads(canonical_json({"schema_version": 1, "operation_id": operation_id,
+            proposal = {"schema_version": 2 if incident else 1, "operation_id": operation_id,
                 "source_database_identity": source_database_identity,
                 "candidate_database_identity": self.history._database_identity(),
                 "deployment_id": self.financial.manifest.deployment_id,
@@ -354,7 +373,10 @@ class FinancialDatabaseRecovery:
                 "incident_evidence_sha256": incident_evidence_sha256, "authority_fences": self._authority_fences(),
                 "recovered_financial_commitments": recovered,
                 "terminal_subscription_rows": terminal_subscription_rows(self.database),
-                "append_only_rows": append_only, "expires_at": expires_at}))
+                "append_only_rows": append_only, "expires_at": expires_at}
+            if incident:
+                proposal["history_incident"] = incident
+            return json.loads(canonical_json(proposal))
 
     def _authority_fences(self):
         instances = [dict(row) for row in self.database.execute("""SELECT instance_id,generation
@@ -365,19 +387,22 @@ class FinancialDatabaseRecovery:
             raise StaleState("recovery controller fence exceeds retained bound")
         return {"instances": instances, "issued_request_ids": issued}
 
-    def apply(self, approval):
+    def apply(self, approval, *, history_incident=None):
         with self.database.exclusive_lock("financial-database-recovery"):
             with self.history.witness_lock() as directory:
-                return self._apply_locked(approval, directory)
+                return self._apply_locked(approval, directory, history_incident=history_incident)
 
-    def _apply_locked(self, approval, directory):
+    def _apply_locked(self, approval, directory, *, history_incident=None):
         self.financial.manifest.assert_current()
-        if (self.database.connection.in_transaction or type(approval) is not dict or set(approval) != APPROVAL_FIELDS
-                or type(approval["schema_version"]) is not int or approval["schema_version"] != 1
+        if (self.database.connection.in_transaction or not _approval_shape(approval)
                 or approval["candidate_database_identity"] != self.history._database_identity()
                 or approval["operator_manifest"] != json.loads(canonical_json(asdict(self.financial.manifest)))
                 or approval["deployment_id"] != self.financial.manifest.deployment_id):
             raise AuthorityDenied("owner recovery approval binding refused")
+        if ((approval["schema_version"] == 2 and (history_incident is None
+                or approval["history_incident"] != history_incident))
+                or approval["schema_version"] == 1 and history_incident is not None):
+            raise AuthorityDenied("recovery approval requires the identical independent owner history incident")
         row = _row(self.history, approval["operation_id"])
         if row is not None:
             payload = load_recovery(self.history, row)
@@ -385,7 +410,8 @@ class FinancialDatabaseRecovery:
                 raise AuthorityDenied("committed recovery requires identical owner approval")
             self._recover(payload, directory)
             return self._result(payload)
-        current = self._inspect_locked(directory=directory, **{key: approval[key] for key in (
+        current = self._inspect_locked(directory=directory, history_incident=history_incident,
+            **{key: approval[key] for key in (
             "source_database_identity", "source_manifests", "operation_id", "incident_evidence_sha256", "expires_at")})
         if current != approval:
             raise StaleState("owner recovery approval became stale or candidate state changed")
@@ -439,7 +465,8 @@ class FinancialDatabaseRecovery:
             return
         if witness != payload["source_witness"]:
             raise StaleState("interrupted recovery lost its exact original witness")
-        current = self._inspect_locked(directory=directory, allow_pending=True, **{key: approval[key] for key in (
+        current = self._inspect_locked(directory=directory, allow_pending=True,
+            history_incident=approval.get("history_incident"), **{key: approval[key] for key in (
             "source_database_identity", "source_manifests", "operation_id", "incident_evidence_sha256", "expires_at")})
         if current["complete_state"] != payload["committed_state"]:
             raise StaleState("interrupted recovery candidate state changed; publication refused")
@@ -451,10 +478,14 @@ class FinancialDatabaseRecovery:
 
     @staticmethod
     def _result(payload):
-        return {"status": "APPLIED", "operation_id": payload["operation_id"],
+        result = {"status": "APPLIED", "operation_id": payload["operation_id"],
             "recovery_sha256": document_sha256(payload),
             "database_identity": payload["approval"]["candidate_database_identity"],
             "management_profile": "MANAGE_ONLY", "live_authorization": False, "paid_authorization": False}
+        if payload["approval"]["schema_version"] == 2:
+            result.update(history_status="PARTIAL_HISTORY",
+                evaluation_period=payload["approval"]["history_incident"]["new_evaluation_period"])
+        return result
 
 
 def main(argv=None):
@@ -468,6 +499,7 @@ def main(argv=None):
     parser.add_argument("--operation-id")
     parser.add_argument("--incident-evidence-sha256")
     parser.add_argument("--expires-at")
+    parser.add_argument("--partial-price-history", action="store_true")
     args = parser.parse_args(argv)
     from trade_graph.adapters.brokers.paper import PaperBroker
     from trade_graph.adapters.persistence.db import Database
@@ -494,18 +526,31 @@ def main(argv=None):
                         raise AuthorityDenied("inspection requires original inode, evidence, operation ID and expiry")
                     sources = [json.loads(read_owner_file(path.parent, path.name, 32768), object_pairs_hook=_unique)
                                for path in args.source_manifest]
+                    incident = None
+                    if args.partial_price_history:
+                        from trade_graph.kernel.recovery_history import MAXIMUM_INCIDENT_BYTES
+
+                        incident = json.loads(read_owner_file(args.protected_owner,
+                            "financial-history-incident.json", MAXIMUM_INCIDENT_BYTES), object_pairs_hook=_unique)
                     result = operator._inspect_locked(directory=directory, source_manifests=sources,
+                        history_incident=incident,
                         source_database_identity=[args.source_device, args.source_inode],
                         operation_id=args.operation_id, incident_evidence_sha256=args.incident_evidence_sha256,
                         expires_at=args.expires_at)
                 else:
-                    if args.source_manifest or any(value is not None for value in (
+                    if args.partial_price_history or args.source_manifest or any(value is not None for value in (
                             args.source_device, args.source_inode, args.operation_id,
                                                           args.incident_evidence_sha256, args.expires_at)):
                         raise AuthorityDenied("apply accepts only fixed root-distributed recovery approval")
                     approval = json.loads(read_owner_file(args.protected_owner,
                         "financial-recovery-approval.json", MAXIMUM_RECOVERY_BYTES), object_pairs_hook=_unique)
-                    result = operator._apply_locked(approval, directory)
+                    incident = None
+                    if type(approval) is dict and approval.get("schema_version") == 2:
+                        from trade_graph.kernel.recovery_history import MAXIMUM_INCIDENT_BYTES
+
+                        incident = json.loads(read_owner_file(args.protected_owner,
+                            "financial-history-incident.json", MAXIMUM_INCIDENT_BYTES), object_pairs_hook=_unique)
+                    result = operator._apply_locked(approval, directory, history_incident=incident)
             print(canonical_json(result))
             return 0
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error, AuthorityDenied, StaleState) as exc:

@@ -1,6 +1,7 @@
 """Synthetic public feed with real paper assembly, protection and OS ownership."""
 
 import hashlib
+import json
 import signal
 from types import SimpleNamespace
 
@@ -18,7 +19,7 @@ def management_flow(tmp_path, monkeypatch):
     from trade_graph.application import subscription_management as management
     from trade_graph.application import subscription_profile
     setup, protected, cli = flow(tmp_path)
-    raw = b'{"public_data_enabled":true,"tick_interval_seconds":0.01}'
+    raw = b'{"public_data_enabled":true,"public_history_enabled":false,"tick_interval_seconds":0.01}'
     manifest = protected.financial.manifest
     pinned = profile(deployment_id=manifest.deployment_id, manifest_sha256=manifest.sha256,
         protected_package_sha256=manifest.protected_package_sha256,
@@ -76,6 +77,60 @@ def test_management_runs_without_auth_or_model_tasks_and_closes_cleanly(manageme
     assert before_budget == [tuple(row) for row in h.setup.db.execute("SELECT * FROM deployment_budget")]
     assert h.cli.requests == []
     assert {number: signal.getsignal(number) for number in signals} == signals
+
+
+@pytest.mark.parametrize("status", ["ok", "partial"])
+def test_management_refreshes_completed_history_through_pinned_market_route_without_ai(
+        management_flow, monkeypatch, status):
+    from trade_graph.application import subscription_operation
+    from trade_graph.domain.clock import utc_iso
+
+    h = management_flow
+    raw = json.dumps({**json.loads(h.raw), "public_history_enabled": True, "public_history_hours": 168}).encode()
+    pinned = h.pinned.model_copy(update={"paper_config_sha256": hashlib.sha256(raw).hexdigest()})
+    monkeypatch.setattr(h.module, "read_owner_file", lambda *_a: raw)
+    monkeypatch.setattr(h.module, "load_subscription_network_profile", lambda _owner: pinned)
+    feed_factory, order = h.module.PublicPaperFeed, []
+
+    def public_feed(*args, **kwargs):
+        feed = feed_factory(*args, **kwargs)
+        feed.symbols, feed.transport = ["BTC/USD", "ETH/USD"], kwargs["transport"]
+        poll = feed.poll
+        def quote():
+            order.append("quote")
+            return poll()
+        feed.poll = quote
+        return feed
+
+    monkeypatch.setattr(h.module, "PublicPaperFeed", public_feed)
+    requested_at = utc_iso(h.setup.clock.now())
+    def history(database, clock, transport, **kwargs):
+        assert transport.proxy == pinned.market_proxy_url and transport.trust_env is False
+        assert kwargs == {"hours": 168, "symbols": ("BTC/USD", "ETH/USD")}
+        assert h.cli.requests == [] and h.setup.office.execution.profile(h.setup.pid) == "MANAGE_ONLY"
+        order.append("history")
+        clock.advance(2)
+        return {"status": status, "source": "kraken_public_ohlc", "symbols": {
+            symbol: {"status": "ok", "fetched": 168, "available_at_utc": utc_iso(clock.now()),
+                     "missing_hours": 0 if status == "ok" else 1}
+            for symbol in ("BTC/USD", "ETH/USD")}}
+
+    monkeypatch.setattr(subscription_operation, "collect_public_hourly_history", history)
+    queued = h.setup.add("research")
+    before_budget = [tuple(row) for row in h.setup.db.execute("SELECT * FROM deployment_budget")]
+    result = run(h, 2)
+    report = result["public_history"]
+    assert order[:2] == ["history", "quote"] and order.count("history") == 1
+    assert report["refresh_requested_at_utc"] == requested_at
+    assert report["refresh_finished_at_utc"] == utc_iso(h.setup.clock.now())
+    assert report["symbols"]["BTC/USD"]["available_at_utc"] == report["refresh_finished_at_utc"]
+    retained = h.setup.db.execute(
+        "SELECT payload_json FROM activity_events WHERE kind='public_history_refresh'").fetchall()
+    assert len(retained) == 1 and json.loads(retained[0][0]) == report
+    assert h.setup.row(queued)["status"] == "QUEUED" and h.cli.requests == []
+    assert result["inference_attempts"] == result["scheduled"] == result["completed"] == 0
+    assert result["position_management"] == "MANAGE_ONLY" and h.feeds[0].closed
+    assert before_budget == [tuple(row) for row in h.setup.db.execute("SELECT * FROM deployment_budget")]
 
 
 @pytest.mark.parametrize("pause", ["PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY",

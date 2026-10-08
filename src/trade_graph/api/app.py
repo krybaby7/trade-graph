@@ -96,6 +96,8 @@ def create_app(runtime) -> FastAPI:
         data["health"] = project_health(runtime, authenticated=True)
         data["degraded"] = data["health"]["degraded"]
         data["degraded_reasons"] = data["health"]["degraded_reasons"]
+        if hasattr(runtime, "recovery_history"):
+            data["recovery_history"] = runtime.recovery_history()
         return data
 
     def progress_data():

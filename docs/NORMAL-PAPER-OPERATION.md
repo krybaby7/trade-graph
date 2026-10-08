@@ -82,6 +82,11 @@ owner halts remain in force. This authorization does not establish that startup,
 model dispatch, a decision or a fill has occurred. Record actual operation in the
 status and dated evidence after observing it.
 
+The 2026-10-08 recovery hold supersedes the earlier startup authorization. The
+recovered installation remains in MANAGE_ONLY with AI paused. Recovery and public
+data refresh do not authorize clearing that hold; normal paper AI requires a
+separate explicit owner resume instruction.
+
 ## Quota reserve and watched first run
 
 The morning reserve and startup decision is recorded in [D98](DECISIONS.md).
@@ -214,11 +219,12 @@ reconciliation remain required. Protected process/filesystem/network controls
 keep model workers away from credentials and financial authority. These existing
 project controls remain distinct from obsolete diagnostic acceptance gates.
 
-The service may resume this task's exact historical first-cycle manage-only pause
-when a subscription route is ready, under the latest owner authorization. Stronger
-or unrelated owner halts remain in force. There is no mandatory pause after the
-first cycle. When AI is unavailable, disclose the blocker and retain deterministic
-paper-order/position management rather than abandoning existing exposure.
+Historical first-cycle resume authorization does not clear a later recovery pause
+or another owner halt. Clear only the specifically authorized current pause through
+the authenticated owner control and its current revision after reconciliation and
+readiness checks. There is no mandatory pause after an ordinary first cycle. When
+AI is unavailable, disclose the blocker and retain deterministic paper-order and
+position management.
 
 For each remaining blocker, identify its source: obsolete earlier prompt policy,
 existing project design, provider requirement or missing functionality. Remove
@@ -227,3 +233,38 @@ implementation failures. Run checks appropriate to changed code. An unrelated
 full test suite and live-account commissioning are not prerequisites for each
 paper run. Real-money trading, separately billed APIs, paid extras and purchases
 remain disabled throughout this operating path.
+
+
+## Accepted partial historical reporting after storage recovery
+
+A separately owner-approved [partial-history recovery](PARTIAL-HISTORY-RECOVERY.md)
+can retain the same paper account while explicitly recording missing historical
+price/reporting observations and a new evaluation-period boundary. Original run,
+financial/AI identities, failed outcomes, uncertain costs, real operating budget
+and original witness commitments remain retained. Old/inception reporting must
+show the accepted gap; the new period needs fresh public valuation inputs and
+complete later observations. Neither the period label nor recovery resumes AI.
+For this recovered dashboard installation, a later authorized resume has this order:
+
+1. Keep the dashboard running. Resolve the active management run's PID, verify its
+   `/proc` birth identity and exact `manage-subscription` command, and send SIGTERM
+   only to that subprocess inside the existing dashboard container.
+2. Wait for graceful exit, both `paper-service` and `role-worker` leases to clear,
+   its graph-service run to become terminal, and exclusive inode ownership to be
+   released. Do not delete leases or force-kill to shortcut this gate.
+3. Use authenticated **Start Trading** (`POST /api/v1/owner/start-trading`, fresh
+   `request_id`, `mode: paper`) to launch the NORMAL service while the owner pause
+   remains in force. Require a newly started worker rather than attachment to the
+   management process, one live run/PID and one owner of the two service leases.
+4. Verify protected isolation/readiness, reconciliation, fresh public data and
+   Sol-only configuration with empty fallback. Quota metadata must be at most
+   30 seconds old, include weekly allowance, and show strictly more than 40%
+   remaining in every reported supported window, ordinary allowance available
+   and no spendable credits. Preserve the existing guard.
+5. Read the current owner revision, then use separate authenticated **Owner Resume**
+   (`POST /api/v1/owner/resume`, fresh `request_id`, current `expected_revision`).
+   A failed reconciliation or readiness barrier retains the pause.
+
+Do not Resume while the management subprocess is alive. Start Trading alone
+attaches to that worker, and the management worker would reinstate MANAGE_ONLY.
+Real trading, separately billed APIs and paid extras remain disabled.

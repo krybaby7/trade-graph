@@ -13,6 +13,7 @@ from pathlib import Path
 from trade_graph.adapters.market.paper_feed import PublicPaperFeed
 from trade_graph.adapters.market.public import HttpxTextTransport
 from trade_graph.application.paper_service import PaperService
+from trade_graph.application.subscription_operation import _HistoryRefreshingFeed
 from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
 from trade_graph.kernel.subscription_network import (
     load_subscription_network_profile,
@@ -70,6 +71,12 @@ def run_subscription_management(database_path: Path, protected_owner: Path, *,
             feed = PublicPaperFeed(runtime.execution, portfolio_ids, configured.paper_symbols,
                 interval_seconds=configured.public_poll_interval_seconds,
                 transport=HttpxTextTransport(timeout=5, proxy=profile.market_proxy_url, trust_env=False))
+            if configured.public_history_enabled:
+                # Reuse ordinary completed-hour collection/receipt diagnostics
+                # on this same protected public route, without creating any AI
+                # admission, authentication or task handler.
+                feed = _HistoryRefreshingFeed(feed, runtime, hours=configured.public_history_hours,
+                                              interval_seconds=configured.public_history_interval_seconds)
         service = _ManagementPaperService(runtime.database, runtime.execution, clock=runtime.clock,
             portfolio_ids=[runtime.portfolio_id], handlers={}, schedule_intervals={},
             artifact_runtime=runtime.artifact_runtime, public_feed=feed, secretary=runtime.secretary,
@@ -78,6 +85,7 @@ def run_subscription_management(database_path: Path, protected_owner: Path, *,
         return {**result, "status": "management_degraded" if result["failures"] else "management_stopped",
             "position_management": runtime.execution.profile(runtime.portfolio_id),
             "profile_sha256": profile.sha256, "inference_attempts": 0, "ai_enabled": False,
+            "public_history": feed.last_history if isinstance(feed, _HistoryRefreshingFeed) else None,
             "live_authorization": False, "paid_authorization": False, "automatic_optimisation": False}
     finally:
         runtime.database.close()

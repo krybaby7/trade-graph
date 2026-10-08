@@ -52,7 +52,7 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
         from trade_graph.kernel.deployment_image import read_owner_file
         from trade_graph.paper_runtime import PaperRuntimeConfig
 
-        manifest, _, _ = _owner_bundle(protected_owner)
+        manifest, _, capability_key = _owner_bundle(protected_owner)
         manifest.assert_current()
         try:
             config = PaperRuntimeConfig.model_validate_json(
@@ -93,10 +93,26 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
                               portfolio_id=row["portfolio_id"], deployment_id="deployment", config=config,
                               subscription_provider=subscription().get("selected_provider")
                                   if protected_owner is not None else None)
+    if protected_owner is not None:
+        runtime.recovery_history = lambda: _recovery_history_projection(runtime, manifest, capability_key)
     runtime.service_controller = ServiceController(runtime, config_path=config_path,
                                                    protected_owner=protected_owner, prerequisites=prerequisites)
     return runtime
 
+
+
+def _recovery_history_projection(runtime, manifest, capability_key):
+    """Only authenticated protected receipts can label historical observation gaps."""
+    from trade_graph.domain.errors import TradeGraphError
+    from trade_graph.kernel.financial_service import ProtectedFinancialService
+    from trade_graph.kernel.recovery_history import verified_recovery_history
+
+    try:
+        financial = ProtectedFinancialService(runtime.database, runtime.clock, runtime.execution,
+            manifest=manifest, capability_key=capability_key)
+        return verified_recovery_history(financial, runtime.portfolio_id)
+    except (OSError, ValueError, TradeGraphError):
+        return {"status": "UNAVAILABLE", "account_reset": False, "old_run_retained": True}
 
 
 def _subscription_prerequisites(protected_owner):

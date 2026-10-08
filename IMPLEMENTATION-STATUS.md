@@ -1,3 +1,49 @@
+# Partial-history recovery deployed; AI remains paused — 2026-10-08
+
+The owner-approved reporting-only recovery is running in a separate private
+installation. Originals, backup, original witness/keys and previous image are
+preserved outside Git. The authenticated incident records eleven known public
+price/reporting gaps plus possible additional reporting loss. Full historical
+continuity is not certified and the corruption cause remains unknown.
+
+Independent exact-record audit supports retained financial/AI continuity with
+explicit legacy-witness proof limits. All 15 attempts/13 invocations, failures and
+unknown usage/costs remain. Full SQLite integrity, foreign keys, balanced Decimal
+accounting and protected financial-prefix validation pass. No account reset,
+manufactured missing payload or AI replay occurred.
+
+Deployed executable source `780dce1`, image
+`sha256:4d0ee615aa0e15d535aa2025422404891ab6acc9fdef6f9ea90d6f99ec9ed1e7`,
+Python 3.12.15 / SQLite 3.53.4. Authenticated database-identity recovery and then
+manifest transition preserved original witness commitments. Exactly one
+MANAGE_ONLY management worker runs inside the dashboard's protected container;
+one owner holds both service leases, the inode lock excludes a second owner,
+and no AI task was claimed. Dashboard: <http://localhost:8000/> (authenticated
+pages and login verified). Fresh Kraken quotes, completed hourly history and
+reporting FX have actual receipt times; all ten required features per symbol are
+ready. A consistent private checkpoint passes integrity/FK checks.
+
+184 focused regressions and independent 147-case review selection passed, plus
+actual-image lock/WAL/isolation probes, Ruff, hygiene and planning checks. See
+[dated evidence and limits](docs/reviews/2026-10-08-partial-history-recovery.md).
+Registered operating checkout: `first-paper-cycle`; integration branch:
+`codex/paper-recovery-20261008`. Sol-only, empty fallback and the existing quota
+guard remain unchanged. AI, live trading, separately billed APIs and extras remain
+disabled. No inference was initiated for recovery. A later dashboard Stop was
+respected; explicit owner instruction then restored one MANAGE_ONLY worker and
+all post-start checks passed again.
+
+The next owner step is a separate explicit normal-paper AI resume instruction.
+The operator must hand over from the management subprocess to one NORMAL worker
+while the owner pause persists, verify fresh quota/readiness, then use authenticated
+Owner Resume with the current revision. The exact order is in the
+[normal operating runbook](docs/NORMAL-PAPER-OPERATION.md). Historical acceptance
+and broader economic/live gates remain unchanged.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
 # Non-destructive recovery audited; continuity gap keeps installation stopped — 2026-10-08
 
 The owner explicitly authorized a separate private recovery copy and a supported

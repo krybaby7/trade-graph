@@ -26,7 +26,10 @@ valuation/financial records block promotion even when older accounting balances.
 
 The owner must retain a private audit establishing continuity and supply its
 SHA-256 digest. Inspection binds that digest but cannot establish the truth of
-its contents. Do not distribute an approval when records remain unexplained.
+its contents. Do not distribute an approval when financial or AI records remain unexplained.
+An explicitly owner-accepted gap in historical price/reporting observations can
+be recorded through the narrow [partial-history procedure](PARTIAL-HISTORY-RECOVERY.md);
+it leaves every financial validation and witness commitment unchanged.
 The October 8 damaged installation is not recovered merely because this source
 path and its synthetic tests exist.
 
@@ -118,8 +121,10 @@ transition pass independently, the installation owner may point the service and
 dashboard at the recovered candidate. Retain the old image and damaged originals.
 Start exactly one management worker, refresh public data and verify MANAGE_ONLY.
 Normal paper AI operation still requires a separate authenticated owner resume
-through existing reconciliation and eligibility checks. Missing records or
-unexplained mismatches require remaining stopped.
+through existing reconciliation and eligibility checks. Missing financial/AI records or
+unexplained mismatches require remaining stopped. Accepted price/reporting gaps
+remain visible in their authenticated incident receipt and require a distinct
+new evaluation/reporting period, without resetting the account or old run.
 
 ## Synthetic regression checks
 
