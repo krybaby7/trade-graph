@@ -97,10 +97,14 @@ witness makes runtime readiness false, while reconciliation and queued order
 management continue.
 
 Every recorded witness scope is checked against the database before any new scope
-is considered. A new owner-approved manifest cannot reset finance: changing the
-manifest for an already witnessed portfolio currently refuses until a separately
-implemented and tested protected continuity transition exists. Executable release
-changes within the same approved manifest preserve financial history normally.
+is considered. A new owner-approved manifest cannot reset finance. The explicit
+[owner-approved offline transition](FINANCIAL-TRANSITION.md) binds exact old
+approval documents, the original key, database identity, current witness and
+scanned state before appending target checkpoints. Its schema-two witness retains
+all old scopes and authenticated transition receipts. Old manifests remain
+retired; ordinary admission, issue and dispatch never infer a transition or repair
+a missing witness. Executable release changes within the same approved manifest
+preserve financial history normally.
 
 Restoring both the database and witness together, or rolling back the entire
 host, is outside this local SQLite continuity proof. Intended-host admission

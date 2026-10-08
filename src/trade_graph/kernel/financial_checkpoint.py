@@ -194,11 +194,20 @@ class FinancialHistoryCheckpoint:
             if type(document) is not dict or set(document) != {"payload", "authentication"}:
                 raise StaleState("protected financial witness envelope refused")
             payload = document["payload"]
-            if (type(payload) is not dict or set(payload) != {"schema_version", "database_identity", "scopes"}
-                    or payload["schema_version"] != 1 or type(payload["scopes"]) is not dict
+            expected = {"schema_version", "database_identity", "scopes"}
+            if type(payload) is dict and payload.get("schema_version") == 2:
+                expected.add("transitions")
+            if (type(payload) is not dict or set(payload) != expected
+                    or type(payload["schema_version"]) is not int or payload["schema_version"] not in {1, 2}
+                    or type(payload["scopes"]) is not dict
                     or len(payload["scopes"]) > 128 or type(document["authentication"]) is not str
                     or not hmac.compare_digest(document["authentication"], self._mac(payload))):
                 raise StaleState("protected financial witness authentication refused")
+            transitions = payload.get("transitions", [])
+            if (type(transitions) is not list or len(transitions) > 128
+                    or any(type(item) is not str or len(item) != 64 for item in transitions)
+                    or len(set(transitions)) != len(transitions)):
+                raise StaleState("protected financial witness transition chain refused")
             if payload["database_identity"] != self._database_identity():
                 raise StaleState("protected financial database identity changed")
             if any(scope not in payload["scopes"] for scope in self._highwater):
@@ -243,11 +252,9 @@ class FinancialHistoryCheckpoint:
             except FileNotFoundError:
                 pass
 
-    def previous(self, portfolio_id: str, directory: int) -> tuple[dict | None, dict | None]:
-        witness = self._read_witness(directory)
-        if witness is None and (self._highwater or self.database.execute(
-                "SELECT 1 FROM protected_financial_checkpoints LIMIT 1").fetchone()):
-            raise StaleState("protected financial checkpoint lacks independent witness")
+    def verified_scopes(self, witness: dict | None, *, allow_pending=False) -> tuple[dict, dict]:
+        """Authenticate every retained scope and the complete owner transition chain."""
+        scopes = {}
         if witness:
             for prior_scope, observed in witness["scopes"].items():
                 header = self.database.execute("""SELECT manifest_sha256,portfolio_id,generation,
@@ -270,9 +277,35 @@ class FinancialHistoryCheckpoint:
                         raise ValueError
                 except (ValueError, TypeError, RecursionError):
                     raise StaleState("prior protected financial checkpoint authentication refused") from None
-                if header["portfolio_id"] == portfolio_id and header["manifest_sha256"] != self.manifest.sha256:
-                    raise StaleState("new owner manifest requires a tested protected financial continuity transition")
+                if (prior_payload.get("manifest_sha256") != header["manifest_sha256"]
+                        or prior_payload.get("portfolio_id") != header["portfolio_id"]
+                        or prior_payload.get("generation") != header["generation"]):
+                    raise StaleState("protected prior financial scope binding refused")
+                scopes[prior_scope] = prior_payload
+        from trade_graph.kernel.financial_transition import verify_transition_chain
+
+        edges = verify_transition_chain(self, witness, scopes, allow_pending=allow_pending)
+        return scopes, edges
+
+    def previous(self, portfolio_id: str, directory: int) -> tuple[dict | None, dict | None]:
+        witness = self._read_witness(directory)
+        if witness is None and (self._highwater or self.database.execute(
+                "SELECT 1 FROM protected_financial_checkpoints LIMIT 1").fetchone()):
+            raise StaleState("protected financial checkpoint lacks independent witness")
+        scopes, edges = self.verified_scopes(witness)
         scope = self._scope(portfolio_id)
+        if scope in edges:
+            raise StaleState("protected financial manifest has been retired by owner transition")
+        for prior_scope, prior in scopes.items():
+            if prior["portfolio_id"] != portfolio_id or prior_scope == scope:
+                continue
+            leaf = prior_scope
+            for _ in range(129):
+                if leaf not in edges:
+                    break
+                leaf = edges[leaf]
+            if leaf != scope:
+                raise StaleState("new owner manifest requires a tested protected financial continuity transition")
         if self.database.execute("""SELECT 1 FROM protected_financial_checkpoints
             WHERE manifest_sha256=? AND portfolio_id=? AND length(CAST(payload_json AS BLOB))>? LIMIT 1""",
             (self.manifest.sha256, portfolio_id, MAXIMUM_WITNESS_BYTES)).fetchone():
@@ -348,6 +381,8 @@ class FinancialHistoryCheckpoint:
             "transport_attempts": ("provider_transport_attempts", "reservation_id IN (SELECT reservation_id FROM "
                                    "budget_reservations WHERE deployment_id=?)", (deployment,), "rowid"),
             "price_cards": ("price_cards", "1", (), "price_card_id"),
+            "subscription_invocations": ("subscription_invocations", "1", (), "rowid"),
+            "subscription_attempts": ("subscription_attempts", "1", (), "rowid"),
         }
         commitments = {}
         native_cash, native_inventory = {}, {}
@@ -359,7 +394,12 @@ class FinancialHistoryCheckpoint:
                            "native_fee_reservations": {"current_amount", "state"},
                            "invocations": {"state", "result_json", "updated_at"},
                            "transport_attempts": {"outcome", "response_sha256", "status_code", "response_bytes",
-                                                  "error_category", "finished_at"}}
+                                                  "error_category", "finished_at"},
+                           "subscription_invocations": {"actual_model", "state", "result_json", "quota_json",
+                                                        "usage_json", "cost_status", "actual_cost_native",
+                                                        "updated_at"},
+                           "subscription_attempts": {"actual_model", "state", "result_json", "usage_json",
+                                                     "actual_cost_native", "updated_at"}}
         previous_commitments = previous["tables"] if previous else {}
         for name, (table, condition, parameters, order) in queries.items():
             budget.check()
@@ -646,9 +686,10 @@ class FinancialHistoryCheckpoint:
             raise StaleState("protected native journal disagrees with owner-pinned Ledger authority")
 
     def retain(self, portfolio_id: str, scan: dict, previous: dict | None) -> dict:
-        if previous and previous["state_sha256"] == scan["state_sha256"]:
+        same_manifest = previous and previous["manifest_sha256"] == self.manifest.sha256
+        if same_manifest and previous["state_sha256"] == scan["state_sha256"]:
             return previous
-        generation = previous["generation"] + 1 if previous else 1
+        generation = previous["generation"] + 1 if same_manifest else 1
         if generation > 1_000_000:
             raise StaleState("protected financial checkpoint generation bound exceeded")
         payload = {"schema_version": 1, "manifest_sha256": self.manifest.sha256,

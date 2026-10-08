@@ -9,6 +9,7 @@ from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as 
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
 from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEMENTS as FINANCIAL_CHECKPOINT_STATEMENTS
+from trade_graph.adapters.persistence.financial_transition_schema import STATEMENTS as FINANCIAL_TRANSITION_STATEMENTS
 from trade_graph.adapters.persistence.native_fee_reservation_schema import (
     STATEMENTS as NATIVE_FEE_RESERVATION_STATEMENTS,
 )
@@ -451,6 +452,7 @@ STATEMENTS.append(("0018", STARTUP_STATEMENTS))
 STATEMENTS.append(("0019", SUBSCRIPTION_ATTEMPT_STATEMENTS))
 STATEMENTS.append(("0020", SUBSCRIPTION_ADMISSION_STATEMENTS))
 STATEMENTS.append(("0021", ["ALTER TABLE subscription_attempts ADD COLUMN quota_json TEXT NOT NULL DEFAULT '{}'"]))
+STATEMENTS.append(("0022", FINANCIAL_TRANSITION_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
