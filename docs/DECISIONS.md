@@ -170,3 +170,26 @@ None prevents offline development. Mark credentialed verification pending when c
   overnight start hold. Authorization is separate from actual execution evidence;
   live trading, paid extras, API billing and purchases remain unauthorized. See the
   [normal operating runbook](NORMAL-PAPER-OPERATION.md).
+
+
+- **D99 (2026-10-08, owner-authorized repair):** Protected financial manifest
+  upgrades use the offline [authenticated transition](FINANCIAL-TRANSITION.md),
+  an exact root-distributed approval, original key/database inode, owner
+  MANAGE_ONLY, exclusive service ownership, complete state commitments and all
+  retained witness scopes. Preserve previous checkpoints and native/subscription
+  attempt identities; revoke old capabilities rather than rewrite history.
+  Interrupted publication can finish only the same already-authenticated operation
+  against unchanged committed state. This is no general restore, key rotation,
+  reseal or resume authority. Older checkpoints cannot retroactively prove identity
+  commitments they never retained. Synthetic tests and independent review are
+  separate from an actual installation transition.
+
+- **D100 (2026-10-08, storage incident):** Preserve the unreadable current database,
+  independent witness, protected owner settings, failed attempts and verified
+  hold-time backup. Do not replace the authoritative database or call it recovered
+  after a failed header-only forensic repair. Keep the worker/dashboard stopped
+  pending a separately reviewed storage recovery and SQLite runtime. Retaining
+  auxiliary database descriptors fixes a reproduced POSIX lock-loss defect;
+  neither it nor the old runtime's SQLite version proves the corruption cause.
+  Leader's original native CLI cause also remains unknown. No new AI, paid call,
+  live order or quota admission is claimed while the installation is stopped.

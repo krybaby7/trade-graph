@@ -1,3 +1,37 @@
+# Repair checkpoint; deployment blocked by storage corruption — 2026-10-08
+
+The authenticated owner MANAGE_ONLY control was applied before repair work and
+achieved `managing`. Public collection, reconciliation and dashboard initially
+continued, with no in-flight subscription attempts. A consistent private backup,
+the existing financial witness, all owner files and all 15 retained attempts were
+preserved before source changes. No AI call was initiated for this repair.
+
+The existing worker subsequently exited during an unexpected storage failure.
+The dashboard first reported SQLite malformed-image errors; later fresh reads
+reported `file is not a database`. Earlier full host/container integrity checks
+had both passed. The damaged database and available evidence are retained, and
+the old dashboard container is stopped. A forensic copy with only its header
+repaired fails full integrity checks across several trees; it is not authoritative.
+The verified pre-repair backup remains intact. No restore, reseal, database
+replacement, manifest transition, deployment or resume has been performed.
+
+The registered operating checkout is `first-paper-cycle`, branch
+`codex/normal-paper-2026-10-07`, rather than the main Linux checkout. Integrated repair source is `7be13b1`; the equivalent sanitized publication
+source is `4570876` on `codex/paper-repair-2026-10-08`, preserving the newer remote
+manual review schedule. All five requested source repairs and the reproduced
+SQLite-lock defect repair are implemented. Final regression/review evidence is
+recorded in the linked repair evidence: **363 focused regressions passed** and
+**108 independent continuity checks passed**, with no unresolved review findings.
+Ruff, staged hygiene and planning checks passed. The installed image remains the previous image from source
+`6bf6697`; its dashboard container is stopped and new repairs are not deployed. See [repair evidence](docs/reviews/2026-10-08-paper-repair.md).
+Only `gpt-6.1-sol`, empty fallback and the existing strictly-more-than-40% reported
+quota guard remain configured. Live trading, separately billed APIs and extras
+remain disabled. Leader's original cause is still unknown.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
 # Normal paper operation running — 2026-10-07
 
 The owner authorized morning operation and replaced the overnight start hold.
