@@ -107,3 +107,9 @@ verified management subprocess, wait for both leases/run/ownership release, star
 one NORMAL worker while the owner pause persists, verify fresh quota/readiness,
 then authenticated Owner Resume against the current revision. No resume occurred
 as part of recovery. Broader T17–T22 acceptance remains unchanged.
+
+Sanitized source/tests/docs are published on
+[`codex/paper-partial-recovery-2026-10-08`](https://github.com/krybaby7/trade-graph/tree/codex/paper-partial-recovery-2026-10-08).
+Remote Git blobs and the complete tree were compared exactly with local source;
+the prior remote manual review schedule remains unchanged. Private owner report,
+incident identities, keys, owner settings and runtime evidence remain outside Git.

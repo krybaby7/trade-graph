@@ -16,6 +16,10 @@
 - [x] Create a new private candidate from the verified backup, append only independently validated surviving newer public rows, preserve original row identities/receipt times, and record all missing IDs/interval/uncertainty in a protected owner incident.
 - [x] Build/recheck the exact immutable image, pin the target owner manifest while retaining deployment identity/key/model/quota policy, then inspect/apply authenticated identity recovery followed by the required manifest transition.
 - [x] Independently inspect the created production container, start one MANAGE_ONLY management worker and dashboard, collect fresh prices/completed-hour history/FX, and verify locks, accounting, unchanged 15 attempts/13 invocations, feature readiness, dashboard, actual deployed identity and database health.
-- [ ] Publish only sanitized source and update status/private owner handoff with accepted gaps, new period and exact separate owner-resume action. Retain originals, previous image and all failures.
+- [x] Publish only sanitized source and update status/private owner handoff with accepted gaps, new period and exact separate owner-resume action. Retain originals, previous image and all failures.
 
 Actual command evidence and decisions belong in the dated review/status. No record is marked complete before observed results. User authorization accepts historical observations only and does not authorize AI resume, API spend, real orders or fresh financial authority.
+
+Sanitized source was published on `codex/paper-partial-recovery-2026-10-08`; the
+remote commit/tree were independently compared with the local publication tree.
+The private owner report and consistent checkpoint remain outside Git.
