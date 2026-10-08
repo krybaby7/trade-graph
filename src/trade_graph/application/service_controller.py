@@ -20,6 +20,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
+from trade_graph.adapters.persistence.db import DatabaseOwnershipConflict
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
@@ -40,16 +41,11 @@ def process_identity(pid: int | None) -> str | None:
 
 
 def database_owned(database) -> bool:
-    fd = os.open(database.path.resolve(strict=True), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return True
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        return False
-    finally:
-        os.close(fd)
+        with database.exclusive_lock("ownership-probe", single_link=False):
+            return False
+    except DatabaseOwnershipConflict:
+        return True
 
 
 def service_started(database, clock, portfolio_id: str, mode: str, run_id: str | None, *, ai_available: bool) -> str:

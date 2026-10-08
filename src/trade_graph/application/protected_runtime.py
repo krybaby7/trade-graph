@@ -8,13 +8,10 @@ children. This slice supports decision proposals, not broader Engineer deploymen
 from __future__ import annotations
 
 import asyncio
-import fcntl
-import os
-import stat
 import threading
 from contextlib import contextmanager
 
-from trade_graph.adapters.persistence.db import Database
+from trade_graph.adapters.persistence.db import Database, DatabaseOwnershipConflict
 from trade_graph.application.execution import Execution
 from trade_graph.contracts.models import Observation
 from trade_graph.domain.clock import Clock
@@ -35,25 +32,15 @@ class ProtectedPaperRuntime:
 
     @contextmanager
     def _exclusive_controller(self):
-        path = self.financial.database.path
-        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        acquired = False
         try:
-            info = os.fstat(descriptor)
-            current = path.stat(follow_symlinks=False)
-            if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
-                raise StaleState("protected database file identity changed")
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise StaleState("another service or protected controller owns the financial database") from exc
-            acquired = True
-            self._owns_database = True
-            yield
-        finally:
-            if acquired:
-                self._owns_database = False
-            os.close(descriptor)
+            with self.financial.database.exclusive_lock("protected-controller"):
+                self._owns_database = True
+                try:
+                    yield
+                finally:
+                    self._owns_database = False
+        except DatabaseOwnershipConflict as exc:
+            raise StaleState("another service or protected controller owns the financial database") from exc
 
     async def _manage(self, portfolio_id: str) -> int:
         async with self._execution_lock:

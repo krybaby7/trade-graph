@@ -8,11 +8,9 @@ their lifetime. Nothing here constructs a network transport or a paid provider.
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import inspect
 import json
 import math
-import os
 import signal
 import threading
 import uuid
@@ -126,6 +124,7 @@ class PaperService:
         self.worker = RoleWorker(self.scheduler, owner=self.owner, system_version_id=system_version_id,
                                  reconcile=self._reconcile, artifact_runtime=artifact_runtime)
         self._lock_fd: int | None = None
+        self._ownership_context = None
         self._started = False
         self._ready = False
         self._stopping = False
@@ -163,14 +162,12 @@ class PaperService:
         self._stop_requested.set()
 
     def _acquire(self) -> None:
-        path = self.database.path.resolve(strict=True)
-        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(path, flags)
+        ownership = self.database.exclusive_lock("paper-service", single_link=False)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            os.close(descriptor)
-            raise StaleState("another paper service owns this database") from exc
+            descriptor = ownership.__enter__()
+        except StaleState as exc:
+            raise StaleState("another paper service owns this database or its path changed") from exc
+        self._ownership_context = ownership
         self._lock_fd = descriptor
         try:
             with self.database.immediate():
@@ -196,8 +193,9 @@ class PaperService:
             try:
                 self.database.execute("DELETE FROM process_leases WHERE owner = ?", (self.owner,))
             finally:
-                os.close(self._lock_fd)
+                ownership, self._ownership_context = self._ownership_context, None
                 self._lock_fd = None
+                ownership.__exit__(None, None, None)
 
     async def start(self) -> None:
         if self._ready:

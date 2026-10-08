@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import threading
 import uuid
@@ -12,6 +11,17 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from trade_graph.adapters.persistence.inode_locks import (
+    DatabaseFile,
+    connection_closed,
+    connection_opened,
+)
+from trade_graph.adapters.persistence.inode_locks import (
+    DatabaseOwnershipConflict as DatabaseOwnershipConflict,
+)
+from trade_graph.adapters.persistence.inode_locks import (
+    exclusive_database_path as exclusive_database_path,
+)
 from trade_graph.adapters.persistence.migrate import apply_migrations
 from trade_graph.domain.clock import SystemClock, utc_iso
 
@@ -25,33 +35,82 @@ def atomic[T](method: Callable[..., T]) -> Callable[..., T]:
     return wrapped
 
 
+class _TrackedConnection(sqlite3.Connection):
+    _inode = None
+
+    def close(self) -> None:
+        super().close()
+        inode, self._inode = self._inode, None
+        if inode is not None:
+            connection_closed(inode)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            # sqlite3 may reject close after partial construction or teardown.
+            pass
+
+
 class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        if str(self.path) != ":memory:":
-            # SQLite derives sidecar permissions from the main file. Create only
-            # new storage privately; admission of existing files belongs to callers.
-            try:
-                descriptor = os.open(
-                    self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600,
-                )
-            except FileExistsError:
-                pass
-            else:
-                os.close(descriptor)
+        self._lifecycle = threading.RLock()
+        self._closed = False
+        self._file = None
+        self._file = DatabaseFile(self.path, create=True) if str(self.path) != ":memory:" else None
         self._local = threading.local()
         self._serialization = threading.RLock()
-        self._connection = self._open()
-        self._connection.execute("PRAGMA journal_mode=WAL")
-        apply_migrations(self._connection, utc_iso(SystemClock().now()))
+        try:
+            self._connection = self._open()
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            apply_migrations(self._connection, utc_iso(SystemClock().now()))
+        except BaseException:
+            self.close()
+            raise
 
     def _open(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, isolation_level=None, timeout=30, check_same_thread=False)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=5000")
-        return connection
+        with self._lifecycle:
+            return self._open_connection()
+
+    def _open_connection(self) -> sqlite3.Connection:
+        if self._closed:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+        if self._file is not None:
+            self._file.identity(single_link=False)
+        connection = sqlite3.connect(self.path, isolation_level=None, timeout=30, check_same_thread=False,
+                                     factory=_TrackedConnection)
+        if self._file is not None:
+            connection_opened(self._file.inode)
+            connection._inode = self._file.inode
+        try:
+            if self._file is not None:
+                self._file.identity(single_link=False)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA busy_timeout=5000")
+            return connection
+        except BaseException:
+            connection.close()
+            raise
+
+    def file_identity(self) -> list[int]:
+        if self._file is None:
+            raise ValueError("on-disk database identity required")
+        return self._file.identity()
+
+    def retained_descriptor(self, purpose: str) -> int:
+        if self._file is None:
+            raise ValueError("on-disk database ownership required")
+        return self._file.descriptor(purpose)
+
+    @contextmanager
+    def exclusive_lock(self, purpose: str = "exclusive-controller", *, single_link: bool = True) -> Iterator[int]:
+        if self._file is None:
+            raise ValueError("on-disk database ownership required")
+        with self._file.exclusive_lock(purpose, single_link=single_link) as descriptor:
+            yield descriptor
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -166,4 +225,23 @@ class Database:
             yield connection
 
     def close(self) -> None:
-        self._connection.close()
+        with self._lifecycle:
+            self._close_connections()
+
+    def _close_connections(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        connection = getattr(self, "_connection", None)
+        if connection is not None:
+            connection.close()
+        if self._file is not None:
+            self._file.close()
+
+    def __del__(self):
+        try:
+            if hasattr(self, "_closed"):
+                self.close()
+        except Exception:
+            # Explicit close reports errors; object finalization cannot do so.
+            pass
