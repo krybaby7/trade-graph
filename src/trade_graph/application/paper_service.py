@@ -148,6 +148,10 @@ class PaperService:
         self._execution_lock = threading.RLock()
         self._feed_failed = public_feed is not None
         self._old_gate = None
+        self._feed_failure_count = 0
+        self._feed_first_failed_at = None
+        self._feed_last_diagnostic_at = None
+        self._feed_last_failure = None
 
     def _blocks_increase(self, symbol: str) -> bool:
         gate = getattr(self.public_feed, "blocks_increase", None)
@@ -548,22 +552,65 @@ class PaperService:
         async with self._tick_lock:
             return await self._tick(wait_roles=wait_roles, wait_feed=wait_feed)
 
+    def _record_feed_health(self, error_type: str | None, stage: str) -> None:
+        """Keep first, recurring and recovered evidence without raw transport data."""
+        now = self.clock.now()
+        symbol = None
+        if error_type is not None:
+            context = getattr(self.public_feed, "diagnostic_context", None)
+            if stage == "poll" and isinstance(context, dict):
+                if context.get("stage") in {"metadata", "ticker", "reference_fx"}:
+                    stage = context["stage"]
+                if context.get("symbol") in {"BTC/USD", "ETH/USD", "BTC/EUR", "ETH/EUR"}:
+                    symbol = context["symbol"]
+            self._feed_failure_count += 1
+            if self._feed_first_failed_at is None:
+                self._feed_first_failed_at = now
+            failure = (stage, symbol, error_type)
+            if (failure == self._feed_last_failure and self._feed_last_diagnostic_at is not None
+                    and now < self._feed_last_diagnostic_at + timedelta(seconds=30)):
+                return
+            self._feed_last_failure = failure
+        elif not self._feed_failure_count:
+            return
+        payload = {"run_id": self.service_run_id, "status": "degraded" if error_type else "recovered",
+            "stage": stage, "symbol": symbol, "error_type": error_type,
+            "consecutive_failures": self._feed_failure_count,
+            "first_failed_at_utc": utc_iso(self._feed_first_failed_at), "observed_at_utc": utc_iso(now),
+            "financial_management_continues": True, "feed_blocks_increase": error_type is not None}
+        with self.database.immediate():
+            for pid in self.portfolio_ids:
+                self.execution.ledger._activity(pid, "public_feed_health", payload)
+        self._feed_last_diagnostic_at = now
+        if error_type is None:
+            self._feed_failure_count = 0
+            self._feed_first_failed_at = None
+            self._feed_last_failure = None
+
     async def _consume_feed(self, task: asyncio.Task, *, maintenance_errors: list[Exception]) -> tuple[int, str | None]:
         try:
             emitted = await self._wait_for_work(task, maintenance_errors=maintenance_errors)
         except Exception as exc:
             self._feed_failed = True
+            await self._offload(self._record_feed_health, type(exc).__name__, "poll")
             return 0, "feed:" + type(exc).__name__
         try:
             observations = await self._offload(self._ingest, emitted)
         except ValidationFailure as exc:
             self._feed_failed = True
+            await self._offload(self._record_feed_health, type(exc).__name__, "ingest")
             return 0, "feed:" + type(exc).__name__
-        except Exception:
+        except Exception as exc:
             self._feed_failed = True
+            await self._offload(self._record_feed_health, type(exc).__name__, "ingest")
             raise
         self._feed_failed = False
+        await self._offload(self._record_feed_health, None, "poll")
         return observations, None
+
+    async def _prepare_role_inputs(self) -> tuple[int, tuple[str, ...]]:
+        """Runtime-specific acquisitions required before capturing new inputs."""
+        return 0, ()
 
     async def _tick(self, *, wait_roles: bool, wait_feed: bool) -> TickResult:
         if self._heartbeat_task and self._heartbeat_task.done():
@@ -598,6 +645,9 @@ class PaperService:
         failures.extend(management_failures)
         scheduled = 0
         if not self._stop_requested.is_set():
+            acquired, input_failures = await self._prepare_role_inputs()
+            observations += acquired
+            failures.extend(input_failures)
             try:
                 scheduled = await self._offload(self._schedules)
             except Exception as exc:

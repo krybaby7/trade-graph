@@ -32,20 +32,24 @@ class PublicPaperFeed:
         self.next_poll = None
         self.next_metadata = None
         self.next_fx = None
+        self.diagnostic_context = {"stage": "poll", "symbol": None}
 
     def poll(self) -> list:
         now = self.clock.now()
         if self.next_poll is not None and now < self.next_poll:
             return []
+        self.diagnostic_context = {"stage": "poll", "symbol": None}
         # Only successful acquisition advances the poll cursor. A failed poll
         # remains degraded and cannot silently renew old observations or marks.
         if self.next_metadata is None or now >= self.next_metadata:
+            self.diagnostic_context = {"stage": "metadata", "symbol": None}
             for rules in self.rest.fetch_instruments(self.symbols):
                 self.execution.register_instrument(rules)
                 self.execution.register_instrument(rules.model_copy(update={"venue": "paper", "synthetic": True}))
             self.next_metadata = now + timedelta(hours=1)
         observations = []
         for symbol in self.symbols:
+            self.diagnostic_context = {"stage": "ticker", "symbol": symbol}
             # Actual receipt time is supplied only after the HTTP transport returns.
             quote = self.rest.fetch_ticker(symbol, observation_id=str(uuid.uuid4()), available_at=now)
             received = self.clock.now()
@@ -61,9 +65,11 @@ class PublicPaperFeed:
                     self.execution.ledger.observe_mark(pid, base, price, currency, source=paper.source)
             observations.append(paper)
         if self.next_fx is None or now >= self.next_fx:
+            self.diagnostic_context = {"stage": "reference_fx", "symbol": None}
             self._reference_fx()
             self.next_fx = now + timedelta(hours=1)
         self.next_poll = self.clock.now() + timedelta(seconds=self.interval_seconds)
+        self.diagnostic_context = {"stage": "poll", "symbol": None}
         return observations
 
     def _reference_fx(self) -> None:

@@ -7,12 +7,13 @@ normal operation has no first-cycle prerequisite or mandatory terminal pause.
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 
 from trade_graph.application.collect_price_history import collect_public_hourly_history
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
+from trade_graph.domain.clock import utc_iso
 from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
 from trade_graph.paper_runtime import PaperRuntimeConfig, assemble_paper_runtime
 
@@ -24,23 +25,55 @@ _PREVIOUS_TASK_PAUSES = {
 
 
 class _HistoryRefreshingFeed:
-    """Use the same public-only transport; retain sparse/failed history truthfully."""
+    """Refresh completed hours before new inputs; retry only unresolved symbols."""
     def __init__(self, feed, runtime, *, hours: int, interval_seconds: int):
         self.feed, self.runtime = feed, runtime
         self.hours, self.interval_seconds = hours, interval_seconds
         self.next_history = None
         self.last_history = None
+        self._next_by_symbol = dict.fromkeys(feed.symbols)
+        self._symbol_reports = {}
 
     def __getattr__(self, name):
         return getattr(self.feed, name)
 
-    def poll(self):
+    def history_due(self) -> bool:
         now = self.runtime.clock.now()
-        if self.next_history is None or now >= self.next_history:
-            self.last_history = collect_public_hourly_history(self.runtime.database, self.runtime.clock,
-                self.feed.transport, hours=self.hours, symbols=tuple(self.feed.symbols))
+        return any(due is None or now >= due for due in self._next_by_symbol.values())
+
+    def poll(self):
+        requested = self.runtime.clock.now()
+        symbols = tuple(symbol for symbol, due in self._next_by_symbol.items()
+                        if due is None or requested >= due)
+        if symbols:
+            report = collect_public_hourly_history(self.runtime.database, self.runtime.clock,
+                self.feed.transport, hours=self.hours, symbols=symbols)
+            finished = self.runtime.clock.now()
+            next_hour = finished.astimezone(UTC).replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            retry_symbols = []
+            for symbol in symbols:
+                outcome = report["symbols"].get(symbol, {})
+                # A valid response may still lack its newly completed tail. Keep
+                # that absence visible and retry promptly for late publication.
+                tail_missing = (outcome.get("latest_closed_utc") is not None and
+                                outcome["latest_closed_utc"] < utc_iso(next_hour - timedelta(hours=1)))
+                retry = outcome.get("status") != "ok" or tail_missing or outcome.get("fetched") == 0
+                if retry:
+                    retry_symbols.append(symbol)
+                delay = min(self.interval_seconds, 30) if retry else self.interval_seconds
+                self._next_by_symbol[symbol] = min(next_hour, finished + timedelta(seconds=delay))
+            self.next_history = min(self._next_by_symbol.values())
+            self._symbol_reports.update(report["symbols"])
+            outcomes = [outcome.get("status") for outcome in self._symbol_reports.values()]
+            status = report["status"]
+            if len(outcomes) == len(self._next_by_symbol) and all(outcomes):
+                failures = outcomes.count("failed")
+                status = "failed" if failures == len(outcomes) else "partial" if failures else "ok"
+            self.last_history = {**report, "status": status, "symbols": dict(self._symbol_reports),
+                "requested_symbols": list(symbols), "retry_symbols": retry_symbols,
+                "refresh_requested_at_utc": utc_iso(requested), "refresh_finished_at_utc": utc_iso(finished),
+                "next_refresh_at_utc": utc_iso(self.next_history)}
             self.runtime.ledger._activity(self.runtime.portfolio_id, "public_history_refresh", self.last_history)
-            self.next_history = self.runtime.clock.now() + timedelta(seconds=self.interval_seconds)
         # Acquire quotes after history, so slow historical requests do not age
         # otherwise-current quote inputs before the service can consume them.
         return self.feed.poll()
@@ -51,10 +84,33 @@ class _HistoryRefreshingFeed:
 
 class _NormalSubscriptionService(PaperService):
     async def _tick(self, *, wait_roles: bool, wait_feed: bool):
-        # Complete the first successful public acquisition before model work.
-        # Later ticks keep the independent feed/management concurrency.
+        # Finish due hourly history before schedules capture new role inputs.
+        # _consume_feed keeps deterministic management running while it waits.
+        history_due = (isinstance(self.public_feed, _HistoryRefreshingFeed) and self.public_feed.history_due())
         return await super()._tick(wait_roles=wait_roles,
-                                   wait_feed=wait_feed or self._feed_failed)
+                                   wait_feed=wait_feed or self._feed_failed or history_due)
+
+    async def _prepare_role_inputs(self) -> tuple[int, tuple[str, ...]]:
+        observations, failures = 0, []
+        # A quote poll started before the hour may still be in flight. Drain it,
+        # then make at most one new acquisition for the now-due completed hour.
+        for _ in range(2):
+            if (self._stop_requested.is_set() or not isinstance(self.public_feed, _HistoryRefreshingFeed)
+                    or not self.public_feed.history_due()):
+                break
+            if self._feed_task is None:
+                self._feed_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.public_feed.poll))
+            maintenance_errors = []
+            try:
+                acquired, failure = await self._consume_feed(self._feed_task, maintenance_errors=maintenance_errors)
+                observations += acquired
+                if failure:
+                    failures.append(failure)
+            finally:
+                self._feed_task = None
+            if maintenance_errors:
+                raise maintenance_errors[0]
+        return observations, tuple(failures)
 
 
 def _attempts(database) -> int:
