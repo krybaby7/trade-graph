@@ -27,6 +27,12 @@ full current witness digest/highwaters and complete current scanned state digest
 for every portfolio. The existing complete-prefix/native-source checks and scan
 bounds remain enforced. Old executable pins are historical data and are not run.
 
+Older checkpoints did not retain immutable native order-attempt identity prefixes
+or subscription row commitments. The transition binds their exact current rows
+and captures identity prefixes for subsequent verification; it cannot prove
+retroactively that these fields were unchanged before that approval. Existing
+authenticated ledger and budget-origin commitments retain their original proof.
+
 Run the reviewed installed interpreter with actual protected paths and a current
 expiry (the paths and timestamp below are placeholders):
 

@@ -83,27 +83,12 @@ class FinancialHistoryCheckpoint:
         self._database_highwater = self._database_identity()
 
     def _database_identity(self):
-        """Traverse every ancestor and the leaf through no-follow handles."""
-        directory = descriptor = None
-        try:
-            directory = open_directory(self.database.path.absolute().parent)
-            descriptor = os.open(self.database.path.name, os.O_RDONLY | os.O_NOFOLLOW
-                                 | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
-            identity = os.fstat(descriptor)
-            if not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1:
-                raise StaleState("protected financial database is not a single regular file")
-            result = [identity.st_dev, identity.st_ino]
-            known = getattr(self, "_database_highwater", None)
-            if known and result != known:
-                raise StaleState("protected financial database identity changed")
-            return result
-        except OSError:
-            raise StaleState("protected financial database secure path refused") from None
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            if directory is not None:
-                os.close(directory)
+        """Verify no-follow identity using a handle retained beyond SQLite connections."""
+        result = self.database.file_identity()
+        known = getattr(self, "_database_highwater", None)
+        if known and result != known:
+            raise StaleState("protected financial database identity changed")
+        return result
 
     def _mac(self, document: dict) -> str:
         return hmac.new(self.key, b"protected-financial-checkpoint-v1\0"
@@ -362,7 +347,7 @@ class FinancialHistoryCheckpoint:
             "native_fee_reservations": ("native_fee_reservations", "portfolio_id=?", (portfolio_id,), "rowid"),
             "intents": ("order_intents", "portfolio_id=?", (portfolio_id,), "intent_id"),
             "attempts": ("order_attempts", "intent_id IN (SELECT intent_id FROM order_intents WHERE portfolio_id=?)",
-                         (portfolio_id,), "attempt_id"),
+                         (portfolio_id,), "rowid"),
             "fills": ("fills", "portfolio_id=?", (portfolio_id,), "rowid"),
             "marks": ("valuation_marks", "portfolio_id=?", (portfolio_id,), "mark_id"),
             "fx": ("fx_rates", "1", (), "rate_id"),
@@ -391,6 +376,7 @@ class FinancialHistoryCheckpoint:
         immutable = {"ledger", "journal", "journal_transactions", "fills", "usage_receipts", "cost_allocations",
                      "invoices", "budget_origins"}
         identity_fields = {"budget_reservations": {"amount", "state", "updated_at"},
+                           "attempts": {"result_json"},
                            "native_fee_reservations": {"current_amount", "state"},
                            "invocations": {"state", "result_json", "updated_at"},
                            "transport_attempts": {"outcome", "response_sha256", "status_code", "response_bytes",
@@ -412,7 +398,7 @@ class FinancialHistoryCheckpoint:
             old = previous_commitments.get(name)
             old_count = old["rows"] if old and name in immutable else None
             prefix = digest.hexdigest() if old_count == 0 else None
-            identity_count = old["rows"] if old and name in identity_fields else None
+            identity_count = (old["rows"] if old and name in identity_fields and "identity_sha256" in old else None)
             if identity_count == 0:
                 identity_prefix = identity_digest.hexdigest()
             maximum = (f"CASE WHEN kind='fill_chronological_replay' THEN {MAXIMUM_CORRECTION_BYTES} "

@@ -7,20 +7,17 @@ from __future__ import annotations
 
 import argparse
 import copy
-import fcntl
 import hashlib
 import hmac
 import json
-import os
 import re
 import sqlite3
-import stat
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from dataclasses import asdict, fields
 from datetime import timedelta
 from pathlib import Path
 
-from trade_graph.adapters.engineering.artifact_files import open_directory
+from trade_graph.adapters.persistence.db import exclusive_database_path
 from trade_graph.domain.clock import parse_utc, utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState
 from trade_graph.kernel.financial_checkpoint import MAXIMUM_WITNESS_BYTES, _unique
@@ -69,6 +66,7 @@ def load_transition(history, row):
                 or document_sha256(payload) != row["transition_sha256"]
                 or payload["created_at"] != row["created_at"]
                 or parse_utc(payload["created_at"]) > history.financial.clock.now()
+                or parse_utc(payload["created_at"]) >= parse_utc(payload["approval"]["expires_at"])
                 or not hmac.compare_digest(row["authentication"], transition_mac(history, payload))):
             raise ValueError
         return payload
@@ -188,29 +186,6 @@ def verify_transition_chain(history, witness, scopes, *, allow_pending=False):
     return edges
 
 
-@contextmanager
-def exclusive_financial_database(path: Path):
-    """The same native flock used by the persistent paper service and controller."""
-    directory = descriptor = None
-    try:
-        directory = open_directory(path.absolute().parent)
-        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-                             dir_fd=directory)
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise StaleState("protected financial transition requires a single regular database")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise StaleState("another service or protected controller owns the financial database") from None
-        yield
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
-        if directory is not None:
-            os.close(directory)
-
-
 class FinancialManifestTransition:
     """Trusted offline operator; never exposed in mutable model RPC or tool context."""
 
@@ -218,7 +193,7 @@ class FinancialManifestTransition:
         self.financial, self.history, self.database = financial, financial.history, financial.database
 
     def _pause_and_portfolios(self):
-        rows = self.database.execute("SELECT * FROM portfolios ORDER BY portfolio_id").fetchall()
+        rows = self.database.execute("SELECT * FROM portfolios ORDER BY portfolio_id LIMIT 129").fetchall()
         if not 1 <= len(rows) <= 128 or any(row["mode"] != "paper" for row in rows):
             raise AuthorityDenied("financial transition requires a bounded paper-only database")
         for row in rows:
@@ -235,7 +210,7 @@ class FinancialManifestTransition:
         return self.history.scan(portfolio["portfolio_id"], state, previous=previous)
 
     def inspect(self, *, source_manifests, operation_id, expires_at):
-        with exclusive_financial_database(self.database.path):
+        with self.database.exclusive_lock("financial-transition"):
             return self._inspect_locked(source_manifests=source_manifests, operation_id=operation_id,
                                         expires_at=expires_at)
 
@@ -282,7 +257,7 @@ class FinancialManifestTransition:
                 return _document(approval)
 
     def apply(self, approval):
-        with exclusive_financial_database(self.database.path):
+        with self.database.exclusive_lock("financial-transition"):
             return self._apply_locked(approval)
 
     def _apply_locked(self, approval):
@@ -324,6 +299,8 @@ class FinancialManifestTransition:
                     links.append({"portfolio_id": pid, "from_scope": before_scope,
                         "from_checkpoint_sha256": document_sha256(before), "to_scope": self.history._scope(pid),
                         "to_checkpoint_sha256": document_sha256(after)})
+                if self.financial.clock.now() >= parse_utc(approval["expires_at"]):
+                    raise AuthorityDenied("owner financial continuity approval expired before commit")
                 payload = {"schema_version": 1, "operation_id": approval["operation_id"],
                     "approval": copy.deepcopy(approval), "approval_sha256": document_sha256(approval),
                     "source_witness": witness, "links": links, "created_at": utc_iso(self.financial.clock.now())}
@@ -407,7 +384,7 @@ def main(argv=None):
     try:
         # Lock before Database opens/migrates; a live worker never shares ownership.
         with ExitStack() as lifetime:
-            lifetime.enter_context(exclusive_financial_database(args.database))
+            lifetime.enter_context(exclusive_database_path(args.database, "financial-transition"))
             manifest = load_owner_runtime_manifest(args.protected_owner / "runtime-manifest.json")
             key = read_owner_file(args.protected_owner, "capability.key", 4096)
             clock = SystemClock()

@@ -117,7 +117,7 @@ def test_second_transition_keeps_source_chain_and_rejects_old_authority(tmp_path
             operation_id="rollback", expires_at=utc_iso(clock.now() + timedelta(minutes=10)))
 
 
-@pytest.mark.parametrize("stage", ["before_commit", "after_commit", "after_publish"])
+@pytest.mark.parametrize("stage", ["before_commit", "after_commit", "after_commit_expired", "after_publish"])
 def test_interruption_is_atomic_or_recovers_only_exact_committed_transition(tmp_path, monkeypatch, stage):
     db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
     approval = approval_for(target, old.financial)
@@ -141,9 +141,11 @@ def test_interruption_is_atomic_or_recovers_only_exact_committed_transition(tmp_
             operator(target).apply(approval)
         assert db.execute("SELECT count(*) FROM protected_financial_transitions").fetchone()[0] == 1
         assert not old.financial.history.ready(portfolio)
-        if stage == "after_commit":
+        if stage in {"after_commit", "after_commit_expired"}:
             assert not target.history.ready(portfolio)
         monkeypatch.setattr(target.history, "_write_witness", original)
+        if stage == "after_commit_expired":
+            clock.advance(601)
     before = facts(db)
     assert operator(target).apply(approval)["status"] == "APPLIED"
     assert target.history.ready(portfolio) and facts(db) == before
@@ -239,6 +241,30 @@ def test_subscription_evidence_and_unknown_cost_survive_transition_and_identity_
         target.retain_budget_history(portfolio)
 
 
+def test_prior_checkpoint_without_native_attempt_identity_retains_original_proof_limits(tmp_path, monkeypatch):
+    from trade_graph.kernel.financial_checkpoint import FinancialHistoryCheckpoint
+    from trade_graph.kernel.runtime_manifest import document_sha256
+    original_scan = FinancialHistoryCheckpoint._scan
+    def legacy_scan(self, *args, **kwargs):
+        result = original_scan(self, *args, **kwargs)
+        result["tables"]["attempts"].pop("identity_sha256", None)
+        result["state_sha256"] = document_sha256({key: result[key] for key in ("state", "tables", "financial")})
+        return result
+    with monkeypatch.context() as legacy:
+        legacy.setattr(FinancialHistoryCheckpoint, "_scan", legacy_scan)
+        db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    with old.financial.history.witness_lock() as directory:
+        previous, _ = old.financial.history.previous(portfolio, directory)
+    assert "identity_sha256" not in previous["tables"]["attempts"]
+    before = facts(db)
+    operator(target).apply(approval_for(target, old.financial))
+    assert facts(db) == before and target.history.ready(portfolio)
+    with target.history.witness_lock() as directory:
+        current, _ = target.history.previous(portfolio, directory)
+    assert "identity_sha256" in current["tables"]["attempts"]
+
+
+
 def test_transition_database_rollback_cannot_drop_upgrade_or_restore_old_authority(tmp_path):
     db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
     approval = approval_for(target, old.financial)
@@ -311,14 +337,17 @@ def test_operator_cli_reads_only_protected_approval_and_locks_before_open_until_
     monkeypatch.setattr(deployment_image, "read_owner_file", protected_read)
     monkeypatch.setattr(clocks, "SystemClock", lambda: clock)
     original_open, original_close = Database.__init__, Database.close
-    boundaries = []
+    boundaries, managed_ids = [], set()
     def locked_boundary(self, path):
         with pytest.raises(StaleState, match="owns"):
             with old._exclusive_controller():
                 pass
         boundaries.append("before-open")
         original_open(self, path)
+        managed_ids.add(id(self))
     def locked_close(self):
+        if id(self) not in managed_ids or self._closed:
+            return original_close(self)
         with pytest.raises(StaleState, match="owns"):
             with old._exclusive_controller():
                 pass
@@ -370,3 +399,46 @@ def test_transition_requires_all_existing_portfolios_and_retains_all_scopes(tmp_
     assert set(outcome["portfolio_ids"]) == {portfolio, other}
     assert target.history.ready(portfolio) and target.history.ready(other)
     assert facts(db) == before
+
+
+def test_native_attempt_identity_is_retained_after_transition_but_ack_update_is_allowed(tmp_path):
+    db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    operator(target).apply(approval_for(target, old.financial))
+    db.execute("UPDATE order_attempts SET result_json=?", ('{"synthetic":"later acknowledgment"}',))
+    target.retain_budget_history(portfolio)
+    db.execute("""INSERT INTO order_attempts (attempt_id,intent_id,kind,created_at,result_json)
+        SELECT '000-additional-attempt',intent_id,'cancel',created_at,'{}' FROM order_attempts LIMIT 1""")
+    target.retain_budget_history(portfolio)
+    db.execute("UPDATE order_attempts SET attempt_id='changed-native-attempt' WHERE rowid=1")
+    with pytest.raises(StaleState, match="original financial effect identity"):
+        target.retain_budget_history(portfolio)
+
+
+def test_financial_identity_and_refused_transition_preserve_existing_sqlite_reserved_lock(tmp_path):
+    from tests.integration.test_database_locks import reserved_lock_available, sqlite_reserved
+    db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    approval = approval_for(target, old.financial)
+    with sqlite_reserved(db):
+        target.history._database_identity()
+        assert not reserved_lock_available(db.path)
+        with pytest.raises((AuthorityDenied, StaleState)):
+            operator(target).apply(approval)
+        assert not reserved_lock_available(db.path)
+
+
+def test_approval_expiry_during_complete_scan_refuses_before_commit(tmp_path, monkeypatch):
+    db, clock, ledger, execution, portfolio, old, target = transition_stack(tmp_path)
+    approval = approval_for(target, old.financial)
+    transition = operator(target)
+    original, calls = transition._scan, []
+    def scan_then_expire(*args, **kwargs):
+        result = original(*args, **kwargs)
+        calls.append(1)
+        if len(calls) == 2:
+            clock.advance(601)
+        return result
+    monkeypatch.setattr(transition, "_scan", scan_then_expire)
+    with pytest.raises(AuthorityDenied, match="expired"):
+        transition.apply(approval)
+    assert db.execute("SELECT count(*) FROM protected_financial_transitions").fetchone()[0] == 0
+    assert old.financial.history.ready(portfolio)
