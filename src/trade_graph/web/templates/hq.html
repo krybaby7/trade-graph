@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{#- Trade Graph HQ. The server renders a readable first paint (headline, times, needs-you titles);
+    hq-*.js replaces it from the JSON island and keeps it current from GET /api/v1/hq. -#}
+{% macro dur(seconds) -%}
+{%- set s = seconds|int(0) -%}
+{%- if s < 60 -%}{{ s }} s
+{%- elif s < 3600 -%}{{ s // 60 }} min
+{%- elif s < 86400 -%}{{ s // 3600 }} h{% if (s % 3600) // 60 %} {{ (s % 3600) // 60 }} min{% endif %}
+{%- else -%}{{ s // 86400 }} d{% if (s % 86400) // 3600 %} {{ (s % 86400) // 3600 }} h{% endif %}
+{%- endif -%}
+{%- endmacro %}
+{% macro segs(text) -%}
+{%- if text is sequence and text is not string -%}{%- for s in text -%}{%- if s is mapping -%}
+{%- if s.get('t') in ['text', 'term', 'link'] -%}{{ s.get('v', '') }}
+{%- elif s.get('t') == 'time' -%}{%- set at = s.get('at', '')|string -%}<time datetime="{{ at }}">{% if s.get('style') == 'date' %}{{ at[:10] }}{% else %}{{ at[11:16] }} UTC{% endif %}</time>
+{%- elif s.get('t') in ['money', 'percent'] -%}{{ s.get('display', '') }}
+{%- elif s.get('t') == 'duration' -%}{{ dur(s.get('seconds')) }}
+{%- endif -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+{%- endmacro %}
+{% macro help(section, title) %}<button type="button" class="hq-help" data-hq-help="{{ section }}" aria-label="What am I looking at? {{ title }}">?</button>{% endmacro %}
+{% block title %}HQ{% endblock %}
+{% block body_class %}hq-page{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="/static/hq.css">
+  <script src="/static/hq-core.js" defer></script>
+  <script src="/static/hq-glossary.js" defer></script>
+  <script src="/static/hq-render.js" defer></script>
+  <script src="/static/hq-prompts.js" defer></script>
+  <script src="/static/hq-decide.js" defer></script>
+  <script src="/static/hq-checkins.js" defer></script>
+  <script src="/static/hq.js" defer></script>
+{% endblock %}
+{% block eyebrow %}Trade Graph{% endblock %}
+{% block heading %}Trade Graph HQ{% endblock %}
+{% block description %}What the team is doing, what needs you and what comes next.{% endblock %}
+{#- The HQ header below replaces the generic page heading once base.html wraps it in this block (WP4). -#}
+{% block page_heading %}{% endblock %}
+{% block content %}
+{% set snap = data if data is mapping else {} %}
+{% set live = operating_mode|default('paper') == 'live' %}
+{% set now = snap.get('now') if snap.get('now') is mapping else {} %}
+{% set attention = snap.get('attention') if snap.get('attention') is sequence and snap.get('attention') is not string else [] %}
+{% set departments = snap.get('departments') if snap.get('departments') is sequence and snap.get('departments') is not string else [] %}
+{% set need_count = now.get('attention_count', 0) %}
+<div class="hq-root" data-hq-root>
+  <header class="hq-header">
+    <div class="hq-header-top">
+      <h1 class="hq-title">Trade Graph HQ</h1>
+      <p class="hq-chips">{% if live %}<span class="hq-chip hq-chip-live">Live account</span>{% else %}<button type="button" class="hq-chip hq-chip-paper" data-term="practice_money">Practice money</button><button type="button" class="hq-chip hq-chip-safe" data-term="real_trading_off">Real trading: off</button>{% endif %}</p>
+    </div>
+    <div class="hq-header-bar">
+      <nav class="hq-anchors" aria-label="Jump to a part of HQ"><a href="#hq">HQ</a><a href="#calendar">Calendar</a><a href="#story">Story</a><a href="#money">Money</a><a href="#decide">Decide</a></nav>
+      <p class="hq-fresh" data-hq-fresh data-tone="ok"><span class="hq-fresh-mark" aria-hidden="true">●</span> <span>{% if snap.get('as_of') %}As of <time datetime="{{ snap.as_of }}">{{ (snap.as_of|string)[11:16] }} UTC</time>{% else %}Loading…{% endif %}</span></p>
+    </div>
+    <div class="hq-banner" data-hq-banner hidden></div>
+  </header>
+  <noscript><p class="hq-noscript">This page keeps itself up to date with JavaScript, which is switched off here. What you see was correct when the page loaded. <a href="/journal">Open the Account journal</a> for the detailed records.</p></noscript>
+
+  <section id="hq" class="hq-section hq-home" data-hq-section aria-label="HQ">
+    <div class="hq-slot hq-slot-welcome" data-hq="welcome" data-hq-hide-empty></div>
+    <div class="hq-slot hq-slot-notices" data-hq="notices" data-hq-hide-empty></div>
+    <div class="hq-board">
+    <article class="hq-panel hq-now" data-hq-now-card data-tone="{{ now.get('tone', 'calm') }}" data-code="{{ now.get('code', '') }}" aria-labelledby="hq-h-now">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-now" class="hq-panel-title">Right now</h2>
+        <span class="hq-now-chip" data-hq-now-chip></span>
+        {{ help('now', 'Right now') }}
+      </div>
+      <p class="hq-now-headline" data-hq-now-headline aria-live="polite">{% if now.get('headline') %}{{ segs(now.get('headline')) }}{% else %}Reading the latest records…{% endif %}</p>
+      <div class="hq-now-body" data-hq="now">{% if now.get('detail') %}<p class="hq-now-detail">{{ segs(now.get('detail')) }}</p>{% endif %}</div>
+    </article>
+    <div class="hq-side">
+    <article class="hq-panel hq-attention" aria-labelledby="hq-h-attention">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-attention" class="hq-panel-title">Needs you <span class="hq-count" data-hq-attention-count{% if not need_count %} hidden{% endif %}>{{ need_count }}</span></h2>
+        {{ help('attention', 'Needs you') }}
+      </div>
+      <div data-hq="attention">{% if attention %}<ul class="hq-attn-list">{% for item in attention if item is mapping %}<li class="hq-attn" data-sev="{{ item.get('sev', 'info') }}"><h3 class="hq-attn-title">{{ segs(item.get('title')) }}</h3></li>{% endfor %}</ul>{% elif snap %}<p class="hq-empty">Nothing needs you. You can relax.</p>{% endif %}</div>
+    </article>
+    <article class="hq-panel hq-upnext" aria-labelledby="hq-h-upnext">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-upnext" class="hq-panel-title">Up next</h2>
+        <a class="hq-head-link" href="#calendar">Calendar ›</a>
+        {{ help('upnext', 'Up next') }}
+      </div>
+      <div data-hq="upnext"></div>
+    </article>
+    </div>
+    <article class="hq-panel hq-map" aria-labelledby="hq-h-map">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-map" class="hq-panel-title">HQ map</h2>
+        {{ help('map', 'HQ map') }}
+      </div>
+      <div data-hq="map">{% if departments %}<ul class="hq-map-fallback">{% for dept in departments if dept is mapping %}<li><strong>{{ dept.get('name', '') }}</strong>: {{ segs(dept.get('light_text')) }}</li>{% endfor %}</ul>{% endif %}</div>
+    </article>
+    </div>
+  </section>
+
+  <section id="calendar" class="hq-section" data-hq-section aria-label="Calendar">
+    <article class="hq-panel hq-calendar" aria-labelledby="hq-h-calendar">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-calendar" class="hq-panel-title">Calendar</h2>
+        {{ help('calendar', 'Calendar') }}
+      </div>
+      <div data-hq="calendar"></div>
+    </article>
+    <article class="hq-panel hq-checkins" aria-labelledby="hq-h-checkins"{% if snap.get('checkins') is none %} hidden{% endif %}>
+      <div class="hq-panel-head">
+        <h2 id="hq-h-checkins" class="hq-panel-title">Your check-ins</h2>
+      </div>
+      <div data-hq="checkins" data-hq-hide-empty></div>
+    </article>
+  </section>
+
+  <section id="story" class="hq-section" data-hq-section aria-label="Story">
+    <article class="hq-panel hq-story" aria-labelledby="hq-h-story">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-story" class="hq-panel-title">Story so far</h2>
+        {{ help('story', 'Story') }}
+      </div>
+      <div data-hq="story"></div>
+    </article>
+  </section>
+
+  <section id="money" class="hq-section" data-hq-section aria-label="Money">
+    <article class="hq-panel hq-money-panel" aria-labelledby="hq-h-money">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-money" class="hq-panel-title">Scoreboard</h2>
+        {{ help('money', 'Money') }}
+      </div>
+      <div data-hq="money"></div>
+    </article>
+    <article class="hq-panel hq-allowance" aria-labelledby="hq-h-allowance">
+      <div class="hq-panel-head"><h2 id="hq-h-allowance" class="hq-panel-title">AI allowance</h2></div>
+      <div data-hq="allowance"></div>
+    </article>
+    <article class="hq-panel hq-market-panel" aria-labelledby="hq-h-market">
+      <div class="hq-panel-head"><h2 id="hq-h-market" class="hq-panel-title">Market weather</h2></div>
+      <div data-hq="market"></div>
+    </article>
+  </section>
+
+  <section id="decide" class="hq-section" data-hq-section aria-label="Decide">
+    <article class="hq-panel hq-decide" aria-labelledby="hq-h-decide">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-decide" class="hq-panel-title">Team controls</h2>
+        {{ help('decide', 'Decide') }}
+      </div>
+      <div data-hq="decide"></div>
+    </article>
+    <article class="hq-panel hq-review" aria-labelledby="hq-h-review">
+      <div class="hq-panel-head"><h2 id="hq-h-review" class="hq-panel-title">Review check-ins</h2></div>
+      <div data-hq="review"></div>
+    </article>
+    <article class="hq-panel hq-bills" aria-labelledby="hq-h-bills">
+      <div class="hq-panel-head"><h2 id="hq-h-bills" class="hq-panel-title">Your bills</h2></div>
+      <div data-hq="bills"></div>
+    </article>
+    <article class="hq-panel hq-prompt" aria-labelledby="hq-h-prompt">
+      <div class="hq-panel-head"><h2 id="hq-h-prompt" class="hq-panel-title">Prompt settings (this device only)</h2></div>
+      <div data-hq="prompt"></div>
+    </article>
+    <article class="hq-panel hq-help-panel" aria-labelledby="hq-h-help">
+      <div class="hq-panel-head"><h2 id="hq-h-help" class="hq-panel-title">Help &amp; glossary</h2></div>
+      <div data-hq="help"></div>
+    </article>
+  </section>
+  {% if not live %}<p class="hq-footer">This is practice: no real trades happen. Real costs are only the bills you enter.</p>{% endif %}
+</div>
+<nav class="hq-tabs" aria-label="HQ sections">
+  <a class="hq-tab" href="#hq"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-hq"></use></svg><span>HQ</span></a>
+  <a class="hq-tab" href="#calendar"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-calendar"></use></svg><span>Calendar</span></a>
+  <a class="hq-tab" href="#story"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-story"></use></svg><span>Story</span></a>
+  <a class="hq-tab" href="#money"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-money"></use></svg><span>Money</span></a>
+  <a class="hq-tab" href="#decide"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-decide"></use></svg><span>Decide</span></a>
+</nav>
+<dialog class="hq-sheet" data-hq-sheet aria-labelledby="hq-sheet-title"><div class="hq-sheet-content" data-hq-sheet-content></div></dialog>
+<div class="hq-toast" role="status" aria-live="polite" data-hq-toast></div>
+<template data-hq-icon><svg class="hq-icon" aria-hidden="true" focusable="false"><use></use></svg></template>
+<script type="application/json" id="hq-snapshot">{{ snap|tojson }}</script>
+{% endblock %}
