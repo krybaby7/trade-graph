@@ -292,10 +292,13 @@ class ProtectedDeploymentSpec:
         if subscription:
             security += ["--security-opt", "seccomp=" + self.subscription_profile.seccomp_path]
         network = profile.network_id if profile is not None else "none"
+        # Native subscription clients create threads as well as processes.
+        pids_limit = "192" if subscription else "64"
+        memory_limit = "1g" if subscription else "512m"
         return ["docker", "create", "--name", name, "--platform", PLATFORM, *environment,
                 "--user", f"{UID}:{GID}", "--read-only", "--network", network, *publication, "--cap-drop", "ALL",
-                *security, "--pids-limit", "64", "--memory", "512m",
-                "--memory-swap", "512m", "--cpus", "1", "--ulimit", "core=0:0", "--init",
+                *security, "--pids-limit", pids_limit, "--memory", memory_limit,
+                "--memory-swap", memory_limit, "--cpus", "1", "--ulimit", "core=0:0", "--init",
                 "--tmpfs", f"/tmp:{TMPFS}", "--mount",
                 f"type=bind,src={self.owner_directory},dst={OWNER_MOUNT},readonly,bind-propagation=rprivate",
                 "--mount", f"type=bind,src={self.state_directory},dst={STATE_MOUNT},bind-propagation=rprivate",
@@ -341,6 +344,8 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
     expected_exposed = {"8000/tcp": {}} if dashboard else image["Config"].get("ExposedPorts", {})
     profile = spec.subscription_profile if subscription else spec.live_profile if live else spec.funded_profile
     expected_network = profile.network_id if profile is not None else "none"
+    expected_pids = 192 if subscription else 64
+    expected_memory = 1073741824 if subscription else 536870912
     if funded:
         from trade_graph.kernel.funded_profile import verify_funded_network
 
@@ -397,8 +402,8 @@ def verify_container_inspection(spec: ProtectedDeploymentSpec, image: dict, cont
             or not any(item.startswith("name=seccomp,profile=builtin") for item in daemon_security_options)
             or host.get("PidMode") or host.get("IpcMode") not in {"private", ""} or host.get("UTSMode")
             or host.get("UsernsMode") or host.get("CgroupnsMode") != "private"
-            or host.get("PidsLimit") != 64 or host.get("Memory") != 536870912
-            or host.get("MemorySwap") != 536870912 or host.get("NanoCpus") != 1000000000
+            or host.get("PidsLimit") != expected_pids or host.get("Memory") != expected_memory
+            or host.get("MemorySwap") != expected_memory or host.get("NanoCpus") != 1000000000
             or host.get("Tmpfs") != {"/tmp": TMPFS} or host.get("Init") is not True
             or host.get("Devices") or host.get("DeviceRequests") or host.get("ExtraHosts")
             or host.get("DeviceCgroupRules") or host.get("GroupAdd") or host.get("Runtime") != "runc"

@@ -1,0 +1,9 @@
+# Subscription installation capacity repair
+
+Owner-authorized T17/T21 continuation; integration owner Codex, branch `codex/resource-capacity-20261009`, based on latest published recovery source `a0be95d`, matching all 186 deployed Python modules. This slice does not close broader acceptance gates.
+
+Design and execution plan: retain normal operation while native metadata helpers clean up and graph health remains current. Raise only subscription deployment resources to finite 192 tasks and 1 GiB memory with equal memory-swap (no additional swap); retain CPU1 and all namespace/capability/network restrictions. Update create arguments and strict independent verifier together. Add failure-first exact-limit refusal tests and focused existing isolation/controller tests. Add private, bounded rotated allowlisted operational event diagnostics, with no raw stdout/model/prompt/credential retention. Build an exact pinned immutable image with existing reviewed native/SQLite inputs; use supported owner manifest transition, state-preserving graceful handover and supported startup. Inspect existing history and account hashes before/after and observe naturally scheduled work, never manually dispatch inference. Record exact private capacity/deployment evidence and keep strategies/schedules unchanged.
+
+Measured pre-repair metadata cycles have 3 processes/24 threads at rest and 6 processes/61 threads at peak; the client itself uses 35 threads. These helpers exit normally rather than accumulating as orphans. The512MiB cap causes persistent cache reclaim; Windows/WSL available physical capacity is ample for1GiB. Resource bounds include metadata overlap, one serialized native inference, graph/management threads and diagnostics; actual next natural inference peak remains to be observed.
+
+Research alignment is an explanation/proposal only; no strategy or schedule mutation in this slice.

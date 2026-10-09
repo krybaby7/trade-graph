@@ -59,6 +59,7 @@ def subscription_inspection(monkeypatch, action="check-subscription"):
     trust_files(monkeypatch, value)
     image, container = inspected(ordinary)
     container["Config"]["Cmd"] = [action]
+    container["HostConfig"].update(PidsLimit=192, Memory=1073741824, MemorySwap=1073741824)
     container["HostConfig"]["NetworkMode"] = value.network_id
     container["HostConfig"]["SecurityOpt"] = ["no-new-privileges", "seccomp=" + json.dumps(seccomp_document())]
     container["NetworkSettings"]["Networks"] = {"synthetic-internal": {"NetworkID": ""}}
@@ -364,3 +365,28 @@ def test_subscription_dashboard_is_same_private_state_and_not_live_commissioning
     assert calls == [["dashboard", "--mode", "paper", "--database", "/var/lib/trade-graph/trade_graph.sqlite",
         "--protected-owner", "/run/trade-graph-owner", "--session-file", "/var/lib/trade-graph/owner-session.json",
         "--protected-network-bind", "--port", "8000"]]
+
+
+@pytest.mark.parametrize("action", ["boot-subscription", "boot-subscription-dashboard", "check-subscription",
+                                    "research-subscription", "manage-subscription"])
+def test_subscription_capacity_has_finite_headroom_and_no_swap(action):
+    spec = replace(deployment(), subscription_profile=profile())
+    args = spec.create_arguments(name="trade-graph-capacity", action=action)
+    assert args[args.index("--pids-limit") + 1] == "192"
+    assert args[args.index("--memory") + 1] == "1g"
+    assert args[args.index("--memory-swap") + 1] == "1g"
+    assert args[args.index("--cpus") + 1] == "1"
+
+
+@pytest.mark.parametrize(("field", "value"), [("PidsLimit", 64), ("PidsLimit", 193),
+    ("PidsLimit", -1), ("Memory", 536870912), ("Memory", 1073741825),
+    ("MemorySwap", 536870912), ("MemorySwap", -1), ("NanoCpus", 2000000000)])
+def test_subscription_capacity_inspection_refuses_unreviewed_limits(monkeypatch, field, value):
+    spec, image, container, network, proxy = subscription_inspection(monkeypatch)
+    container["HostConfig"].update(PidsLimit=192, Memory=1073741824, MemorySwap=1073741824)
+    deployment_image.verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"],
+        action="check-subscription", network=network, proxy=proxy)
+    container["HostConfig"][field] = value
+    with pytest.raises(PermissionError):
+        deployment_image.verify_container_inspection(spec, image, container, ["name=seccomp,profile=builtin"],
+            action="check-subscription", network=network, proxy=proxy)
