@@ -21,7 +21,33 @@ def projection_runtime(runtime):
     return SimpleNamespace(**values)
 
 
-def overview(runtime, *, reporting_end: str | None = None) -> dict:
+# Stable codes for economic_result.unknown_reasons, in the order they are appended.
+# Owner-expense reasons without a code of their own map to "other".
+_OWNER_EXPENSE_REASON_CODES = {
+    "owner_subscription_completeness_missing": "subscription_bills_unconfirmed",
+    "owner_other_completeness_missing": "other_costs_unconfirmed",
+    "duplicate_existing_accounting": "bill_matches_existing_records",
+    "missing_fx": "bill_euro_rate_missing",
+    "stale_fx": "bill_euro_rate_old",
+}
+
+
+def _invoice_uncertainty(runtime, now: str) -> bool:
+    # Same query as the health projection's invoice check.
+    invoices = runtime.database.execute(
+        "SELECT unexplained FROM invoice_reconciliations WHERE deployment_id = ? AND created_at <= ?",
+        (getattr(runtime, "deployment_id", "deployment"), now),
+    ).fetchall()
+    return any(Decimal(row["unexplained"]) != 0 for row in invoices)
+
+
+def economics(runtime, *, reporting_end: str | None = None) -> dict:
+    """Inception economics from one financial overview, without activity or health projections.
+
+    Returns the financial overview, the owner-expense projection, recovery history and
+    ``economic_result`` exactly as :func:`overview` publishes them, plus
+    ``unknown_reason_codes`` parallel to ``economic_result["unknown_reasons"]``.
+    """
     reader = projection_runtime(runtime)
     now = utc_iso(runtime.clock.now())
     portfolio = reader.database.execute(
@@ -36,8 +62,6 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
         reader.clock = FrozenClock(cutoff)
     data = financial.overview(reader)
     current_reader = projection_runtime(runtime)
-    operations = health(current_reader, authenticated=True)
-    active = activity.overview(current_reader)
     period = {"start_at": portfolio["created_at"], "end_at": data["as_of"],
               "basis": "account inception, retained history", "selected_cutoff": reporting_end is not None}
     # Owner evidence can arrive after the period it substantiates. Retain the
@@ -84,24 +108,53 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
     trading = performance["trading_pnl"]
     reason_labels = {"owner_subscription_completeness_missing": "Subscription expense evidence is incomplete.",
                      "owner_other_completeness_missing": "Other operating expense evidence is incomplete."}
-    reasons = [reason_labels.get(reason, reason.replace("_", " "))
-               for reason in expense["coverage"].get("unknown_reasons", [])]
+    owner_reasons = expense["coverage"].get("unknown_reasons", [])
+    reasons = [reason_labels.get(reason, reason.replace("_", " ")) for reason in owner_reasons]
+    codes = [_OWNER_EXPENSE_REASON_CODES.get(reason, "other") for reason in owner_reasons]
     if owner_allocation_unknown:
         reasons.append("Owner bills allocate to the deployment; this portfolio's share is unknown.")
+        codes.append("shared_between_accounts")
     if data["valuation"].get("provisional"):
         reasons.append("Current valuation is incomplete or stale.")
+        codes.append("valuation_not_final")
     if existing["allocation_issues"] or existing["holds"]["uncertain"] != Decimal(0) or api_unknown:
         reasons.append("API receipt or allocation coverage remains incomplete.")
+        codes.append("ai_usage_records_incomplete")
     if recorded_other is None:
         reasons.append("Recorded operating expense valuation remains incomplete.")
-    if operations["invoice_uncertainty"]:
+        codes.append("other_cost_value_unknown")
+    invoice_uncertainty = _invoice_uncertainty(current_reader, now)
+    if invoice_uncertainty:
         reasons.append("Recorded invoices have unexplained differences.")
+        codes.append("invoice_differences")
     recovery = runtime.recovery_history() if hasattr(runtime, "recovery_history") else {"status": "NOT_CONFIGURED"}
     if recovery.get("status") in {"PARTIAL_HISTORY", "UNAVAILABLE"}:
         reasons.append("Historical recovery limitations prevent a complete economic conclusion.")
+        codes.append("history_gap")
     net = None
     if trading is not None and ai_amount is not None and other_amount is not None and not reasons:
         net = Decimal(trading) - ai_amount - other_amount
+    economic_result = {"status": "unknown" if net is None else "covered" if net >= 0 else "not_covered",
+                       "trading_after_execution_costs": trading,
+                       "allocated_ai_expense": financial._amount(ai_amount),
+                       "other_operating_expense": financial._amount(other_amount),
+                       "known_api_ai_expense": canonical_decimal(known_api_ai),
+                       "known_other_expense": financial._amount(recorded_other),
+                       "net_result": financial._amount(net), "unknown_reasons": reasons,
+                       "currency": data["reporting_currency"], "period": period,
+                       "basis": "Trading fees, spread and slippage already affect trading result; "
+                                "do not deduct twice."}
+    return {"financial": data, "now": now, "period": period, "owner_expenses": expense,
+            "recovery_history": recovery, "invoice_uncertainty": invoice_uncertainty,
+            "economic_result": economic_result, "unknown_reason_codes": codes}
+
+
+def overview(runtime, *, reporting_end: str | None = None) -> dict:
+    economic = economics(runtime, reporting_end=reporting_end)
+    data, now, period = economic["financial"], economic["now"], economic["period"]
+    current_reader = projection_runtime(runtime)
+    operations = health(current_reader, authenticated=True)
+    active = activity.overview(current_reader)
     service = active.get("service", {})
     op_reasons = []
     pause = operations["pause"]["profile"]
@@ -117,17 +170,10 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
     resource = resources.observation(runtime)
     op_reasons.extend(resource["warnings"])
     op_status = "operating" if not op_reasons else "paused" if pause != "RUNNING" else "attention"
-    data.update(as_of=now, health=operations, recovery_history=recovery, activity=active, owner_expenses=expense,
-                reporting_period=period, external_observations={"resources": resource},
+    data.update(as_of=now, health=operations, recovery_history=economic["recovery_history"], activity=active,
+                owner_expenses=economic["owner_expenses"], reporting_period=period,
+                external_observations={"resources": resource},
                 operational_health={"status": op_status, "reasons": op_reasons, "service": service,
                                     "basis": "persisted heartbeat, control and reconciliation records"},
-                economic_result={"status": "unknown" if net is None else "covered" if net >= 0 else "not_covered",
-                    "trading_after_execution_costs": trading,
-                    "allocated_ai_expense": financial._amount(ai_amount),
-                    "other_operating_expense": financial._amount(other_amount),
-                    "known_api_ai_expense": canonical_decimal(known_api_ai),
-                    "known_other_expense": financial._amount(recorded_other),
-                    "net_result": financial._amount(net), "unknown_reasons": reasons,
-                    "currency": data["reporting_currency"], "period": period,
-                    "basis": "Trading fees, spread and slippage already affect trading result; do not deduct twice."})
+                economic_result=economic["economic_result"])
     return redact(data)
