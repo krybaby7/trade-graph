@@ -387,13 +387,14 @@ class FinancialHistoryCheckpoint:
             "price_cards": ("price_cards", "1", (), "price_card_id"),
             "subscription_invocations": ("subscription_invocations", "1", (), "rowid"),
             "subscription_attempts": ("subscription_attempts", "1", (), "rowid"),
+            "owner_expense_evidence": ("owner_expense_evidence", "deployment_id=?", (deployment,), "sequence"),
         }
         commitments = {}
         native_cash, native_inventory = {}, {}
         source_cash, source_inventory = {}, {}
         source_manifest, source_count, deferred = hashlib.sha256(), 0, None
         immutable = {"ledger", "journal", "journal_transactions", "fills", "usage_receipts", "cost_allocations",
-                     "invoices", "budget_origins"}
+                     "invoices", "budget_origins", "owner_expense_evidence"}
         identity_fields = {"budget_reservations": {"amount", "state", "updated_at"},
                            "attempts": {"result_json"},
                            "native_fee_reservations": {"current_amount", "state"},

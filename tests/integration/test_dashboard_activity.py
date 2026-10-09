@@ -217,3 +217,70 @@ def test_inactive_or_stale_management_service_and_empty_quota_are_explicit(runti
     shared = activity.overview(runtime)["usage"]["shared_quota"]
     assert shared["windows"] == {"primary": None}
     assert shared["available"] is False
+
+
+def test_latest_native_preserves_requested_and_unknown_actual_model(runtime):
+    from trade_graph.api import activity
+
+    invocation(runtime, "model-identity")
+    attempt(runtime, "model-identity", 1, "FAILED")
+    runtime.database.execute("UPDATE subscription_attempts SET actual_model=NULL WHERE invocation_id='model-identity'")
+    latest = next(row for row in activity.overview(runtime)["departments"] if row["role"] == "research")["last_native"]
+    assert latest["requested_model"] == "model-requested"
+    assert latest["actual_model"] is None
+    assert latest["model"] is None
+
+
+def test_attempt_history_preserves_earlier_failure_diagnostic_without_native_transcripts(runtime):
+    from trade_graph.api import activity
+
+    invocation(runtime, "repaired")
+    attempt(runtime, "repaired", 1, "FAILED")
+    attempt(runtime, "repaired", 2, "COMPLETED", stamp="2026-01-01T01:00:00Z")
+    runtime.database.execute("UPDATE subscription_attempts SET result_json=? WHERE attempt_id='repaired:1'", (
+        json.dumps({"ok": False, "failure": "validation", "message": "PRIVATE NATIVE MESSAGE",
+                    "raw_redacted": "PRIVATE NATIVE RESPONSE", "payload": {"messages": ["PRIVATE TRANSCRIPT"]},
+                    "diagnostic": {"native_exit_code": 1, "category": "invalid_schema",
+                                   "error_code": "invalid_json_schema", "schema_path": ""}}),))
+    result = activity.overview(runtime)
+    records = result["usage"]["native_attempts"]
+    assert [row["attempt_id"] for row in records] == ["repaired:2", "repaired:1"]
+    failed = records[1]
+    assert failed["status"] == "FAILED" and failed["failure"] == "validation"
+    assert failed["diagnostic"] == {"native_exit_code": 1, "category": "invalid_schema",
+                                    "error_code": "invalid_json_schema", "schema_path": ""}
+    assert failed["requested_model"] == "model-requested" and failed["actual_model"] == "model-actual"
+    assert "PRIVATE" not in json.dumps(result)
+
+
+def test_attempt_history_exports_all_scoped_children_and_legacy_fallback_only(runtime):
+    from trade_graph.api import activity
+
+    invocation(runtime, "aggregate")
+    attempt(runtime, "aggregate", 1, "FAILED")
+    attempt(runtime, "aggregate", 2, "COMPLETED")
+    invocation(runtime, "legacy", role="leader", state="UNCERTAIN")
+    invocation(runtime, "synthetic", synthetic=True)
+    invocation(runtime, "foreign", portfolio=runtime.other)
+    attempt(runtime, "foreign", 1, "FAILED")
+    result = activity.overview(runtime)
+    records = result["usage"]["native_attempts"]
+    assert {row["attempt_id"] for row in records} == {"aggregate:1", "aggregate:2", "legacy", "synthetic"}
+    assert len(records) == result["usage"]["totals"]["attempts"]
+    assert next(row for row in records if row["attempt_id"] == "legacy")["status"] == "UNCERTAIN"
+    assert next(row for row in records if row["attempt_id"] == "synthetic")["synthetic"] is True
+
+
+def test_invalid_diagnostic_and_untyped_failure_are_withheld_from_attempt_export(runtime):
+    from trade_graph.api import activity
+
+    invocation(runtime, "invalid-diagnostic")
+    attempt(runtime, "invalid-diagnostic", 1, "FAILED")
+    runtime.database.execute("UPDATE subscription_attempts SET result_json=? WHERE attempt_id='invalid-diagnostic:1'", (
+        json.dumps({"ok": False, "failure": "PRIVATE UNTYPED FAILURE", "diagnostic": {
+            "native_exit_code": 1, "category": "invalid_schema", "error_code": "invalid_json_schema",
+            "schema_path": "", "provider_text": "PRIVATE PROVIDER TEXT"}}),))
+    result = activity.overview(runtime)
+    record = result["usage"]["native_attempts"][0]
+    assert record["diagnostic"] is None and record["failure"] is None
+    assert "PRIVATE" not in json.dumps(result)

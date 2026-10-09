@@ -302,7 +302,7 @@
       if (!response.ok) throw new Error(detail(body));
       if (!body || body.authenticated !== true) throw new Error("The service did not acknowledge an authenticated session.");
       field.value = "";
-      window.location.assign("/progress");
+      window.location.assign("/");
     } catch (error) { field.value = ""; result(login, error.message, true); }
     finally { button.disabled = false; }
   });

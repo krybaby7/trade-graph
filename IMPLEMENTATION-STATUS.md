@@ -1,3 +1,13 @@
+# Live operating dashboard prepared — 2026-10-09
+
+Continuation branch `codex/live-dashboard-20261009`, based on the deployed capacity/logging source `493c25c`. Authenticated home adds distinct operational/economic indicators, reported attempt usage and missing coverage, native/applied departments, immutable owner expense evidence/allocation, a completed reporting cutoff, and a complete scoped read-only snapshot export. Browser navigation redirects to sign-in; API authentication/CSRF remain. Refresh/export use retained quota metadata and initiate no inference. See [dashboard use](docs/LIVE-DASHBOARD.md).
+
+290 focused dashboard, usage, economics, owner expense, protected checkpoint and manifest transition regressions pass, zero failures/errors/skips. Ruff, Node syntax, 23-task plan validation, ten planning checks and diff checks pass. Actual Windows Microsoft Edge synthetic desktop/mobile login/home/export/offline recovery checks pass without horizontal overflow or browser script errors. All development databases are fresh isolated fixtures. Current session clipboard helper was verified without displaying its value.
+
+Deployment is pending an immutable image build and supported continuity verification. The existing paper worker remained running throughout development. Database, witness, account/attempt history, prior failures, capacity/logging repair and accepted historical gap are preserved. No strategy, schedule, routing, fallback, quota reserve, live/billed/extra authorization change. T17/T21 and economic/live acceptance remain open. Full suite and intended-host production acceptance have not been rerun.
+
+---
+
 # Subscription capacity repair deployed — 2026-10-09
 
 The recovered paper installation runs one NORMAL worker after the supported authenticated manifest transition and reconciled owner resume. Subscription-only limits are now finite 192 tasks / 1 GiB RAM / one CPU / no additional swap. The create specification and exact independent verifier changed together; existing isolation and all non-subscription limits are preserved. Controller-launched worker diagnostics now retain three rotating 256 KiB sanitized event files rather than losing all operational output.

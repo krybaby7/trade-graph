@@ -219,3 +219,17 @@ None prevents offline development. Mark credentialed verification pending when c
 
 
 - **D103 (2026-10-09, owner-authorized resource repair):** Subscription deployments require finite 192 cgroup tasks and 1 GiB memory with equal memory-swap, retaining one CPU and all isolation. Limits count threads and processes. The supported create specification and exact independent verifier change together; other profiles retain existing bounds. Controller-launched workers retain only bounded rotated operational codes/classes/counters, never raw output or model conversations. Protected code upgrades preserve the original database/key/witness through the authenticated manifest transition. Observed native metadata pressure supports this headroom; worst-case inference capacity remains bounded by future evidence. Research timing/expiry alignment is a separate proposal and does not change schedules or strategy in this repair.
+
+- **D104 (2026-10-09, live dashboard evidence):** Separate current operational
+  health from inception-period economics and retained native/applied outcomes.
+  Count reported attempts once and disclose missing token coverage; retained
+  shared quota is separate. Owner bills are immutable evidence with explicit
+  service-period graph proration and labelled department allocations. Whole bills
+  and graph shares are separate; unknown usage is not priced into per-call fees.
+  Economic conclusions require complete expense/valuation evidence and retain
+  recovery limitations. A completed reporting cutoff never makes a past
+  completeness declaration cover future expenses. Multiple accounts without
+  explicit portfolio allocation retain unknown selected-account economics.
+  Snapshot export and modest refresh are read-only and trigger no inference or
+  native quota probe. Upgrade preserves original database/key/witness through
+  supported continuity; schedules, strategy and routing remain unchanged.

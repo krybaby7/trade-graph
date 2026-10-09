@@ -95,6 +95,7 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
                                   if protected_owner is not None else None)
     if protected_owner is not None:
         runtime.recovery_history = lambda: _recovery_history_projection(runtime, manifest, capability_key)
+        runtime.subscription_readonly_status = lambda: subscription(refresh=False)
     runtime.service_controller = ServiceController(runtime, config_path=config_path,
                                                    protected_owner=protected_owner, prerequisites=prerequisites)
     return runtime
@@ -131,15 +132,16 @@ def _subscription_prerequisites(protected_owner):
     except OSError:
         declared = True
 
-    def status(*, journal=None):
+    def status(*, journal=None, refresh=True):
         from trade_graph.domain.errors import TradeGraphError
 
         current = subscription_profile_unchanged(protected_owner, admission.profile_sha256)
         observed = admission.status
         if current and admission.adapter is not None:
             try:
-                observed = {**admission.status, **admission.adapter.public_status(journal=journal)}
-            except (OSError, ValueError, RuntimeError, TradeGraphError):
+                status_args = {"journal": journal} if refresh else {"journal": journal, "refresh": False}
+                observed = {**admission.status, **admission.adapter.public_status(**status_args)}
+            except (OSError, ValueError, TypeError, RuntimeError, TradeGraphError):
                 observed = {**admission.status, "ready": False, "available_subscription_routes": [],
                     "blockers": ["Subscription readiness refresh unavailable; management continues."]}
         ready = bool(current and admission.adapter and observed.get("ready"))

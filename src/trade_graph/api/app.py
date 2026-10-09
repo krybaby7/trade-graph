@@ -10,11 +10,11 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from trade_graph.api import evidence, financial, progress, progress_runs
+from trade_graph.api import evidence, financial, live, owner_expenses, progress, progress_runs, review_export
 from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.api.controls import configuration, register_controls
 from trade_graph.api.health import health as project_health
@@ -76,6 +76,12 @@ def create_app(runtime) -> FastAPI:
     async def inaccessible_record(request: Request, exc: NotFound):
         return JSONResponse(status_code=404, content={"detail": "record not found"})
 
+    @app.exception_handler(HTTPException)
+    async def authentication_navigation(request: Request, exc: HTTPException):
+        if exc.status_code == 401 and request.method in {"GET", "HEAD"} and not request.url.path.startswith("/api/"):
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+
     @app.exception_handler(RequestValidationError)
     async def invalid_parameters(request: Request, exc: RequestValidationError):
         return JSONResponse(status_code=422, content={"detail": "invalid request parameters"})
@@ -91,14 +97,11 @@ def create_app(runtime) -> FastAPI:
             "auth_mechanism": request.state.auth_mechanism, "operating_mode": operating_mode,
         })
 
-    def overview_data():
-        data = financial.overview(runtime)
-        data["health"] = project_health(runtime, authenticated=True)
-        data["degraded"] = data["health"]["degraded"]
-        data["degraded_reasons"] = data["health"]["degraded_reasons"]
-        if hasattr(runtime, "recovery_history"):
-            data["recovery_history"] = runtime.recovery_history()
-        return data
+    def overview_data(end_at=None):
+        try:
+            return live.overview(runtime, reporting_end=end_at)
+        except (ValueError, TypeError):
+            raise HTTPException(422, "invalid reporting cutoff") from None
 
     def progress_data():
         storage_error = None
@@ -157,10 +160,19 @@ def create_app(runtime) -> FastAPI:
             return project_health(runtime, authenticated=authenticated)
 
     @app.get("/api/v1/overview")
-    def overview(request: Request):
+    def overview(request: Request, end_at: str | None = None):
         identity(request)
         with runtime.database.snapshot():
-            return redact(overview_data())
+            return redact(overview_data(end_at))
+
+    @app.get("/api/v1/review-export")
+    def review(request: Request, end_at: str | None = None):
+        identity(request)
+        try:
+            data = review_export.export(runtime, reporting_end=end_at)
+        except (ValueError, TypeError):
+            raise HTTPException(422, "invalid reporting cutoff") from None
+        return JSONResponse(data, headers={"Content-Disposition": 'attachment; filename="trade-graph-review.json"'})
 
     @app.get("/api/v1/progress")
     def progress_projection(request: Request):
@@ -247,10 +259,10 @@ def create_app(runtime) -> FastAPI:
             return redact(evidence.events(runtime, limit=limit, offset=offset))
 
     @app.get("/", response_class=HTMLResponse)
-    def page(request: Request):
+    def page(request: Request, end_at: str | None = None):
         identity(request)
         with runtime.database.snapshot():
-            return render(request, "overview", overview_data())
+            return render(request, "overview", overview_data(end_at))
 
     @app.get("/progress", response_class=HTMLResponse)
     def progress_page(request: Request):
@@ -315,6 +327,7 @@ def create_app(runtime) -> FastAPI:
 
     register_controls(app, runtime, identity, owner_write)
     register_service_controls(app, runtime, identity, owner_write)
+    owner_expenses.register(app, runtime, identity, owner_write)
     return app
 
 

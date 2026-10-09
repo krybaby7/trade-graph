@@ -7,10 +7,14 @@ Native generation completion and validated task completion are separate outcomes
 from __future__ import annotations
 
 from datetime import datetime
+from typing import get_args
+
+from pydantic import ValidationError
 
 from trade_graph.adapters.models.subscription import sanitize_quota
 from trade_graph.api import evidence
 from trade_graph.api.security import redact
+from trade_graph.contracts.models import ModelDiagnostic, ModelFailureKind
 from trade_graph.domain.clock import utc_iso
 
 _ROLES = {
@@ -20,6 +24,7 @@ _ROLES = {
 _FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "billed_output_tokens",
            "reasoning_tokens", "tool_units")
 _MEASURES = (*_FIELDS, "input_tokens", "output_tokens", "total_tokens")
+_FAILURES = frozenset(get_args(ModelFailureKind))
 
 
 def _number(value) -> int | None:
@@ -48,17 +53,29 @@ def _native(row, *, source: str, parent: dict | None = None) -> dict:
     if not isinstance(usage, dict):
         usage = {}
     status = "FAILED" if row["state"] == "COMPLETED" and result.get("ok") is False else row["state"]
+    actual_model = row.get("actual_model") or result.get("provider_model")
+    if not isinstance(actual_model, str) or not actual_model:
+        actual_model = None
+    diagnostic = None
+    if isinstance(result.get("diagnostic"), dict):
+        try:
+            diagnostic = ModelDiagnostic.model_validate(result["diagnostic"]).model_dump(mode="json")
+        except ValidationError:
+            pass
+    failure = result.get("failure")
+    if not isinstance(failure, str) or failure not in _FAILURES:
+        failure = None
     return {
         "invocation_id": parent["invocation_id"], "attempt_id": row.get("attempt_id", parent["invocation_id"]),
         "attempt_index": row.get("attempt_index", 1), "attempt_kind": row.get("attempt_kind", "primary"),
         "task_id": parent["task_id"],
         "root_task_id": parent["root_task_id"], "run_id": parent["run_id"], "role": parent["role"],
         "system_version_id": parent["system_version_id"], "provider": row["provider"],
-        "requested_model": row["requested_model"], "model": row.get("actual_model") or row["requested_model"],
+        "requested_model": row["requested_model"], "actual_model": actual_model, "model": actual_model,
         "status": status, "persisted_state": row["state"], "created_at": row["created_at"],
         "updated_at": row["updated_at"], "completed_at": row["updated_at"] if status == "COMPLETED" else None,
         "synthetic": bool(parent.get("synthetic", False)), "source": source,
-        "failure": result.get("failure"), "usage": _usage(usage),
+        "failure": failure, "diagnostic": diagnostic, "usage": _usage(usage),
         "usage_reported": bool(usage), "quota": sanitize_quota(evidence._json(row.get("quota_json"))),
         "outcome_basis": "native generation; task validation and application are reported separately",
     }
@@ -141,6 +158,12 @@ def _shared_quota(runtime, records: list[dict], now: str) -> dict:
                     any(window.get(field) is not None for field in ("remaining_percent", "used_percent"))
                     for window in windows.values())
     return {"scope": "shared account allowance", "observed_at": latest.get("observed_at"),
+            "age_seconds": (int((datetime.fromisoformat(now.replace("Z", "+00:00")) -
+                                  datetime.fromisoformat(latest["observed_at"].replace("Z", "+00:00")))
+                                 .total_seconds()) if latest else None),
+            "fresh_for_dispatch": bool(latest and
+                (datetime.fromisoformat(now.replace("Z", "+00:00")) -
+                 datetime.fromisoformat(latest["observed_at"].replace("Z", "+00:00"))).total_seconds() <= 30),
             "provider": latest.get("provider"), "windows": windows, "source": latest.get("source"),
             "record_source": latest.get("record_source"), "available": available,
             "metadata_error": latest.get("metadata_error", False),
@@ -212,6 +235,7 @@ def overview(runtime) -> dict:
             departments.append({
                 "role": role, "name": name, "last_native":
                     evidence._pick(latest, ("invocation_id", "attempt_id", "task_id", "provider", "model", "status",
+                                           "requested_model", "actual_model", "diagnostic",
                                            "created_at", "updated_at", "completed_at", "synthetic", "failure",
                                            "persisted_state",
                                            "outcome_basis")) if latest else None,
@@ -231,7 +255,8 @@ def overview(runtime) -> dict:
         counts["trades"] = counts["fills"]
         return redact({"portfolio_id": runtime.portfolio_id, "as_of": now, "departments": departments,
                        "usage": {"period": "all retained lifetime records", "departments": usage_departments,
-                                 "totals": _totals(records), "shared_quota": _shared_quota(runtime, records, now)},
+                                 "totals": _totals(records), "shared_quota": _shared_quota(runtime, records, now),
+                                 "native_attempts": records},
                        "counts": counts, "count_definitions": {"trades": "persisted fills, including partial fills",
                                                                   "orders": "persisted order intents"},
                        "service": _service(runtime, now), "decisions": recent_decisions["decisions"],

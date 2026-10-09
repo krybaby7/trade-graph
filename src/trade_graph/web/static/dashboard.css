@@ -233,3 +233,12 @@ pre { max-width: 100%; overflow: auto; padding: 1rem; border-radius: 0.35rem; ba
   .data-table { min-width: 0; }
   a { color: inherit; }
 }
+/* Home overview reuses the dashboard's responsive panels and monetary display. */
+.live-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:0.75rem; margin-bottom:1rem; }
+.live-toolbar [data-live-freshness] { margin-right:auto; }
+.department-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr)); gap:1rem; }
+.department-card { padding:1rem; border:1px solid var(--border,#809090); border-radius:0.65rem; min-width:0; }
+.department-card small { display:block; overflow-wrap:anywhere; }
+[data-live-content] .key-value dd { overflow-wrap:anywhere; }
+[data-live-content] details { margin-top:1rem; }
+[data-live-content] summary { cursor:pointer; font-weight:600; }

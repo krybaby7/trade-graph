@@ -1,9 +1,13 @@
 {% extends 'base.html' %}
 {% from 'macros.html' import metric, money, value, badge, empty, data_tree %}
 {% block title %}Overview{% endblock %}
-{% block heading %}Portfolio overview{% endblock %}
+{% block extra_head %}<script src="/static/live.js" defer></script>{% endblock %}
+{% block heading %}Trade Graph today{% endblock %}
 {% block description %}{{ 'Live allocation, trading performance and real operating expenses, with their valuation basis.' if operating_mode == 'live' else 'Virtual capital, trading performance and real operating expenses, with their valuation basis.' }}{% endblock %}
 {% block content %}
+<div data-live-content>
+{% if data.get('economic_result') %}{% include 'live_home.html' %}{% endif %}
+<details class="panel"><summary>Account valuation and retained history</summary>
 {% set currency = data.get('reporting_currency', currency|default('EUR')) %}
 {% set performance = data.get('performance', {}) %}
 {% set valuation = data.get('valuation', {}) %}
@@ -52,4 +56,6 @@
   {% if not valuation.get('marks') and not valuation.get('fx') %}{{ empty('No valuation observations are recorded for this projection. Unavailable amounts are not treated as zero.') }}{% endif %}
 </section>
 <section class="panel"><div class="panel-heading"><h2 class="panel-title">External capital flows</h2></div>{% if flows.get('items') %}<div class="table-wrap"><table class="data-table"><thead><tr><th>Kind</th><th>Native amount</th><th>Reporting amount</th><th>At</th></tr></thead><tbody>{% for item in flows['items'] %}<tr><td>{{ item.get('kind') }}</td><td>{{ money(item.get('amount'), item.get('asset', '')) }}</td><td>{{ money(item.get('reporting_amount'), currency) }}</td><td>{{ value(item.get('at')) }}</td></tr>{% endfor %}</tbody></table></div>{% else %}{{ empty('No external capital flows are recorded.') }}{% endif %}</section>
+</details>
+</div>
 {% endblock %}

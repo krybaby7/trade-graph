@@ -269,7 +269,7 @@ def _subscription_cost_state(runtime, at: str) -> dict:
     # captures admission. Consume it without constructing a controller, loading
     # profiles, probing a CLI or touching broker/worker lifecycle methods here.
     controller = getattr(runtime, "service_controller", None)
-    prerequisites = getattr(controller, "prerequisites", None)
+    prerequisites = getattr(runtime, "subscription_readonly_status", None) or getattr(controller, "prerequisites", None)
     if callable(prerequisites):
         try:
             ready = prerequisites()

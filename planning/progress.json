@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-09",
-  "status_note": "Owner-authorized recovered subscription capacity repair deployed through original-inode authenticated manifest transition. Subscription192tasks/1GiB/noextra swap; bounded sanitized diagnostics. Original history/witness and accepted reporting gap preserved. Observed natural scheduled role succeeded; zero new cgroup limit/OOM events.196focused deployment/diagnostic checks and92financial tests plus actual-image/WAL/isolation probes pass. No forced inference or strategy/schedule change; broader acceptance unchanged.",
+  "status_note": "Live operating dashboard continuation claimed from deployed capacity/logging source 493c25c. Isolated worktrees/tmp databases; operating paper service unchanged during development. Pending implementation/deployment evidence; broader acceptance unchanged.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -226,8 +226,8 @@
     },
     "T17": {
       "status": "in_progress",
-      "owner": "codex",
-      "branch": "codex/resource-capacity-20261009",
+      "owner": "codex-live-dashboard",
+      "branch": "codex/live-dashboard-20261009",
       "evidence": [
         "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
         "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
