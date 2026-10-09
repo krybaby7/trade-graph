@@ -38,6 +38,93 @@ SCOPES = {
 }
 OMIT_COLUMNS = {"request_json", "response_json", "input_json", "output_json", "result_json", "raw_response",
                 "pid", "pid_start_ticks", "lease_token", "token", "token_hash", "csrf_secret"}
+_PROMPT_FIELDS = {
+    "instructions", "source_instruction", "analysis_instruction", "prompt", "prompts", "system_prompt",
+    "raw_redacted", "raw_output", "raw_input", "raw_response", "raw_request", "model_request",
+    "provider_response", "provider_text", "provider_conversation", "transcript", "transcripts",
+    "conversation", "messages", "chain_of_thought", "prompt_template", "prompt_text", "role_prompt", "new_prompt",
+}
+_REPORT = ("report_id", "role", "kind", "summary", "evidence_refs")
+_COMPLETION = (
+    "_status", "status", "reason", "error", "decision_id", "intent_id", "report_id", "candidate_id", "change_id",
+    "action", "usage_reservations", "context_bytes", "input_tokens", "output_tokens", "effects",
+)
+
+
+def _without_prompt_fields(value):
+    """Keep business facts while dropping prompt/transcript containers at every depth."""
+    if isinstance(value, dict):
+        return {key: _without_prompt_fields(item) for key, item in value.items()
+                if str(key).lower().replace("-", "_") not in _PROMPT_FIELDS}
+    if isinstance(value, list):
+        return [_without_prompt_fields(item) for item in value]
+    return value
+
+
+def _report(document) -> dict:
+    return evidence._scalar_pick(document, _REPORT)
+
+
+def _snapshot_payload(document: dict, runtime) -> dict:
+    # A snapshot can contain raw instructions, Engineer source files and failed
+    # provider context. Export the same explicit inputs used in decision detail.
+    result = evidence._retained_inputs(document, None)
+    result["artifact"] = evidence._scalar_pick(document.get("artifact"),
+        ("version_id", "artifact_hash", "generation", "manifest_sha256"))
+    if not result["strategy_templates"]:
+        result["strategy_templates"] = {
+            key: evidence._scalar_pick(value, evidence._STRATEGY)
+            for key, value in evidence._mapping(document.get("strategy_templates")).items()
+        }
+    result["evidence_refs"] = [ref for ref in document.get("evidence_refs", []) if isinstance(ref, str)]
+    selected = evidence._mapping(document.get("selected_context"))
+    lesson_refs = [item["record_id"] for item in selected.get("lessons", [])
+                   if isinstance(item, dict) and isinstance(item.get("record_id"), str)]
+    retained_lessons = runtime.database.execute(
+        "SELECT revision_id FROM lessons WHERE portfolio_id=? AND revision_id IN (SELECT value FROM json_each(?))",
+        (runtime.portfolio_id, json.dumps(lesson_refs)),
+    ).fetchall()
+    result["selected_context"] = {
+        "always_include": [name for name in selected.get("always_include", [])
+                           if name in {"active_safety", "mandate_obligations"}],
+        "lesson_revision_ids": sorted(row["revision_id"] for row in retained_lessons),
+    }
+    result["reports"] = [_report(item) for item in document.get("reports", []) if isinstance(item, dict)]
+    result["decisions"] = [evidence._pick(item, evidence._DECISION)
+                           for item in document.get("decisions", []) if isinstance(item, dict)]
+    result["lesson_revisions"] = [evidence._pick(item, evidence._LESSON)
+                                 for item in document.get("lesson_revisions", []) if isinstance(item, dict)]
+    return _without_prompt_fields(result)
+
+
+def _document(table: str, document, runtime):
+    if not isinstance(document, dict):
+        return _without_prompt_fields(document)
+    if table == "snapshots":
+        return _snapshot_payload(document, runtime)
+    if table in {"decisions", "leader_decisions"}:
+        return _without_prompt_fields(evidence._pick(document, evidence._DECISION))
+    if table == "findings":
+        return _without_prompt_fields(evidence._pick(document, evidence._FINDING))
+    if table == "lessons":
+        return _without_prompt_fields(evidence._pick(document, evidence._LESSON))
+    if table == "role_results":
+        result = _without_prompt_fields(evidence._pick(document, _COMPLETION))
+        if "artifact" in document:
+            result["artifact"] = evidence._scalar_pick(document["artifact"],
+                ("version_id", "artifact_hash", "generation", "manifest_sha256"))
+        return result
+    if table == "secretary_reports":
+        return _report(document)
+    if table == "secretary_digests":
+        result = evidence._scalar_pick(document, ("digest_id", "portfolio_id", "evidence_refs", "material"))
+        result["reports"] = [_report(item) for item in document.get("reports", []) if isinstance(item, dict)]
+        result["groups"] = {key: refs for key, refs in evidence._mapping(document.get("groups")).items()
+                            if isinstance(refs, list) and all(isinstance(ref, str) for ref in refs)}
+        return result
+    # Financial/event payloads retain native amounts, units, timestamps and IDs;
+    # prompt-shaped fields are never part of this safe business-record export.
+    return _without_prompt_fields(document)
 
 
 def _safe_row(table, row, runtime):
@@ -53,6 +140,7 @@ def _safe_row(table, row, runtime):
                 value = json.loads(value)
             except (ValueError, TypeError):
                 value = {"status": "unreadable retained JSON"}
+            value = _document(table, value, runtime)
         result[key.removesuffix("_json")] = value
     return redact(result)
 
