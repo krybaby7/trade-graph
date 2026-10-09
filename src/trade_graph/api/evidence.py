@@ -90,6 +90,24 @@ _DECISION = (
     "mandate_id",
 )
 _TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "DEAD_LETTER"}
+_MARKET_FEATURES = (
+    "bid", "ask", "mid", "spread", "observation_id", "sma_20", "sma_50", "pullback_from_high",
+    "pullback_depth", "range_high", "range_low", "midpoint", "midpoint_distance", "hourly_return",
+    "four_hour_drift", "trend",
+)
+_OBSERVATION = (
+    "schema_version", "observation_id", "venue", "symbol", "event_time_utc", "available_at_utc", "source",
+    "bid", "ask", "last", "bid_size", "ask_size", "volume", "sequence", "gap", "stale",
+)
+_STRATEGY = (
+    "strategy_id", "hypothesis", "features", "entry_rule", "exit_rule", "entry", "exit", "invalidation",
+    "sizing_rule", "required_capabilities", "validation_protocol",
+)
+_MANDATE = (
+    "mandate_id", "portfolio_id", "revision", "strategy_ids", "experiment_id", "symbols", "allowed_order_types",
+    "max_gross_exposure_fraction", "max_single_asset_exposure_fraction", "decision_horizon_seconds",
+    "order_types_long_only", "discretionary_experiment", "max_quote_age_seconds", "expires_at_utc", "resource_note",
+)
 
 
 def _json(value: str | None) -> dict:
@@ -104,6 +122,69 @@ def _json(value: str | None) -> dict:
 
 def _pick(value: dict, keys: tuple[str, ...]) -> dict:
     return {key: value[key] for key in keys if key in value}
+
+
+def _mapping(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _scalar_pick(value, keys: tuple[str, ...]) -> dict:
+    """Select scalar fields, never an unexpected nested prompt or provider document."""
+    return {key: item for key, item in _pick(_mapping(value), keys).items()
+            if item is None or type(item) in (str, int, float, bool)
+            or isinstance(item, list) and all(type(part) in (str, int, float, bool) for part in item)}
+
+
+def _retained_inputs(payload: dict, strategy_id: str | None) -> dict:
+    """Explicit per-structure allowlists preserve decision inputs without raw prompts."""
+    market = {}
+    for symbol, value in _mapping(payload.get("market")).items():
+        item = _mapping(value)
+        history = _mapping(item.get("history"))
+        historical = _scalar_pick(history, (
+            "symbol", "as_of_utc", "source", "interval_minutes", "feature_version", "source_ref", "stale",
+            "latest_close_time_utc", "latest_expected_close_time_utc", "event_time_utc", "available_at_utc",
+            "candle_ids",
+        ))
+        historical["values"] = _scalar_pick(history.get("values"), _MARKET_FEATURES)
+        historical["features"] = {
+            name: _scalar_pick(feature, (
+                "status", "definition", "lookback_candles", "available_candles", "missing_close_times_utc",
+                "window_start_close_time_utc", "window_end_close_time_utc", "event_time_utc", "available_at_utc",
+                "value",
+            )) for name, feature in _mapping(history.get("features")).items() if name in _MARKET_FEATURES
+        }
+        historical["provenance"] = _scalar_pick(history.get("provenance"), (
+            "source", "feature_snapshot_ref", "retained_candle_manifest_sha256", "retained_candle_count",
+            "availability_basis",
+        ))
+        market[symbol] = {**_scalar_pick(item, ("fresh",)),
+                          "observation": _scalar_pick(item.get("observation"), _OBSERVATION),
+                          "features": _scalar_pick(item.get("features"), _MARKET_FEATURES), "history": historical}
+    portfolio = _mapping(payload.get("portfolio"))
+    retained_portfolio = {key: {asset: amount for asset, amount in _mapping(portfolio.get(key)).items()
+                               if type(amount) in (str, int)} for key in ("cash", "inventory", "reserved")}
+    retained_portfolio["reporting_valuation"] = _scalar_pick(
+        portfolio.get("reporting_valuation"), ("currency", "equity", "provisional", "stale"))
+    retained_portfolio["execution_state"] = _scalar_pick(
+        portfolio.get("execution_state"), ("basis", "uncertain_order_ids", "orders_truncated"))
+    retained_portfolio["open_orders"] = [
+        _scalar_pick(item, ("intent_id", "symbol", "state")) for item in portfolio.get("open_orders", [])
+        if isinstance(item, dict)
+    ] if isinstance(portfolio.get("open_orders", []), list) else []
+    templates = _mapping(payload.get("active_strategy_templates"))
+    if not templates and strategy_id:
+        stored = _mapping(payload.get("strategy_templates"))
+        templates = {strategy_id: stored[strategy_id]} if strategy_id in stored else {}
+    sources = [
+        _scalar_pick(source, ("source_ref", "kind", "url", "source_url", "publisher", "source_hash",
+                              "published_at_utc", "retrieved_at_utc", "event_at_utc", "available_at_utc"))
+        for source in payload.get("sources", []) if isinstance(source, dict)
+    ] if isinstance(payload.get("sources", []), list) else []
+    return {"as_of": payload.get("as_of"), "market": market, "portfolio": retained_portfolio,
+            "strategy_templates": {key: _scalar_pick(value, _STRATEGY) for key, value in templates.items()},
+            "sources": sources,
+            "basis": "allowlisted point-in-time fields from the retained decision snapshot"}
 
 
 def _before(value: str | None, now: str) -> bool:
@@ -415,11 +496,13 @@ def decision(runtime, decision_id: str) -> dict:
             snapshot_payload = _json(snapshot["payload_json"])
             snapshot_doc = _pick(dict(snapshot), ("snapshot_id", "as_of", "created_at"))
             snapshot_doc["artifact"] = _pick(
-                snapshot_payload.get("artifact", {}), ("version_id", "artifact_hash", "generation", "manifest_sha256")
+                _mapping(snapshot_payload.get("artifact")),
+                ("version_id", "artifact_hash", "generation", "manifest_sha256")
             )
+            snapshot_doc["retained_inputs"] = _retained_inputs(snapshot_payload, doc.get("strategy_id"))
         elif row["snapshot_id"]:
             missing.append(row["snapshot_id"])
-        selected = snapshot_payload.get("selected_context", {})
+        selected = _mapping(snapshot_payload.get("selected_context"))
         refs = set(ref for ref in doc.get("evidence_refs", []) if isinstance(ref, str))
         refs.update(ref for ref in snapshot_payload.get("evidence_refs", []) if isinstance(ref, str))
         lesson_refs = {
@@ -445,7 +528,8 @@ def decision(runtime, decision_id: str) -> dict:
         lesson_docs = [_lesson(runtime, item) for item in lesson_rows]
         if snapshot_doc is not None:
             snapshot_doc["selected_context"] = {
-                "always_include": selected.get("always_include", []),
+                "always_include": [name for name in selected.get("always_include", [])
+                                   if name in {"active_safety", "mandate_obligations"}],
                 "lesson_revision_ids": [
                     item["revision_id"] for item in lesson_docs if item["revision_id"] in lesson_refs
                 ],
@@ -542,7 +626,7 @@ def decision(runtime, decision_id: str) -> dict:
                 "research": findings,
                 "lessons": lesson_docs,
                 "versions": [dict(v) for v in version_rows],
-                "mandate": _json(mandate["document_json"]) if mandate else None,
+                "mandate": _scalar_pick(_json(mandate["document_json"]), _MANDATE) if mandate else None,
                 "evidence_missing": missing,
             }
         )
