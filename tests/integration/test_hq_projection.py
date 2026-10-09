@@ -615,3 +615,29 @@ def test_owner_checkins_come_from_the_lazy_store(env, monkeypatch):
     unavailable = snap(env)
     assert unavailable["checkins"]["available"] is False and unavailable["checkins"]["items"] == []
     assert "checkin_due" not in codes(unavailable)
+
+
+def test_all_times_iso_ms(env):
+    _scenario(env, "snapshot_busy")
+    task(env, "t-9", "leader", "FAILED", created=-7200, output={"reason": "model validation: bad"},
+         result={"_status": "FAILED", "reason": "model validation: bad"})
+    data = snap(env, calendar_days=14)
+    page = hq.story_page(env.runtime, OWNER, before="2026-01-02T00:00:00+02:00")
+    moments = [value for value in _strings({"snapshot": data, "page": page})
+               if re.match(r"^\d{4}-\d{2}-\d{2}T", value)]
+    assert moments and all(re.fullmatch(ISO_MS_PATTERN, value) for value in moments)
+
+
+def test_unreadable_records_are_skipped_not_guessed(env):
+    run(env)
+    schedule(env, "trader", 3600)
+    task(env, "t-bad", "trader", "FAILED", dedup_key="schedule:s-trader:not-a-time",
+         output={"reason": "ValueError"})
+    env.db.execute("UPDATE tasks SET created_at='not-a-time' WHERE task_id='t-bad'")
+    insert(env, "decisions", decision_id="d-bad", portfolio_id=env.pid, action="no_action", payload_json="{",
+           mandate_revision="1", policy_revision="1", snapshot_id="s", system_version_id="v",
+           created_at="yesterday", task_id=None)
+    data = snap(env)
+    assert "decision:d-bad" not in [item["id"] for item in data["story"]["items"]]
+    assert not [item for item in data["calendar"]["items"] if "not-a-time" in item["id"]]
+    assert next(item for item in data["quests"] if item["id"] == "task:t-bad")["state"] == "FAILED"

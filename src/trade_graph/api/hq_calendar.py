@@ -30,8 +30,8 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
     items: list[dict] = []
     notes: list[list] = []
 
-    def add(item: dict) -> None:
-        moment = _dt(item["at"])
+    def add(item: dict | None) -> None:
+        moment = _dt(item["at"]) if item else None
         if moment is not None and start <= moment <= end:
             items.append(item)
 
@@ -65,8 +65,10 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
 
 def _item(item_id: str, kind: str, dept, at: datetime | str, title: list, status: str, p: Projection, *,
           exact: bool = True, conditional: bool = False, detail=None, warning=None, waiting=None, link=None,
-          checkin_id=None, series=None) -> dict:
+          checkin_id=None, series=None) -> dict | None:
     moment = _dt(at)
+    if moment is None:
+        return None  # an unreadable timestamp is left out, never guessed
     return {"id": item_id, "kind": kind, "dept": dept, "at": iso_ms(moment), "title": title, "status": status,
             "exact": exact, "conditional": conditional, "past": moment < p.now, "detail": detail,
             "warning": warning, "waiting_because": waiting, "link": link, "checkin_id": checkin_id,
@@ -89,7 +91,7 @@ def _future_turns(p: Projection, role, end: datetime) -> list:
             first_detail = c.says(c.CALENDAR["only_if_running"])
         elif gate == "G5":
             first_detail = c.says(c.CALENDAR["only_if_resume"])
-    items = [_item(f"turn:{schedule_id}:{iso_ms(role.next_at)}", "dept_turn", role.dept, role.next_at,
+    items: list = [_item(f"turn:{schedule_id}:{iso_ms(role.next_at)}", "dept_turn", role.dept, role.next_at,
                    _turn_title(role.dept), "overdue" if role.overdue else "planned", p, detail=first_detail,
                    waiting=role.gate_text if role.overdue else None, series=series)]
     if not role.every:

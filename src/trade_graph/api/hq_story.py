@@ -38,6 +38,8 @@ def story(p: Projection, *, window_start: datetime, window_end: datetime, checki
     items += _account_opened(p)
     unique: dict[str, dict] = {}
     for item in items:
+        if item is None:
+            continue
         moment = _dt(item["at"])
         if moment is not None and window_start <= moment < window_end:
             unique.setdefault(item["id"], item)
@@ -49,7 +51,10 @@ def story(p: Projection, *, window_start: datetime, window_end: datetime, checki
 
 
 def _story_item(item_id: str, at, kind: str, dept: str, tone: str, headline: list, *, until=None,
-                consequence=None, quote=None, count=None, link=None, problem=False, technical=None) -> dict:
+                consequence=None, quote=None, count=None, link=None, problem=False,
+                technical=None) -> dict | None:
+    if _dt(at) is None:
+        return None  # an unreadable timestamp is left out, never guessed
     return {"id": item_id, "at": iso_ms(_dt(at)), "until": iso_ms(_dt(until)) if _dt(until) else None, "kind": kind,
             "dept": dept, "tone": tone, "headline": headline, "consequence": consequence or None, "quote": quote,
             "count": count, "link": link, "problem": problem, "technical": c.technical(technical)}
