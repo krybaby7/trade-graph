@@ -1,0 +1,1643 @@
+{
+  "schema": "trade-graph.hq.v1",
+  "as_of": "2026-10-11T19:05:00.000Z",
+  "poll_seconds": 30,
+  "mode": "paper",
+  "account": {
+    "started_at": "2026-10-05T17:17:19.483Z",
+    "reporting_currency": "EUR",
+    "day_number": 7
+  },
+  "viewer": {
+    "role": "owner",
+    "auth": "cookie",
+    "can_act": true,
+    "act_block_reason": null,
+    "owner_revision": 12
+  },
+  "now": {
+    "code": "quota_paused",
+    "tone": "resting",
+    "light": "paused",
+    "headline": [
+      {
+        "t": "text",
+        "v": "AI is resting: the subscription allowance ran out."
+      }
+    ],
+    "detail": [
+      {
+        "t": "text",
+        "v": "It turns back on by itself when a newer reading shows allowance. Practice money "
+      },
+      {
+        "t": "money",
+        "amount": "8920.05",
+        "currency": "EUR",
+        "display": "€8,920.05"
+      },
+      {
+        "t": "text",
+        "v": " · nothing held · "
+      },
+      {
+        "t": "term",
+        "key": "allowance",
+        "v": "AI allowance"
+      },
+      {
+        "t": "text",
+        "v": " 3% (new AI work stops at 40%; checked 4 min ago) · 1 thing needs you."
+      }
+    ],
+    "if_nothing": [
+      {
+        "t": "text",
+        "v": "Departments wait for allowance; nothing else changes."
+      }
+    ],
+    "since": "2026-10-11T15:12:44.000Z",
+    "primary_decision": null,
+    "attention_count": 1
+  },
+  "team": {
+    "service": {
+      "status": "RUNNING",
+      "active": true,
+      "run_id": "r-1",
+      "started_at": "2026-10-09T11:26:02.000Z",
+      "last_sign_of_life_at": "2026-10-11T19:04:57.000Z",
+      "silent_seconds": 3,
+      "stale": false,
+      "problems": [],
+      "plain": [
+        {
+          "t": "text",
+          "v": "On and working normally",
+          "code": "RUNNING"
+        }
+      ]
+    },
+    "pause": {
+      "profile": "RUNNING",
+      "originator": null,
+      "since": null,
+      "achieved": null,
+      "departments_paused": false,
+      "plain": [
+        {
+          "t": "text",
+          "v": "Normal: departments may work",
+          "code": "RUNNING"
+        }
+      ],
+      "reason": null
+    },
+    "ai": {
+      "state": "paused_quota",
+      "plain": [
+        {
+          "t": "text",
+          "v": "The allowance ran out. It turns back on by itself."
+        }
+      ],
+      "clears_by_itself": true,
+      "since": "2026-10-11T15:12:44.000Z"
+    },
+    "allowance": {
+      "status": "below_line",
+      "observed_at": "2026-10-11T19:01:12.000Z",
+      "age_seconds": 228,
+      "stop_line_percent": 40,
+      "windows": [
+        {
+          "name": "limit_1_primary",
+          "label": "weekly",
+          "duration_minutes": 10080,
+          "remaining_percent": 3,
+          "resets_at": "2026-10-12T00:00:00.000Z"
+        }
+      ],
+      "unreported_windows": [
+        "limit_1_secondary"
+      ],
+      "plain": [
+        {
+          "t": "text",
+          "v": "3% left this week. Refills Mon 00:00 UTC. A second, shorter limit isn't reported."
+        }
+      ]
+    },
+    "automatic_turns": true,
+    "automatic_optimisation": false
+  },
+  "attention": [
+    {
+      "id": "allowance_near",
+      "sev": "watch",
+      "title": [
+        {
+          "t": "text",
+          "v": "AI allowance 3%: below the line"
+        }
+      ],
+      "why": [
+        {
+          "t": "text",
+          "v": "Below the line, departments wait instead of thinking."
+        }
+      ],
+      "consequence": [
+        {
+          "t": "text",
+          "v": "Turns wait until it refills ("
+        },
+        {
+          "t": "time",
+          "at": "2026-10-12T00:00:00.000Z",
+          "style": "day_clock"
+        },
+        {
+          "t": "text",
+          "v": ")."
+        }
+      ],
+      "can_fix_here": true,
+      "how": null,
+      "decision": "pause_ai",
+      "checkin_id": null,
+      "link": null,
+      "in_next_prompt": true,
+      "since": "2026-10-11T15:12:44.000Z"
+    },
+    {
+      "id": "costs_unconfirmed",
+      "sev": "info",
+      "title": [
+        {
+          "t": "text",
+          "v": "Optional: enter this month's AI subscription bill"
+        }
+      ],
+      "why": [
+        {
+          "t": "text",
+          "v": "It completes your record of real costs."
+        }
+      ],
+      "consequence": [
+        {
+          "t": "text",
+          "v": "The 'since 5 Oct' answer stays 'not known' because of the history gap."
+        }
+      ],
+      "can_fix_here": true,
+      "how": null,
+      "decision": "record_bill",
+      "checkin_id": null,
+      "link": null,
+      "in_next_prompt": false,
+      "since": "2026-10-05T17:17:19.483Z"
+    }
+  ],
+  "departments": [
+    {
+      "id": "leader",
+      "kind": "ai",
+      "name": "Leader",
+      "room": "Leader's office",
+      "job": [
+        {
+          "t": "text",
+          "v": "Sets priorities, reviews reports, can commission improvements."
+        }
+      ],
+      "light": "paused",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Paused: waiting for AI allowance"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Paused: the allowance ran out. Prices and protection continue."
+        }
+      ],
+      "last": null,
+      "next": {
+        "at": "2026-10-14T08:13:00.000Z",
+        "exact": true,
+        "every_seconds": 604800,
+        "overdue": false,
+        "waiting_because": null,
+        "note": null,
+        "extra_rows": 0
+      },
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/organization"
+    },
+    {
+      "id": "research",
+      "kind": "ai",
+      "name": "Research",
+      "room": "Research lab",
+      "job": [
+        {
+          "t": "text",
+          "v": "Reads market data and writes short notes for the Trader."
+        }
+      ],
+      "light": "paused",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Paused: waiting for AI allowance"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Paused: the allowance ran out. Prices and protection continue."
+        }
+      ],
+      "last": null,
+      "next": {
+        "at": "2026-10-12T08:13:00.000Z",
+        "exact": true,
+        "every_seconds": 86400,
+        "overdue": false,
+        "waiting_because": null,
+        "note": null,
+        "extra_rows": 0
+      },
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/organization"
+    },
+    {
+      "id": "trader",
+      "kind": "ai",
+      "name": "Trader",
+      "room": "Trading desk",
+      "job": [
+        {
+          "t": "text",
+          "v": "Decides whether to buy, sell or wait with the practice money."
+        }
+      ],
+      "light": "paused",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Paused: waiting for AI allowance"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Paused: the allowance ran out. Prices and protection continue."
+        }
+      ],
+      "last": {
+        "at": "2026-10-11T13:56:26.000Z",
+        "outcome": "decided",
+        "text": [
+          {
+            "t": "text",
+            "v": "Looked at BTC and ETH and "
+          },
+          {
+            "t": "term",
+            "key": "wait",
+            "v": "chose to wait",
+            "code": "no_action"
+          },
+          {
+            "t": "text",
+            "v": ". No money moved."
+          }
+        ],
+        "quote": null,
+        "link": "/decisions/d-171"
+      },
+      "next": {
+        "at": "2026-10-11T17:56:26.000Z",
+        "exact": true,
+        "every_seconds": 14400,
+        "overdue": true,
+        "waiting_because": [
+          {
+            "t": "text",
+            "v": "Waiting: the AI is paused (the allowance ran out)."
+          }
+        ],
+        "note": [
+          {
+            "t": "text",
+            "v": "If several turns were missed, the team does one catch-up turn, not all of them."
+          }
+        ],
+        "extra_rows": 0
+      },
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": [
+        {
+          "t": "text",
+          "v": "BTC/USD and ETH/USD only; at most 50% of the money in coins."
+        }
+      ],
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/trading"
+    },
+    {
+      "id": "learning",
+      "kind": "ai",
+      "name": "Learning",
+      "room": "Learning room",
+      "job": [
+        {
+          "t": "text",
+          "v": "Looks back at decisions and writes lessons."
+        }
+      ],
+      "light": "paused",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Paused: waiting for AI allowance"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Paused: the allowance ran out. Prices and protection continue."
+        }
+      ],
+      "last": null,
+      "next": {
+        "at": "2026-10-12T06:40:00.000Z",
+        "exact": true,
+        "every_seconds": 86400,
+        "overdue": false,
+        "waiting_because": null,
+        "note": null,
+        "extra_rows": 0
+      },
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/organization"
+    },
+    {
+      "id": "optimisation",
+      "kind": "ai",
+      "name": "Optimisation",
+      "room": "Optimisation workshop",
+      "job": [
+        {
+          "t": "text",
+          "v": "Only works when you ask."
+        }
+      ],
+      "light": "on_call",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "On call: only works when asked"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Only works when asked."
+        }
+      ],
+      "last": null,
+      "next": null,
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/organization"
+    },
+    {
+      "id": "engineer",
+      "kind": "ai",
+      "name": "Engineer",
+      "room": "Engineering workshop",
+      "job": [
+        {
+          "t": "text",
+          "v": "Builds small, checked improvements when the Leader commissions one."
+        }
+      ],
+      "light": "on_call",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "On call: only works when asked"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Only works when asked."
+        }
+      ],
+      "last": null,
+      "next": null,
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/changes"
+    },
+    {
+      "id": "secretary",
+      "kind": "software",
+      "name": "Secretary",
+      "room": "Post room",
+      "job": [
+        {
+          "t": "text",
+          "v": "Keeps the records and tells the Leader about problems."
+        }
+      ],
+      "light": "ok",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Working normally"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Working normally."
+        }
+      ],
+      "last": null,
+      "next": null,
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/organization"
+    },
+    {
+      "id": "market",
+      "kind": "software",
+      "name": "Price feed",
+      "room": "Price feed",
+      "job": [
+        {
+          "t": "text",
+          "v": "Brings in BTC and ETH prices from Kraken's public feed."
+        }
+      ],
+      "light": "ok",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Working normally"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Working normally."
+        }
+      ],
+      "last": null,
+      "next": null,
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/trading"
+    },
+    {
+      "id": "accounts",
+      "kind": "software",
+      "name": "Accounts desk",
+      "room": "Accounts desk",
+      "job": [
+        {
+          "t": "text",
+          "v": "Places practice orders, keeps the balances and double-checks them."
+        }
+      ],
+      "light": "ok",
+      "light_text": [
+        {
+          "t": "text",
+          "v": "Working normally"
+        }
+      ],
+      "had_problem": false,
+      "now": [
+        {
+          "t": "text",
+          "v": "Working normally."
+        }
+      ],
+      "last": null,
+      "next": null,
+      "heads_up": null,
+      "if_nothing": null,
+      "rules": null,
+      "record_7d": {
+        "done": 0,
+        "problems": 0,
+        "skipped": 0
+      },
+      "open_quests": 0,
+      "facts": [],
+      "details_href": "/trading"
+    }
+  ],
+  "quests": [
+    {
+      "id": "task:t-77",
+      "dept": "trader",
+      "origin": "schedule",
+      "origin_text": [
+        {
+          "t": "text",
+          "v": "Regular turn (every 4 hours)"
+        }
+      ],
+      "state": "QUEUED",
+      "state_text": [
+        {
+          "t": "text",
+          "v": "Waiting for AI allowance (re-checks every 30 s)"
+        }
+      ],
+      "needs_you": false,
+      "terminal": false,
+      "created_at": "2026-10-11T17:56:26.000Z",
+      "due_at": "2026-10-11T17:56:26.000Z",
+      "deadline_at": null,
+      "finished_at": null,
+      "attempts": {
+        "used": 0,
+        "max": 3
+      },
+      "reason": null,
+      "link": "/organization"
+    }
+  ],
+  "calendar": {
+    "from": "2026-10-09T19:05:00.000Z",
+    "to": "2026-10-18T19:05:00.000Z",
+    "truncated": false,
+    "up_next": [
+      "refill:limit_1_primary",
+      "turn:s-learning:2026-10-12T06:40:00.000Z",
+      "turn:s-research:2026-10-12T08:13:00.000Z",
+      "turn:s-leader:2026-10-14T08:13:00.000Z"
+    ],
+    "items": [
+      {
+        "id": "turn:s-trader:2026-10-11T13:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T13:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "done",
+        "exact": true,
+        "conditional": false,
+        "past": true,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T17:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T17:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "overdue",
+        "exact": true,
+        "conditional": false,
+        "past": true,
+        "detail": null,
+        "warning": null,
+        "waiting_because": [
+          {
+            "t": "text",
+            "v": "Waiting: the AI is paused (the allowance ran out)."
+          }
+        ],
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T23:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T23:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "refill:limit_1_primary",
+        "kind": "allowance_refill",
+        "dept": null,
+        "at": "2026-10-12T00:00:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "AI allowance refills (weekly limit)"
+          }
+        ],
+        "status": "planned",
+        "exact": true,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": null
+      },
+      {
+        "id": "turn:s-learning:2026-10-12T06:40:00.000Z",
+        "kind": "dept_turn",
+        "dept": "learning",
+        "at": "2026-10-12T06:40:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Learning's turn"
+          }
+        ],
+        "status": "planned",
+        "exact": true,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-learning",
+          "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-research:2026-10-12T08:13:00.000Z",
+        "kind": "dept_turn",
+        "dept": "research",
+        "at": "2026-10-12T08:13:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
+          }
+        ],
+        "status": "planned",
+        "exact": true,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-research",
+          "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-leader:2026-10-14T08:13:00.000Z",
+        "kind": "dept_turn",
+        "dept": "leader",
+        "at": "2026-10-14T08:13:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Leader's turn"
+          }
+        ],
+        "status": "planned",
+        "exact": true,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-leader",
+          "every_seconds": 604800
+        }
+      }
+    ],
+    "recurring": [
+      {
+        "id": "history",
+        "title": [
+          {
+            "t": "text",
+            "v": "Price history refresh"
+          }
+        ],
+        "every_seconds": 3600,
+        "next_at": "2026-10-11T20:00:00.000Z",
+        "machine": true
+      }
+    ],
+    "notes": []
+  },
+  "story": {
+    "window_start": "2026-10-08T19:05:00.000Z",
+    "next_before": "2026-10-08T19:05:00.000Z",
+    "items": [
+      {
+        "id": "quota-wait:trader:2026-10-11T17:56:26.000Z",
+        "at": "2026-10-11T17:56:30.000Z",
+        "until": "2026-10-11T19:04:30.000Z",
+        "kind": "allowance_wait",
+        "dept": "trader",
+        "tone": "neutral",
+        "headline": [
+          {
+            "t": "text",
+            "v": "Trader's turn waited for AI allowance from "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-11T17:56:30.000Z",
+            "style": "clock"
+          },
+          {
+            "t": "text",
+            "v": " to "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-11T19:04:30.000Z",
+            "style": "clock"
+          },
+          {
+            "t": "text",
+            "v": " (137 retries)."
+          }
+        ],
+        "consequence": [
+          {
+            "t": "text",
+            "v": "No allowance was used while waiting."
+          }
+        ],
+        "quote": null,
+        "count": 137,
+        "link": null,
+        "problem": false,
+        "technical": "subscription_quota_deferred"
+      },
+      {
+        "id": "ai-paused:2026-10-11T15:12:44.000Z",
+        "at": "2026-10-11T15:12:44.000Z",
+        "until": null,
+        "kind": "ai_paused",
+        "dept": "hq",
+        "tone": "attention",
+        "headline": [
+          {
+            "t": "text",
+            "v": "AI paused: the subscription allowance ran out."
+          }
+        ],
+        "consequence": [
+          {
+            "t": "text",
+            "v": "Prices and protection continued; departments waited."
+          }
+        ],
+        "quote": null,
+        "count": null,
+        "link": null,
+        "problem": true,
+        "technical": "subscription quota exhausted"
+      },
+      {
+        "id": "decision:d-171",
+        "at": "2026-10-11T13:56:26.000Z",
+        "until": null,
+        "kind": "trader_decision",
+        "dept": "trader",
+        "tone": "neutral",
+        "headline": [
+          {
+            "t": "text",
+            "v": "Trader looked at BTC and ETH and chose to wait."
+          }
+        ],
+        "consequence": [
+          {
+            "t": "text",
+            "v": "No money moved."
+          }
+        ],
+        "quote": null,
+        "count": null,
+        "link": "/decisions/d-171",
+        "problem": false,
+        "technical": "no_action"
+      }
+    ]
+  },
+  "money": {
+    "available": true,
+    "unavailable_reason": null,
+    "as_of": "2026-10-11T19:04:40.000Z",
+    "practice_value": {
+      "amount": "8920.05",
+      "currency": "EUR",
+      "display": "€8,920.05"
+    },
+    "value_final": false,
+    "estimate_notes": [
+      {
+        "code": "euro_rate_from_earlier_day",
+        "tone": "calm",
+        "text": [
+          {
+            "t": "text",
+            "v": "Uses the latest published euro rate (dated "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-09T00:00:00.000Z",
+            "style": "date"
+          },
+          {
+            "t": "text",
+            "v": "). Normal until today's rate is published."
+          }
+        ]
+      }
+    ],
+    "opening": {
+      "native": [
+        {
+          "amount": "10000",
+          "currency": "USD",
+          "display": "$10,000.00"
+        }
+      ],
+      "reporting": {
+        "amount": "8912.4",
+        "currency": "EUR",
+        "display": "€8,912.40"
+      },
+      "at": "2026-10-05T17:17:19.483Z"
+    },
+    "change": {
+      "total": {
+        "amount": "7.65",
+        "currency": "EUR",
+        "display": "€7.65"
+      },
+      "currency_effect": {
+        "amount": "7.65",
+        "currency": "EUR",
+        "display": "€7.65"
+      },
+      "team_effect": {
+        "amount": "0",
+        "currency": "EUR",
+        "display": "€0.00"
+      },
+      "unknown_reason": null
+    },
+    "holdings": {
+      "coins": {
+        "amount": "0",
+        "currency": "EUR",
+        "display": "€0.00"
+      },
+      "cash": {
+        "amount": "8920.05",
+        "currency": "EUR",
+        "display": "€8,920.05"
+      },
+      "flat": true,
+      "open_orders": 0,
+      "unclear_orders": 0
+    },
+    "counts": {
+      "decisions": 26,
+      "waits": 26,
+      "buys": 0,
+      "sells": 0,
+      "other_decisions": 0,
+      "orders": 0,
+      "completed_trades": 0,
+      "research_notes": 7,
+      "notes_in_use": 0,
+      "lessons": 4
+    },
+    "pays_for_itself": {
+      "status": "unknown",
+      "net": null,
+      "missing": [
+        {
+          "code": "subscription_bills_unconfirmed",
+          "fixable_here": true,
+          "text": [
+            {
+              "t": "text",
+              "v": "You haven't confirmed your AI subscription bills for this period."
+            }
+          ]
+        },
+        {
+          "code": "history_gap",
+          "fixable_here": false,
+          "text": [
+            {
+              "t": "text",
+              "v": "Part of the early history was lost in a repair (accepted)."
+            }
+          ]
+        }
+      ],
+      "honest_note": [
+        {
+          "t": "text",
+          "v": "Because of the history gap, this can't be answered for the whole time since 5 Oct, even after you enter bills."
+        }
+      ]
+    },
+    "at_risk": [
+      {
+        "t": "text",
+        "v": "Is my money at risk? No. This is practice money; real costs are only the bills you enter."
+      }
+    ]
+  },
+  "market": [
+    {
+      "symbol": "BTC/USD",
+      "price": {
+        "amount": "82511.1",
+        "currency": "USD",
+        "display": "$82,511.10"
+      },
+      "price_at": "2026-10-11T19:04:58.000Z",
+      "price_age_seconds": 2,
+      "avg_20h": {
+        "amount": "82390.6",
+        "currency": "USD",
+        "display": "$82,390.60"
+      },
+      "avg_50h": {
+        "amount": "82300.15",
+        "currency": "USD",
+        "display": "$82,300.15"
+      },
+      "trend": "below",
+      "text": [
+        {
+          "t": "text",
+          "v": "Recent prices are lower than the longer-run average (drifting down). The Trader decides for itself what this means."
+        }
+      ]
+    },
+    {
+      "symbol": "ETH/USD",
+      "price": {
+        "amount": "2433.9",
+        "currency": "USD",
+        "display": "$2,433.90"
+      },
+      "price_at": "2026-10-11T19:04:58.000Z",
+      "price_age_seconds": 2,
+      "avg_20h": {
+        "amount": "2440.25",
+        "currency": "USD",
+        "display": "$2,440.25"
+      },
+      "avg_50h": {
+        "amount": "2418.6",
+        "currency": "USD",
+        "display": "$2,418.60"
+      },
+      "trend": "above",
+      "text": [
+        {
+          "t": "text",
+          "v": "Recent prices are higher than the longer-run average (drifting up). The Trader decides for itself what this means."
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "start_trading",
+      "shown": false,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": false,
+      "recommended_because": null,
+      "title": "Start the team",
+      "button_label": "Start",
+      "confirm_label": "Yes, start the team",
+      "weight": "light",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Starts the team's program, or reconnects to the one already running. It watches Kraken prices, keeps the practice account and runs turns on the timetable. If AI isn't available it only watches and protects. It does not lift a pause."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money. Turns then use your AI allowance."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Yes: Stop safely."
+          }
+        ],
+        "reversible": "yes",
+        "when": [
+          {
+            "t": "text",
+            "v": "Not needed right now: the team is on."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {}
+    },
+    {
+      "id": "pause_ai",
+      "shown": true,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": true,
+      "recommended_because": [
+        {
+          "t": "text",
+          "v": "The allowance is below the line."
+        }
+      ],
+      "title": "Pause the AI, keep protection",
+      "button_label": "Pause AI",
+      "confirm_label": "Yes, pause the AI",
+      "weight": "light",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Departments stop starting new AI work. No new buying."
+            }
+          ],
+          [
+            {
+              "t": "text",
+              "v": "Prices, record-keeping and protection continue. Queued turns wait and re-check every 30 s."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money. Saves AI allowance."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Yes: press Resume. It double-checks orders and balances first."
+          }
+        ],
+        "reversible": "yes",
+        "when": [
+          {
+            "t": "text",
+            "v": "Recommended: the allowance is below the line."
+          }
+        ],
+        "right_now": [
+          [
+            {
+              "t": "text",
+              "v": "These would wait: Trader (overdue), Research "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-12T08:13:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ". Each runs once after Resume."
+            }
+          ]
+        ]
+      },
+      "facts": {}
+    },
+    {
+      "id": "resume",
+      "shown": false,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": false,
+      "recommended_because": null,
+      "title": "Resume",
+      "button_label": "Resume",
+      "confirm_label": "Yes, resume",
+      "weight": "light",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "First double-checks orders and balances. If all is clear, departments return to their timetable. Each department that missed turns runs once."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money. Turns then use AI allowance."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Yes: pause again any time."
+          }
+        ],
+        "reversible": "yes",
+        "when": [
+          {
+            "t": "text",
+            "v": "Only after a pause."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {}
+    },
+    {
+      "id": "start_optimisation",
+      "shown": true,
+      "available": false,
+      "unavailable_because": [
+        {
+          "t": "text",
+          "v": "Needs the team running normally, no pause, and no review already in progress."
+        }
+      ],
+      "recommended": false,
+      "recommended_because": null,
+      "title": "Ask for an optimisation review",
+      "button_label": "Ask for a review",
+      "confirm_label": "Yes, ask for one review",
+      "weight": "light",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "The Optimisation department reviews quality and cost once; the Leader then reads its answer and may commission an improvement. Any improvement still needs checks and a trial. Nothing changes automatically."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money. Uses AI allowance: up to 3 tries plus a Leader follow-up. No time limit set. The system checks your allowance when you confirm and may say no."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Can't be cancelled once started. Pausing sets aside its current step."
+          }
+        ],
+        "reversible": "no",
+        "when": [
+          {
+            "t": "text",
+            "v": "Occasionally, for a fresh look; not routinely."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {
+        "max_attempts": 3,
+        "deadline_seconds": null
+      }
+    },
+    {
+      "id": "stop_safely",
+      "shown": true,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": false,
+      "recommended_because": null,
+      "title": "Stop the team safely",
+      "button_label": "Stop",
+      "confirm_label": "Yes, stop the team",
+      "weight": "careful",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Everything stops and the team's program shuts down. While stopped, nothing is watched. To restart: Start the team, wait about a minute, then Resume."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Yes: Start, then Resume."
+          }
+        ],
+        "reversible": "yes",
+        "when": [
+          {
+            "t": "text",
+            "v": "Only before PC maintenance or a long shutdown."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {
+        "flat": true
+      }
+    },
+    {
+      "id": "record_bill",
+      "shown": true,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": true,
+      "recommended_because": [
+        {
+          "t": "text",
+          "v": "Optional: your AI subscription bills aren't confirmed yet."
+        }
+      ],
+      "title": "Record a bill",
+      "button_label": "Record a bill",
+      "confirm_label": "Yes, record this bill",
+      "weight": "careful",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Saves a real bill for the month you choose; the share you choose counts as Trade Graph's cost. Spends nothing and doesn't touch the practice account."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money moves."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "No. Bills are permanent. A second bill for the same service and overlapping dates is refused, so a mistake can't simply be replaced. Ask for help first if unsure."
+          }
+        ],
+        "reversible": "no",
+        "when": [
+          {
+            "t": "text",
+            "v": "Optional: it completes your record of real costs."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {
+        "graph_share_presets": [
+          "0.25",
+          "0.5",
+          "0.75",
+          "1"
+        ],
+        "scheduled_departments": [
+          "leader",
+          "research",
+          "trader",
+          "learning",
+          "optimisation"
+        ]
+      }
+    },
+    {
+      "id": "declare_bills_complete",
+      "shown": true,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": false,
+      "recommended_because": null,
+      "title": "I've entered every bill for a month",
+      "button_label": "I've entered every bill for a month",
+      "confirm_label": "Yes, confirm",
+      "weight": "careful",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Tells HQ there are no other bills of the kinds you pick for that month. A later bill for that month cancels this until you confirm again."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "No money moves."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "No (permanent)."
+          }
+        ],
+        "reversible": "no",
+        "when": [
+          {
+            "t": "text",
+            "v": "After you've entered the bills for a finished month."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {
+        "suggested_period": {
+          "start": "2026-09-01T00:00:00.000Z",
+          "end": "2026-10-01T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "id": "plan_checkin",
+      "shown": true,
+      "available": true,
+      "unavailable_because": null,
+      "recommended": true,
+      "recommended_because": [
+        {
+          "t": "text",
+          "v": "No review check-in is planned yet."
+        }
+      ],
+      "title": "Plan a review check-in",
+      "button_label": "Plan",
+      "confirm_label": "Yes, add these check-ins",
+      "weight": "light",
+      "preview": {
+        "what_happens": [
+          [
+            {
+              "t": "text",
+              "v": "Adds reminders to your HQ calendar. HQ sends nothing anywhere."
+            }
+          ]
+        ],
+        "cost": [
+          {
+            "t": "text",
+            "v": "Free."
+          }
+        ],
+        "undo": [
+          {
+            "t": "text",
+            "v": "Yes: move or cancel any time."
+          }
+        ],
+        "reversible": "yes",
+        "when": [
+          {
+            "t": "text",
+            "v": "Whenever you want a reminder to review the run."
+          }
+        ],
+        "right_now": []
+      },
+      "facts": {}
+    }
+  ],
+  "checkins": {
+    "available": true,
+    "items": [],
+    "next_id": null,
+    "last_done_at": null,
+    "suggested_at": null
+  },
+  "prompt_facts": {
+    "as_of": "2026-10-11T19:05:00.000Z",
+    "team": "On and working normally, last sign of life 3 s ago",
+    "setting": "Normal",
+    "allowance": "3% left this week (checked 4 min ago); new AI work stops at 40%; a shorter limit isn't reported",
+    "next_turns": [
+      {
+        "dept": "trader",
+        "name": "Trader",
+        "at": "2026-10-11T17:56:26.000Z"
+      },
+      {
+        "dept": "research",
+        "name": "Research",
+        "at": "2026-10-12T08:13:00.000Z"
+      },
+      {
+        "dept": "learning",
+        "name": "Learning",
+        "at": "2026-10-12T06:40:00.000Z"
+      },
+      {
+        "dept": "leader",
+        "name": "Leader",
+        "at": "2026-10-14T08:13:00.000Z"
+      }
+    ],
+    "since": {
+      "from": null,
+      "label": "the last 24 hours",
+      "decisions": 5,
+      "waits": 5,
+      "orders": 0,
+      "completed_trades": 0,
+      "problems": 1,
+      "research_notes": 1
+    },
+    "flagged": [
+      "AI allowance 3%: below the line"
+    ],
+    "practice_value": "€8,920.05",
+    "value_final": false,
+    "pays_for_itself": "Not known yet"
+  },
+  "notices": [
+    {
+      "code": "history_gap",
+      "tone": "info",
+      "title": [
+        {
+          "t": "text",
+          "v": "Some early history is missing"
+        }
+      ],
+      "text": [
+        {
+          "t": "text",
+          "v": "An earlier repair lost some price records. It was accepted. Totals still include everything."
+        }
+      ],
+      "link": "/journal"
+    }
+  ],
+  "links": {
+    "journal": "/journal",
+    "mission_control": "/progress",
+    "trading": "/trading",
+    "organisation": "/organization",
+    "costs": "/costs",
+    "improvements": "/changes",
+    "owner": "/owner",
+    "review_export": "/api/v1/review-export"
+  }
+}
