@@ -59,10 +59,10 @@ def test_dashboard_rechecks_admitted_routes_and_projects_reserve_without_new_adm
             "execution_headroom_percent": 10, "admission_threshold_remaining_percent": 40},
         "quota_policy_routes": [], "quota_admission_blocked": False}
     class Adapter:
-        def public_status(self, *, journal=None):
+        def public_status(self, *, journal=None, refresh=True):
             if journal:
                 assert journal.database.path == fixture.database.path
-            observed.append(journal)
+            observed.append((journal, refresh))
             return dict(state)
     admission = SubscriptionAdmission(None, Adapter(), {
         "ready": True, "selected_provider": "claude_subscription", "blockers": [], "quota": {}}, "1" * 64)
@@ -90,6 +90,31 @@ def test_dashboard_rechecks_admitted_routes_and_projects_reserve_without_new_adm
     state["quota_policy_routes"][0]["provider_admission"] = {"occupied": True}
     assert any("admission is active" in reason
                for reason in runtime.service_controller.status()["prerequisites"]["reasons"])
-    assert any(item is not None for item in observed)
+    assert all(not refresh for _, refresh in observed[1:])
+    assert all(journal is None for journal, _ in observed)
     assert runtime.database.execute("SELECT COUNT(*) FROM subscription_attempts").fetchone()[0] == 0
     runtime.database.close()
+
+
+def test_browser_status_reuses_quota_but_control_readiness_remains_fresh(tmp_path):
+    from tests.integration.test_dashboard import _client
+
+    from trade_graph.application.service_controller import ServiceController
+
+    client, _, _, token, *_ = _client(tmp_path)
+    runtime = client.app.state.runtime
+    fresh_calls = []
+    cached_calls = []
+    def fresh():
+        fresh_calls.append(True)
+        return {"ai_available": True, "paper_available": True}
+    def cached():
+        cached_calls.append(True)
+        return {"ai_available": False, "reasons": ["retained metadata is stale"]}
+    runtime.subscription_readonly_status = cached
+    runtime.service_controller = ServiceController(runtime, prerequisites=fresh)
+    for url in ("/organization", "/owner", "/api/v1/service"):
+        assert client.get(url, headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    assert cached_calls and not fresh_calls
+    assert runtime.service_controller._readiness()["ai_available"] is True
+    assert len(fresh_calls) == 1

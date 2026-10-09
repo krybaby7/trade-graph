@@ -231,7 +231,12 @@ class ServiceController:
                 "status": "ATTACHED_EXISTING",
                 "heartbeat_at": None,
             }
-        ready = self._readiness()
+        # Browser/status reads reuse metadata. Start/resume admission still calls
+        # _readiness independently and dispatch/retries still enforce fresh quota.
+        cached = getattr(self.runtime, "subscription_readonly_status", None)
+        ready = ({**cached(), "paper_available": True, "live_available": False,
+                  "live_reasons": ["Live startup requires separately commissioned protected owner configuration."]}
+                 if callable(cached) else self._readiness())
         provider_states = self.database.execute(
             "SELECT * FROM subscription_provider_state ORDER BY provider"
         ).fetchall()
