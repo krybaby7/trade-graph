@@ -236,6 +236,16 @@ def _kraken_summary(result: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from trade_graph.kernel.operational_diagnostics import worker_context
+
+    with worker_context() as diagnostics:
+        result = _main(argv)
+        if diagnostics is not None:
+            diagnostics.exit_code = result
+        return result
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     owner_command = "kraken-read-only" in (argv if argv is not None else sys.argv[1:])
     if owner_command:

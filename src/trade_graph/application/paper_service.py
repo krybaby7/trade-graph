@@ -655,7 +655,11 @@ class PaperService:
                 if wait_roles:
                     completed += await self._wait_for_work(self._role_task)
                     self._role_task = None
+        from trade_graph.kernel.operational_diagnostics import emit_event, sample_resources
+
+        sample_resources()
         if tuple(failures) != self._last_tick_failures:
+            emit_event("service_degraded" if failures else "service_recovered", failures=len(failures))
             with self.database.immediate():
                 for pid in self.portfolio_ids:
                     self.execution.ledger._activity(pid, "service_degraded" if failures else "service_recovered",

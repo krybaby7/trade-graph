@@ -583,3 +583,22 @@ def test_automatic_optimisation_projection_respects_configured_role_schedules(tm
     runtime.config = SimpleNamespace(automatic_schedule=True, optimisation_manual_only=False,
                                      schedule_intervals=intervals)
     assert ServiceController(runtime).status()["automatic_optimisation"] is expected
+
+
+def test_launcher_retains_safe_diagnostics_without_raw_output(tmp_path):
+    import sys
+
+    runtime, _ = runtime_stack(tmp_path)
+    control = ServiceController(runtime)
+    command = [sys.executable, "-c", "from trade_graph.kernel.operational_diagnostics import worker_context; "
+               "ctx=worker_context(); ctx.__enter__(); print('SECRET provider output'); "
+               "ctx.__exit__(None, None, None)"]
+    child = control._launch(command)
+    assert child.wait(timeout=10) == 0
+    path = runtime.database.path.resolve().parent / "operational-diagnostics" / "worker.jsonl"
+    raw = path.read_text()
+    assert "SECRET" not in raw
+    events = [json.loads(line) for line in raw.splitlines()]
+    assert [event["event"] for event in events] == ["worker_start", "worker_exit"]
+    assert events[-1]["stdout_bytes"] > 0
+    assert child.stdout is None and child.stderr is None

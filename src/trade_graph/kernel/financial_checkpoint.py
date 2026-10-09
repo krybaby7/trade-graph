@@ -239,6 +239,11 @@ class FinancialHistoryCheckpoint:
                 os.fsync(descriptor)
             os.rename(temporary, self.path.name, src_dir_fd=directory, dst_dir_fd=directory)
             os.fsync(directory)
+        except Exception as exc:
+            from trade_graph.kernel.operational_diagnostics import emit_event
+
+            emit_event("witness_failure", error=exc)
+            raise
         finally:
             if descriptor is not None:
                 os.close(descriptor)

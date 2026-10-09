@@ -146,9 +146,14 @@ class ServiceController:
             os.close(fd)
 
     def _launch(self, command):
+        from trade_graph.kernel.operational_diagnostics import PrivateDiagnostics
+
+        diagnostics_directory = self.database.path.resolve().parent / "operational-diagnostics"
+        PrivateDiagnostics(diagnostics_directory).close()
         # Bind child imports to this installed/source package, not ambient PYTHONPATH.
         env = os.environ.copy()
         env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+        env["TRADE_GRAPH_DIAGNOSTICS_DIRECTORY"] = str(diagnostics_directory)
         env.pop("OPENAI_API_KEY", None)
         env.pop("ANTHROPIC_API_KEY", None)
         return subprocess.Popen(
