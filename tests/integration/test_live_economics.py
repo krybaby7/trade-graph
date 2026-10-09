@@ -164,3 +164,40 @@ def test_historical_period_uses_current_owner_evidence_and_incurred_fx_but_cuts_
     assert result["allocated_ai_expense"] == "9.9"
     assert result["net_result"] == "-9.9"
     assert result["status"] == "not_covered"
+
+
+def test_nonzero_unallocated_api_receipt_does_not_establish_cost_coverage(tmp_path):
+    from trade_graph.api import financial, live
+
+    runtime = _live_runtime(tmp_path)
+    _receipt(runtime)
+    _complete_owner_coverage(runtime)
+    costs = financial._cost_state(runtime)
+    assert costs["actual"] == Decimal("0.9")
+    assert costs["receipts"][0]["allocation_basis"] == "unallocated deployment expense"
+
+    result = live.overview(runtime)["economic_result"]
+
+    assert result["known_api_ai_expense"] == "0"
+    assert result["allocated_ai_expense"] is None
+    assert result["net_result"] is None
+    assert result["status"] == "unknown"
+    assert "API receipt or allocation coverage remains incomplete." in result["unknown_reasons"]
+
+
+def test_deterministically_zero_api_receipt_does_not_require_account_allocation(tmp_path):
+    from trade_graph.api import financial, live
+
+    runtime = _live_runtime(tmp_path)
+    _receipt(runtime, tokens=0)
+    _complete_owner_coverage(runtime)
+    costs = financial._cost_state(runtime)
+    assert costs["actual"] == Decimal("0")
+    assert costs["receipts"][0]["allocation_basis"] == "unallocated deployment expense"
+
+    result = live.overview(runtime)["economic_result"]
+
+    assert result["known_api_ai_expense"] == "0"
+    assert result["allocated_ai_expense"] == "0"
+    assert result["net_result"] == "0"
+    assert result["status"] == "covered"

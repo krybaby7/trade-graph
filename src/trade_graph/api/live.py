@@ -53,7 +53,10 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
                         if not row["unresolved"] and not row["valuation"]["provisional"]
                         and row["allocated_amount"] is not None), Decimal(0))
     api_unknown = any(row["unresolved"] or row["valuation"]["provisional"]
-                      or row["allocated_amount"] is None for row in actual_receipts)
+                      or row["allocated_amount"] is None
+                      or (row["allocation_basis"] == "unallocated deployment expense"
+                          and Decimal(row["native_cost"]) != 0)
+                      for row in actual_receipts)
     # Independent ledger expenses already exclude receipt mirrors. Deriving
     # this category directly prevents uncertain API bounds becoming other costs.
     independent_expenses = [row for row in existing["ledger_expenses"] if row["portfolio_id"] == reader.portfolio_id]
