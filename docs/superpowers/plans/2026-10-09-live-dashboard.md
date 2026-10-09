@@ -32,5 +32,5 @@ quota observations; rendering and export never invoke inference or metadata CLI.
   original financial continuity, stop/release leases, transition the authenticated
   manifest, restart exactly one worker, verify and resume normal paper operation.
   Preserve database inode, witness, history, failures and accepted recovery gap.
-- [ ] Update status/progress/decisions with actual evidence, scan staged changes
+- [x] Update status/progress/decisions with actual evidence, scan staged changes
   for secrets, commit and publish sanitized implementation only.
