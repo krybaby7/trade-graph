@@ -11,6 +11,7 @@ the recorded service PID, or calls a provider.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
@@ -329,8 +330,8 @@ def checkins(runtime, start: str, end: str, *, owner: bool) -> dict:  # R28 (own
             return empty
         return {"available": True, "items": owner_checkins.window(runtime, start, end),
                 "last_done_at": owner_checkins.last_done_at(runtime)}
-    except (ValueError, TypeError, LookupError):
-        return empty
+    except (ValueError, TypeError, LookupError, sqlite3.DatabaseError):
+        return empty  # HQ keeps working without check-ins rather than failing the page
 
 
 def config(runtime) -> dict:  # R29
