@@ -217,7 +217,7 @@ class ServiceController:
                     result.update(status="INTERRUPTED", error_type="LaunchInterrupted")
         return result
 
-    def status(self) -> dict:
+    def status(self, *, refresh: bool = False) -> dict:
         for run_id, child in tuple(self._children.items()):
             if hasattr(child, "poll") and child.poll() is not None:
                 self._children.pop(run_id, None)
@@ -231,12 +231,12 @@ class ServiceController:
                 "status": "ATTACHED_EXISTING",
                 "heartbeat_at": None,
             }
-        # Browser/status reads reuse metadata. Start/resume admission still calls
-        # _readiness independently and dispatch/retries still enforce fresh quota.
+        # Browser/status reads reuse metadata. Owner optimisation requests refresh
+        # admission; start and dispatch/retries retain their own readiness checks.
         cached = getattr(self.runtime, "subscription_readonly_status", None)
         ready = ({**cached(), "paper_available": True, "live_available": False,
                   "live_reasons": ["Live startup requires separately commissioned protected owner configuration."]}
-                 if callable(cached) else self._readiness())
+                 if callable(cached) and not refresh else self._readiness())
         provider_states = self.database.execute(
             "SELECT * FROM subscription_provider_state ORDER BY provider"
         ).fetchall()
@@ -450,7 +450,7 @@ class ServiceController:
             replay = self._replay(request_id, "start_optimisation", {})
             if replay:
                 return replay
-            state = self.status()
+            state = self.status(refresh=True)
             if state["service"]["status"] != "RUNNING" or not state["prerequisites"]["ai_available"]:
                 raise AuthorityDenied("Optimisation requires an active isolated subscription model runtime.")
             if self.runtime.execution.profile(self.runtime.portfolio_id) != "RUNNING":
