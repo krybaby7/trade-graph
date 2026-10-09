@@ -92,7 +92,8 @@ try:
     conn = sqlite3.connect('file:' + str(path) + '?mode=ro', uri=True)
     result = {'protected_running':conn.execute(
         "SELECT count(*) FROM protected_runtime_instances WHERE status='RUNNING'").fetchone()[0],
-        'service_leases':conn.execute("SELECT count(*) FROM process_leases WHERE lease_name='paper-service'").fetchone()[0],
+        'service_leases':conn.execute(
+            "SELECT count(*) FROM process_leases WHERE lease_name='paper-service'").fetchone()[0],
         'paid_receipts':conn.execute('SELECT count(*) FROM usage_receipts WHERE synthetic=0').fetchone()[0]}
 except sqlite3.OperationalError:
     # Startup can recreate WAL/SHM before the read-only observer attaches.
