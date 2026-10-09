@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-09",
+  "updated_at": "2026-10-09T13:56:21.883521Z",
   "status_note": "Live operating dashboard continuation claimed from deployed capacity/logging source 493c25c. Isolated worktrees/tmp databases; operating paper service unchanged during development. Pending implementation/deployment evidence; broader acceptance unchanged.",
   "tasks": {
     "T00": {
@@ -256,12 +256,13 @@
         "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained.",
         "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
         "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
-        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure."
+        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure.",
+        "2026-10-09 live dashboard continuation: docs/reviews/2026-10-09-live-dashboard.md; executable c488e67 based on capacity/logging 493c25c. 302 focused tests, lint/hygiene pass; actual Windows Edge sign-in/home/export/decision/mobile/offline recovery verified. Both supported original-inode/witness transitions applied; exactly one NORMAL worker resumed, no inference forced. New-AI pauses 587.293 and 172.396 seconds. Broader acceptance remains open."
       ],
-      "remaining": "Reviewed storage recovery decision and SQLite runtime; then actual protected manifest transition/deployment, fresh quota admission/authenticated resume and real Research publication/feature-ready Trader snapshot. Current authoritative DB corrupt, worker/dashboard stopped, damaged files and verified consistent backup retained. Source repairs and independent review complete. Leader original cause unknown; economic/live/off-host acceptance unchanged.",
-      "execution_state": "blocked",
-      "execution_scope": "owner_authorized_paper_repair_with_preserved_storage_evidence",
-      "execution_result": "source_verified_deployment_blocked_storage_recovery"
+      "remaining": "Broader funded soak, full-product economic evidence and live/off-host acceptance remain open. Accepted historical observation gaps, earlier failures, unknown usage/model echo and absent owner bill evidence remain explicit. Normal paper operates on retained healthy storage; dashboard slice is deployed.",
+      "execution_state": "normal_paper_running",
+      "execution_scope": "owner_authorized_live_dashboard_paper_continuation",
+      "execution_result": "live_dashboard_deployed_supported_continuity_verified"
     },
     "T18": {
       "status": "in_progress",
@@ -932,5 +933,23 @@
     "current_application_attempts": 7,
     "newer_retry_executed": false,
     "source_files_verified_against_active_image": 199
+  },
+  "live_dashboard_continuation": {
+    "branch": "codex/live-dashboard-20261009",
+    "executable_source": "c488e67",
+    "image_id": "sha256:34abee6a44d00647f3e53bc8fd1febce6b7399fa18875146309f9677969c477b",
+    "focused_tests": 302,
+    "normal_paper_resumed_at": "2026-10-09T13:56:21.883521+00:00",
+    "new_ai_pause_seconds": [
+      587.292884,
+      172.396283
+    ],
+    "database_witness_key_and_history_preserved": true,
+    "owner_expense_evidence_entered": false,
+    "unknown_economic_coverage": true,
+    "live_enabled": false,
+    "billed_and_extra_routes_enabled": false,
+    "strategy_and_schedules_changed": false,
+    "acceptance_transition": false
   }
 }

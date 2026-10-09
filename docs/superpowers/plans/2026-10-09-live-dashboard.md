@@ -12,23 +12,23 @@ projections and one SQLite read snapshot per overview/export. Retain paper mode,
 Sol-only, empty fallback, quota admission and existing schedules. Use persisted
 quota observations; rendering and export never invoke inference or metadata CLI.
 
-- [ ] Reproduce HTML authentication failure; add redirect tests and fix HTML
+- [x] Reproduce HTML authentication failure; add redirect tests and fix HTML
   navigation while retaining API 401, cookie CSRF and owner authority.
-- [ ] Project department native/application outcomes, due times, retries, linked
+- [x] Project department native/application outcomes, due times, retries, linked
   work and reported attempt usage exactly once. Keep coverage and shared quota
   separate; expose safe retained decision evidence with selected source links.
-- [ ] Add append-only owner expense evidence and an explicit bill/graph/department
+- [x] Add append-only owner expense evidence and an explicit bill/graph/department
   allocation policy. Preserve per-call usage uncertainty, shared-bill identity,
   historical FX and period completeness. Do not replenish operating budgets.
-- [ ] Render a modestly refreshing home with distinct operational/economic
+- [x] Render a modestly refreshing home with distinct operational/economic
   indicators, exposure, result, expenses, activity and recovery limitations.
-- [ ] Add authenticated read-only review export containing complete scoped safe
+- [x] Add authenticated read-only review export containing complete scoped safe
   records in one snapshot, independently timestamped external observations,
   resource warnings, coverage, schedules, failures and explicit limitations.
-- [ ] Run focused authentication/accounting/usage/snapshot regressions, lint,
+- [x] Run focused authentication/accounting/usage/snapshot regressions, lint,
   hygiene, and actual Windows browser desktop/mobile/offline checks on isolated
   synthetic storage. Build and independently verify an immutable image.
-- [ ] Pause new AI with management continuing, drain in-flight work, checkpoint
+- [x] Pause new AI with management continuing, drain in-flight work, checkpoint
   original financial continuity, stop/release leases, transition the authenticated
   manifest, restart exactly one worker, verify and resume normal paper operation.
   Preserve database inode, witness, history, failures and accepted recovery gap.
