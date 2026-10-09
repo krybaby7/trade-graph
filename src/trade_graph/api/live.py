@@ -40,7 +40,11 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
     active = activity.overview(current_reader)
     period = {"start_at": portfolio["created_at"], "end_at": data["as_of"],
               "basis": "account inception, retained history", "selected_cutoff": reporting_end is not None}
-    expense = owner_expenses.projection(reader, period["start_at"], period["end_at"], data["reporting_currency"])
+    # Owner evidence can arrive after the period it substantiates. Retain the
+    # current evidence snapshot while proration and incurred-at FX stay historical.
+    expense = owner_expenses.projection(current_reader, period["start_at"], period["end_at"],
+                                       data["reporting_currency"])
+    # API/ledger accruals remain bounded by the selected financial cutoff.
     existing = financial._cost_state(reader, data["reporting_currency"])
     # Receipt attribution totals are global accruals. The selected account owns
     # only its persisted allocation, including its fraction of a shared receipt.

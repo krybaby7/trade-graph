@@ -119,3 +119,48 @@ def test_deployment_owner_bill_is_not_assigned_to_one_of_multiple_portfolios(tmp
     assert result["net_result"] is None
     assert result["status"] == "unknown"
     assert "Owner bills allocate to the deployment; this portfolio's share is unknown." in result["unknown_reasons"]
+
+
+def test_historical_period_uses_current_owner_evidence_and_incurred_fx_but_cuts_off_api_accruals(tmp_path):
+    from trade_graph.api import live
+    from trade_graph.api.owner_expenses import record
+
+    runtime = _live_runtime(tmp_path)
+    start = runtime.database.execute("SELECT created_at FROM portfolios WHERE portfolio_id=?",
+                                     (runtime.portfolio_id,)).fetchone()[0]
+    cutoff = utc_iso(runtime.clock.now())
+    runtime.ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.9"),
+                              source="synthetic bill-date reference", kind="reference", stale=False)
+    earlier = _receipt(runtime)
+    runtime.budget.allocate(earlier, {runtime.portfolio_id: Decimal("1")})
+    runtime.clock.advance(10)
+    runtime.ledger.observe_fx(base="USD", quote="EUR", rate=Decimal("0.8"),
+                              source="synthetic later reference", kind="reference", stale=False)
+    later = _receipt(runtime)
+    runtime.budget.allocate(later, {runtime.portfolio_id: Decimal("1")})
+    record(runtime, {"record_type": "expense", "request_id": "late-owner-bill", "bill_id": "closed-plan",
+                     "billing_scope": "closed-owner-plan", "expense_kind": "subscription", "amount_native": "20",
+                     "native_currency": "USD", "incurred_at": cutoff, "period_start": start, "period_end": cutoff,
+                     "graph_share": "0.5", "allocation_policy": "owner graph share",
+                     "department_weights": {"trader": "1"}, "department_allocation_label": "owner weights",
+                     "evidence_ref": "owner-evidence:late-plan"})
+    record(runtime, {"record_type": "completeness", "request_id": "late-owner-completeness",
+                     "period_start": start, "period_end": cutoff, "expense_kinds": ["subscription", "other"],
+                     "evidence_ref": "owner-evidence:closed-period"})
+
+    overview = live.overview(runtime, reporting_end=cutoff)
+    owner = overview["owner_expenses"]
+    result = overview["economic_result"]
+
+    assert owner["coverage"]["status"] == "complete"
+    assert len(owner["completeness_declarations"]) == 1
+    assert owner["evidence_as_of"] == utc_iso(runtime.clock.now())
+    assert owner["period"] == {"start_at": start, "end_at": cutoff}
+    assert owner["graph_subscription_allocation"]["amount"] == "9"
+    assert owner["full_bills"][0]["graph_allocation_valuation"]["fx"]["rate"] == "0.9"
+    assert overview["as_of"] == owner["evidence_as_of"]
+    assert overview["valuation"]["as_of"] == cutoff
+    assert result["known_api_ai_expense"] == "0.9"
+    assert result["allocated_ai_expense"] == "9.9"
+    assert result["net_result"] == "-9.9"
+    assert result["status"] == "not_covered"
