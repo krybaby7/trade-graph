@@ -211,3 +211,9 @@ def test_inactive_or_stale_management_service_and_empty_quota_are_explicit(runti
     assert result["usage"]["shared_quota"]["observed_at"] is None
     assert result["usage"]["shared_quota"]["available"] is False
     assert result["counts"]["trades"] == 0
+    insert(runtime, "subscription_provider_state", provider="codex_subscription", quota_json=json.dumps(
+        {"observed_at": "2026-01-01T23:59:00+00:00", "windows": {"primary": None},
+         "unavailable_windows": ["primary"]}), updated_at="2026-01-01T23:59:00Z")
+    shared = activity.overview(runtime)["usage"]["shared_quota"]
+    assert shared["windows"] == {"primary": None}
+    assert shared["available"] is False

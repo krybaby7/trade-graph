@@ -137,9 +137,12 @@ def _shared_quota(runtime, records: list[dict], now: str) -> dict:
     windows = latest.get("windows", {})
     if not windows:
         windows = {key: latest[key] for key in ("five_hour", "weekly") if key in latest}
+    available = any(isinstance(window, dict) and
+                    any(window.get(field) is not None for field in ("remaining_percent", "used_percent"))
+                    for window in windows.values())
     return {"scope": "shared account allowance", "observed_at": latest.get("observed_at"),
             "provider": latest.get("provider"), "windows": windows, "source": latest.get("source"),
-            "record_source": latest.get("record_source"), "available": bool(windows),
+            "record_source": latest.get("record_source"), "available": available,
             "metadata_error": latest.get("metadata_error", False),
             "unavailable_windows": latest.get("unavailable_windows", []),
             "ordinary_usage_allowed": latest.get("ordinary_usage_allowed"),
