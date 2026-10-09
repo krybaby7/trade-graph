@@ -1,3 +1,13 @@
+# Subscription capacity repair deployed — 2026-10-09
+
+The recovered paper installation runs one NORMAL worker after the supported authenticated manifest transition and reconciled owner resume. Subscription-only limits are now finite 192 tasks / 1 GiB RAM / one CPU / no additional swap. The create specification and exact independent verifier changed together; existing isolation and all non-subscription limits are preserved. Controller-launched worker diagnostics now retain three rotating 256 KiB sanitized event files rather than losing all operational output.
+
+Branch `codex/resource-capacity-20261009`; executable commits `986c19d`/`97f1290`, image verifier `60cf18e`/`905e2c7`. Deployed immutable image `sha256:8f949f8052cd734932f1b345b5aab47258f8e4d0caafd3875f6209f33eb9717d`, Python 3.12.15 / SQLite 3.53.4, unchanged dependency lock/native tools/graph and paper strategy configuration. The original database inode/key, independent witness, historical financial/AI records and accepted reporting recovery gap remain. The naturally scheduled Trader completed and applied its result; no inference was forced. Whole-container resource limits produced no new events in the observed run. This is bounded operational evidence, not worst-case capacity or full historical/economic acceptance.
+
+196 focused deployment/diagnostic/controller/service tests and 92 financial continuity tests pass; actual installed image/WAL/ownership/isolation checks pass. A transient synthetic startup observer read is now retried within the existing finite readiness bound. Actual account, quota, scheduling and inspection details are private. Research expiry alignment is documented only; schedules and strategy are unchanged. See [capacity repair and diagnostics](docs/reviews/2026-10-09-subscription-capacity.md) for measured cause, verification and logging limits. T17/T21 remain in progress; broader acceptance statuses are unchanged.
+
+---
+
 # Normal paper operation resumed; repaired Trader verified — 2026-10-08
 
 The owner separately authorized normal paper AI on the recovered installation.

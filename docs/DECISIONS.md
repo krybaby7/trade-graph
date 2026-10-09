@@ -216,3 +216,6 @@ None prevents offline development. Mark credentialed verification pending when c
   worker and dashboard in the same protected application container to retain the
   strict dedicated-network invariant. Normal paper AI requires a later explicit
   owner instruction and management-to-normal handover before Owner Resume.
+
+
+- **D103 (2026-10-09, owner-authorized resource repair):** Subscription deployments require finite 192 cgroup tasks and 1 GiB memory with equal memory-swap, retaining one CPU and all isolation. Limits count threads and processes. The supported create specification and exact independent verifier change together; other profiles retain existing bounds. Controller-launched workers retain only bounded rotated operational codes/classes/counters, never raw output or model conversations. Protected code upgrades preserve the original database/key/witness through the authenticated manifest transition. Observed native metadata pressure supports this headroom; worst-case inference capacity remains bounded by future evidence. Research timing/expiry alignment is a separate proposal and does not change schedules or strategy in this repair.

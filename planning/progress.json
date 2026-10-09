@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-08",
-  "status_note": "Owner-approved partial public/reporting history recovery deployed source780dce1 SQLite3.53.4 through authenticated identity recovery plus manifest transition. Eleven known reporting gaps and possible additional reporting loss explicitly retained; legacy witness proof limits and unknown cause preserved. Exact financial/AI audit, 15 attempts/13 invocations with failures/unknown costs, integrity/FK/Decimal accounting pass. One MANAGE_ONLY worker/dashboard; fresh public prices/hourly/FX and features ready. AI/live/billed APIs/extras disabled; separate later owner resume required. 184 focused tests, independent147-case selection and actual-image WAL/isolation probes passed. Broader historical acceptance unchanged.",
+  "updated_at": "2026-10-09",
+  "status_note": "Owner-authorized recovered subscription capacity repair deployed through original-inode authenticated manifest transition. Subscription192tasks/1GiB/noextra swap; bounded sanitized diagnostics. Original history/witness and accepted reporting gap preserved. Observed natural scheduled role succeeded; zero new cgroup limit/OOM events.196focused deployment/diagnostic checks and92financial tests plus actual-image/WAL/isolation probes pass. No forced inference or strategy/schedule change; broader acceptance unchanged.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -226,8 +226,8 @@
     },
     "T17": {
       "status": "in_progress",
-      "owner": "codex-repair-integration",
-      "branch": "codex/normal-paper-2026-10-07",
+      "owner": "codex",
+      "branch": "codex/resource-capacity-20261009",
       "evidence": [
         "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
         "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
@@ -255,7 +255,8 @@
         "2026-10-07 morning: protected source 6bf6697 passed 218 focused checks plus actual intended-image isolation/production inspection. Existing owner resume/start controls began normal local paper service. First actual Research/Trader/Learning invocation and applied results verified; legitimate no_action, no orders/fills, Decimal accounting and financial baseline preserved. Five invocations/seven application attempts include three failed Leader attempts; Optimisation inference completed but applied citation validation failed. Records/cost uncertainty retained. See docs/reviews/2026-10-07-morning-paper-operation.md.",
         "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained.",
         "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
-        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md."
+        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
+        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure."
       ],
       "remaining": "Reviewed storage recovery decision and SQLite runtime; then actual protected manifest transition/deployment, fresh quota admission/authenticated resume and real Research publication/feature-ready Trader snapshot. Current authoritative DB corrupt, worker/dashboard stopped, damaged files and verified consistent backup retained. Source repairs and independent review complete. Leader original cause unknown; economic/live/off-host acceptance unchanged.",
       "execution_state": "blocked",
@@ -335,8 +336,8 @@
     },
     "T21": {
       "status": "in_progress",
-      "owner": "codex-recovery-integration",
-      "branch": "codex/paper-recovery-20261008",
+      "owner": "codex",
+      "branch": "codex/resource-capacity-20261009",
       "evidence": [
         "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
         "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
@@ -355,7 +356,8 @@
         "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
         "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
         "2026-10-08: tested authenticated database recovery preserves original witness scopes and explicitly binds a new inode, source manifests/deployment, complete state and retained attempt/mark/FX prefixes. Independent150-case source checks and actual pinned SQLite3.53.4 candidate-image ext4 lock/1,000-WAL-commit checks pass. Actual installation remains stopped because newer financial payloads are missing; no production acceptance or recovery promotion.",
-        "2026-10-08 docs/reviews/2026-10-08-partial-history-recovery.md: explicitly owner-approved historical reporting-only gap, authenticated identity recovery + manifest transition actually deployed; original authority/financial/AI state retained with legacy proof limits; exact-image SQLite3.53.4 locking/isolation, one MANAGE_ONLY worker/dashboard, fresh public collection and consistent checkpoint verified. 184 focused + independent147 selected tests pass; broader acceptance remains in progress."
+        "2026-10-08 docs/reviews/2026-10-08-partial-history-recovery.md: explicitly owner-approved historical reporting-only gap, authenticated identity recovery + manifest transition actually deployed; original authority/financial/AI state retained with legacy proof limits; exact-image SQLite3.53.4 locking/isolation, one MANAGE_ONLY worker/dashboard, fresh public collection and consistent checkpoint verified. 184 focused + independent147 selected tests pass; broader acceptance remains in progress.",
+        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure."
       ],
       "remaining": "Current installation storage recovery and reviewed SQLite runtime; actual repaired intended-host/image admission and independent financial transition/deployment proof. Owner-approved manifest transition source is implemented with synthetic evidence; actual application pending. External whole-host rollback anchor, protected key rotation and generic interrupted-checkpoint recovery remain separate gates. No paid/live authority.",
       "execution_state": "idle",
