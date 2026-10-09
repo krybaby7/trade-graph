@@ -313,8 +313,13 @@ def test_migration_adds_evidence_without_rewriting_existing_rows(tmp_path):
     connection.execute("INSERT INTO portfolios VALUES ('retained','paper','EUR','experiment','active',NULL,?)",
                        (START,))
     connection.commit()
-    assert apply_migrations(connection, END) == ["0024"]
+    # 0024 and every later additive migration (0025 owner check-ins once migrate.py registers it).
+    pending = [version for version, _ in STATEMENTS if version >= "0024"]
+    assert pending[0] == "0024"
+    assert apply_migrations(connection, END) == pending
     assert connection.execute("SELECT portfolio_id,created_at FROM portfolios").fetchone() == ("retained", START)
     assert apply_migrations(connection, END) == []
     assert connection.execute("SELECT COUNT(*) FROM owner_expense_evidence").fetchone()[0] == 0
+    if "0025" in pending:
+        assert connection.execute("SELECT COUNT(*) FROM owner_checkins").fetchone()[0] == 0
     connection.close()

@@ -81,8 +81,12 @@ def test_schema_0023_checkpoint_chain_upgrades_to_0024_without_resealing(tmp_pat
     db = Database(path)
     try:
         assert db.file_identity() == identity
-        assert db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == "0024"
+        latest = migrate.STATEMENTS[-1][0]  # 0024, or 0025 once owner check-ins are registered
+        assert latest >= "0024"
+        assert db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == latest
         assert db.execute("SELECT count(*) FROM owner_expense_evidence").fetchone()[0] == 0
+        if latest >= "0025":
+            assert db.execute("SELECT count(*) FROM owner_checkins").fetchone()[0] == 0
         ledger = Ledger(db, clock)
         execution = Execution(db, ledger, clock, PaperBroker(db, clock))
         target = ProtectedFinancialService(db, clock, execution, manifest=replace(source, wall_seconds=4),
