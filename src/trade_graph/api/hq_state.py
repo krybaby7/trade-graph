@@ -980,9 +980,9 @@ def attention(p: Projection, checkins: list[dict]) -> list:
                    key=lambda task: task["created_at"], reverse=True)
     for task in stuck[:TURN_STUCK_MAX_CARDS]:
         dept = c.dept_name(task["role"]) if task["role"] in c.ROOM else c.MISC["a_department"]
+        # The state text already says it won't retry by itself; no second sentence repeating it (U7).
         items.append(_card("turn_stuck", c.says(c.ATTENTION["turn_stuck"].format(dept=dept)),
-                           why=p.state_text(task),
-                           consequence=c.says(c.ATTENTION["turn_stuck_consequence"].format(dept=dept)),
+                           why=p.state_text(task), consequence=[],
                            how=c.says(c.ATTENTION["turn_stuck_how"]), link="/organization",
                            since=task["created_at"], suffix=c.technical(task["task_id"], 100).replace(" ", "_")))
     due = [item for item in checkins if item["state"] in ("due", "overdue")]
@@ -1248,7 +1248,7 @@ def _room_last(p: Projection, role: Role) -> dict | None:
         return {"at": at, "outcome": "done", "text": c.says(_done_words(p, task, cadence)),
                 "quote": c.quote(result.get("summary")), "link": link}
     if status in STUCK:
-        return {"at": at, "outcome": "stuck", "text": p.state_text(task), "quote": None, "link": link}
+        return {"at": at, "outcome": "stuck", "text": c.says(c.LAST["stuck_plain"]), "quote": None, "link": link}
     if p.is_skip(task) or status == "CANCELLED":
         reason = c.SKIP_PLAIN.get(p.skip_key(task) or "", c.MISC["cancelled"])
         return {"at": at, "outcome": "skipped", "text": c.says(c.LAST["skipped"].format(reason=reason)),

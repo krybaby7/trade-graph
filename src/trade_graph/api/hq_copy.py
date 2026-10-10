@@ -319,7 +319,8 @@ TASK_STATE: Final = {
     "running": "Working on it (try {used} of {max})",
     "lease_lost": "Lost track; will be picked up again when the team runs",
     "WAITING_EXTERNAL": "Stuck: its answer can't be confirmed. It won't retry by itself.",
-    "BLOCKED_BUDGET": "Stuck: out of allowance for this job. It won't retry by itself.",
+    "BLOCKED_BUDGET": ("Stuck: this job reached its own cost limit (not your AI allowance). It won't retry by "
+                       "itself."),
     "past_deadline": "Past its time limit; will be skipped",
     "SUCCEEDED": "Done",
     "FAILED": "Didn't work",
@@ -412,7 +413,7 @@ REASON: Final = {
     "mandate": "its trading permission had expired",
     "prices": "prices were too old to place a practice order",
     "unresolved": "an earlier practice order was still being checked",
-    "budget": "out of allowance for this job",
+    "budget": "this job reached its own cost limit",
     "error": "a technical error",
     "unknown": "a problem HQ can't describe in plain words",
 }
@@ -509,7 +510,6 @@ ATTENTION: Final = {
     "in_prompt": "Added to your next review prompt.",
     "nothing_now": "Nothing to do now. It's added to your next review prompt.",
     "turn_stuck": "{dept}'s turn is stuck",
-    "turn_stuck_consequence": "{dept} won't retry by itself.",
     "turn_stuck_how": "Nothing to do right now; it's in your next review prompt.",
     "checkin_due": "Your '{title}' check-in is {state}",
     "checkin_due_why": "Send the review prompt to your review chat.",
@@ -1021,6 +1021,7 @@ LAST: Final = {
     "problem_plain": "Its turn didn't work: ",
     "skipped": "Its turn was skipped: {reason}.",
     "stuck": "Its turn is stuck: {state}",
+    "stuck_plain": "Its last turn got stuck.",
 }
 HEADS_UP: Final = {
     "trader_expired": ("Research notes expired at ", ", before this turn."),
@@ -1037,8 +1038,8 @@ SAFETY: Final = {
     "reason": "By the system (automatic safety stop) after {trigger}.",
     "why": "After {trigger}, the system switched to {profile}.",
     "trader_failed": "the Trader's turn failed",
-    "out_of_allowance": "{dept}'s turn ran out of allowance",
-    "out_of_allowance_plain": "a turn ran out of allowance",
+    "out_of_allowance": "{dept}'s turn reached its cost limit",
+    "out_of_allowance_plain": "a turn reached its cost limit",
     "unknown": "a problem it recorded",
     "management_service": "the team was started in protect-only maintenance mode",
 }

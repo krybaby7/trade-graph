@@ -814,8 +814,12 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
              dedup_key=f"schedule:s-learning:{at(env, created)}",
              output={"reason": "model timeout_uncertain: no answer"}, attempts=3)
     data = snap(env)
-    assert data["attention"][0]["id"] == "turn_stuck:t-41"
-    assert "won't retry by itself" in text(data["attention"][0]["why"])
+    stuck = data["attention"][0]
+    assert stuck["id"] == "turn_stuck:t-41"
+    assert "won't retry by itself" in text(stuck["why"]) and "cost limit" in text(stuck["why"])
+    assert "out of allowance" not in text(stuck["why"])  # its own cost limit, not the AI allowance (U7)
+    assert stuck["consequence"] == []
+    assert room(data, "leader")["last"]["text"] == [{"t": "text", "v": "Its last turn got stuck."}]
     repeat = next(item for item in data["attention"] if item["id"] == "repeat_problems")
     assert "(2 in a row)" in text(repeat["title"])
     assert "didn't answer in time" in text(repeat["why"])
