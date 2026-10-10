@@ -90,6 +90,8 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
         money = hq_state.money_block(p)
         story = hq_story.story(p, window_start=now - STORY_WINDOW, window_end=now + timedelta(milliseconds=1),
                                checkins=items)
+        since, _ = hq_state.prompt_since(p)
+        counts = hq_facts.period_counts(runtime.database, runtime.portfolio_id, since, now)
         return {
             "schema": SCHEMA, "as_of": p.as_of, "poll_seconds": POLL_SECONDS, "mode": p.mode,
             "account": hq_state.account(p), "viewer": hq_state.viewer(p),
@@ -97,7 +99,8 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
             "departments": hq_state.departments(p), "quests": hq_state.quests(p),
             "calendar": hq_calendar.calendar(p, calendar_days, items), "story": story, "money": money,
             "market": hq_state.market(p), "decisions": hq_state.decisions(p, attention, checkin_block, barriers),
-            "checkins": checkin_block, "prompt_facts": hq_state.prompt_facts(p, attention, story["items"], money),
+            "checkins": checkin_block,
+            "prompt_facts": hq_state.prompt_facts(p, attention, story["items"], money, counts),
             "notices": hq_state.notices(p), "links": hq_state.links(p),
         }
 

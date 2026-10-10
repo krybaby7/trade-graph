@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -795,6 +796,40 @@ def test_snapshot_validates_against_contract(env, name):
     assert set(data["team"]) == set(fixture["team"]) and set(data["money"]) == set(fixture["money"])
     assert (data["checkins"] is None) == (fixture["checkins"] is None)
     assert len(json.dumps(data)) < 80 * 1024
+
+
+def _checkin_store(monkeypatch, *, last_done, items=()):
+    import sys
+
+    import trade_graph.api
+
+    store = SimpleNamespace(available=lambda runtime: True, window=lambda runtime, start, end: list(items),
+                            last_done_at=lambda runtime: last_done)
+    monkeypatch.setitem(sys.modules, "trade_graph.api.owner_checkins", store)
+    monkeypatch.setattr(trade_graph.api, "owner_checkins", store, raising=False)
+    return store
+
+
+def test_prompt_since_counts_are_exact_beyond_reader_caps(env, monkeypatch):
+    run(env)
+    for index in range(45):
+        insert(env, "fills", fill_id=f"fill-{index}", venue="paper", account_id="paper", trade_id=f"tr-{index}",
+               portfolio_id=env.pid, intent_id=None, document_json="{}", created_at=at(env, -600 - 60 * index))
+        finding(env, f"f-{index}", created=-700 - 60 * index, expires=3600)
+    for index in reversed(range(130)):
+        decision(env, f"d-{index:03d}", "hold" if index % 5 == 0 else "enter", created=-60 - 300 * index)
+    began = time.perf_counter()
+    since = snap(env)["prompt_facts"]["since"]
+    print(f"snapshot with 130 decisions, 45 fills and 45 notes: {(time.perf_counter() - began) * 1000:.0f} ms")
+    assert since["label"] == "the last 24 hours"
+    assert (since["completed_trades"], since["research_notes"], since["decisions"]) == (45, 45, 130)
+    assert since["waits"] == 26
+    # The owner's last check-in was 9 days ago; a failure 8.5 days ago is older than the task reader's window.
+    _checkin_store(monkeypatch, last_done=iso_ms(at(env, -9 * 86400)))
+    task(env, "t-old-failure", "learning", "FAILED", created=-8.5 * 86400, output={"reason": "ValueError"})
+    since = snap(env)["prompt_facts"]["since"]
+    assert since["label"] == "my last check-in"
+    assert since["problems"] >= 1 and since["decisions"] == 130
 
 
 def test_owner_checkins_come_from_the_lazy_store(env, monkeypatch):

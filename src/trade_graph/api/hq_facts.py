@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 
 from trade_graph.adapters.models.subscription import sanitize_quota
 from trade_graph.api import evidence, resources
+from trade_graph.api.hq_copy import SKIP_REASONS
 from trade_graph.application.service_controller import ACTIVE_TASK, observed_run
 from trade_graph.domain.clock import utc_iso
 
@@ -418,10 +419,39 @@ def config(runtime) -> dict:  # R29
 
 
 
-def period_orders(database, pid: str, since: datetime) -> list[dict]:  # R17b: orders placed since a moment
-    cursor = database.execute(
-        "SELECT intent_id, state, created_at FROM order_intents WHERE portfolio_id=? ORDER BY rowid DESC", (pid,))
-    return _scan(cursor, since, DECISION_CAP)
+def period_counts(database, pid: str, since: datetime, until: datetime) -> dict:  # R30
+    """Exact counts for the review prompt's "since" line, from ``since`` to ``until`` inclusive.
+
+    COUNT(*) queries rather than the capped lists (an exception to the capped readers, D110): the
+    prompt states these numbers as exact.
+    """
+    bounds = (utc_iso(since), utc_iso(until))
+    window = "created_at >= ? AND created_at <= ?"
+
+    def count(sql: str, params: tuple) -> int:
+        return int(database.execute(sql, params).fetchone()[0] or 0)
+
+    decisions_row = database.execute(
+        f"""SELECT COUNT(*) AS total, COALESCE(SUM(action IN ('no_action', 'hold')), 0) AS waits
+        FROM decisions WHERE portfolio_id=? AND {window}""", (pid, *bounds)).fetchone()
+    skips = tuple(SKIP_REASONS)
+    marks = ",".join("?" for _ in skips)
+    problems = count(
+        f"""SELECT COUNT(*) FROM tasks WHERE (portfolio_id=? OR portfolio_id IS NULL) AND {window} AND (
+            status IN ('WAITING_EXTERNAL', 'BLOCKED_BUDGET') OR status = 'FAILED'
+            OR (status = 'DEAD_LETTER' AND COALESCE(CASE WHEN json_valid(output_json)
+                THEN json_extract(output_json, '$.reason') END, '') NOT IN ({marks})))""",
+        (pid, *bounds, *skips))
+    return {
+        "decisions": int(decisions_row["total"] or 0),
+        "waits": int(decisions_row["waits"] or 0),
+        "orders": count(f"SELECT COUNT(*) FROM order_intents WHERE portfolio_id=? AND {window}", (pid, *bounds)),
+        "completed_trades": count(f"SELECT COUNT(*) FROM fills WHERE portfolio_id=? AND {window}", (pid, *bounds)),
+        "research_notes": count(
+            f"SELECT COUNT(*) FROM findings WHERE (portfolio_id=? OR portfolio_id IS NULL) AND {window}",
+            (pid, *bounds)),
+        "problems": problems,
+    }
 
 
 def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datetime, owner: bool) -> dict:
@@ -460,7 +490,6 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
         "marks": latest_marks(database, pid),
         "fx": latest_fx(database),
         "orders": orders(database, pid),
-        "recent_orders": period_orders(database, pid, prompt_from),
         "fills": fill_rows,
         "secretary": secretary(database, pid),
         "rollout": rollout(database, pid),

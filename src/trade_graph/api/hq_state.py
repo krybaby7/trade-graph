@@ -1757,17 +1757,20 @@ def checkins_block(p: Projection) -> dict | None:
             "last_done_at": _iso(facts["last_done_at"]) if available else None, "suggested_at": suggested}
 
 
-def prompt_facts(p: Projection, attention_items: list, story_items: list, money: dict) -> dict:
+def prompt_since(p: Projection) -> tuple[datetime, datetime | None]:
+    """(the review prompt's "since" moment, the last done check-in or None): that check-in, else 24 h ago."""
     last_done = _dt(p.checkin_facts.get("last_done_at")) if p.owner and p.checkin_facts["available"] else None
-    since = last_done or p.now - timedelta(hours=24)
+    return last_done or p.now - timedelta(hours=24), last_done
+
+
+def prompt_facts(p: Projection, attention_items: list, story_items: list, money: dict, counts: dict) -> dict:
+    """The review prompt's facts; ``counts`` are exact (``hq_facts.period_counts`` from ``prompt_since``)."""
+    since, last_done = prompt_since(p)
 
     def within(value) -> bool:
         moment = _dt(value)
         return moment is not None and since <= moment <= p.now
 
-    decisions = [row for row in p.facts["decisions"] if within(row["created_at"])]
-    problems = sum(1 for task in p.facts["recent_tasks"] if within(task["created_at"]) and (
-        task["status"] in STUCK or (task["status"] in {"FAILED", "DEAD_LETTER"} and not p.is_skip(task))))
     flagged = [c.cut(c.plain(item["title"]), 200) for item in attention_items if item["sev"] in ("act", "watch")]
     for item in story_items:
         if item["problem"] and within(item["at"]):
@@ -1783,12 +1786,9 @@ def prompt_facts(p: Projection, attention_items: list, story_items: list, money:
         "as_of": p.as_of, "team": _team_plain(p), "setting": _setting_plain(p), "allowance": _allowance_line(p),
         "next_turns": turns,
         "since": {"from": _iso(last_done), "label": c.PROMPT["since_checkin" if last_done else "last_24h"],
-                  "decisions": len(decisions),
-                  "waits": sum(row["action"] in ("no_action", "hold") for row in decisions),
-                  "orders": sum(1 for row in p.facts.get("recent_orders", []) if within(row["created_at"])),
-                  "completed_trades": sum(1 for row in p.facts["fills"] if within(row["created_at"])),
-                  "problems": problems,
-                  "research_notes": sum(1 for row in p.facts["findings"] if within(row.get("created_at")))},
+                  "decisions": counts["decisions"], "waits": counts["waits"], "orders": counts["orders"],
+                  "completed_trades": counts["completed_trades"], "problems": counts["problems"],
+                  "research_notes": counts["research_notes"]},
         "flagged": flagged, "practice_value": value["display"] if value else None,
         "value_final": money["value_final"], "pays_for_itself": pays_plain(money),
     }
