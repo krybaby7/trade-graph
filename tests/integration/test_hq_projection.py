@@ -66,8 +66,8 @@ def schedule(env, role, next_due: float, *, interval=14400, last_due: float | No
 
 
 def task(env, task_id, role, status, *, created: float = -60, objective=None, dedup_key=None, output=None,
-         lease: float | None = None, due: float | None = None, attempts=0, result=None):
-    insert(env, "tasks", task_id=task_id, root_task_id=task_id, portfolio_id=env.pid, role=role,
+         lease: float | None = None, due: float | None = None, attempts=0, result=None, root=None):
+    insert(env, "tasks", task_id=task_id, root_task_id=root or task_id, portfolio_id=env.pid, role=role,
            objective=objective or f"{role}-review", status=status, due_at=None if due is None else at(env, due),
            priority=0, dedup_key=dedup_key, max_steps=1, max_attempts=3, attempts_used=attempts,
            lease_expires_at=None if lease is None else at(env, lease), input_json="{}",
@@ -373,6 +373,16 @@ def test_pause_never_downgrades_a_stronger_leader_pause(env):
     assert any("replaces the Leader's 'decisions paused' setting" in text(line)
                for line in pause_card["preview"]["what_happens"])
     assert next(item for item in softer["attention"] if item["id"] == "allowance_near")["decision"] == "pause_ai"
+
+
+def test_review_is_unavailable_while_any_cycle_task_is_unresolved(env):
+    quiet(env)
+    assert card(snap(env), "start_optimisation")["available"] is True
+    task(env, "t-cycle", "optimisation", "SUCCEEDED", created=-900, objective="owner-optimisation-cycle")
+    task(env, "t-cycle-a", "optimisation", "FAILED", created=-800, root="t-cycle")
+    task(env, "t-cycle-b", "leader", "RUNNING", created=-700, root="t-cycle", lease=60)
+    review = card(snap(env), "start_optimisation")
+    assert review["available"] is False and "already in progress" in text(review["unavailable_because"])
 
 
 def test_resume_hidden_when_running(env):

@@ -1587,7 +1587,7 @@ def _optimisation_card(p: Projection) -> dict:
     copy = c.DECISION["start_optimisation"]
     cycle = p.facts["cycle"]
     eligible = (p.status == "RUNNING" and p.stale is False and p.profile == "RUNNING" and not p.provider_paused
-                and (cycle is None or cycle["state"] not in ("QUEUED", "RUNNING", "BLOCKED")))
+                and not (cycle and cycle["active"]))
     tries = p.cache.get("max_attempts")
     deadline = p.config.get("optimisation_deadline_seconds")
     deadline = deadline if type(deadline) is int and deadline > 0 else None

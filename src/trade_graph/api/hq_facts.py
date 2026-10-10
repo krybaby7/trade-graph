@@ -379,8 +379,14 @@ def optimisation_cycle(database, pid: str) -> dict | None:  # R26
     if root is None:
         return None
     rows = database.execute("SELECT status, role FROM tasks WHERE root_task_id=?", (root["task_id"],)).fetchall()
+    # The controller refuses a new review while any task of any cycle is unresolved (service_controller.py).
+    active = database.execute(
+        """SELECT 1 FROM tasks WHERE portfolio_id=?
+        AND status IN ('QUEUED', 'LEASED', 'RUNNING', 'WAITING_EXTERNAL', 'BLOCKED_BUDGET')
+        AND root_task_id IN (SELECT task_id FROM tasks WHERE objective='owner-optimisation-cycle') LIMIT 1""",
+        (pid,)).fetchone() is not None
     return {"task_id": root["task_id"], "created_at": root["created_at"], "deadline_at": root["deadline_at"],
-            "state": cycle_state(rows) if rows else cycle_state([root])}
+            "state": cycle_state(rows) if rows else cycle_state([root]), "active": active}
 
 
 def resource_observation(runtime) -> dict:  # R27 (30 s cache)
