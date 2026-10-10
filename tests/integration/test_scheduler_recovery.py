@@ -293,10 +293,10 @@ def test_additive_migration_preserves_old_tasks_and_is_repeatable(tmp_path):
     for _ in range(2):
         database = Database(path)
         assert database.execute("SELECT attempts_used FROM tasks WHERE task_id = 'old'").fetchone()[0] == 1
-        assert migrate.applied_versions(database.connection) == {
-            "0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013",
-            "0014", "0015", "0016", "0017", "0018",
-        }
+        # Every registered additive migration is applied once, on top of the legacy 0001 schema.
+        registered = [version for version, _ in migrate.STATEMENTS]
+        assert registered[:18] == [f"{number:04d}" for number in range(1, 19)]
+        assert migrate.applied_versions(database.connection) == set(registered)
         database.close()
     database = Database(path)
     try:
