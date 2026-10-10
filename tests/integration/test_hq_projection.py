@@ -253,6 +253,22 @@ def test_system_pause_stuck_card_and_controls(env):
     assert softer["team"]["pause"]["departments_paused"] is False
 
 
+def test_stop_during_a_safety_stop_is_partly_reversible_and_not_recommended(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")
+    stop = card(snap(env), "stop_safely")
+    assert stop["shown"] is True and stop["recommended"] is False
+    assert stop["facts"]["flat"] is True
+    preview = stop["preview"]
+    assert preview["reversible"] == "partly"
+    assert "Not recommended" in text(preview["when"])
+    assert "cause isn't fixed" in text(preview["undo"])
+    assert any("replaces the automatic safety stop" in text(line) for line in preview["what_happens"])
+    env.db.execute("DELETE FROM pause_states WHERE portfolio_id=?", (env.pid,))
+    normal = card(snap(env), "stop_safely")["preview"]
+    assert normal["reversible"] == "yes" and "Not recommended" not in text(normal["when"])
+
+
 def test_owner_pause_resume_shown_with_predicted_blockers(env):
     run(env)
     pause(env, "MANAGE_ONLY", "owner")

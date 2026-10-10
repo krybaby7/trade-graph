@@ -3,7 +3,7 @@
 import pytest
 from tests.integration.test_dashboard import _client
 
-from trade_graph.api import activity, controls, financial, health, hq, hq_facts, live, review_export
+from trade_graph.api import activity, controls, financial, health, hq, hq_facts, hq_money, live, review_export
 from trade_graph.api.hq_contract import validate_snapshot
 from trade_graph.api.owner_expenses import record
 from trade_graph.application import service_controller
@@ -58,6 +58,46 @@ def test_snapshot_uses_cache_and_never_runs_expensive_projections(runtime, monke
     assert len(calls) == 2
     assert third["money"]["as_of"] != first["money"]["as_of"]
     assert "other_costs_unconfirmed" not in [item["code"] for item in third["money"]["pays_for_itself"]["missing"]]
+
+
+def _text(segments) -> str:
+    return "".join(segment.get("v") or segment.get("display") or "" for segment in segments or [])
+
+
+def test_cache_hit_sees_a_new_open_order(runtime):
+    viewer = hq.Viewer("owner", "cookie", True)
+    first = hq.snapshot(runtime, viewer)
+    assert first["money"]["holdings"]["flat"] is True
+    now = utc_iso(runtime.clock.now())
+    runtime.database.execute(
+        """INSERT INTO order_intents (intent_id, portfolio_id, client_order_id, state, symbol, payload_json,
+        created_at, updated_at) VALUES ('i-open', ?, 'c-open', 'OPEN', 'BTC/USD',
+        '{"client_order_id":"c-open","symbol":"BTC/USD","side":"buy"}', ?, ?)""",
+        (runtime.portfolio_id, now, now))
+    second = hq.snapshot(runtime, viewer)  # the money cache is not reset by hand
+    validate_snapshot(second)
+    assert second["money"]["holdings"]["flat"] is False
+    assert second["money"]["holdings"]["open_orders"] == 1
+    assert second["money"]["counts"]["orders"] == 1
+    stop = next(card for card in second["decisions"] if card["id"] == "stop_safely")
+    assert stop["facts"]["flat"] is False
+    assert "an order is open" in _text(stop["preview"]["what_happens"][0])
+
+
+def test_cache_expires_after_60_seconds(runtime, monkeypatch):
+    calls = []
+    original = financial.overview
+    monkeypatch.setattr(financial, "overview", lambda reader: calls.append(reader) or original(reader))
+    clock = [1000.0]
+    monkeypatch.setattr(hq_money, "_monotonic", lambda: clock[0])
+    viewer = hq.Viewer("owner", "cookie", True)
+    hq.snapshot(runtime, viewer)
+    clock[0] += 59
+    hq.snapshot(runtime, viewer)
+    assert len(calls) == 1
+    clock[0] += 2  # 61 s after the first computation
+    hq.snapshot(runtime, viewer)
+    assert len(calls) == 2
 
 
 def test_story_page_and_reader_views_are_also_cheap(runtime):

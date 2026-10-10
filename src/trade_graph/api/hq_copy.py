@@ -651,6 +651,10 @@ DECISION: Final = {
                                  "own Stop. If the cause is still there, the system may stop itself again."),
         "cost": "No money.", "undo": "Yes: Start, then Resume.", "reversible": "yes",
         "when": "Only before PC maintenance or a long shutdown.",
+        "undo_safety": ("Partly. If nothing is held, Start and then Resume bring the team back without the safety "
+                        "stop, but its cause isn't fixed. If something is held, the safety stop stays."),
+        "not_recommended_safety": ("Not recommended during an automatic safety stop. Copy the technical steps from "
+                                   "its card first."),
     },
     "record_bill": {
         "title": "Record a bill", "button": "Record a bill", "confirm": "Yes, record this bill",

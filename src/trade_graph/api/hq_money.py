@@ -1,10 +1,12 @@
 """Fingerprinted 60-second cache of HQ's expensive facts (spec §B.3).
 
 Holds raw values only (no copy, no viewer): the economics from one
-``financial.overview``, flatness, activity counts, the active mandate, the
-allowance stop line, the attempt limit and the hourly-history averages. The cache
-is recomputed after 60 seconds or as soon as a bill, fill or ledger event lands.
-A failure leaves the money values unknown (``None``), never zero.
+``financial.overview``, whether positions are held, activity counts, the active
+mandate, the allowance stop line, the attempt limit and the hourly-history
+averages. The cache is recomputed after 60 seconds or as soon as a bill, fill,
+ledger event, order or decision lands. Open orders are not cached: the projection
+reads them on every poll, so "flat" is always fresh. A failure leaves the money
+values unknown (``None``), never zero.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError
 
 MAX_AGE_SECONDS = 60
+_monotonic = monotonic  # injectable timer (tests move it forward)
 MARKET_SYMBOLS = ("BTC/USD", "ETH/USD")
 FAILURES = (ValueError, TypeError, ArithmeticError, LookupError, TradeGraphError)
 
@@ -33,26 +36,28 @@ def money(runtime, now: str) -> dict:
     with lock:
         current = fingerprint(runtime)
         cached = getattr(runtime, "_hq_money", None)
-        if cached and monotonic() - cached[0] < MAX_AGE_SECONDS and cached[1] == current:
+        if cached and _monotonic() - cached[0] < MAX_AGE_SECONDS and cached[1] == current:
             return cached[2]
         result = compute(runtime, now)
-        runtime._hq_money = (monotonic(), current, result)
+        runtime._hq_money = (_monotonic(), current, result)
         return result
 
 
 def fingerprint(runtime) -> tuple:
-    database = runtime.database
+    database, pid = runtime.database, runtime.portfolio_id
     return (
         database.execute("SELECT MAX(sequence) FROM owner_expense_evidence").fetchone()[0],
-        database.execute("SELECT MAX(rowid) FROM fills WHERE portfolio_id=?", (runtime.portfolio_id,)).fetchone()[0],
+        database.execute("SELECT MAX(rowid) FROM fills WHERE portfolio_id=?", (pid,)).fetchone()[0],
         database.execute("SELECT MAX(rowid) FROM ledger_events").fetchone()[0],
+        database.execute("SELECT MAX(rowid) FROM order_intents WHERE portfolio_id=?", (pid,)).fetchone()[0],
+        database.execute("SELECT MAX(rowid) FROM decisions WHERE portfolio_id=?", (pid,)).fetchone()[0],
     )
 
 
 def compute(runtime, now: str) -> dict:
     reader = live.projection_runtime(runtime)
     result = {"as_of": now, **_economics(runtime)}
-    result["flat"] = _flat(runtime, reader)
+    result["nonflat_positions"] = _nonflat_positions(reader)
     result["counts"] = _counts(runtime, now)
     result["mandate"] = _mandate(runtime)
     result.update(_threshold(runtime))
@@ -105,9 +110,10 @@ def _fx(row: dict) -> dict:
             "expired": maximum is not None and age is not None and age > maximum}
 
 
-def _flat(runtime, reader) -> bool | None:
+def _nonflat_positions(reader) -> bool | None:
+    """Whether anything is held (lots or non-cash balances); open orders are read fresh by the projection."""
     try:
-        return not (controls._nonflat(reader) or runtime.execution._has_outstanding(runtime.portfolio_id))
+        return bool(controls._nonflat(reader))
     except (*FAILURES, AttributeError):
         return None
 

@@ -96,6 +96,9 @@ class Projection:
         self.auto_optimisation = bool(automatic_optimisation_enabled(self.config["settings"]))
         self.unclear_orders = facts["orders"]["unclear"]
         self.open_orders = facts["orders"]["open"]
+        # Fresh on every poll: open orders (R17, the execution's outstanding states) plus cached holdings.
+        nonflat = cache.get("nonflat_positions")
+        self.flat = None if nonflat is None else (not nonflat and self.open_orders == 0)
         self.decision_by_task = {row["task_id"]: row for row in facts["decisions"] if row.get("task_id")}
         self.decision_by_id = {row["decision_id"]: row for row in facts["decisions"]}
         self.findings_by_id = {row["finding_id"]: row for row in facts["findings"]}
@@ -857,7 +860,7 @@ def _now_facts(p: Projection, count: int) -> list:
     coins = c.decimal_or_none(cache.get("inventory")) if cache.get("available") else None
     if coins is None:
         holdings = c.says(c.FACTS["holdings_unknown"])
-    elif coins == 0 and cache.get("flat") is not False:
+    elif coins == 0 and p.flat is not False:
         holdings = c.says(c.FACTS["nothing_held"])
     else:
         holdings = c.says(c.money_segment(coins, p.reporting), c.FACTS["in_coins"])
@@ -1400,7 +1403,8 @@ def decisions(p: Projection, attention_items: list, checkins_block: dict | None,
 
 def _decision(key: str, *, shown: bool, available: bool = True, unavailable: str | None = None,
               recommended: str | None = None, what: list | None = None, cost: list | None = None,
-              when: list | None = None, right_now: list | None = None, facts: dict | None = None) -> dict:
+              when: list | None = None, right_now: list | None = None, facts: dict | None = None,
+              undo: list | None = None, reversible: str | None = None) -> dict:
     copy = c.DECISION[key]
     return {"id": key, "shown": shown, "available": available,
             "unavailable_because": None if available else c.says(unavailable),
@@ -1409,7 +1413,7 @@ def _decision(key: str, *, shown: bool, available: bool = True, unavailable: str
             "title": copy["title"], "button_label": copy["button"], "confirm_label": copy["confirm"],
             "weight": copy["weight"],
             "preview": {"what_happens": what or [c.says(copy["what"])], "cost": cost or c.says(copy["cost"]),
-                        "undo": c.says(copy["undo"]), "reversible": copy["reversible"],
+                        "undo": undo or c.says(copy["undo"]), "reversible": reversible or copy["reversible"],
                         "when": when or c.says(copy.get("when") or copy.get("not_needed")),
                         "right_now": right_now or []},
             "facts": facts or {}}
@@ -1530,7 +1534,7 @@ def _optimisation_card(p: Projection) -> dict:
 
 def _stop_card(p: Projection) -> dict:
     copy = c.DECISION["stop_safely"]
-    flat = p.cache.get("flat")
+    flat = p.flat
     if flat is True:
         what = [c.says(copy["what_flat"])]
         if p.system_pause:
@@ -1539,6 +1543,11 @@ def _stop_card(p: Projection) -> dict:
         what = [c.says(copy["what_held"])]
     else:
         what = [c.says(copy["what_unknown"])]
+    if p.system_pause:
+        # Never recommended during an automatic safety stop, and only partly undoable (spec §B.5.8).
+        return _decision("stop_safely", shown=p.active, what=what, facts={"flat": flat},
+                         undo=c.says(copy["undo_safety"]), reversible="partly",
+                         when=c.says(copy["not_recommended_safety"]))
     return _decision("stop_safely", shown=p.active, what=what, facts={"flat": flat})
 
 
@@ -1598,7 +1607,7 @@ def _zero_counts() -> dict:
 def money_block(p: Projection) -> dict:
     cache = p.cache
     at_risk = c.says(c.AT_RISK_PAPER if p.paper else c.AT_RISK_LIVE)
-    holdings = {"coins": None, "cash": None, "flat": cache.get("flat"), "open_orders": p.open_orders,
+    holdings = {"coins": None, "cash": None, "flat": p.flat, "open_orders": p.open_orders,
                 "unclear_orders": p.unclear_orders}
     counts = cache.get("counts") or _zero_counts()
     as_of = _iso(cache.get("as_of"))
@@ -1625,11 +1634,11 @@ def money_block(p: Projection) -> dict:
     value = c.money(cache.get("equity"), reporting)
     return {"available": True, "unavailable_reason": None, "as_of": as_of, "practice_value": value,
             "value_final": value is not None and not cache.get("valuation_provisional"),
-            "estimate_notes": _estimate_notes(cache), "opening": opening, "change": change,
+            "estimate_notes": _estimate_notes(cache, p.flat), "opening": opening, "change": change,
             "holdings": holdings, "counts": counts, "pays_for_itself": _pays(p, cache), "at_risk": at_risk}
 
 
-def _estimate_notes(cache: dict) -> list:
+def _estimate_notes(cache: dict, flat: bool | None) -> list:
     notes: dict[str, dict] = {}
     for fx in cache.get("fx") or []:
         if fx["expired"] and "euro_rate_too_old" not in notes:
@@ -1641,7 +1650,7 @@ def _estimate_notes(cache: dict) -> list:
             notes["euro_rate_from_earlier_day"] = {"code": "euro_rate_from_earlier_day", "tone": "calm",
                                                    "text": c.says(before, c.time(fx["valid_as_of"], "date"), after)}
     # Old or missing prices only make the total an estimate when something is held.
-    if cache.get("valuation_provisional") and cache.get("flat") is not True:
+    if cache.get("valuation_provisional") and flat is not True:
         marks = cache.get("marks") or []
         stale = [mark["age_seconds"] for mark in marks if mark["stale"] and mark.get("age_seconds") is not None]
         if stale:
