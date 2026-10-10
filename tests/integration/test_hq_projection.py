@@ -835,7 +835,7 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
     assert stuck["consequence"] == []
     assert room(data, "leader")["last"]["text"] == [{"t": "text", "v": "Its last turn got stuck."}]
     repeat = next(item for item in data["attention"] if item["id"] == "repeat_problems")
-    assert "(2 in a row)" in text(repeat["title"])
+    assert text(repeat["title"]) == "Learning's turn (daily) keeps having problems (2 in a row)"
     assert "didn't answer in time" in text(repeat["why"])
     assert room(data, "leader")["light"] == "stuck"
     assert room(data, "learning")["had_problem"] is True
@@ -845,6 +845,60 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
     review = next(item for item in data["calendar"]["items"] if item["kind"] == "extra_review")
     assert review["status"] == "stuck"
     assert "Leader's turn is stuck" in data["prompt_facts"]["flagged"]
+
+
+def test_old_problem_says_it_was_tried_again(env):
+    run(env)
+    schedule(env, "learning", 6 * 3600, interval=86400)
+    task(env, "t-lf", "learning", "FAILED", created=-50 * 3600, output={"reason": "model temporary: retry"},
+         dedup_key=f"schedule:s-learning:{at(env, -50 * 3600)}")
+    for task_id, created in (("t-ls1", -26 * 3600), ("t-ls2", -2 * 3600)):
+        task(env, task_id, "learning", "SUCCEEDED", created=created, result={"lesson_revision_ids": []},
+             dedup_key=f"schedule:s-learning:{at(env, created)}")
+    problem = next(item for item in snap(env)["story"]["items"] if item["id"] == "task:t-lf")
+    assert text(problem["headline"]) == "Learning's turn (daily) didn't work (a temporary AI error)."
+    assert "Tried again" in text(problem["consequence"]) and "Next try" not in text(problem["consequence"])
+    assert problem["consequence"][1] == {"t": "time", "at": iso_ms(at(env, -26 * 3600)), "style": "day_clock"}
+
+
+def test_ai_pause_story_uses_the_reason_recorded_then(env):
+    run(env)
+    reading(env, remaining=3, paused_reason="subscription quota exhausted")
+    insert(env, "subscription_invocations", invocation_id="inv-p", request_hash="h", task_id="t-paused",
+           root_task_id="t-paused", role="trader", run_id="r-1", system_version_id="v1",
+           provider="codex_subscription", requested_model="m", state="FAILED",
+           result_json=json.dumps({"ok": False, "failure": "unsupported"}), quota_json="{}",
+           created_at=at(env, -3700), updated_at=at(env, -3600))
+    events(env, "subscription_ai_paused", [(-3600, {"task_id": "t-paused", "role": "trader"}),
+                                           (-1800, {"task_id": "t-unknown", "role": "trader"})])
+    paused = sorted((item for item in snap(env)["story"]["items"] if item["kind"] == "ai_paused"),
+                    key=lambda item: item["at"])
+    assert [text(item["headline"]) for item in paused] == [
+        "AI paused: the AI model isn't available.", "AI paused: a provider stop."]
+
+
+def test_trade_decision_names_quantity_coin_and_limit(env):
+    run(env)
+    payload = {"action": "enter", "symbol": "ETH/USD", "quantity": {"amount": "0.5", "asset": "ETH"},
+               "limit_price": {"amount": "2418.70", "currency": "USD"}, "rationale": "Breakout confirmed."}
+    task(env, "t-buy", "trader", "SUCCEEDED", created=-400, output={"decision_id": "d-buy", "intent_id": "i-buy"},
+         result={"decision_id": "d-buy"})
+    insert(env, "decisions", decision_id="d-buy", portfolio_id=env.pid, action="enter",
+           payload_json=json.dumps(payload), mandate_revision="1", policy_revision="1", snapshot_id="snap",
+           system_version_id="v1", created_at=at(env, -300), task_id="t-buy")
+    insert(env, "fills", fill_id="fill-buy", venue="paper", account_id="paper", trade_id="tr-buy",
+           portfolio_id=env.pid, intent_id="i-buy", created_at=at(env, -200),
+           document_json=json.dumps({"symbol": "ETH/USD", "side": "buy", "quantity": "0.5", "price": "2418.70",
+                                     "fee_amount": "1.20", "fee_asset": "USD"}))
+    data = snap(env)
+    item = next(item for item in data["story"]["items"] if item["id"] == "decision:d-buy")
+    assert text(item["headline"]) == "Trader decided to buy 0.5 ETH at a limit of $2,418.70."
+    assert text(item["consequence"]) == "Bought 0.5 ETH at $2,418.70, fee $1.20."
+    assert text(room(data, "trader")["last"]["text"]) == "Decided to buy ETH."
+    env.db.execute("UPDATE decisions SET payload_json=? WHERE decision_id='d-buy'",
+                   (json.dumps({"action": "enter", "symbol": "ETH/USD", "rationale": "Breakout."}),))
+    plain = next(item for item in snap(env)["story"]["items"] if item["id"] == "decision:d-buy")
+    assert text(plain["headline"]) == "Trader decided to buy ETH."
 
 
 def test_story_pages_go_back_without_inventing(env):

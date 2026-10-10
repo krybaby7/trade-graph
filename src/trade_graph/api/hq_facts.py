@@ -256,6 +256,18 @@ def deferral_streaks(database, pid: str, *, since: datetime, before: datetime | 
     return streaks
 
 
+def invocation_failures(database, task_ids: list[str]) -> dict[str, str]:  # R31
+    """The recorded failure (e.g. "unsupported", "rate_limit") of each task's subscription invocation."""
+    failures = {}
+    for task_id in list(dict.fromkeys(task_ids))[:20]:
+        row = database.execute("SELECT result_json FROM subscription_invocations WHERE task_id=? LIMIT 1",
+                               (task_id,)).fetchone()
+        failure = loads(row["result_json"]).get("failure") if row else None
+        if isinstance(failure, str):
+            failures[task_id] = failure
+    return failures
+
+
 def activity_events(database, pid: str, since: datetime) -> list[dict]:  # R14
     marks = ",".join("?" for _ in STORY_EVENT_KINDS)
     cursor = database.execute(

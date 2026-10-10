@@ -7,6 +7,7 @@ The calendar and story modules read the derived facts from :class:`Projection`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -43,10 +44,36 @@ OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
 # Leader pauses that protect more than the owner's "Pause AI" (protect-only); HQ never offers to weaken them.
 STRONGER_PAUSES = ("CANCEL_ALL", "FLATTEN", "STOPPED")
 CHECKIN_SUGGESTION_DELAY = timedelta(minutes=20)
+ASSET_CODE = re.compile(r"^[A-Z0-9]{2,16}$")
 
 
 def _dt(value) -> datetime | None:
     return value if isinstance(value, datetime) else parse(value)
+
+
+def base_asset(symbol) -> str | None:
+    """The coin of a pair such as ``ETH/USD`` ("ETH"), when it reads as an asset code."""
+    if not isinstance(symbol, str):
+        return None
+    base = symbol.split("/", 1)[0]
+    return base if ASSET_CODE.fullmatch(base) else None
+
+
+def quote_asset(symbol) -> str | None:
+    """The pricing currency of a pair such as ``ETH/USD`` ("USD")."""
+    if not isinstance(symbol, str) or "/" not in symbol:
+        return None
+    quote = symbol.split("/", 1)[1]
+    return quote if ASSET_CODE.fullmatch(quote) else None
+
+
+def amount_and_unit(value, unit_key: str) -> tuple[Decimal | None, str | None]:
+    """A persisted ``{"amount", <unit_key>}`` object (Quantity or Money) or a plain decimal string (C12)."""
+    if isinstance(value, dict):
+        unit = value.get(unit_key)
+        unit = unit if isinstance(unit, str) and ASSET_CODE.fullmatch(unit) else None
+        return c.decimal_or_none(value.get("amount")), unit
+    return c.decimal_or_none(value), None
 
 
 def _iso(value) -> str | None:
@@ -897,9 +924,10 @@ def _calm_copy(p: Projection) -> tuple[list, list, list]:
     if dept == "trader":
         if_nothing = c.says(nothing + "at ", c.time(at, "clock"), c.NOW["calm_trader"])
     else:
-        cadence = c.cadence(p.roles[dept].every) or "next"
-        if_nothing = c.says(nothing + c.NOW["calm_other"].format(dept=c.dept_name(dept), cadence=cadence),
-                            c.time(at, "clock"), ".")
+        cadence = c.cadence(p.roles[dept].every)
+        other = (c.NOW["calm_other"].format(dept=c.dept_name(dept), cadence=cadence) if cadence
+                 else c.NOW["calm_other_plain"].format(dept=c.dept_name(dept)))
+        if_nothing = c.says(nothing + other, c.time(at, "clock"), ".")
     return c.says(head), detail, if_nothing
 
 
@@ -1103,13 +1131,14 @@ def _repeat_problems(p: Projection) -> list:
                 continue
             latest = problems[0]
             dept = c.dept_name(role.dept)
-            cadence = p.task_cadence(latest) or "regular"
+            cadence = p.task_cadence(latest)
             reason = c.reason_segment(p.raw_reason(latest), live=not p.paper) or c.text(c.REASON["unknown"])
             consequence = c.says(c.ATTENTION["repeat_problems_next"], c.time(role.next_at, "day_clock"), ".") \
                 if role.next_at else []
             cards.append(_card(
                 "repeat_problems",
-                c.says(c.ATTENTION["repeat_problems"].format(dept=dept, cadence=cadence, n=len(problems))),
+                c.says(c.ATTENTION["repeat_problems"].format(dept=dept, cadence=cadence, n=len(problems)) if cadence
+                       else c.ATTENTION["repeat_problems_plain"].format(dept=dept, n=len(problems))),
                 why=c.says(c.MISC["last_reason"][0], reason, c.MISC["last_reason"][1]), consequence=consequence,
                 how=c.says(c.ATTENTION["in_prompt"]), since=p.task_moment(latest),
                 suffix=None if not cards else f"{role.dept}_{len(cards)}"))
@@ -1282,8 +1311,9 @@ def _decision_last(p: Projection, decision: dict) -> dict:
         segment = c.term("wait", words, code=action) if action == "no_action" else c.text(words, code=action)
         text = [c.text(before.format(symbols=p.symbols_text(symbols))), segment, c.text(after)]
     elif action in ("enter", "exit"):
-        text = [c.text(c.LAST["decided_trade"].format(verb="buy" if action == "enter" else "sell",
-                                                      symbol=symbols[0] if symbols else c.MISC["a_coin"]), code=action)]
+        asset = (base_asset(symbols[0]) if symbols else None) or c.MISC["a_coin"]
+        text = [c.text(c.LAST["decided_trade"].format(verb="buy" if action == "enter" else "sell", symbol=asset),
+                       code=action)]
     else:
         text = [c.text(c.LAST["decided_other"].format(action=words[:1].upper() + words[1:]), code=action)]
     return {"at": iso_ms(_dt(decision["created_at"]) or p.now), "outcome": "decided", "text": text,

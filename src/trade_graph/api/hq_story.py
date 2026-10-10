@@ -11,13 +11,17 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trade_graph.api import hq_copy as c
+from trade_graph.api import hq_facts
 from trade_graph.api.hq_contract import AI_DEPARTMENTS, STORY_MAX_ITEMS, iso_ms
 from trade_graph.api.hq_facts import loads
-from trade_graph.api.hq_state import STUCK, TERMINAL, Projection, _dt
+from trade_graph.api.hq_state import STUCK, TERMINAL, Projection, _dt, amount_and_unit, base_asset, quote_asset
 
 WINDOW = timedelta(hours=72)
 ONE_MS = timedelta(milliseconds=1)
 CRASHED = frozenset({"FAILED", "INTERRUPTED"})
+AI_PAUSE_LOOKUPS = 20  # invocation reads per page for "AI paused" items
+# A subscription invocation's recorded failure -> the provider stop it caused (paper_service.py).
+INVOCATION_PAUSE = {"unsupported": "subscription model unavailable", "rate_limit": "subscription quota exhausted"}
 
 
 def story(p: Projection, *, window_start: datetime, window_end: datetime, checkins: list[dict],
@@ -107,17 +111,20 @@ def _decisions(p: Projection) -> list:
         if action in ("no_action", "hold"):
             headline = c.says(c.STORY["decision_wait"].format(symbols=p.symbols_text(symbols), action=words))
         elif action in ("enter", "exit"):
-            symbol = symbols[0] if symbols else c.MISC["a_coin"]
-            head = c.STORY["decision_trade"].format(action=words, symbol=symbol)
-            quantity = c.decimal_or_none(payload.get("quantity"))
-            limit = c.decimal_or_none(payload.get("limit_price"))
-            quote = symbol.split("/")[1] if "/" in symbol else None
-            if quantity is not None and limit is not None and quote:
-                headline = c.says(head + c.TRADE["limit"].format(qty=c.quantity(quantity)),
-                                  c.money_segment(limit, quote), c.TRADE["limit_after"])
+            # Coins are named by their asset ("ETH"); quantity and limit are {amount, asset/currency} (C12).
+            symbol = symbols[0] if symbols else None
+            asset, quote = base_asset(symbol) or c.MISC["a_coin"], quote_asset(symbol)
+            quantity, quantity_asset = amount_and_unit(payload.get("quantity"), "asset")
+            limit, limit_currency = amount_and_unit(payload.get("limit_price"), "currency")
+            limit_currency = limit_currency or quote
+            if quantity is not None and limit is not None and limit_currency:
+                verb = "buy" if action == "enter" else "sell"
+                headline = c.says(c.STORY["decision_trade_qty"].format(
+                    verb=verb, qty=c.quantity(quantity), asset=quantity_asset or asset),
+                    c.money_segment(limit, limit_currency), ".")
             else:
-                headline = c.says(head + ".")
-            consequence = _order_consequence(p, tasks.get(row.get("task_id")), quote)
+                headline = c.says(c.STORY["decision_trade"].format(action=words, symbol=asset) + ".")
+            consequence = _order_consequence(p, tasks.get(row.get("task_id")), quote, asset)
         else:
             headline = c.says(c.STORY["decision_other"].format(action=words))
         items.append(_story_item(f"decision:{row['decision_id']}", row["created_at"], "trader_decision", "trader",
@@ -126,7 +133,7 @@ def _decisions(p: Projection) -> list:
     return items
 
 
-def _order_consequence(p: Projection, task: dict | None, quote: str | None) -> list | None:
+def _order_consequence(p: Projection, task: dict | None, quote: str | None, asset: str) -> list | None:
     intent_id = loads(task.get("output_json")).get("intent_id") if task else None
     if not intent_id:
         return None
@@ -137,7 +144,9 @@ def _order_consequence(p: Projection, task: dict | None, quote: str | None) -> l
         fee, fee_asset = c.decimal_or_none(document.get("fee_amount")), document.get("fee_asset")
         if quantity is not None and price is not None:
             side = "buy" if document.get("side") == "buy" else "sell"
-            parts: list = [c.TRADE["done"][side].format(qty=c.quantity(quantity)), c.money_segment(price, quote)]
+            coin = base_asset(document.get("symbol")) or asset
+            parts: list = [c.TRADE["done"][side].format(qty=c.quantity(quantity), asset=coin),
+                           c.money_segment(price, quote)]
             if fee is not None and isinstance(fee_asset, str) and fee_asset == quote:
                 parts += [c.TRADE["fee"], c.money_segment(fee, quote)]
             return c.says(*parts, ".")
@@ -255,8 +264,14 @@ def _problem_consequence(p: Projection, task: dict, role: str, at: datetime) -> 
         return c.says(c.STORY["stuck"])
     if role == "trader" and p.system_pause and p.pause_since and abs((p.pause_since - at).total_seconds()) < 300:
         return c.says(c.STORY["safety_after_trader"])
+    # What happened next, true to the time (C10): a later turn of the same department, else the booked one.
+    later = [moment for other in p.roles[role].recent
+             if other is not task and (moment := _dt(other.get("created_at"))) is not None and moment > at]
+    if later:
+        before, after = c.STORY["tried_again"]
+        return c.says(before, c.time(min(later), "day_clock"), after)
     next_at = p.roles[role].next_at
-    if next_at is not None and next_at > at:
+    if next_at is not None and next_at > p.now:
         return c.says(c.STORY["next_try"], c.time(next_at, "day_clock"), ".")
     return None
 
@@ -303,16 +318,20 @@ def _allowance_waits(p: Projection, cut: datetime | None = None) -> list:
 
 
 def _ai_paused(p: Projection) -> list:
+    """Each AI pause with the reason recorded for the turn that caused it, never today's provider reason (C11)."""
+    events = [event for event in p.facts["events"] if event["kind"] == "subscription_ai_paused"]
+    task_ids = [task_id for event in events[:AI_PAUSE_LOOKUPS]
+                if isinstance(task_id := event["payload"].get("task_id"), str)]
+    failures = hq_facts.invocation_failures(p.runtime.database, task_ids)
     items = []
-    reason_raw = p.provider_reason or None
-    reason = c.AI_PAUSE_REASON.get(reason_raw or "", c.AI_PAUSE_REASON_OTHER)
-    for event in p.facts["events"]:
-        if event["kind"] != "subscription_ai_paused":
-            continue
+    for event in events:
+        failure = failures.get(event["payload"].get("task_id"))
+        reason_raw = INVOCATION_PAUSE.get(failure or "")
+        reason = c.AI_PAUSE_REASON.get(reason_raw or "", c.AI_PAUSE_REASON_OTHER)
         items.append(_story_item(f"ai-paused:{event['event_id']}", event["created_at"], "ai_paused", "hq",
                                  "attention", c.says(c.STORY["ai_paused"].format(reason=reason)),
                                  consequence=c.says(c.STORY["ai_paused_consequence"]), problem=True,
-                                 technical=reason_raw))
+                                 technical=reason_raw or failure))
     return items
 
 
