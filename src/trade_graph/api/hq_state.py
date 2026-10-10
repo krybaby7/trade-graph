@@ -1490,7 +1490,7 @@ def _start_card(p: Projection) -> dict:
     shown = p.code in ("no_run", "crashed", "stopped", "silent", "attached_unknown")
     blocked = p.code in ("silent", "attached_unknown")
     recommended = copy["recommended"] if p.code in ("no_run", "crashed", "stopped") else None
-    when = c.says(recommended or copy["not_needed"])
+    when = c.says(recommended or (copy["not_needed_silent"] if blocked else copy["not_needed"]))
     return _decision("start_trading", shown=shown, available=not blocked,
                      unavailable=copy["silent"] if blocked else None, recommended=recommended, when=when)
 

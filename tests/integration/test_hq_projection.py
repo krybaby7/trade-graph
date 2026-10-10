@@ -229,6 +229,8 @@ def test_stale_heartbeat_is_silent_and_start_not_recommended(env):
     start = card(data, "start_trading")
     assert start["shown"] is True and start["available"] is False and start["recommended"] is False
     assert "only reconnect" in text(start["unavailable_because"])
+    assert "the team is on" not in text(start["preview"]["when"])
+    assert "isn't responding" in text(start["preview"]["when"])
     assert codes(data)[0] == "team_silent"
     assert all(item["light"] == "off" for item in data["departments"] if item["kind"] == "ai")
 
@@ -713,6 +715,8 @@ def test_history_gap_honest_note(env):
     assert "history_gap" in [notice["code"] for notice in data["notices"]]
     costs = next(item for item in data["attention"] if item["id"] == "costs_unconfirmed")
     assert "history gap" in text(costs["consequence"])
+    bill = card(data, "record_bill")
+    assert bill["recommended"] is True and not text(bill["recommended_because"]).startswith("Optional")
     env.runtime.recovery_history = lambda: {"status": "UNAVAILABLE"}
     assert "history_unverified" in [notice["code"] for notice in snap(env)["notices"]]
 

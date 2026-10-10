@@ -580,6 +580,7 @@ DECISION: Final = {
         "undo": "Yes: Stop safely.", "reversible": "yes",
         "recommended": "Recommended: nothing is being watched right now.",
         "not_needed": "Not needed right now: the team is on.",
+        "not_needed_silent": "Not needed: the team's program was started but isn't responding.",
         "silent": "Start would only reconnect to the stuck program. This needs a technical check.",
     },
     "pause_ai": {
@@ -667,8 +668,8 @@ DECISION: Final = {
                  "so a mistake can't simply be replaced. Ask for help first if unsure."),
         "reversible": "no",
         "when": "Optional: it completes your record of real costs.",
-        "recommended": "Optional: your AI subscription bills aren't confirmed yet.",
-        "recommended_other": "Optional: your other running costs aren't confirmed yet.",
+        "recommended": "Your AI subscription bills aren't confirmed yet.",
+        "recommended_other": "Your other running costs aren't confirmed yet.",
     },
     "declare_bills_complete": {
         "title": "I've entered every bill for a month", "button": "I've entered every bill for a month",
