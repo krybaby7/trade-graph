@@ -6,7 +6,8 @@ or once a row is older than ``since - 10 min``. The first row is always kept, so
 the newest record is visible even when it is older than the window.
 
 Nothing here reads the dashboard's cached readiness, probes a process other than
-the recorded service PID, or calls a provider.
+the recorded service PID, calls a provider, or takes a database lock (no
+ownership probe).
 """
 
 from __future__ import annotations
@@ -17,12 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 from trade_graph.adapters.models.subscription import sanitize_quota
 from trade_graph.api import evidence, resources
-from trade_graph.application.service_controller import (
-    ACTIVE_SERVICE,
-    ACTIVE_TASK,
-    database_owned,
-    observed_run,
-)
+from trade_graph.application.service_controller import ACTIVE_TASK, observed_run
 from trade_graph.domain.clock import utc_iso
 
 SCAN_SLACK = timedelta(minutes=10)
@@ -86,14 +82,15 @@ def portfolio(database, pid: str) -> dict | None:  # R1
 
 
 def current_run(database, now: datetime) -> dict:  # R2
+    """The newest recorded run, checked against its recorded PID only.
+
+    HQ never probes database ownership (D110): a probe takes the database lock for a
+    moment and could collide with the owner's Start. HQ therefore never reports
+    ``ATTACHED_EXISTING``; Mission Control still does.
+    """
     row = database.execute("SELECT * FROM graph_service_runs ORDER BY rowid DESC LIMIT 1").fetchone()
-    observed = observed_run(row, now)
-    if observed is None or observed["status"] not in ACTIVE_SERVICE:
-        if database_owned(database):
-            observed = {"run_id": None, "status": "ATTACHED_EXISTING", "heartbeat_at": None,
-                        "requested_at": None, "finished_at": None, "error_type": None}
-    return observed or {"run_id": None, "status": "IDLE", "heartbeat_at": None, "requested_at": None,
-                        "finished_at": None, "error_type": None}
+    return observed_run(row, now) or {"run_id": None, "status": "IDLE", "heartbeat_at": None,
+                                      "requested_at": None, "finished_at": None, "error_type": None}
 
 
 def recent_runs(database) -> list[dict]:  # R3

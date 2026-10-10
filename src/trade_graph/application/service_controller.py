@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -40,12 +41,17 @@ def process_identity(pid: int | None) -> str | None:
         return None
 
 
+_PROBE_LOCK = threading.Lock()
+
+
 def database_owned(database) -> bool:
-    try:
-        with database.exclusive_lock("ownership-probe", single_link=False):
-            return False
-    except DatabaseOwnershipConflict:
-        return True
+    # Probes in one process are serialised, so two concurrent probes never mistake each other for an owner.
+    with _PROBE_LOCK:
+        try:
+            with database.exclusive_lock("ownership-probe", single_link=False):
+                return False
+        except DatabaseOwnershipConflict:
+            return True
 
 
 _OBSERVED_FIELDS = ("run_id", "portfolio_id", "mode", "status", "requested_at", "heartbeat_at", "finished_at",

@@ -3,9 +3,10 @@
 import pytest
 from tests.integration.test_dashboard import _client
 
-from trade_graph.api import activity, controls, financial, health, hq, live, review_export
+from trade_graph.api import activity, controls, financial, health, hq, hq_facts, live, review_export
 from trade_graph.api.hq_contract import validate_snapshot
 from trade_graph.api.owner_expenses import record
+from trade_graph.application import service_controller
 from trade_graph.application.service_controller import ServiceController
 from trade_graph.domain.clock import utc_iso
 
@@ -13,6 +14,8 @@ POISONED = (
     (activity, "overview"), (activity, "_attempts"), (live, "overview"), (live, "health"), (health, "health"),
     (controls, "configuration"), (review_export, "export"), (ServiceController, "status"),
     (ServiceController, "_readiness"),
+    # The ownership probe takes the database lock for a moment; HQ never probes (D110).
+    (service_controller, "database_owned"), (hq_facts, "database_owned"),
 )
 
 
@@ -22,7 +25,8 @@ def runtime(tmp_path, monkeypatch):
     runtime = client.app.state.runtime
     runtime.clock.advance(3600)
     for owner, name in POISONED:
-        monkeypatch.setattr(owner, name, lambda *args, _name=name, **kwargs: pytest.fail(f"HQ called {_name}"))
+        monkeypatch.setattr(owner, name, lambda *args, _name=name, **kwargs: pytest.fail(f"HQ called {_name}"),
+                            raising=False)
     yield runtime
     database.close()
 
