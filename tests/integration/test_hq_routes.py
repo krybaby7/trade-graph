@@ -7,17 +7,22 @@ from pathlib import Path
 import pytest
 from tests.integration.test_dashboard import _client
 
+from trade_graph.api import resources
 from trade_graph.api.hq_contract import SCHEMA, validate_snapshot
 from trade_graph.api.security import redact
+from trade_graph.domain.clock import utc_iso
 
 WEB = Path(__file__).resolve().parents[2] / "src" / "trade_graph" / "web"
 ISLAND = re.compile(r'<script type="application/json" id="hq-snapshot">(.*?)</script>', re.DOTALL)
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
     client, database, portfolio, token, csrf, leader = _client(tmp_path)
     client.app.state.runtime.clock.advance(86400)
+    # The host's own resource counters never leak into these tests (review T14).
+    monkeypatch.setattr(resources, "observation",
+                        lambda runtime: {"observed_at": utc_iso(runtime.clock.now()), "warnings": []})
     yield client, token, csrf, leader
     database.close()
 
@@ -75,6 +80,7 @@ def test_journal_is_the_old_home_unchanged(env):
     for marker in ("Operational health", "Trading covers costs", "data-live-home", "review-export"):
         assert marker in page.text
     assert 'aria-current="page">Account journal (detailed numbers)</a>' in page.text
+    assert "subject to protected owner policy" in page.text  # the journal keeps the base footer (U15)
     assert client.get("/journal", params={"end_at": "2026-01-01T12:00:00Z"}, headers=headers).status_code == 200
     for invalid in ("bad", "2026-01-01T12:00:00", "2025-01-01T00:00:00Z", "2030-01-01T00:00:00Z"):
         response = client.get("/journal", params={"end_at": invalid}, headers=headers)

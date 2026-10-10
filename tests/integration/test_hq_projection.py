@@ -685,19 +685,23 @@ def test_unknown_money_is_null(env):
     money = data["money"]
     assert money["change"]["total"] is None
     assert money["change"]["unknown_reason"]
-    unknown = {"total", "currency_effect", "team_effect", "practice_value", "net"}
+    zero_money = []
 
-    def walk(value):
+    def walk(value, path):
+        # Every Money object and money segment in the whole snapshot (review T13), not only the money block.
         if isinstance(value, dict):
+            if "amount" in value and "currency" in value and Decimal(value["amount"]) == 0:
+                zero_money.append(path)
             for key, item in value.items():
-                if key in unknown:
-                    assert item is None or item["amount"] != "0", key
-                walk(item)
+                walk(item, f"{path}.{key}")
         elif isinstance(value, list):
-            for item in value:
-                walk(item)
+            for index, item in enumerate(value):
+                walk(item, f"{path}[{index}]")
 
-    walk(money)
+    walk(data, "snapshot")
+    assert zero_money == []
+    rendered = [value for value in _strings(data) if re.search(r"[$€£]0\.00", value)]
+    assert rendered == []
     assert money["practice_value"] is None
     assert "not known yet" in text(data["now"]["detail"])
     assert data["prompt_facts"]["practice_value"] is None
