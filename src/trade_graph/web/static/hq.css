@@ -355,7 +355,10 @@ body.hq-page .hq-week-chip[data-status="done"] { border-left-color: var(--succes
 body.hq-page .hq-week-chip[data-status="problem"], body.hq-page .hq-week-chip[data-status="overdue"],
 body.hq-page .hq-week-chip[data-status="stuck"] { border-left-color: var(--warning); }
 body.hq-page .hq-week-chip[data-kind="owner_checkin"] { border-left-color: var(--accent); background: var(--accent-soft); }
-body.hq-page .hq-week-chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Up to two lines, so "2 notes expire" or "Your check-in" reads whole in a narrow day column. */
+body.hq-page .hq-week-chip-title {
+  display: -webkit-box; overflow: hidden; overflow-wrap: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
 body.hq-page .hq-week-chip-top { display: flex; align-items: baseline; gap: 0.3rem; min-width: 0; }
 body.hq-page .hq-week-when { min-width: 0; font-variant-numeric: tabular-nums; }
 body.hq-page .hq-week-chip .hq-cal-mark { flex: none; }
