@@ -5,6 +5,11 @@ iteration": ``ORDER BY rowid DESC`` without ``LIMIT``, stopping after ``cap`` ro
 or once a row is older than ``since - 10 min``. The first row is always kept, so
 the newest record is visible even when it is older than the window.
 
+A capped reader that hits its cap inside the story window reports a floor: the
+oldest moment it read completely. The story then covers only the time from the
+highest floor on, and the next page starts there (``story_floor``), so nothing
+is silently dropped.
+
 Nothing here reads the dashboard's cached readiness, probes a process other than
 the recorded service PID, calls a provider, or takes a database lock (no
 ownership probe).
@@ -26,9 +31,12 @@ TASK_WINDOW = timedelta(days=8)
 TASK_CAP = 400
 DECISION_CAP = 120
 EVENT_CAP = 3000
-STORY_EVENT_KINDS = ("subscription_quota_deferred", "subscription_ai_paused", "service_degraded",
-                     "service_recovered", "public_feed_health", "public_history_refresh", "role_failed",
-                     "portfolio_opened", "engineer_candidate")
+DEFERRAL_CAP = 60000
+DEFERRAL_STREAK_GAP = timedelta(seconds=90)
+# Allowance deferrals are read separately (deferral_streaks): one every 30 s per waiting turn would crowd
+# every other event out of the capped scan.
+STORY_EVENT_KINDS = ("subscription_ai_paused", "service_degraded", "service_recovered", "public_feed_health",
+                     "public_history_refresh", "role_failed", "portfolio_opened", "engineer_candidate")
 UNCLEAR_ORDER_STATES = frozenset({"UNKNOWN", "SUBMITTING", "CANCEL_PENDING"})
 OPEN_ORDER_STATES = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN",
                                "CANCEL_PENDING"})
@@ -70,6 +78,20 @@ def _scan(rows: Iterable, since: datetime, cap: int, column: str = "created_at")
         if moment is not None and moment < cutoff:
             break
     return result
+
+
+def _floor(rows: list[dict], cap: int, story_start: datetime) -> datetime | None:
+    """The oldest moment a capped reader read completely, when its cap cut into the story window."""
+    if len(rows) < cap:
+        return None
+    oldest = min((moment for row in rows if (moment := parse(row.get("created_at"))) is not None), default=None)
+    return oldest if oldest is not None and oldest >= story_start else None
+
+
+def story_floor(story_start: datetime, *readers: tuple[list[dict], int]) -> datetime | None:
+    """The latest floor of the capped story readers, or None when none was cut inside the window."""
+    floors = [floor for rows, cap in readers if (floor := _floor(rows, cap, story_start)) is not None]
+    return max(floors, default=None)
 
 
 # --- R1-R29 -------------------------------------------------------------------------------------
@@ -180,6 +202,59 @@ def findings(database, pid: str, now_iso: str) -> list[dict]:  # R13
     return [evidence._finding(row, now_iso) for row in rows]
 
 
+def deferral_streaks(database, pid: str, *, since: datetime, before: datetime | None = None,
+                     cap: int = DEFERRAL_CAP) -> list[dict]:  # R14b
+    """Allowance-wait streaks, newest first, counted in full back to ``since``.
+
+    Reads only the time, role and task of each ``subscription_quota_deferred`` row, newest first, until
+    a row is older than ``since`` (rows up to 90 s older are peeked at to see whether a streak goes on)
+    or ``cap`` rows were read. A department's streak breaks after a 90 s gap. A streak is
+    ``complete: False`` when it may continue before the oldest row read. Malformed payloads are skipped.
+    """
+    sql = """SELECT created_at,
+        CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.role') END AS role,
+        CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.task_id') END AS task_id
+        FROM activity_events WHERE (portfolio_id=? OR portfolio_id IS NULL) AND kind='subscription_quota_deferred'"""
+    params: list = [pid]
+    if before is not None:
+        sql += " AND created_at < ?"
+        params.append(utc_iso(before))
+    open_by_role: dict[str, dict] = {}
+    streaks: list[dict] = []
+    read, oldest_read = 0, None
+    for row in database.execute(sql + " ORDER BY rowid DESC", tuple(params)):
+        moment, role = parse(row["created_at"]), row["role"]
+        if moment is not None and moment < since:
+            # Peek: an older row of the same department within the gap means that streak goes on.
+            if moment < since - DEFERRAL_STREAK_GAP:
+                break
+            streak = open_by_role.get(role) if isinstance(role, str) else None
+            if streak is not None and streak["first_at"] - moment <= DEFERRAL_STREAK_GAP:
+                streak["complete"] = False
+            continue
+        if read >= cap:
+            for streak in open_by_role.values():  # the cap stopped the scan: streaks near its end may go on
+                if oldest_read is not None and streak["first_at"] - oldest_read <= DEFERRAL_STREAK_GAP:
+                    streak["complete"] = False
+            break
+        read += 1
+        if moment is None or not isinstance(role, str) or not role:
+            continue
+        oldest_read = moment if oldest_read is None else min(oldest_read, moment)
+        streak = open_by_role.get(role)
+        if streak is None or streak["first_at"] - moment > DEFERRAL_STREAK_GAP:
+            streak = {"role": role, "first_at": moment, "last_at": moment, "count": 0,
+                      "task_id": row["task_id"] if isinstance(row["task_id"], str) else None, "complete": True,
+                      "moments": []}
+            open_by_role[role] = streak
+            streaks.append(streak)
+        streak["first_at"] = min(streak["first_at"], moment)
+        streak["last_at"] = max(streak["last_at"], moment)
+        streak["count"] += 1
+        streak["moments"].append(moment)  # lets the story split a streak where a page is cut
+    return streaks
+
+
 def activity_events(database, pid: str, since: datetime) -> list[dict]:  # R14
     marks = ",".join("?" for _ in STORY_EVENT_KINDS)
     cursor = database.execute(
@@ -215,15 +290,13 @@ def orders(database, pid: str) -> dict:  # R17
             "unclear": sum(count for state, count in counts.items() if state in UNCLEAR_ORDER_STATES)}
 
 
-def fills(database, pid: str) -> list[dict]:  # R18
-    result = []
-    for row in database.execute(
-            """SELECT fill_id, intent_id, document_json, created_at FROM fills WHERE portfolio_id=?
-            ORDER BY rowid DESC LIMIT 40""", (pid,)).fetchall():
-        item = dict(row)
-        item["document"] = loads(item.pop("document_json"))
-        result.append(item)
-    return result
+def fills(database, pid: str, since: datetime) -> list[dict]:  # R18
+    rows = _scan(database.execute(
+        """SELECT fill_id, intent_id, document_json, created_at FROM fills WHERE portfolio_id=?
+        ORDER BY rowid DESC""", (pid,)), since, DECISION_CAP)
+    for row in rows:
+        row["document"] = loads(row.pop("document_json"))
+    return rows
 
 
 def secretary(database, pid: str) -> list[dict]:  # R19
@@ -359,6 +432,12 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
     providers = provider_states(database)
     tasks = active_tasks(database, pid)
     working = [task["task_id"] for task in tasks if task["status"] in {"LEASED", "RUNNING"}]
+    recent = recent_tasks(database, pid, now)
+    decision_rows = decisions(database, pid, min(story_start, prompt_from))
+    events = activity_events(database, pid, story_start)
+    fill_rows = fills(database, pid, story_start)
+    floor = story_floor(story_start, (recent, TASK_CAP), (decision_rows, DECISION_CAP), (events, EVENT_CAP),
+                        (fill_rows, DECISION_CAP))
     return {
         "now": now, "now_iso": now_iso,
         "portfolio": portfolio(database, pid),
@@ -369,17 +448,20 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
         "quota": latest_quota(database, providers, now),
         "schedules": schedules(database, pid),
         "active_tasks": tasks,
-        "recent_tasks": recent_tasks(database, pid, now),
+        "recent_tasks": recent,
         "attempt_starts": attempt_starts(database, working),
-        "decisions": decisions(database, pid, min(story_start, prompt_from)),
+        "decisions": decision_rows,
         "leader_decisions": leader_decisions(database, pid),
         "findings": findings(database, pid, now_iso),
-        "events": activity_events(database, pid, story_start),
+        "events": events,
+        # Allowance waits are counted from where the page starts, so an ongoing wait stays on the first page.
+        "deferrals": deferral_streaks(database, pid, since=max(story_start, floor or story_start)),
+        "story_floor": floor,
         "marks": latest_marks(database, pid),
         "fx": latest_fx(database),
         "orders": orders(database, pid),
         "recent_orders": period_orders(database, pid, prompt_from),
-        "fills": fills(database, pid),
+        "fills": fill_rows,
         "secretary": secretary(database, pid),
         "rollout": rollout(database, pid),
         "improvements": improvements(database, pid),
@@ -420,4 +502,8 @@ def story_before(runtime, *, start: datetime, before: datetime) -> dict:
         fill_rows.append(row)
     runs = [row for row in recent_runs(database)
             if (moment := parse(row.get("requested_at"))) is not None and moment < before]
-    return {"recent_tasks": tasks, "decisions": rows, "events": events, "fills": fill_rows, "runs": runs}
+    floor = story_floor(start, (tasks, TASK_CAP), (rows, DECISION_CAP), (events, EVENT_CAP),
+                        (fill_rows, DECISION_CAP))
+    return {"recent_tasks": tasks, "decisions": rows, "events": events, "fills": fill_rows, "runs": runs,
+            "deferrals": deferral_streaks(database, pid, since=max(start, floor or start), before=before),
+            "story_floor": floor}

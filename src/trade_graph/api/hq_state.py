@@ -36,7 +36,6 @@ STUCK = frozenset({"WAITING_EXTERNAL", "BLOCKED_BUDGET"})
 STALE_AFTER = timedelta(seconds=90)
 OVERDUE_GRACE = 120
 QUOTA_DEFERRAL_RECENT = 120
-QUOTA_STREAK_GAP = 90
 PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:")
 ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:")
 OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
@@ -178,10 +177,10 @@ class Projection:
         self.deferred_tasks = [task for task in self.facts["active_tasks"]
                                if task["status"] == "QUEUED" and loads(task.get("output_json")).get(
                                    "_subscription_quota_deferred")]
-        deferrals = [event for event in self.facts["events"] if event["kind"] == "subscription_quota_deferred"]
-        recent_deferral = any(
-            (moment := parse(event["created_at"])) is not None
-            and 0 <= (self.now - moment).total_seconds() <= QUOTA_DEFERRAL_RECENT for event in deferrals)
+        streaks = self.facts.get("deferrals") or []  # newest first
+        self.newest_deferral = streaks[0] if streaks else None
+        recent_deferral = any(0 <= (self.now - streak["last_at"]).total_seconds() <= QUOTA_DEFERRAL_RECENT
+                              for streak in streaks)
         self.quota = self.facts["quota"]
         self.threshold = self.cache.get("threshold")
         self.windows, self.unreported = self._windows()
@@ -198,7 +197,7 @@ class Projection:
             state, self.ai_since = "paused_quota", _dt(quota[0]["updated_at"])
         elif self.deferred_tasks or recent_deferral:
             state = "waiting_for_allowance"
-            self.ai_since = self._deferral_streak_start(deferrals)
+            self.ai_since = self.newest_deferral["first_at"] if self.newest_deferral else None
         elif below:
             state = "probably_low"
         elif self.quota:
@@ -206,17 +205,6 @@ class Projection:
         else:
             state = "unknown"
         self.ai_state = state
-
-    def _deferral_streak_start(self, events: list) -> datetime | None:
-        start = None
-        for event in events:  # newest first
-            moment = parse(event["created_at"])
-            if moment is None:
-                continue
-            if start is not None and (start - moment).total_seconds() > QUOTA_STREAK_GAP:
-                break
-            start = moment
-        return start
 
     def _windows(self) -> tuple[list, list]:
         quota = self.quota or {}
@@ -860,9 +848,7 @@ def _now_copy(p: Projection) -> tuple[list, list, list, datetime | None]:
 
 def _waiting_dept(p: Projection) -> str:
     task = p.deferred_tasks[0] if p.deferred_tasks else None
-    role = task["role"] if task else next(
-        (event["payload"].get("role") for event in p.facts["events"]
-         if event["kind"] == "subscription_quota_deferred"), None)
+    role = task["role"] if task else (p.newest_deferral or {}).get("role")
     return c.dept_name(role) if role in c.ROOM else c.MISC["a_department"]
 
 

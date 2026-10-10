@@ -16,17 +16,25 @@ from trade_graph.api.hq_facts import loads
 from trade_graph.api.hq_state import STUCK, TERMINAL, Projection, _dt
 
 WINDOW = timedelta(hours=72)
-QUOTA_GAP_SECONDS = 90
+ONE_MS = timedelta(milliseconds=1)
 CRASHED = frozenset({"FAILED", "INTERRUPTED"})
 
 
 def story(p: Projection, *, window_start: datetime, window_end: datetime, checkins: list[dict],
           limit: int = STORY_MAX_ITEMS) -> dict:
+    """One page: the newest ``limit`` items from ``window_start`` (or a reader's floor) to ``window_end``.
+
+    Nothing is silently dropped (T1, T5):
+    - a capped reader cut inside the window sets a floor; the page covers only the time after it;
+    - when the item limit cuts the page, an allowance wait that runs across the cut keeps its newer part
+      here ("at least") and its older part goes to the next page;
+    - the next page starts 1 ms after the oldest item shown, so items sharing that moment come again;
+      clients de-duplicate by id.
+    """
     items: list[dict] = []
     items += _decisions(p)
     items += _fills(p)
     items += _tasks(p)
-    items += _allowance_waits(p)
     items += _ai_paused(p)
     items += _runs(p)
     items += _routine_problems(p)
@@ -36,18 +44,36 @@ def story(p: Projection, *, window_start: datetime, window_end: datetime, checki
     items += _owner_actions(p, checkins)
     items += _improvements(p)
     items += _account_opened(p)
+    floor = p.facts.get("story_floor")
+    start = max(window_start, floor) if floor is not None else window_start
+    cut: datetime | None = None
+    for _ in range(limit + 1):  # the cut only ever moves to a newer moment
+        ordered = _in_window([*items, *_allowance_waits(p, cut)], max(start, cut) if cut else start, window_end)
+        if len(ordered) <= limit:
+            break
+        oldest = _dt(ordered[limit - 1]["at"])
+        if cut is not None and oldest <= cut:
+            break
+        cut = oldest
+    ordered = ordered[:limit]
+    if cut is not None:
+        next_before = iso_ms(_dt(ordered[-1]["at"]) + ONE_MS)
+    elif start > window_start:
+        next_before = iso_ms(start + ONE_MS)
+    else:
+        next_before = iso_ms(window_start)
+    return {"window_start": iso_ms(start), "next_before": next_before, "items": ordered}
+
+
+def _in_window(items: list, start: datetime, end: datetime) -> list[dict]:
     unique: dict[str, dict] = {}
     for item in items:
         if item is None:
             continue
         moment = _dt(item["at"])
-        if moment is not None and window_start <= moment < window_end:
+        if moment is not None and start <= moment < end:
             unique.setdefault(item["id"], item)
-    ordered = sorted(unique.values(), key=lambda item: (item["at"], item["id"]), reverse=True)
-    truncated = len(ordered) > limit
-    ordered = ordered[:limit]
-    next_before = ordered[-1]["at"] if truncated else iso_ms(window_start)
-    return {"window_start": iso_ms(window_start), "next_before": next_before, "items": ordered}
+    return sorted(unique.values(), key=lambda item: (item["at"], item["id"]), reverse=True)
 
 
 def _story_item(item_id: str, at, kind: str, dept: str, tone: str, headline: list, *, until=None,
@@ -238,39 +264,41 @@ def _problem_consequence(p: Projection, task: dict, role: str, at: datetime) -> 
 # --- Allowance and AI pauses ----------------------------------------------------------------------------
 
 
-def _allowance_waits(p: Projection) -> list:
-    streaks: dict[str, list[list]] = {}
-    for event in sorted((event for event in p.facts["events"] if event["kind"] == "subscription_quota_deferred"),
-                        key=lambda event: event["created_at"]):
-        role = event["payload"].get("role")
-        moment = _dt(event["created_at"])
-        if moment is None or not isinstance(role, str):
-            continue
-        groups = streaks.setdefault(role, [])
-        if groups and (moment - groups[-1][-1][0]).total_seconds() <= QUOTA_GAP_SECONDS:
-            groups[-1].append((moment, event))
-        else:
-            groups.append([(moment, event)])
+def _allowance_waits(p: Projection, cut: datetime | None = None) -> list:
+    """One item per allowance-wait streak (hq_facts.deferral_streaks), counted in full.
+
+    With a ``cut``, a streak that runs across it keeps only its part from the cut on; its older part
+    belongs to the next page.
+    """
     items = []
-    for role, groups in streaks.items():
+    for streak in p.facts.get("deferrals") or []:
+        role, first, last, count = streak["role"], streak["first_at"], streak["last_at"], streak["count"]
+        complete = streak["complete"]
+        if cut is not None and first < cut <= last:
+            kept = [moment for moment in streak["moments"] if moment >= cut]
+            first, count, complete = min(kept), len(kept), False
         dept = c.dept_name(role) if role in c.ROOM else c.MISC["a_department"]
         story_dept = role if role in c.ROOM else "hq"
-        for group in groups:
-            first, last, count = group[0][0], group[-1][0], len(group)
-            if count == 1:
-                headline = c.says(c.STORY["allowance_wait_one"].format(dept=dept), c.time(first, "clock"), ".")
-            else:
-                before, middle, after = c.STORY["allowance_wait"]
-                headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
-                                  after.format(count=count))
-            consequence = [c.text(c.STORY["allowance_wait_consequence"])]
-            task_id = group[-1][1]["payload"].get("task_id")
-            started = p.facts.get("attempt_starts", {}).get(task_id) if task_id else None
-            if started and _dt(started) and _dt(started) >= last:
-                consequence = c.says(*consequence, c.STORY["allowance_wait_ran"], c.time(started, "clock"), ".")
-            items.append(_story_item(f"quota-wait:{role}:{iso_ms(first)}", first, "allowance_wait", story_dept,
-                                     "neutral", headline, until=last if count > 1 else None, consequence=consequence,
-                                     count=count, technical="subscription_quota_deferred"))
+        if not complete:
+            # The streak goes on before the oldest record read here: both its start and its count are floors.
+            before, middle, after = c.STORY["allowance_wait_at_least"]
+            headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
+                              after.format(count=count))
+        elif count == 1:
+            headline = c.says(c.STORY["allowance_wait_one"].format(dept=dept), c.time(first, "clock"), ".")
+        else:
+            before, middle, after = c.STORY["allowance_wait"]
+            headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
+                              after.format(count=count))
+        consequence = [c.text(c.STORY["allowance_wait_consequence"])]
+        task_id = streak.get("task_id")
+        started = p.facts.get("attempt_starts", {}).get(task_id) if task_id else None
+        if started and _dt(started) and _dt(started) >= last:
+            consequence = c.says(*consequence, c.STORY["allowance_wait_ran"], c.time(started, "clock"), ".")
+        until = last if count > 1 or not complete else None
+        items.append(_story_item(f"quota-wait:{role}:{iso_ms(first)}", first, "allowance_wait", story_dept,
+                                 "neutral", headline, until=until, consequence=consequence, count=count,
+                                 technical="subscription_quota_deferred"))
     return items
 
 

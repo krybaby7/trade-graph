@@ -868,6 +868,8 @@ STORY: Final = {
     "nothing_used": "Nothing was used.",
     "allowance_wait": ("{dept}'s turn waited for AI allowance from ", " to ", " ({count} retries)."),
     "allowance_wait_one": "{dept}'s turn waited for AI allowance at ",
+    "allowance_wait_at_least": ("{dept}'s turn waited for AI allowance from at least ", " to ",
+                                " (at least {count} retries)."),
     "allowance_wait_consequence": "No allowance was used while waiting.",
     "allowance_wait_ran": " It ran at ",
     "ai_paused": "AI paused: {reason}.",

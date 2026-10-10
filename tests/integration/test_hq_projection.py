@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from tests.integration.test_dashboard import _client
 
-from trade_graph.api import hq, resources
+from trade_graph.api import hq, hq_facts, resources
 from trade_graph.api.auth import issue_session, role_for_token
 from trade_graph.api.hq_contract import DEPARTMENT_ORDER, ISO_MS_PATTERN, iso_ms, validate_snapshot
 from trade_graph.api.security import redact
@@ -411,6 +411,95 @@ def test_quota_deferrals_collapse(env):
     assert waits[0]["until"] == iso_ms(start + timedelta(seconds=30 * 49))
     assert waits[0]["at"] < waits[0]["until"]
     assert "50 retries" in text(waits[0]["headline"])
+
+
+def events(env, kind, rows):
+    """Bulk activity events: ``rows`` are (seconds from now, payload) pairs, inserted in time order."""
+    with env.db.transaction() as connection:
+        connection.executemany(
+            """INSERT INTO activity_events (event_id, portfolio_id, kind, payload_json, created_at, hash, prev_hash)
+            VALUES (?, ?, ?, ?, ?, ?, NULL)""",
+            [(f"e-{kind}-{index}", env.pid, kind, json.dumps(payload), at(env, seconds), f"h-{kind}-{index}")
+             for index, (seconds, payload) in enumerate(sorted(rows, key=lambda row: row[0]))])
+
+
+def _page_through(env, first: dict) -> tuple[list[dict], list[dict]]:
+    """Every story page from ``first`` back to the first uncut page: (pages, items de-duplicated by id)."""
+    pages, seen = [first], {}
+    while pages[-1]["next_before"] != pages[-1]["window_start"] and len(pages) < 12:
+        pages.append(hq.story_page(env.runtime, OWNER, before=pages[-1]["next_before"])["story"])
+    for page in pages:
+        for item in page["items"]:
+            seen.setdefault(item["id"], item)
+    return pages, list(seen.values())
+
+
+def test_long_allowance_wait_is_counted_and_older_problems_stay_reachable(env):
+    run(env)
+    reading(env)
+    window_start = env.runtime.clock.now() - timedelta(hours=72)
+    # 72 hours of trader deferrals every 30 s, beginning a minute before the story window.
+    first = -72 * 3600 - 60
+    events(env, "subscription_quota_deferred",
+           [(first + 30 * index, {"task_id": "t-77", "role": "trader", "inference_attempts": 0})
+            for index in range(8640)])
+    events(env, "subscription_ai_paused", [(-40 * 3600, {"task_id": "t-paused", "role": "trader"})])
+    data = snap(env)
+    assert data["team"]["ai"]["state"] == "waiting_for_allowance"
+    story = data["story"]
+    wait = next(item for item in story["items"] if item["kind"] == "allowance_wait")
+    assert wait["count"] >= 8600
+    assert abs((hq_facts.parse(wait["at"]) - window_start).total_seconds()) <= 60
+    assert "at least" in text(wait["headline"])
+    assert any(item["kind"] == "ai_paused" for item in story["items"])
+    assert story["next_before"] == story["window_start"]  # nothing was cut
+
+    # A capped reader: 130 decisions in the last day are more than the 120 the reader reads.
+    for index in reversed(range(130)):  # oldest first, as rows are written
+        decision(env, f"d-many-{index:03d}", created=-60 - 600 * index)
+    data = snap(env)
+    story = data["story"]
+    assert story["window_start"] > iso_ms(window_start)
+    assert story["next_before"] != story["window_start"]
+    pages, items = _page_through(env, story)
+    ids = {item["id"] for item in items}
+    assert {f"decision:d-many-{index:03d}" for index in range(130)} <= ids
+    assert any(item["kind"] == "ai_paused" for item in items)
+    waits = [item for item in items if item["kind"] == "allowance_wait"]
+    assert sum(item["count"] for item in waits) >= 8600  # split where a page starts, never dropped
+    for page in pages:
+        validate_snapshot({**data, "story": page})
+        if page is not pages[-1]:
+            assert page["next_before"] != page["window_start"]
+
+
+def test_deferral_streaks_skip_malformed_rows_and_split_by_department(env):
+    events(env, "subscription_quota_deferred",
+           [(-300 + 30 * index, {"task_id": "t-1", "role": "trader"}) for index in range(5)]
+           + [(-290 + 30 * index, {"task_id": "t-2", "role": "research"}) for index in range(3)])
+    insert(env, "activity_events", event_id="e-bad", portfolio_id=env.pid, kind="subscription_quota_deferred",
+           payload_json="{", created_at=at(env, -100), hash="h-bad", prev_hash=None)
+    streaks = hq_facts.deferral_streaks(env.db, env.pid, since=env.runtime.clock.now() - timedelta(hours=1))
+    assert sorted((streak["role"], streak["count"], streak["complete"]) for streak in streaks) == [
+        ("research", 3, True), ("trader", 5, True)]
+
+
+def test_story_paging_keeps_items_that_share_a_timestamp(env):
+    # 59 newer decisions, then 3 that share one millisecond: the 60-item page ends among those 3.
+    for index in range(59):
+        decision(env, f"d-{index:02d}", created=-60 - 60 * index)
+    shared = at(env, -60 - 60 * 59 - 120)
+    for suffix in ("a", "b", "c"):
+        insert(env, "decisions", decision_id=f"d-same-{suffix}", portfolio_id=env.pid, action="no_action",
+               payload_json=json.dumps({"action": "no_action", "rationale": "Waiting."}), mandate_revision="1",
+               policy_revision="1", snapshot_id="snap", system_version_id="v1", created_at=shared, task_id=None)
+    expected = {f"decision:d-{index:02d}" for index in range(59)} | {f"decision:d-same-{s}" for s in "abc"}
+    first = snap(env)["story"]
+    assert len(first["items"]) == 60 and first["next_before"] != first["window_start"]
+    second = hq.story_page(env.runtime, OWNER, before=first["next_before"], limit=60)["story"]
+    ids = [item["id"] for item in first["items"] + second["items"]]
+    found = [item_id for item_id in dict.fromkeys(ids) if item_id.startswith("decision:")]
+    assert set(found) == expected and len(found) == 62
 
 
 def test_probably_low_allowance_gate(env):
