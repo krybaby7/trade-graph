@@ -1,3 +1,13 @@
+# Trade Graph HQ final full-suite check, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009` at `67a774d`. `uv run ruff check src tests` passed. Full suite (`uv run pytest -p no:cacheprovider -rf`, 36 min): 3948 passed, 23 failed, 8 skipped (Node tests skipped in WSL; Windows Node runs them). Of the 23:
+- 19 are the failures already recorded for base `3504248`: 3 `test_progress_dashboard`, 4 `test_progress_projection`, 1 `test_subscription_smoke`, 4 `test_paper_soak` and the e2e dashboard loop (`KeyError: 'degraded'` before the page this branch edited), plus `test_plugin_staging`'s 0.3-second-limit cases, which are flaky on both commits (6 of 6 this run).
+- 4 failed only in this full run: 2 in `test_financial_recovery_history` and 2 in `test_financial_transition`. Run alone, both files passed 56 of 56, twice in a row. They are timing-sensitive under full-suite load, not caused by this branch's changes. The earlier full run at `b1252c5` did not show them.
+
+Desktop visual check (headless Edge, synthetic fixtures only, 1 440×900 light and dark): independent reviewer found nothing remaining. Not deployed; going live needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained.
+
+---
+
 # Trade Graph HQ visual-check fixes (round 2), not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009`, after `1021655` (decision D113). **Nothing was deployed, pushed or run against the installation.**
