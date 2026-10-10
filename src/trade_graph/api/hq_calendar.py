@@ -2,7 +2,9 @@
 
 Only the next turn of a schedule is exact. Later turns are estimates
 (``base + k * interval``), because each turn books the next one when it actually
-runs; when the team cannot run them they are also marked conditional.
+runs; when the team cannot run them they are also marked conditional. Estimates
+more than 48 hours ahead are not listed one by one: each schedule's later
+projections are summarised in one ``calendar.estimates`` series (payload budget, D110).
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from trade_graph.api import hq_copy as c
 from trade_graph.api.hq_contract import (
     AI_DEPARTMENTS,
     CALENDAR_MAX_ITEMS,
+    ESTIMATE_ITEMS_HORIZON_HOURS,
     SERIES_MAX_PROJECTIONS,
     UP_NEXT_MAX,
     iso_ms,
@@ -20,6 +23,7 @@ from trade_graph.api.hq_contract import (
 from trade_graph.api.hq_state import SCHEDULED_ROLES, STUCK, Projection, _dt
 
 PAST_WINDOW = timedelta(hours=48)
+ESTIMATE_ITEMS_HORIZON = timedelta(hours=ESTIMATE_ITEMS_HORIZON_HOURS)
 MANDATE_HORIZON = timedelta(days=30)
 RESEARCH_EXPIRY_MAX = 10
 HISTORY_INTERVAL_SECONDS = 3600
@@ -46,9 +50,13 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
         if moment is not None and start <= moment <= end:
             items.append(item)
 
+    estimates: list[dict] = []
     for dept in SCHEDULED_ROLES:
-        for item in _future_turns(p, p.roles[dept], end):
+        turns, estimate = _future_turns(p, p.roles[dept], end)
+        for item in turns:
             add(item)
+        if estimate is not None:
+            estimates.append(estimate)
     for item in _past_turns(p):
         add(item)
     for item in checkins:
@@ -71,7 +79,7 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
     upcoming = [item for item in ordered if not item["past"] and item["status"] != "estimated"]
     return {"from": iso_ms(start), "to": iso_ms(end), "truncated": truncated,
             "up_next": [item["id"] for item in upcoming[:UP_NEXT_MAX]], "items": ordered,
-            "recurring": _recurring(p), "notes": notes}
+            "recurring": _recurring(p), "notes": notes, "estimates": estimates}
 
 
 def _item(item_id: str, kind: str, dept, at: datetime | str, title: list, status: str, p: Projection, *,
@@ -90,9 +98,14 @@ def _turn_title(dept: str) -> list:
     return c.says(c.CALENDAR["turn"].format(dept=c.dept_name(dept)))
 
 
-def _future_turns(p: Projection, role, end: datetime) -> list:
+def _future_turns(p: Projection, role, end: datetime) -> tuple[list, dict | None]:
+    """A schedule's next turn and its estimated successors up to ``end``.
+
+    Estimates up to 48 hours ahead are listed as items; later ones (within the same
+    ``SERIES_MAX_PROJECTIONS`` cap) come back as one summarised series, or None.
+    """
     if role.schedule is None or role.next_at is None:
-        return []
+        return [], None
     schedule_id = role.schedule["schedule_id"]
     series = {"schedule_id": schedule_id, "every_seconds": role.every} if role.every else None
     gate = role.blocking_gate
@@ -104,20 +117,29 @@ def _future_turns(p: Projection, role, end: datetime) -> list:
                    conditional=conditional and upcoming, waiting=None if upcoming else role.gate_text,
                    series=series)]
     if not role.every:
-        return items
+        return items, None
     # The scheduler books the next turn at the moment a turn fires, plus the interval
     # (scheduler.py), so an overdue turn's successors count from now, never from the missed time (C3).
     base = max(role.next_at, p.now)
     detail = c.says(c.CONDITIONAL) if conditional else None
+    horizon = p.now + ESTIMATE_ITEMS_HORIZON
+    later: list[datetime] = []
     for step in range(1, SERIES_MAX_PROJECTIONS + 1):
         at = base + timedelta(seconds=role.every * step)
         if at <= p.now:
             continue
         if at > end:
             break
+        if at > horizon:
+            later.append(at)
+            continue
         items.append(_item(f"turn:{schedule_id}:{iso_ms(at)}", "dept_turn", role.dept, at, _turn_title(role.dept),
                            "estimated", p, exact=False, conditional=conditional, detail=detail, series=series))
-    return items
+    if not later:
+        return items, None
+    return items, {"schedule_id": schedule_id, "dept": role.dept, "title": _turn_title(role.dept),
+                   "first_at": iso_ms(later[0]), "every_seconds": role.every, "count": len(later),
+                   "conditional": conditional, "detail": detail}
 
 
 def _task_status(p: Projection, task: dict) -> tuple[str, list | None]:

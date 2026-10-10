@@ -35,6 +35,7 @@ SCHEDULED_ROLES = ("trader", "research", "learning", "leader", "optimisation")
 PROMPT_TURN_ROLES = ("trader", "research", "learning", "leader")
 TERMINAL = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "DEAD_LETTER"})
 STUCK = frozenset({"WAITING_EXTERNAL", "BLOCKED_BUDGET"})
+FINISHED_QUESTS_PER_DEPT = 5  # finished jobs listed per department (payload budget, B18)
 STALE_AFTER = timedelta(seconds=90)
 OVERDUE_GRACE = 120
 QUOTA_DEFERRAL_RECENT = 120
@@ -1442,7 +1443,7 @@ def quests(p: Projection) -> list:
     for dept in c.ROOM:
         role = p.roles.get(dept)
         tasks = [task for task in (role.recent if role else [])
-                 if task["status"] in TERMINAL][:10]
+                 if task["status"] in TERMINAL][:FINISHED_QUESTS_PER_DEPT]
         items.extend(_quest(p, task) for task in tasks)
     for change in p.facts["improvements"]["proposed"]:
         expires = _dt(change["document"].get("expires_at_utc"))
