@@ -1047,6 +1047,11 @@ def attention(p: Projection, checkins: list[dict]) -> list:
     trial = _trial_card(p)
     if trial:
         items.append(trial)
+    for item in items:
+        # "since" is when the situation began; a future moment (a note's expiry, a check-in up to 15 min ahead)
+        # is not one (U3).
+        if item["since"] is not None and item["since"] > p.as_of:
+            item["since"] = None
     ranks = {sev: index for index, sev in enumerate(SEVERITY_ORDER)}
     items.sort(key=lambda item: item["since"] or "", reverse=True)
     items.sort(key=lambda item: ranks[item["sev"]])

@@ -123,6 +123,8 @@ def snap(env, viewer=OWNER, **kwargs) -> dict:
     # Every projected string survives redaction; only the /journal route waits for its allowlist entry (B.11).
     changed = [(old, new) for old, new in zip(_strings(data), _strings(redact(data)), strict=True) if old != new]
     assert {old for old, _ in changed} <= {"/journal"}
+    for item in data["attention"]:  # "since" is when something began, never a future moment (U3)
+        assert item["since"] is None or item["since"] <= data["as_of"], item["id"]
     return data
 
 
@@ -633,6 +635,7 @@ def test_notes_expiring_before_trader(env):
     finding(env, "f-90", created=-3600, expires=1800)
     data = snap(env)
     assert "notes_expire_early" in codes(data)
+    assert next(item for item in data["attention"] if item["id"] == "notes_expire_early")["since"] is None
     expiry = next(item for item in data["calendar"]["items"] if item["kind"] == "research_expiry")
     assert "Before the Trader's turn" in text(expiry["warning"])
     trader = room(data, "trader")
