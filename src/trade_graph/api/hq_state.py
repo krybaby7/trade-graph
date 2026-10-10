@@ -40,6 +40,8 @@ QUOTA_STREAK_GAP = 90
 PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:")
 ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:")
 OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
+# Leader pauses that protect more than the owner's "Pause AI" (protect-only); HQ never offers to weaken them.
+STRONGER_PAUSES = ("CANCEL_ALL", "FLATTEN", "STOPPED")
 CHECKIN_SUGGESTION_DELAY = timedelta(minutes=20)
 
 
@@ -1012,7 +1014,8 @@ def _allowance_card(p: Projection) -> dict:
                        if refill else c.says(c.ATTENTION["allowance_below_unknown"]))
     else:
         consequence = c.says(c.ATTENTION["allowance_near_consequence"])
-    pause_possible = p.can_act and not p.system_pause and (p.profile == "RUNNING" or p.leader_pause)
+    pause_possible = p.can_act and not p.system_pause and (
+        p.profile == "RUNNING" or (p.leader_pause and p.profile not in STRONGER_PAUSES))
     return _card("allowance_near", c.says(title), why=c.says(c.ATTENTION["allowance_why"]),
                  consequence=consequence, decision="pause_ai" if pause_possible else None,
                  can_fix_here=pause_possible, since=p.reading_at)
@@ -1459,15 +1462,20 @@ def _pause_card(p: Projection, codes: set[str]) -> dict:
     if when_text is None:
         when_text = (copy["not_needed_off"] if p.offline and p.code != "silent"
                      else copy["not_needed_silent"] if p.code == "silent" else copy["not_needed"])
+    stronger = p.leader_pause and p.profile in STRONGER_PAUSES
+    available = not p.system_pause and not stronger
+    unavailable = (copy["system"] if p.system_pause
+                   else copy["leader_stronger"].format(profile=c.PAUSE_SHORT[p.profile]) if stronger else None)
     what = [c.says(copy["what"])]
+    if p.leader_pause and available:
+        what.insert(0, c.says(copy["replaces_leader"].format(profile=c.PAUSE_SHORT[p.profile])))
     working = [role for role in p.roles.values() if role.working]
     if working:
         what.append(c.says(copy["working"].format(dept=c.dept_name(working[0].dept))))
     what.append(c.says(copy["continues"]))
     right_now = _waiting_turns(p) if p.running_fresh and p.profile == "RUNNING" else []
-    return _decision("pause_ai", shown=shown, available=not p.system_pause,
-                     unavailable=copy["system"] if p.system_pause else None, recommended=recommended, what=what,
-                     when=c.says(when_text), right_now=right_now)
+    return _decision("pause_ai", shown=shown, available=available, unavailable=unavailable,
+                     recommended=recommended, what=what, when=c.says(when_text), right_now=right_now)
 
 
 def _repeat_dept(p: Projection) -> str:

@@ -274,6 +274,27 @@ def test_owner_pause_resume_shown_with_predicted_blockers(env):
     assert room(data, "accounts")["light"] == "attention"
 
 
+def test_pause_never_downgrades_a_stronger_leader_pause(env):
+    run(env)
+    reading(env, remaining=38)
+    pause(env, "FLATTEN", "leader", reason="Too volatile to hold anything")
+    data = snap(env)
+    pause_card = card(data, "pause_ai")
+    assert pause_card["shown"] is True and pause_card["available"] is False
+    assert pause_card["recommended"] is False
+    assert "stronger" in text(pause_card["unavailable_because"])
+    assert "'sell everything'" in text(pause_card["unavailable_because"])
+    allowance = next(item for item in data["attention"] if item["id"] == "allowance_near")
+    assert allowance["decision"] is None and allowance["can_fix_here"] is False
+    env.db.execute("UPDATE pause_states SET profile='PAUSE_DECISIONS' WHERE portfolio_id=?", (env.pid,))
+    softer = snap(env)
+    pause_card = card(softer, "pause_ai")
+    assert pause_card["available"] is True
+    assert any("replaces the Leader's 'decisions paused' setting" in text(line)
+               for line in pause_card["preview"]["what_happens"])
+    assert next(item for item in softer["attention"] if item["id"] == "allowance_near")["decision"] == "pause_ai"
+
+
 def test_resume_hidden_when_running(env):
     quiet(env)
     data = snap(env)

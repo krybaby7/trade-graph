@@ -594,6 +594,10 @@ DECISION: Final = {
         "not_needed_off": "Not needed right now: the team is off.",
         "not_needed_silent": "Not needed right now: the team isn't responding.",
         "system": "Can't pause over an automatic safety stop (it already protects).",
+        "leader_stronger": ("The Leader's '{profile}' setting is stronger and already protects. Pausing here would "
+                            "weaken it."),
+        "replaces_leader": ("This replaces the Leader's '{profile}' setting with your own pause. Only you can lift "
+                            "it (Resume)."),
         "wait_before": "These would wait: ",
         "wait_after": ". Each runs once after Resume.",
         "repeat_problems": "{dept} keeps having problems; pausing saves allowance while you look.",
