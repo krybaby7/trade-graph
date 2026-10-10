@@ -670,12 +670,27 @@ def _pause_block(p: Projection) -> dict:
             "plain": [c.text(c.PAUSE_PROFILE[p.profile], code=p.profile)], "reason": reason}
 
 
+ROLE_UNAVAILABLE_REASON = "role unavailable; manage positions"  # paper_service.py, after a failed turn
+MANAGEMENT_SERVICE_REASON = "Subscription management service"  # subscription_management.py (prefix)
+SAFETY_EVIDENCE_BEFORE = timedelta(minutes=10)
+SAFETY_EVIDENCE_AFTER = timedelta(seconds=5)
+
+
 def safety_trigger(p: Projection) -> str:
-    """The persisted task problem that most plausibly triggered the automatic stop, in plain words."""
-    since = p.pause_since or p.now
+    """What triggered the automatic stop, in plain words, from evidence close to it in time (C8).
+
+    Only the worker's "role unavailable" stop is explained by a task problem, and only by one
+    recorded from 10 minutes before the stop to 5 seconds after it. Anything else is unknown.
+    """
+    reason = p.pause_reason or ""
+    if reason.startswith(MANAGEMENT_SERVICE_REASON):
+        return c.SAFETY["management_service"]
+    if reason != ROLE_UNAVAILABLE_REASON or p.pause_since is None:
+        return c.SAFETY["unknown"]
+    since = p.pause_since
     for task in p.facts["recent_tasks"]:
         moment = p.task_moment(task)
-        if moment > since + timedelta(seconds=5):
+        if not since - SAFETY_EVIDENCE_BEFORE <= moment <= since + SAFETY_EVIDENCE_AFTER:
             continue
         if task["status"] == "BLOCKED_BUDGET":
             return c.SAFETY["out_of_allowance"].format(dept=c.dept_name(task["role"])) if task["role"] in c.ROOM \

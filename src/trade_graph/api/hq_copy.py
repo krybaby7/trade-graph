@@ -1033,6 +1033,7 @@ SAFETY: Final = {
     "out_of_allowance": "{dept}'s turn ran out of allowance",
     "out_of_allowance_plain": "a turn ran out of allowance",
     "unknown": "a problem it recorded",
+    "management_service": "the team was started in protect-only maintenance mode",
 }
 PAUSED_BY: Final = {
     "owner": "By you.",

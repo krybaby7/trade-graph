@@ -253,6 +253,27 @@ def test_system_pause_stuck_card_and_controls(env):
     assert softer["team"]["pause"]["departments_paused"] is False
 
 
+def test_safety_stop_cause_needs_evidence_close_in_time(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")
+    task(env, "t-old", "trader", "FAILED", created=-600 - 7200, output={"reason": "market feed blocks new exposure"})
+    data = snap(env)
+    why = text(data["attention"][0]["why"])
+    assert "a problem it recorded" in why and "Trader's turn failed" not in why
+
+
+def test_maintenance_mode_stop_is_not_blamed_on_an_old_failure(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="Subscription management service: retain existing paper orders and "
+                                               "positions; no new decisions.")
+    task(env, "t-old", "trader", "FAILED", created=-6 * 86400, output={"reason": "market feed blocks new exposure"})
+    data = snap(env)
+    assert data["now"]["code"] == "safety_stop"
+    why = text(data["attention"][0]["why"])
+    assert "maintenance mode" in why and "Trader's turn failed" not in why
+    assert "maintenance mode" in text(data["team"]["pause"]["reason"])
+
+
 def test_stop_during_a_safety_stop_is_partly_reversible_and_not_recommended(env):
     run(env)
     pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")
