@@ -339,27 +339,71 @@ def _runs(p: Projection) -> list:
     return items
 
 
-def _paired(events: list, start_kind_test, end_kind_test) -> list[tuple[dict, dict | None, list]]:
-    """Group oldest-first events into (first degraded, recovery or None, all degraded) spans."""
-    spans, current = [], []
+class _Span:
+    """One problem span: its degraded events, and how it ended (a recovery, or the end of its team run)."""
+
+    def __init__(self, run_id: str | None) -> None:
+        self.group: list[dict] = []
+        self.run_id = run_id
+        self.recovered: dict | None = None
+        self.run_ended = False  # closed because its team run ended, never told as a recovery
+
+    @property
+    def first(self) -> dict:
+        return self.group[0]
+
+
+def _paired(p: Projection, events: list, start_kind_test, end_kind_test) -> list[_Span]:
+    """Group oldest-first events into problem spans, each within one team run (C2).
+
+    A recovery in the same run closes a span. An event of another run closes it at its own run's end, and so
+    does the end of the list when its run is not the current active run: the worker forgets its problems on
+    restart and never records a recovery for the old run.
+    """
+    spans: list[_Span] = []
+    current: _Span | None = None
     for event in sorted(events, key=lambda event: event["created_at"]):
+        run_id = p.event_run(event)
+        if current is not None and run_id != current.run_id:
+            current.run_ended = True
+            spans.append(current)
+            current = None
         if start_kind_test(event):
-            current.append(event)
-        elif end_kind_test(event) and current:
-            spans.append((current[0], event, current))
-            current = []
-    if current:
-        spans.append((current[0], None, current))
+            if current is None:
+                current = _Span(run_id)
+            current.group.append(event)
+        elif end_kind_test(event) and current is not None:
+            current.recovered = event
+            spans.append(current)
+            current = None
+    if current is not None:
+        current.run_ended = current.run_id is None or not p.active or current.run_id != p.run_id
+        spans.append(current)
     return spans
+
+
+def _span_end(p: Projection, span: _Span, start: datetime) -> tuple[datetime | None, list]:
+    """(until, consequence tail) for a span: recovered at, or the end of its team run."""
+    if span.recovered is not None:
+        end = _dt(span.recovered["created_at"])
+        return end, c.says(c.STORY["recovered"], c.time(end, "clock"), ".") if end else []
+    if not span.run_ended:
+        return None, []
+    end = p.run_end(span.run_id)
+    if end is None or end < start:
+        return None, c.says(c.STORY["run_ended_unknown"])
+    before, after = c.STORY["run_ended"]
+    return end, c.says(before, c.time(end, "clock"), after)
 
 
 def _routine_problems(p: Projection) -> list:
     events = [event for event in p.facts["events"] if event["kind"] in ("service_degraded", "service_recovered")]
     items = []
-    for first, recovered, group in _paired(events, lambda e: e["kind"] == "service_degraded",
-                                           lambda e: e["kind"] == "service_recovered"):
+    for span in _paired(p, events, lambda e: e["kind"] == "service_degraded",
+                        lambda e: e["kind"] == "service_recovered"):
+        first = span.first
         failures = []
-        for event in group:
+        for event in span.group:
             for failure in event["payload"].get("failures") or []:
                 if isinstance(failure, str) and failure not in failures:
                     failures.append(failure)
@@ -370,11 +414,13 @@ def _routine_problems(p: Projection) -> list:
         prefix = next(prefix for prefix in prefixes if prefix != "feed:")
         words, consequence = c.problem_prefix(prefix, live=not p.paper)
         start = _dt(first["created_at"])
-        end = _dt(recovered["created_at"]) if recovered else None
+        if start is None:
+            continue
+        end, ended = _span_end(p, span, start)
         headline = c.says(c.STORY["routine_problem"].format(prefix=words), " (", c.time(start, "clock"))
         headline = (c.says(*headline, c.MISC["range"][0], c.time(end, "clock"), c.MISC["range"][1]) if end
                     else c.says(*headline, c.MISC["range"][1]))
-        tail = c.says(consequence, c.STORY["recovered"], c.time(end, "clock"), ".") if end else c.says(consequence)
+        tail = c.says(consequence, *ended)
         items.append(_story_item(f"routine:{first['event_id']}", start, "routine_problem", "hq", "attention", headline,
                                  until=end, consequence=tail, problem=True, technical=";".join(failures)))
     return items
@@ -383,17 +429,18 @@ def _routine_problems(p: Projection) -> list:
 def _feed_problems(p: Projection) -> list:
     events = [event for event in p.facts["events"] if event["kind"] == "public_feed_health"]
     items = []
-    for first, recovered, _ in _paired(events, lambda e: e["payload"].get("status") == "degraded",
-                                       lambda e: e["payload"].get("status") == "recovered"):
+    for span in _paired(p, events, lambda e: e["payload"].get("status") == "degraded",
+                        lambda e: e["payload"].get("status") == "recovered"):
+        first = span.first
         start = _dt(first["payload"].get("first_failed_at_utc")) or _dt(first["created_at"])
-        end = _dt(recovered["created_at"]) if recovered else None
+        if start is None:
+            continue
+        end, ended = _span_end(p, span, start)
         symbol = first["payload"].get("symbol")
         headline = (c.STORY["prices_problem_symbol"].format(symbol=symbol)
                     if isinstance(symbol, str) and symbol in ("BTC/USD", "ETH/USD", "BTC/EUR", "ETH/EUR")
                     else c.STORY["prices_problem"])
-        consequence = c.says(c.STORY["prices_consequence"])
-        if end:
-            consequence = c.says(*consequence, c.STORY["recovered"], c.time(end, "clock"), ".")
+        consequence = c.says(c.STORY["prices_consequence"], *ended)
         items.append(_story_item(f"feed:{iso_ms(start)}", start, "prices_problem", "market", "attention",
                                  c.says(headline + "."), until=end, consequence=consequence, problem=True,
                                  technical=first["payload"].get("error_type")))

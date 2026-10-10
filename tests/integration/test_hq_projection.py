@@ -253,6 +253,44 @@ def test_system_pause_stuck_card_and_controls(env):
     assert softer["team"]["pause"]["departments_paused"] is False
 
 
+def _mark(env, asset, seconds_ago):
+    insert(env, "valuation_marks", mark_id=f"m-{asset}-{seconds_ago}", portfolio_id=env.pid, asset=asset,
+           quote_currency="USD", mark="62000", convention="mid", observed_at=at(env, -seconds_ago), stale=0,
+           source="synthetic")
+
+
+def test_old_run_feed_problem_does_not_colour_the_new_run(env):
+    run(env, "STOPPED", heartbeat=-610, run_id="r-old", requested=-7200, finished=-600)
+    env.runtime.ledger._activity(env.pid, "public_feed_health",
+                                 {"run_id": "r-old", "status": "degraded", "symbol": "BTC/USD",
+                                  "first_failed_at_utc": at(env, -1800), "error_type": "TimeoutError"},
+                                 created_at=at(env, -1700))
+    env.runtime.ledger._activity(env.pid, "service_degraded", {"run_id": "r-old", "failures": ["reconciliation:X"]},
+                                 created_at=at(env, -1650))
+    run(env, requested=-300)
+    _mark(env, "BTC", 5)
+    data = snap(env)
+    market = room(data, "market")
+    assert market["light"] == "ok" and text(market["now"]) == "Prices are arriving."
+    finished = iso_ms(at(env, -600))
+    spans = [item for item in data["story"]["items"] if item["kind"] in ("prices_problem", "routine_problem")]
+    assert sorted(item["kind"] for item in spans) == ["prices_problem", "routine_problem"]
+    for item in spans:
+        assert item["until"] == finished
+        assert "No longer tracked" in text(item["consequence"])
+        assert "Recovered" not in text(item["consequence"])
+    # The current run's own feed problem still turns the light.
+    env.runtime.ledger._activity(env.pid, "public_feed_health",
+                                 {"run_id": "r-1", "status": "degraded", "symbol": "BTC/USD",
+                                  "first_failed_at_utc": at(env, -20), "error_type": "TimeoutError"},
+                                 created_at=at(env, -10))
+    again = snap(env)
+    assert room(again, "market")["light"] == "attention"
+    current = [item for item in again["story"]["items"] if item["kind"] == "prices_problem"
+               and item["until"] is None]
+    assert len(current) == 1 and "No longer tracked" not in text(current[0]["consequence"])
+
+
 def test_safety_stop_cause_needs_evidence_close_in_time(env):
     run(env)
     pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")

@@ -884,6 +884,8 @@ STORY: Final = {
     "crashed_unknown": "The time of the last sign of life isn't recorded.",
     "routine_problem": "Problem while running: {prefix}",
     "recovered": " Recovered ",
+    "run_ended": (" No longer tracked after the team stopped at ", "."),
+    "run_ended_unknown": " No longer tracked after that team run ended.",
     "prices_problem": "Kraken prices stopped arriving",
     "prices_problem_symbol": "Kraken prices stopped arriving for {symbol}",
     "prices_consequence": "New buying was blocked; anything held stayed protected.",

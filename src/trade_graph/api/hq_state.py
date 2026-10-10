@@ -484,11 +484,11 @@ class Projection:
         limit = max(60, 3 * int(poll))
         self.price_age = seconds_between(self.now, self.last_price_at)
         self.prices_old = self.price_age is not None and self.price_age > limit
-        degraded = False
-        for event in self.facts["events"]:  # newest first
-            if event["kind"] == "public_feed_health":
-                degraded = event["payload"].get("status") == "degraded"
-                break
+        # A previous run's feed problem is not this run's: the worker resets its counters on restart and
+        # never writes "recovered" for the old run (C2).
+        newest = next((event for event in self.facts["events"] if event["kind"] == "public_feed_health"), None)
+        degraded = (newest is not None and self.active and self.run_id is not None
+                    and newest["payload"].get("status") == "degraded" and self.event_run(newest) == self.run_id)
         self.feed_degraded = degraded
         if self.offline:
             self.market_light = "off"
@@ -500,6 +500,31 @@ class Projection:
                                    if event["kind"] == "public_history_refresh"), None)
 
     # --- Shared helpers ------------------------------------------------------------------------
+
+    def event_run(self, event: dict) -> str | None:
+        """The team run an activity event belongs to: its ``run_id``, else the newest run requested before it."""
+        run_id = event["payload"].get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return run_id
+        moment = _dt(event.get("created_at"))
+        if moment is None:
+            return None
+        if self.run_id is not None and self.requested is not None and moment >= self.requested:
+            return self.run_id
+        for run in self.facts["runs"]:  # newest first
+            requested = _dt(run.get("requested_at"))
+            if requested is not None and requested <= moment:
+                return run["run_id"]
+        return None
+
+    def run_end(self, run_id: str | None) -> datetime | None:
+        """When a recorded run ended: its finish time, otherwise its last sign of life."""
+        if run_id is None:
+            return None
+        if run_id == self.run_id:
+            return self.finished or self.heartbeat
+        run = next((row for row in self.facts["runs"] if row["run_id"] == run_id), None)
+        return (_dt(run.get("finished_at")) or _dt(run.get("heartbeat_at"))) if run else None
 
     def task_moment(self, task: dict) -> datetime:
         return _dt(task.get("result_created_at")) or _dt(task.get("created_at")) or self.started_at
