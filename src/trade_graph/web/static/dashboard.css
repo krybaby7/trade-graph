@@ -98,6 +98,14 @@ pre { max-width: 100%; overflow: auto; padding: 1rem; border-radius: 0.35rem; ba
 .nav-link { padding: 0.5rem 0.7rem; border-radius: 0.35rem; color: var(--muted); font-size: 0.85rem; font-weight: 550; text-decoration: none; }
 .nav-link:hover { background: var(--surface-soft); color: var(--text); }
 .nav-link.active, .nav-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+/* "Detailed views": a no-JS disclosure that lists every detailed page. */
+.nav-more { position: relative; }
+.nav-more > summary { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.75rem; list-style: none; cursor: pointer; }
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary::after { content: "\25BE"; font-size: 0.75em; }
+.nav-more[open] > summary::after { content: "\25B4"; }
+.nav-more-list { position: absolute; z-index: 50; top: calc(100% + 0.35rem); left: 0; display: grid; gap: 0.15rem; min-width: 18rem; margin: 0; padding: 0.4rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--surface); box-shadow: var(--shadow); list-style: none; }
+.nav-more-list .nav-link { display: flex; align-items: center; min-height: 2.75rem; }
 .header-actions { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
 .icon-button { display: inline-grid; place-items: center; min-width: 2.5rem; min-height: 2.5rem; padding: 0.45rem; border: 1px solid var(--border); border-radius: 0.35rem; background: var(--surface); color: var(--text); }
 .icon-button:hover { background: var(--surface-soft); }
@@ -209,6 +217,9 @@ pre { max-width: 100%; overflow: auto; padding: 1rem; border-radius: 0.35rem; ba
   .site-header { padding: 0.9rem 1rem; }
   .site-nav { gap: 0.2rem; }
   .nav-link { padding: 0.55rem 0.6rem; }
+  .site-nav { position: relative; }
+  .nav-more { position: static; }
+  .nav-more-list { right: 0; min-width: 0; }
   .shell { width: calc(100% - 2rem); padding-top: 1.4rem; }
   .grid-two, .grid-three, .owner-grid, .detail-grid, .form-grid { grid-template-columns: minmax(0, 1fr); }
   .panel { padding: 1rem; }

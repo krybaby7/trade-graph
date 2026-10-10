@@ -11,7 +11,8 @@ from trade_graph.domain.clock import FrozenClock
 
 
 @pytest.mark.parametrize("path",
-                         ["/", "/progress", "/trading", "/organization", "/costs", "/owner", "/decisions/missing"])
+                         ["/", "/journal", "/progress", "/trading", "/organization", "/costs", "/owner",
+                          "/decisions/missing"])
 def test_browser_pages_redirect_to_local_sign_in(tmp_path, path):
     client, *_ = _client(tmp_path)
     response = client.get(path, follow_redirects=False)
@@ -30,7 +31,7 @@ def test_api_authentication_remains_json_401(tmp_path):
 
 def test_live_home_has_distinct_health_and_economic_indicators(tmp_path):
     client, _, _, token, *_ = _client(tmp_path)
-    response = client.get("/", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/journal", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert "Operational health" in response.text
     assert "Trading covers costs" in response.text
@@ -38,6 +39,15 @@ def test_live_home_has_distinct_health_and_economic_indicators(tmp_path):
     assert "data-live-home" in response.text
     data = client.get("/api/v1/overview", headers={"Authorization": f"Bearer {token}"}).json()
     assert data["economic_result"]["known_other_expense"] == "1.25"
+
+
+def test_home_is_hq_and_links_to_the_journal(tmp_path):
+    client, _, _, token, *_ = _client(tmp_path)
+    response = client.get("/", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert "data-hq-root" in response.text and 'id="hq-snapshot"' in response.text
+    assert "Trade Graph HQ" in response.text and 'href="/journal"' in response.text
+    assert "data-live-home" not in response.text
 
 
 def test_review_is_complete_scoped_readonly_and_consistent(tmp_path):

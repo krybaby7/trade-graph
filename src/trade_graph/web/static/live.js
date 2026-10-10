@@ -41,7 +41,7 @@
     if (event.target.matches("[data-report-period]")) {
       event.preventDefault();
       const cutoff = new Date(new FormData(event.target).get("end_at")).toISOString();
-      window.location.assign("/?end_at=" + encodeURIComponent(cutoff));
+      window.location.assign("/journal?end_at=" + encodeURIComponent(cutoff));
       return;
     }
     const form = event.target.closest("[data-expense-form]");

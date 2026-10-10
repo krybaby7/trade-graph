@@ -64,7 +64,11 @@ def test_null_retained_quota_window_renders_as_unavailable(tmp_path):
              "unavailable_windows": ["primary"]}
     database.execute("INSERT INTO subscription_provider_state (provider,quota_json,updated_at) VALUES (?,?,?)",
                      ("codex_subscription", json.dumps(quota), "2025-12-31T23:59:00Z"))
-    response = client.get("/", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/journal", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert "primary: unavailable" in response.text.lower()
     assert "token usage cover all retained lifetime records through the current snapshot" in response.text
+    allowance = client.get("/api/v1/hq", headers={"Authorization": f"Bearer {token}"}).json()["team"]["allowance"]
+    assert allowance["unreported_windows"] == ["primary"]
+    assert allowance["windows"] == []
+    assert "isn't reported" in "".join(segment.get("v", "") for segment in allowance["plain"])

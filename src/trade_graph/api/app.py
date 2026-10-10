@@ -14,7 +14,17 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from trade_graph.api import evidence, financial, live, owner_expenses, progress, progress_runs, review_export
+from trade_graph.api import (
+    evidence,
+    financial,
+    hq,
+    live,
+    owner_checkins,
+    owner_expenses,
+    progress,
+    progress_runs,
+    review_export,
+)
 from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.api.controls import configuration, register_controls
 from trade_graph.api.health import health as project_health
@@ -259,7 +269,13 @@ def create_app(runtime) -> FastAPI:
             return redact(evidence.events(runtime, limit=limit, offset=offset))
 
     @app.get("/", response_class=HTMLResponse)
-    def page(request: Request, end_at: str | None = None):
+    def page(request: Request):
+        identity(request)
+        with runtime.database.snapshot():
+            return render(request, "hq", hq.snapshot(runtime, hq.viewer_for(runtime, request)))
+
+    @app.get("/journal", response_class=HTMLResponse)
+    def journal(request: Request, end_at: str | None = None):
         identity(request)
         with runtime.database.snapshot():
             return render(request, "overview", overview_data(end_at))
@@ -328,6 +344,8 @@ def create_app(runtime) -> FastAPI:
     register_controls(app, runtime, identity, owner_write)
     register_service_controls(app, runtime, identity, owner_write)
     owner_expenses.register(app, runtime, identity, owner_write)
+    owner_checkins.register(app, runtime, identity, owner_write)
+    hq.register(app, runtime, identity)
     return app
 
 

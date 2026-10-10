@@ -696,7 +696,9 @@ def _allowance_block(p: Projection) -> dict:
 def allowance_plain(p: Projection) -> list:
     line = c.ALLOWANCE_LINE.format(line=c.pct(p.threshold)) if p.threshold is not None else None
     if not p.windows or p.min_remaining is None:
-        return c.join(c.says(c.ALLOWANCE_NO_READING), c.says(line) if line else None)
+        # A reading whose only windows are unreported is not "no reading" (spec §E.2).
+        first = c.ALLOWANCE_NONE_REPORTED if p.unreported else c.ALLOWANCE_NO_READING
+        return c.join(c.says(first), c.says(line) if line else None)
     parts = []
     for window in p.windows:
         if window["remaining_percent"] is None:

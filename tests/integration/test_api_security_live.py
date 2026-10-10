@@ -42,10 +42,11 @@ def test_dashboard_reconciles_and_rejects_bad_auth(tmp_path) -> None:
     assert overview.status_code == 200
     assert overview.json()["equity"] == "100"
     assert overview.json()["simulated"] is True
-    page = client.get("/", headers=headers)
+    page = client.get("/journal", headers=headers)
     assert page.status_code == 200
     assert "100" in page.text
     assert "Actual operating spend" in page.text
+    assert client.get("/", headers=headers).status_code == 200
     leader, _ = issue_session(runtime.database, runtime.clock, "leader")
     denied = client.post("/api/v1/owner/budgets", headers={"Authorization": f"Bearer {leader}"}, json={"total": "9"})
     assert denied.status_code == 403

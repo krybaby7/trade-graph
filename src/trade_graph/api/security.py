@@ -20,8 +20,8 @@ _SECRET = re.compile(
     re.IGNORECASE,
 )
 _PRIVATE_PATH = re.compile(
-    r"(?<![:/\w])/(?!(?:api/v1|changes|decisions|static|trading|organization|costs|owner|login|progress)(?:/|\b))"
-    r"[A-Za-z_.][^\s\"'<>]*"
+    r"(?<![:/\w])/(?!(?:api/v1|changes|decisions|static|trading|organization|costs|owner|login|progress|journal)"
+    r"(?:/|\b))[A-Za-z_.][^\s\"'<>]*"
 )
 _PRIVATE_WINDOWS_PATH = re.compile(r"\b[A-Za-z]:[\\/][^\s\"'<>]*")
 

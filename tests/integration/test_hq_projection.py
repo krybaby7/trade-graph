@@ -428,7 +428,9 @@ def test_reader_and_leader_cannot_act(env):
             assert data["links"]["owner"] is None
             assert data["viewer"]["owner_revision"] is None
     owner = snap(env)
-    assert owner["viewer"]["can_act"] is True and owner["checkins"]["available"] is False
+    # Migration 0025 is registered, so the owner's (still empty) check-in store is available.
+    assert owner["viewer"]["can_act"] is True and owner["checkins"]["available"] is True
+    assert owner["checkins"]["items"] == []
     assert len(owner["decisions"]) == 8
 
 

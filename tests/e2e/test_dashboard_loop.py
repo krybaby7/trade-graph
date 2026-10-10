@@ -47,7 +47,7 @@ def test_dashboard_reconciles_full_loop_and_navigates_retained_evidence(tmp_path
         assert candidate["artifacts"] and candidate["rollouts"]
         health = client.get("/api/v1/health", headers=headers).json()
         assert health["live_enabled"] is False and health["paid_calls_enabled"] is False
-        for page in ["/", "/trading", "/organization", "/costs", "/changes", "/owner",
+        for page in ["/", "/journal", "/trading", "/organization", "/costs", "/changes", "/owner",
                      f"/changes/{report['engineer_candidate_id']}",
                      f"/decisions/{report['leader_activation_decision_id']}"]:
             rendered = client.get(page, headers=headers)

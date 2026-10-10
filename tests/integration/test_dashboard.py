@@ -106,14 +106,17 @@ def test_live_scope_labels_account_records_without_enabling_execution(tmp_path) 
         "live_reasons": ["Protected owner mount is unverified."],
     })
     headers = {"Authorization": f"Bearer {token}"}
-    for path in ["/", "/trading", "/costs", "/organization", "/changes", "/progress", "/owner"]:
+    for path in ["/", "/journal", "/trading", "/costs", "/organization", "/changes", "/progress", "/owner"]:
         response = client.get(path, headers=headers)
         assert response.status_code == 200
         assert "Live account operations" in response.text
         assert ">Live scope</span>" in response.text
         assert "Paper operations" not in response.text
         assert "Paper results are simulated." not in response.text
-    overview = client.get("/", headers=headers).text
+    home = client.get("/", headers=headers).text
+    assert "Live account" in home
+    assert "Practice money" not in home
+    overview = client.get("/journal", headers=headers).text
     assert "Allocated live capital" in overview
     assert "Current live portfolio value" in overview
     assert "Simulated trading P" not in overview

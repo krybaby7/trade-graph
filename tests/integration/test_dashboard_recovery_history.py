@@ -22,7 +22,7 @@ def test_dashboard_discloses_partial_history_and_new_period(tmp_path):
     assert response.status_code == 200
     assert response.json()["recovery_history"] == incident
     assert response.json()["allocated_capital"]["native"][0]["amount"] == "100"
-    page = client.get("/", headers=headers)
+    page = client.get("/journal", headers=headers)
     assert page.status_code == 200
     assert "Historical observations are incomplete" in page.text
     assert "1 identified missing observations" in page.text
@@ -31,6 +31,10 @@ def test_dashboard_discloses_partial_history_and_new_period(tmp_path):
     assert "2026-01-01T00:00:00Z" in page.text
     assert "Earlier account history and failures are retained" in page.text
     assert "Additional observation loss may be unknown" in page.text
+    notices = client.get("/api/v1/hq", headers=headers).json()["notices"]
+    gap = next(notice for notice in notices if notice["code"] == "history_gap")
+    assert gap["link"] == "/journal"
+    assert "history_unverified" not in [notice["code"] for notice in notices]
     database.close()
 
 
@@ -38,9 +42,11 @@ def test_dashboard_does_not_claim_complete_history_when_verification_unavailable
     client, database, _, token, _, _ = _client(tmp_path)
     client.app.state.runtime.recovery_history = lambda: {"status": "UNAVAILABLE"}
     headers = {"Authorization": f"Bearer {token}"}
-    page = client.get("/", headers=headers)
+    page = client.get("/journal", headers=headers)
     assert page.status_code == 200
     assert "Recovery history verification is unavailable" in page.text
     assert "Historical continuity is not certified" in page.text
     assert "Historical observations are incomplete" not in page.text
+    codes = [notice["code"] for notice in client.get("/api/v1/hq", headers=headers).json()["notices"]]
+    assert "history_unverified" in codes and "history_gap" not in codes
     database.close()

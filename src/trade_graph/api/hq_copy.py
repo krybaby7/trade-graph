@@ -303,6 +303,7 @@ AI_PAUSE_REASON: Final = {
 AI_PAUSE_REASON_OTHER: Final = "a provider stop"
 ALLOWANCE_UNREPORTED: Final = "A second, shorter limit isn't reported."
 ALLOWANCE_NO_READING: Final = "No allowance reading yet."
+ALLOWANCE_NONE_REPORTED: Final = "How much allowance is left isn't reported in the latest reading."
 ALLOWANCE_NO_RULE: Final = "No reserve rule is set."
 ALLOWANCE_REFILL_UNKNOWN: Final = "Refill time not reported"
 ALLOWANCE_SHARED: Final = "Your own ChatGPT use counts against the same allowance."
