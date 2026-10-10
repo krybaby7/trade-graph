@@ -5,15 +5,20 @@ Only the next turn of a schedule is exact. Later turns are estimates
 runs; when the team cannot run them they are also marked conditional. Estimates
 more than 48 hours ahead are not listed one by one: each schedule's later
 projections are summarised in one ``calendar.estimates`` series (payload budget, D110).
+Close deadlines of one kind (research notes written together expire together) are one
+item with a ``count`` and an ``until`` (D111).
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from trade_graph.api import hq_copy as c
 from trade_graph.api.hq_contract import (
     AI_DEPARTMENTS,
+    CALENDAR_GROUP_WINDOW_SECONDS,
+    CALENDAR_GROUPED_KINDS,
     CALENDAR_MAX_ITEMS,
     ESTIMATE_ITEMS_HORIZON_HOURS,
     SERIES_MAX_PROJECTIONS,
@@ -25,7 +30,8 @@ from trade_graph.api.hq_state import SCHEDULED_ROLES, STUCK, Projection, _dt
 PAST_WINDOW = timedelta(hours=48)
 ESTIMATE_ITEMS_HORIZON = timedelta(hours=ESTIMATE_ITEMS_HORIZON_HOURS)
 MANDATE_HORIZON = timedelta(days=30)
-RESEARCH_EXPIRY_MAX = 10
+GROUP_WINDOW = timedelta(seconds=CALENDAR_GROUP_WINDOW_SECONDS)
+RESEARCH_EXPIRY_MAX = 10  # research-note expiry items (single or grouped), soonest first
 HISTORY_INTERVAL_SECONDS = 3600
 # Gates under which a department's turns may not happen at all, and what its next turn depends on (U1).
 CONDITIONAL_GATES = frozenset({"G1", "G2", "G3", "G4", "G5", "G6", "GM"})
@@ -61,7 +67,7 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
         add(item)
     for item in checkins:
         add(_checkin_item(p, item))
-    for item in _deadlines(p):
+    for item in _grouped([item for item in _deadlines(p) if item and start <= _dt(item["at"]) <= end]):
         add(item)
     refills = [_refill(p, window) for window in p.windows if window["resets_at"]]
     for item in refills:
@@ -199,7 +205,7 @@ def _refill(p: Projection, window: dict) -> dict:
 def _deadlines(p: Projection) -> list:
     items = []
     trader_next = p.roles["trader"].next_at
-    for finding in p.notes_in_use[:RESEARCH_EXPIRY_MAX]:
+    for finding in p.notes_in_use:  # at most 40 (reader R13); grouped and capped in _grouped
         expires = _dt(finding.get("expires_at"))
         if expires is None:
             continue
@@ -241,6 +247,42 @@ def _deadlines(p: Projection) -> list:
         items.append(_item("mandate-expiry", "mandate_expiry", "trader", expires,
                            c.says(c.CALENDAR["mandate_expiry"]), "planned", p, link="/trading"))
     return items
+
+
+def _grouped(items: list[dict]) -> list[dict]:
+    """Close deadlines of one kind become one item with ``count`` and ``until`` (contract ``CalendarItem``).
+
+    An item joins the open group with the same kind, department, status, link and texts while it is
+    within ``GROUP_WINDOW`` of that group's earliest member; otherwise it starts a new group. Groups keep
+    their earliest member's id. Research-note expiries are then capped at ``RESEARCH_EXPIRY_MAX`` items.
+    """
+    open_groups: dict[tuple, list[dict]] = {}
+    groups: list[list[dict]] = []
+    for item in sorted(items, key=lambda entry: (entry["at"], entry["id"])):
+        key = None
+        if item["kind"] in CALENDAR_GROUPED_KINDS:
+            key = (item["kind"], item["dept"], item["status"], item["past"], item["link"],
+                   json.dumps([item["title"], item["detail"], item["warning"]], sort_keys=True))
+            members = open_groups.get(key)
+            if members and _dt(item["at"]) - _dt(members[0]["at"]) <= GROUP_WINDOW:
+                members.append(item)
+                continue
+        groups.append([item])
+        if key is not None:
+            open_groups[key] = groups[-1]
+    result: list[dict] = []
+    research = 0
+    for members in groups:
+        first = members[0]
+        if first["kind"] == "research_expiry":
+            research += 1
+            if research > RESEARCH_EXPIRY_MAX:
+                continue
+        if len(members) > 1:
+            title = c.says(c.CALENDAR[f"{first['kind']}_many"].format(n=len(members)))
+            first = {**first, "title": title, "count": len(members), "until": members[-1]["at"]}
+        result.append(first)
+    return result
 
 
 def _recurring(p: Projection) -> list:

@@ -1,3 +1,16 @@
+# Trade Graph HQ desktop-check fixes, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `6aa968d`. Five issues from the owner's desktop visual check (decision D111). **Nothing was deployed, pushed or run against the installation.**
+- **Calendar groups:** research-note expiries (and improvement-idea expiries and Engineer time limits) of the same department, status and texts within two hours of the group's first are one item with the additive, omit-not-null `count` and `until` keys and a counted title, e.g. "13 research notes stop being used", shown as "19:30 to 21:30" in the agenda, "19:30–21:30" in the week strip and "Between … and …" in Up next. The ten expiry items are now the ten soonest groups. The busy synthetic week drops from 10 single expiry items to 4 grouped ones (62.6 KB for 7 days, 63.2 KB for 14 days).
+- **Conditions said once:** the estimates condition ("Only if the team is running and not paused …") is one line above the agenda, and an equal condition on consecutive future rows of one day is shown on the first only. Up next keeps each turn's condition (U1).
+- **Desktop (≥ 1024 px):** the two columns flow independently (floats; page order, anchors, iPad and phone layouts unchanged), so a tall "Needs you" no longer leaves a gap under the map.
+- **Up next:** the line under the clock time is "in 2 h" today, then "tomorrow" or the date.
+- **Fixtures:** Learning's cadence is every 3½ days (`302400`), with its next turn 3½ days after its last and the real copy ("Learning finished its turn (every 3½ days).").
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -q -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` passed (8 Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 39 passed. Headless Edge at 1440×900 (light and dark), 1024, 900 and 375 px: no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty and silent snapshots.
+
+---
+
 # Trade Graph HQ review fixes integrated in source, not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009`. Review base `721bc8a`; `claude/hq-fix-wp1` (backend B1–B20, decision D110) merged as `9e60e8f` and `claude/hq-fix-wp2` (frontend F1–F13) as `b1252c5`, both `--no-ff` without conflicts; integration fix `070b0b4` plus this status commit. This closes the HQ review fix plan: 49 findings, all real. **Nothing was deployed, pushed or run against the installation**; every check used temporary databases or fixtures. Shipping still needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained ([D105](docs/DECISIONS.md)). By owner choice, the second independent review round was skipped.

@@ -35,6 +35,10 @@ CALENDAR_MAX_ITEMS: Final = 200
 SERIES_MAX_PROJECTIONS: Final = 48
 # Estimated turns later than this are summarised per schedule in ``calendar.estimates`` (payload budget).
 ESTIMATE_ITEMS_HORIZON_HOURS: Final = 48
+# Deadlines of one of these kinds that fall within this many seconds of each other are one calendar item with a
+# ``count`` and an ``until`` (e.g. several research notes written together expire together).
+CALENDAR_GROUPED_KINDS: Final = ("research_expiry", "proposal_expiry", "engineer_deadline")
+CALENDAR_GROUP_WINDOW_SECONDS: Final = 7200
 QUEST_MAX_ITEMS: Final = 60
 UP_NEXT_MAX: Final = 5
 TURN_STUCK_MAX_CARDS: Final = 3
@@ -660,6 +664,15 @@ class CalendarSeries(_Contract):
 
 
 class CalendarItem(_Contract):
+    """One calendar entry.
+
+    ``count`` and ``until`` (additive; absent on older servers and on single items) mark a group: ``count``
+    deadlines of one ``CALENDAR_GROUPED_KINDS`` kind, with the same department, status and texts, from ``at``
+    (the earliest) to ``until`` (the latest, at most ``CALENDAR_GROUP_WINDOW_SECONDS`` later). The group keeps
+    its earliest member's ``id`` and its title already says how many, e.g. "18 research notes stop being used".
+    """
+
+    _omit_not_null = frozenset({"count", "until"})
     id: Name
     kind: CalendarKind
     dept: DeptId | Literal["you"] | None
@@ -675,6 +688,8 @@ class CalendarItem(_Contract):
     link: AllowedPath | None
     checkin_id: str | None
     series: CalendarSeries | None
+    count: Annotated[int, Field(ge=2)] | None = None
+    until: ISO | None = None
 
     @model_validator(mode="after")
     def _kind(self):
@@ -682,6 +697,14 @@ class CalendarItem(_Contract):
             raise ValueError("owner_checkin items belong to you and name their check-in")
         if self.kind == "dept_turn" and self.dept not in AI_DEPARTMENTS:
             raise ValueError("dept_turn items belong to an AI department")
+        if (self.count is None) != (self.until is None):
+            raise ValueError("a grouped calendar item has both count and until")
+        if self.count is not None:
+            if self.kind not in CALENDAR_GROUPED_KINDS:
+                raise ValueError("only close deadlines of one kind are grouped")
+            spread = (_instant(self.until) - _instant(self.at)).total_seconds()
+            if not 0 <= spread <= CALENDAR_GROUP_WINDOW_SECONDS:
+                raise ValueError("a group runs from at to until, within the group window")
         return self
 
 

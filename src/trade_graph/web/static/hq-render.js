@@ -90,6 +90,16 @@
       default: return Number.isFinite(seconds) && seconds > 0 ? `every ${fmt.duration(seconds)}` : "";
     }
   }
+  /* Contract calendar items[].count and .until (optional; older servers and single items leave them out):
+     close deadlines of one kind arrive as one item, from `at` to `until`, whose title already says how many
+     (D111). Returns the `until` worth showing as a range, or null when there is none or it reads the same. */
+  function groupUntil(item) {
+    if (!(HQ.count(item?.count) > 1)) return null;
+    const from = parseIso(item.at);
+    const to = parseIso(item.until);
+    if (from === null || to === null || to < from || fmt.clock(to) === fmt.clock(from)) return null;
+    return item.until;
+  }
   function lightBadge(light, text) {
     const badge = el("span", "hq-light");
     badge.dataset.light = str(light);
@@ -352,12 +362,13 @@
         row.dataset.kind = str(item.kind);
         row.dataset.row = `next:${str(item.id)}`;
         if (index >= 3) row.classList.add("hq-wide-only");
-        const ms = parseIso(item.at);
-        const days = HQ.dayDiff(ms);
+        // One short line under the clock time: "in 2 h" today, then "tomorrow" or the date (desktop check: a
+        // "tomorrow · in 16 h 41 min" line wrapped onto three lines). The clock time above keeps the exact moment.
+        const days = HQ.dayDiff(parseIso(item.at));
         const when = el("span", "hq-next-when");
         const later = el("span", "hq-next-rel");
         if (days === 0) later.append(time(item.at, "relative"));
-        else if (days === 1 && ms - HQ.serverNow() < 86400000) later.append("tomorrow · ", time(item.at, "relative"));
+        else if (days === 1) later.append("tomorrow");
         else later.append(time(item.at, "date"));
         when.append(time(item.at, "clock"), later);
         // A turn that can only happen if something changes says so right here, not only in the Calendar
@@ -369,6 +380,12 @@
         if (item.status === "due" || item.status === "overdue") words.append(" ", chip(item.status === "due" ? "due now" : "overdue", "hq-chip-warn"));
         if (item.conditional && !hasText(item.detail)) words.append(" ", chip("only if running", "hq-chip-soft"));
         body.append(words);
+        const until = groupUntil(item);
+        if (until) {
+          const range = el("span", "hq-next-detail", "Between ");
+          range.append(time(item.at, "clock"), " and ", time(until, "clock"), ".");
+          body.append(range);
+        }
         if (hasText(item.detail)) body.append(textEl("span", "hq-next-detail", item.detail));
         if (hasText(item.waiting_because)) body.append(textEl("span", "hq-next-detail hq-warn-text", item.waiting_because));
         what.append(deptIcon(item.dept === "you" ? "you" : item.dept), body);
@@ -573,7 +590,9 @@
     glyph.setAttribute("aria-hidden", "true");
     return {glyph, words};
   }
-  function calendarRow(item, snapshot) {
+  // `hideDetail`: the row's condition is already said just above it (or in the estimates caveat), so neither it
+  // nor the "only if running" stand-in is repeated on this row.
+  function calendarRow(item, snapshot, {hideDetail = false} = {}) {
     const row = el("li", "hq-cal-item");
     row.dataset.status = str(item.status);
     row.dataset.kind = str(item.kind);
@@ -581,14 +600,20 @@
     const {glyph, words} = statusMark(item);
     const when = el("span", "hq-cal-when");
     when.append(time(item.at, "clock"));
+    const until = groupUntil(item);
+    if (until) {
+      const to = el("span", "hq-cal-until", "to ");
+      to.append(time(until, "clock"));
+      when.append(to);
+    }
     const main = el("div", "hq-cal-main");
     const title = el("p", "hq-cal-title");
     renderText(title, item.title);
     title.append(el("span", "hq-cal-status", ` · ${words}`));
     if (!item.exact && item.status !== "estimated") title.append(" ", chip("estimate", "hq-chip-soft"));
-    if (item.conditional && !hasText(item.detail)) title.append(" ", chip("only if running", "hq-chip-soft"));
+    if (item.conditional && !hasText(item.detail) && !hideDetail) title.append(" ", chip("only if running", "hq-chip-soft"));
     main.append(title);
-    if (hasText(item.detail)) main.append(textEl("p", "hq-cal-detail", item.detail));
+    if (hasText(item.detail) && !hideDetail) main.append(textEl("p", "hq-cal-detail", item.detail));
     if (hasText(item.warning)) {
       const warning = el("p", "hq-cal-warning");
       warning.append(icon("sev-watch", "hq-icon hq-icon-small"));
@@ -605,6 +630,25 @@
     }
     row.append(when, glyph, main);
     return row;
+  }
+  /* Conditions are said once, not on every row (desktop check): an estimate's condition is the caveat above the
+     agenda, and a future row whose condition matches the last one shown in the same list leaves it out. Returns
+     the items whose condition is not repeated. */
+  function repeatedConditions(entries, caveatKey) {
+    const hidden = new Set();
+    let last = null;
+    for (const item of entries) {
+      if (item.past || !hasText(item.detail)) continue;
+      const key = plain(item.detail);
+      if (item.status === "estimated" && key === caveatKey) { hidden.add(item); continue; }
+      if (key === last) hidden.add(item);
+      last = key;
+    }
+    return hidden;
+  }
+  function calendarRows(entries, snapshot, caveatKey) {
+    const hidden = repeatedConditions(entries, caveatKey);
+    return entries.map(item => calendarRow(item, snapshot, {hideDetail: hidden.has(item)}));
   }
   function dayLabel(ms) {
     const diff = HQ.dayDiff(ms);
@@ -651,7 +695,7 @@
     row.querySelector(".hq-cal-when")?.replaceChildren(time(item.at, "day_clock"));
     return row;
   }
-  function seriesBox(key, listed, series, snapshot) {
+  function seriesBox(key, listed, series, snapshot, caveatKey) {
     const first = listed[0] || null;
     const dept = first ? first.dept : series?.dept;
     const every = cadence(first?.series?.every_seconds ?? series?.every_seconds);
@@ -661,7 +705,8 @@
     box.dataset.row = `series:${key}`;
     box.append(el("summary", "", `${deptName(dept, snapshot)}: about ${every || "regularly"} (${plural(total, "turn")})`));
     const detail = listed.find(item => hasText(item.detail))?.detail || (hasText(series?.detail) ? series.detail : null);
-    if (detail) box.append(textEl("p", "hq-cal-detail", detail));
+    if (detail && plain(detail) === caveatKey) { /* said once above the agenda */ }
+    else if (detail) box.append(textEl("p", "hq-cal-detail", detail));
     else if (listed.some(item => item.conditional) || series?.conditional === true) {
       const note = el("p", "hq-cal-detail");
       note.append(chip("only if running", "hq-chip-soft"));
@@ -672,6 +717,21 @@
     if (total > listed.length + projected.length) rows.append(el("li", "hq-cal-detail", `+${total - listed.length - projected.length} more`));
     box.append(rows);
     return box;
+  }
+
+  // Week-strip chips are narrow: a deadline says what ends in two or three words, with its count when grouped.
+  const SHORT_DEADLINE = new Map([
+    ["research_expiry", ["Note expires", "notes expire"]],
+    ["proposal_expiry", ["Idea expires", "ideas expire"]],
+    ["engineer_deadline", ["Engineer limit", "Engineer limits"]],
+  ]);
+  function chipWords(item, snapshot) {
+    if (item.kind === "dept_turn") return deptName(item.dept, snapshot);
+    if (item.kind === "owner_checkin") return "Your check-in";
+    const short = SHORT_DEADLINE.get(item.kind);
+    if (!short) return plain(item.title);
+    const count = HQ.count(item.count);
+    return count > 1 ? `${count} ${short[1]}` : short[0];
   }
 
   function weekStrip(items, snapshot) {
@@ -706,9 +766,12 @@
         entry.dataset.kind = str(item.kind);
         const {glyph, words: status} = statusMark(item);
         const top = el("span", "hq-week-chip-top");
-        top.append(glyph, time(item.at, "clock"));
-        const words = item.kind === "dept_turn" ? deptName(item.dept, snapshot) : item.kind === "owner_checkin" ? "Your check-in" : plain(item.title);
-        entry.append(top, el("span", "hq-week-chip-title", words), el("span", "hq-sr", `, ${status}`));
+        const when = el("span", "hq-week-when");
+        when.append(time(item.at, "clock"));
+        const until = groupUntil(item);
+        if (until) when.append("–", time(until, "clock"));
+        top.append(glyph, when);
+        entry.append(top, el("span", "hq-week-chip-title", chipWords(item, snapshot)), el("span", "hq-sr", `, ${status}`));
         chips.append(entry);
       });
       if (!nowPlaced) chips.append(el("li", "hq-week-now", "Now"));
@@ -766,6 +829,18 @@
         }
       }
       const agenda = el("div", "hq-agenda");
+      // Every estimated turn carries the same condition: it is said once, above the agenda (desktop check).
+      const caveat = [...items, ...series].find(entry => (entry.status === "estimated" || entry.schedule_id) &&
+        entry.conditional === true && hasText(entry.detail))?.detail || null;
+      const caveatKey = caveat ? plain(caveat) : null;
+      if (caveat) {
+        const note = el("p", "hq-cal-caveat");
+        const mark = el("span", "hq-cal-mark", "≈");
+        mark.setAttribute("aria-hidden", "true");
+        note.append(mark, el("strong", "", "Estimated turns: "));
+        renderText(note, caveat);
+        agenda.append(note);
+      }
       const group = (label, entries, id, nowLine) => {
         const block = el("section", "hq-cal-group");
         if (id) block.id = id;
@@ -773,11 +848,11 @@
         const rows = el("ul", "hq-cal-list");
         const nowMs = HQ.serverNow();
         let placed = !nowLine;
-        for (const item of entries) {
+        calendarRows(entries, snapshot, caveatKey).forEach((row, index) => {
           // Today's list shows where "now" falls, like the week strip (review U14).
-          if (!placed && parseIso(item.at) > nowMs) { rows.append(el("li", "hq-cal-now-line", "Now")); placed = true; }
-          rows.append(calendarRow(item, snapshot));
-        }
+          if (!placed && parseIso(entries[index].at) > nowMs) { rows.append(el("li", "hq-cal-now-line", "Now")); placed = true; }
+          rows.append(row);
+        });
         if (!placed) rows.append(el("li", "hq-cal-now-line", "Now"));
         block.append(rows);
         return block;
@@ -787,7 +862,7 @@
         box.dataset.row = "cal:earlier";
         box.append(el("summary", "", `Earlier (${earlier.length})`));
         const rows = el("ul", "hq-cal-list");
-        for (const item of earlier) rows.append(calendarRow(item, snapshot));
+        rows.append(...calendarRows(earlier, snapshot, caveatKey));
         box.append(rows);
         agenda.append(box);
       }
@@ -802,7 +877,7 @@
         const block = el("section", "hq-cal-group");
         block.id = "hq-cal-later";
         block.append(el("h3", "hq-cal-day", "Later (estimates)"));
-        for (const key of keys) block.append(seriesBox(key, later.get(key) || [], byId.get(key), snapshot));
+        for (const key of keys) block.append(seriesBox(key, later.get(key) || [], byId.get(key), snapshot, caveatKey));
         agenda.append(block);
       }
       if (!agenda.childNodes.length) agenda.append(empty("Nothing to show for this period with these filters."));
@@ -837,7 +912,8 @@
       root.append(footer);
       const notes = el("ul", "hq-notes");
       for (const note of list(calendar.notes)) notes.append(textEl("li", "", note));
-      if (items.some(item => item.conditional || item.status === "overdue") || series.some(entry => entry.conditional === true)) {
+      // The estimates caveat above the agenda already says that missed turns are merged into one.
+      if (!caveat && (items.some(item => item.conditional || item.status === "overdue") || series.some(entry => entry.conditional === true))) {
         notes.append(el("li", "", "If several turns were missed, the team does one catch-up turn, not all of them."));
       }
       if (calendar.truncated) notes.append(el("li", "", "Only the first 200 items are shown."));

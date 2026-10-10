@@ -9,6 +9,7 @@ import pytest
 from trade_graph.api import hq_copy
 from trade_graph.api.hq_contract import ALLOWED_PATH_PATTERN, ISO_MS_PATTERN, contract_keys
 from trade_graph.api.security import _PRIVATE_KEYS, redact
+from trade_graph.application.paper_service import DEFAULT_SCHEDULES
 
 JARGON = ("container", "worker process", "reconciliation", "inference", "native", "token", "quota admission")
 CASE_SENSITIVE_JARGON = ("MANAGE_ONLY", "SMA")
@@ -151,6 +152,15 @@ def test_live_twins_never_say_practice():
 def test_cadence_names():
     assert [hq_copy.cadence(value) for value in (14400, 86400, 302400, 604800, 1800, None)] == [
         "every 4 hours", "daily", "every 3½ days", "weekly", "every 30 min", None]
+
+
+def test_only_research_turns_are_daily_by_default():
+    # The cadence comes from each schedule's interval, never from the department's name.
+    cadences = {role: hq_copy.cadence(seconds) for role, seconds in DEFAULT_SCHEDULES.items()}
+    assert cadences == {"trader": "every 4 hours", "research": "daily", "learning": "every 3½ days",
+                        "leader": "weekly", "optimisation": "weekly"}
+    assert not [value for value in _strings(_copy_constants(), values_only=True)
+                if "daily turn" in value or re.search(r"(?:Learning|Leader|Optimisation).*daily", value)]
 
 
 def test_every_copy_string_survives_redaction():

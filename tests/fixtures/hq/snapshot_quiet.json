@@ -518,9 +518,9 @@
         "link": "/organization"
       },
       "next": {
-        "at": "2026-10-10T06:40:00.000Z",
+        "at": "2026-10-12T18:40:00.000Z",
         "exact": true,
-        "every_seconds": 86400,
+        "every_seconds": 302400,
         "overdue": false,
         "waiting_because": null,
         "note": null,
@@ -958,8 +958,8 @@
     "up_next": [
       "checkin:c-20261009-afternoon",
       "turn:s-trader:2026-10-09T17:56:26.000Z",
-      "turn:s-learning:2026-10-10T06:40:00.000Z",
       "turn:s-research:2026-10-10T08:13:00.000Z",
+      "turn:s-learning:2026-10-12T18:40:00.000Z",
       "turn:s-leader:2026-10-14T08:13:00.000Z"
     ],
     "items": [
@@ -1015,7 +1015,7 @@
         "checkin_id": null,
         "series": {
           "schedule_id": "s-learning",
-          "every_seconds": 86400
+          "every_seconds": 302400
         }
       },
       {
@@ -1216,10 +1216,10 @@
         }
       },
       {
-        "id": "turn:s-learning:2026-10-10T06:40:00.000Z",
+        "id": "turn:s-learning:2026-10-12T18:40:00.000Z",
         "kind": "dept_turn",
         "dept": "learning",
-        "at": "2026-10-10T06:40:00.000Z",
+        "at": "2026-10-12T18:40:00.000Z",
         "title": [
           {
             "t": "text",
@@ -1237,7 +1237,7 @@
         "checkin_id": null,
         "series": {
           "schedule_id": "s-learning",
-          "every_seconds": 86400
+          "every_seconds": 302400
         }
       },
       {
@@ -1464,7 +1464,7 @@
         "headline": [
           {
             "t": "text",
-            "v": "Research finished its daily turn."
+            "v": "Research finished its turn (daily)."
           }
         ],
         "consequence": [
@@ -1510,7 +1510,7 @@
         "headline": [
           {
             "t": "text",
-            "v": "Learning finished its daily turn."
+            "v": "Learning finished its turn (every 3½ days)."
           }
         ],
         "consequence": [
@@ -2144,7 +2144,7 @@
       {
         "dept": "learning",
         "name": "Learning",
-        "at": "2026-10-10T06:40:00.000Z"
+        "at": "2026-10-12T18:40:00.000Z"
       },
       {
         "dept": "leader",

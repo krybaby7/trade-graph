@@ -267,7 +267,7 @@
       "title": [
         {
           "t": "text",
-          "v": "Learning's daily turn keeps having problems (2 in a row)"
+          "v": "Learning's turn (every 3½ days) keeps having problems (2 in a row)"
         }
       ],
       "why": [
@@ -283,7 +283,7 @@
         },
         {
           "t": "time",
-          "at": "2026-10-11T06:40:00.000Z",
+          "at": "2026-10-13T18:40:00.000Z",
           "style": "day_clock"
         },
         {
@@ -609,7 +609,7 @@
         "text": [
           {
             "t": "text",
-            "v": "Its daily turn didn't work: "
+            "v": "Its turn (every 3½ days) didn't work: "
           },
           {
             "t": "text",
@@ -625,9 +625,9 @@
         "link": "/organization"
       },
       "next": {
-        "at": "2026-10-11T06:40:00.000Z",
+        "at": "2026-10-13T18:40:00.000Z",
         "exact": true,
-        "every_seconds": 86400,
+        "every_seconds": 302400,
         "overdue": false,
         "waiting_because": null,
         "note": null,
@@ -985,7 +985,7 @@
       "origin_text": [
         {
           "t": "text",
-          "v": "Regular turn (daily)"
+          "v": "Regular turn (every 3½ days)"
         }
       ],
       "state": "FAILED",
@@ -1055,8 +1055,8 @@
       "research-expiry:f-90",
       "turn:s-trader:2026-10-10T09:56:26.000Z",
       "checkin:c-20261010-midday",
-      "turn:s-learning:2026-10-11T06:40:00.000Z",
-      "refill:limit_1_primary"
+      "refill:limit_1_primary",
+      "turn:s-learning:2026-10-13T18:40:00.000Z"
     ],
     "items": [
       {
@@ -1111,7 +1111,7 @@
         "checkin_id": null,
         "series": {
           "schedule_id": "s-learning",
-          "every_seconds": 86400
+          "every_seconds": 302400
         }
       },
       {
@@ -1179,7 +1179,7 @@
         "title": [
           {
             "t": "text",
-            "v": "Research notes stop being used"
+            "v": "2 research notes stop being used"
           }
         ],
         "status": "planned",
@@ -1205,7 +1205,9 @@
         "waiting_because": null,
         "link": null,
         "checkin_id": null,
-        "series": null
+        "series": null,
+        "count": 2,
+        "until": "2026-10-10T09:40:00.000Z"
       },
       {
         "id": "turn:s-trader:2026-10-10T09:56:26.000Z",
@@ -1280,10 +1282,10 @@
         }
       },
       {
-        "id": "turn:s-learning:2026-10-11T06:40:00.000Z",
+        "id": "turn:s-learning:2026-10-13T18:40:00.000Z",
         "kind": "dept_turn",
         "dept": "learning",
-        "at": "2026-10-11T06:40:00.000Z",
+        "at": "2026-10-13T18:40:00.000Z",
         "title": [
           {
             "t": "text",
@@ -1301,7 +1303,7 @@
         "checkin_id": null,
         "series": {
           "schedule_id": "s-learning",
-          "every_seconds": 86400
+          "every_seconds": 302400
         }
       },
       {
@@ -1498,7 +1500,7 @@
         "headline": [
           {
             "t": "text",
-            "v": "Learning's daily turn didn't work (the AI didn't answer in time)."
+            "v": "Learning's turn (every 3½ days) didn't work (the AI didn't answer in time)."
           }
         ],
         "consequence": [
@@ -1508,7 +1510,7 @@
           },
           {
             "t": "time",
-            "at": "2026-10-11T06:40:00.000Z",
+            "at": "2026-10-13T18:40:00.000Z",
             "style": "day_clock"
           },
           {
@@ -1945,7 +1947,7 @@
             },
             {
               "t": "time",
-              "at": "2026-10-11T06:40:00.000Z",
+              "at": "2026-10-13T18:40:00.000Z",
               "style": "day_clock"
             },
             {
@@ -2314,7 +2316,7 @@
       {
         "dept": "learning",
         "name": "Learning",
-        "at": "2026-10-11T06:40:00.000Z"
+        "at": "2026-10-13T18:40:00.000Z"
       },
       {
         "dept": "leader",
@@ -2336,7 +2338,7 @@
       "Leader's turn is stuck",
       "AI allowance 46%: close to the 40% line",
       "Research notes expire before the Trader reads them",
-      "Learning's daily turn keeps having problems (2 in a row)"
+      "Learning's turn (every 3½ days) keeps having problems (2 in a row)"
     ],
     "practice_value": "€8,951.22",
     "value_final": false,

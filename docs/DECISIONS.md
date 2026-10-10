@@ -295,3 +295,13 @@ None prevents offline development. Mark credentialed verification pending when c
     de-duplicate by id. Long allowance waits are counted in full, never cut.
   - "Pause AI" is never offered while the Leader has a stronger pause on
     (cancel all, flatten or stopped), because it would weaken it.
+
+- **D111 (2026-10-10, HQ desktop check):** Close deadlines of one kind
+  (research-note expiries, improvement-idea expiries, Engineer time limits)
+  with the same department, status and texts within two hours of the group's
+  earliest member are one calendar item with the additive `count` and `until`
+  keys and a counted title ("18 research notes stop being used"). The ten
+  research-expiry items are now the ten soonest groups of every note in use,
+  not the ten newest notes. On desktop the two HQ columns flow independently
+  (floats, no change to the page order), so a tall "Needs you" never opens a
+  gap under the map.

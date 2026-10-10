@@ -411,7 +411,7 @@
       "next": {
         "at": "2026-10-12T06:40:00.000Z",
         "exact": true,
-        "every_seconds": 86400,
+        "every_seconds": 302400,
         "overdue": false,
         "waiting_because": null,
         "note": null,
@@ -798,7 +798,7 @@
         "checkin_id": null,
         "series": {
           "schedule_id": "s-learning",
-          "every_seconds": 86400
+          "every_seconds": 302400
         }
       },
       {

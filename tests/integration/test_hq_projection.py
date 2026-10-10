@@ -679,6 +679,37 @@ def test_notes_expiring_before_trader(env):
     assert data["money"]["counts"]["notes_in_use"] == 1
 
 
+def test_close_research_expiries_are_one_calendar_item(env):
+    quiet(env)  # the Trader's next turn is in 4 hours
+    for index in range(3):  # expire before that turn: a group of their own, with the warning
+        finding(env, f"f-early-{index}", created=-3600, expires=1800 + index * 60)
+    for index in range(18):  # written together, expiring 8 h to 9 h 25 min from now
+        finding(env, f"f-batch-{index}", created=-3600, expires=8 * 3600 + index * 300)
+    finding(env, "f-later", created=-3600, expires=8 * 3600 + 7300)  # more than 2 h after the batch's first
+    data = snap(env)
+    expiries = [item for item in data["calendar"]["items"] if item["kind"] == "research_expiry"]
+    assert [item.get("count") for item in expiries] == [3, 18, None]
+    early, batch, later = expiries
+    assert text(early["title"]) == "3 research notes stop being used"
+    assert "Before the Trader's turn" in text(early["warning"]) and batch["warning"] is None
+    assert text(batch["title"]) == "18 research notes stop being used"
+    assert batch["id"] == "research-expiry:f-batch-0"
+    assert batch["at"] == iso_ms(at(env, 8 * 3600)) and batch["until"] == iso_ms(at(env, 8 * 3600 + 17 * 300))
+    assert "count" not in later and "until" not in later
+    assert text(later["title"]) == "Research notes stop being used"
+    assert early["id"] in data["calendar"]["up_next"]
+    assert data["money"]["counts"]["notes_in_use"] == 22
+
+
+def test_research_expiries_keep_the_ten_soonest_groups(env):
+    quiet(env)
+    for index in range(12):  # three hours apart: twelve separate items
+        finding(env, f"f-{index:02d}", created=-3600, expires=5 * 3600 + index * 3 * 3600)
+    expiries = [item for item in snap(env)["calendar"]["items"] if item["kind"] == "research_expiry"]
+    assert [item["id"] for item in expiries] == [f"research-expiry:f-{index:02d}" for index in range(10)]
+    assert not [item for item in expiries if "count" in item]
+
+
 def test_unknown_money_is_null(env):
     env.runtime.ledger.deposit(env.pid, "USD", Decimal("10"), "synthetic-usd-top-up")
     data = snap(env)
@@ -824,7 +855,7 @@ def test_pause_preview_mentions_set_aside_when_working(env):
 def test_stuck_turns_and_repeat_problems_need_attention(env):
     run(env)
     reading(env)
-    schedule(env, "learning", 6 * 3600, interval=86400)
+    schedule(env, "learning", 6 * 3600, interval=302400)
     task(env, "t-41", "leader", "BLOCKED_BUDGET", created=-1200, dedup_key="secretary:digest-1",
          objective="Review departmental evidence", output={"reason": "room exhausted"}, attempts=1)
     for index, created in enumerate((-90000, -3600)):
@@ -839,7 +870,7 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
     assert stuck["consequence"] == []
     assert room(data, "leader")["last"]["text"] == [{"t": "text", "v": "Its last turn got stuck."}]
     repeat = next(item for item in data["attention"] if item["id"] == "repeat_problems")
-    assert text(repeat["title"]) == "Learning's turn (daily) keeps having problems (2 in a row)"
+    assert text(repeat["title"]) == "Learning's turn (every 3½ days) keeps having problems (2 in a row)"
     assert "didn't answer in time" in text(repeat["why"])
     assert room(data, "leader")["light"] == "stuck"
     assert room(data, "learning")["had_problem"] is True
@@ -853,14 +884,14 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
 
 def test_old_problem_says_it_was_tried_again(env):
     run(env)
-    schedule(env, "learning", 6 * 3600, interval=86400)
+    schedule(env, "learning", 6 * 3600, interval=302400)
     task(env, "t-lf", "learning", "FAILED", created=-50 * 3600, output={"reason": "model temporary: retry"},
          dedup_key=f"schedule:s-learning:{at(env, -50 * 3600)}")
     for task_id, created in (("t-ls1", -26 * 3600), ("t-ls2", -2 * 3600)):
         task(env, task_id, "learning", "SUCCEEDED", created=created, result={"lesson_revision_ids": []},
              dedup_key=f"schedule:s-learning:{at(env, created)}")
     problem = next(item for item in snap(env)["story"]["items"] if item["id"] == "task:t-lf")
-    assert text(problem["headline"]) == "Learning's turn (daily) didn't work (a temporary AI error)."
+    assert text(problem["headline"]) == "Learning's turn (every 3½ days) didn't work (a temporary AI error)."
     assert "Tried again" in text(problem["consequence"]) and "Next try" not in text(problem["consequence"])
     assert problem["consequence"][1] == {"t": "time", "at": iso_ms(at(env, -26 * 3600)), "style": "day_clock"}
 

@@ -144,6 +144,34 @@ def _trader_next(data: dict) -> dict:
     return next(dept for dept in data["departments"] if dept["id"] == "trader")["next"]
 
 
+def _group(data: dict) -> dict:
+    return next(item for item in data["calendar"]["items"] if item.get("count"))
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda item: item.update(count=None),
+    lambda item: item.update(until=None),
+    lambda item: item.pop("until"),
+    lambda item: item.update(count=1),
+    lambda item: item.update(count=True),
+    lambda item: item.update(kind="trial_end"),
+    lambda item: item.update(until="2026-10-10T09:29:59.999Z"),  # before the group's first deadline
+    lambda item: item.update(until="2026-10-10T11:30:00.001Z"),  # beyond the two-hour group window
+])
+def test_grouped_calendar_items_carry_a_count_and_a_range(mutate):
+    data = _load("snapshot_busy.json")
+    item = _group(data)
+    assert item["count"] == 2 and item["kind"] in contract.CALENDAR_GROUPED_KINDS
+    contract.validate_snapshot(data)
+    mutate(item)
+    with pytest.raises(ValidationError):
+        contract.validate_snapshot(data)
+    single = _load("snapshot_busy.json")
+    group = _group(single)
+    del group["count"], group["until"]
+    contract.validate_snapshot(single)  # an older server's single items carry neither key
+
+
 def test_new_keys_are_emitted_in_every_fixture():
     for name in NAMES:
         data = _load(name)

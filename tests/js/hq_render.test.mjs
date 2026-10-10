@@ -108,6 +108,69 @@ test("summarised estimates show one box per schedule and fill the week strip (T2
       page.HQ.dayDiff(Date.parse(item.at)) > 1));
 });
 
+test("close deadlines are one counted item with a time range; an older server's single items still render (D111)", () => {
+  const {page, data} = open("busy");
+  const group = data.calendar.items.find(item => item.count);
+  assert.equal(group.kind, "research_expiry");
+  const calendar = page.view("calendar");
+  const row = calendar.querySelector(`[data-row="cal:${group.id}"]`);
+  assert.match(page.text(row.querySelector(".hq-cal-title")), /^2 research notes stop being used · planned/);
+  assert.equal(row.querySelector(".hq-cal-until time").dateTime, group.until);
+  const chip = () => calendar.querySelectorAll(".hq-week-chip").find(entry => entry.dataset.kind === "research_expiry");
+  assert.equal(page.text(chip().querySelector(".hq-week-chip-title")), "2 notes expire");
+  assert.deepEqual(chip().querySelectorAll(".hq-week-when time").map(node => node.dateTime), [group.at, group.until]);
+  const next = () => page.view("upnext").querySelector(`[data-row="next:${group.id}"]`);
+  assert.match(page.text(next()), /2 research notes stop being used.*Between .+ and .+\./);
+  const older = clone(data);
+  const single = older.calendar.items.find(item => item.id === group.id);
+  delete single.count;
+  delete single.until;
+  single.title = [{t: "text", v: "Research notes stop being used"}];
+  page.show(older);
+  assert.equal(calendar.querySelector(`[data-row="cal:${group.id}"] .hq-cal-until`), null);
+  assert.equal(page.text(chip().querySelector(".hq-week-chip-title")), "Note expires");
+  assert.equal(chip().querySelectorAll(".hq-week-when time").length, 1);
+  assert.doesNotMatch(page.text(next()), /Between/);
+});
+
+test("a condition is said once: one caveat for estimates, and an equal condition is not repeated row after row", () => {
+  const {page, data} = open("quiet");
+  const caveat = "Only if the team is running and not paused. Missed turns are merged into one.";
+  const wait = "Only once AI allowance is available.";
+  const next = clone(data);
+  for (const item of next.calendar.items.filter(entry => entry.kind === "dept_turn" && !entry.past)) {
+    item.conditional = true;
+    item.detail = [{t: "text", v: item.status === "estimated" ? caveat : wait}];
+  }
+  page.show(next);
+  const calendar = page.view("calendar");
+  const times = (node, words) => page.text(node).split(words).length - 1;
+  assert.equal(times(calendar, caveat), 1, "the estimates caveat once, above the agenda");
+  assert.match(page.text(calendar.querySelector(".hq-cal-caveat")), /^≈ ?Estimated turns: Only if the team is running/);
+  const lists = calendar.querySelectorAll(".hq-cal-group").filter(group => times(group, wait));
+  assert.ok(lists.length >= 2, "each day still says it");
+  for (const group of lists) assert.equal(times(group, wait), 1, page.text(group.querySelector(".hq-cal-day")));
+  assert.doesNotMatch(page.text(calendar), /only if running/);
+  // Up next keeps each turn's own condition on its row (U1).
+  const turns = page.view("upnext").querySelectorAll(".hq-next-item").filter(row => row.dataset.kind === "dept_turn");
+  assert.ok(turns.length >= 3 && turns.every(row => page.text(row).includes(wait)));
+});
+
+test("Up next says 'in …' today, then just 'tomorrow' or the date under the clock time (desktop check)", () => {
+  const {page} = open("quiet");
+  const seen = new Set();
+  for (const row of page.view("upnext").querySelectorAll(".hq-next-item")) {
+    const at = Date.parse(row.querySelector(".hq-next-when time").dateTime);
+    const words = page.text(row.querySelector(".hq-next-rel"));
+    const days = page.HQ.dayDiff(at);
+    seen.add(Math.min(days, 2));
+    if (days === 0) assert.match(words, /^in \d/);
+    else if (days === 1) assert.equal(words, "tomorrow");
+    else assert.equal(words, page.HQ.fmt.dateWords(at));
+  }
+  assert.deepEqual([...seen].sort(), [0, 1, 2]);
+});
+
 test("the reserve rule is on, off or couldn't be read; unknown is never 'no rule' (U5)", () => {
   const {page, data} = open("quiet");
   const words = () => page.text(page.view("allowance"));

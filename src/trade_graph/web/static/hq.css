@@ -1,6 +1,7 @@
 /* Trade Graph HQ. Every rule is scoped to body.hq-page and uses only the colour tokens from dashboard.css,
    so light and dark themes follow the existing Theme toggle. Mobile first: phones get one section at a
-   time with a bottom tab bar; 768 px and up shows two columns; 1024 px and up a 12-column grid. */
+   time with a bottom tab bar; 768 px and up shows two columns; 1024 px and up two independent columns
+   (two thirds and one third) that each flow without waiting for the other. */
 
 body.hq-page {
   --hq-radius: 0.875rem;
@@ -315,6 +316,10 @@ body.hq-page .hq-cal-item {
 }
 body.hq-page .hq-cal-list > .hq-cal-item:last-child { border-bottom: 0; }
 body.hq-page .hq-cal-when { font-weight: 650; font-variant-numeric: tabular-nums; }
+body.hq-page .hq-cal-until { display: block; color: var(--muted); font-size: 0.875rem; font-weight: 400; }
+body.hq-page .hq-cal-caveat { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.9375rem; }
+body.hq-page .hq-cal-caveat .hq-cal-mark { margin-right: 0.35rem; }
+body.hq-page .hq-cal-caveat strong { color: var(--text); font-weight: 650; }
 body.hq-page .hq-cal-mark { color: var(--accent); text-align: center; }
 body.hq-page .hq-cal-main { min-width: 0; }
 body.hq-page .hq-cal-title { margin: 0; }
@@ -352,6 +357,7 @@ body.hq-page .hq-week-chip[data-status="stuck"] { border-left-color: var(--warni
 body.hq-page .hq-week-chip[data-kind="owner_checkin"] { border-left-color: var(--accent); background: var(--accent-soft); }
 body.hq-page .hq-week-chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.hq-page .hq-week-chip-top { display: flex; align-items: baseline; gap: 0.3rem; min-width: 0; }
+body.hq-page .hq-week-when { min-width: 0; font-variant-numeric: tabular-nums; }
 body.hq-page .hq-week-chip .hq-cal-mark { flex: none; }
 body.hq-page .hq-week-chip[data-status="done"] .hq-cal-mark { color: var(--success); }
 body.hq-page .hq-week-chip[data-status="problem"] .hq-cal-mark, body.hq-page .hq-week-chip[data-status="overdue"] .hq-cal-mark,
@@ -691,14 +697,25 @@ body.hq-page .hq-tab[aria-current="page"]::before {
 /* --- Desktop: 12 columns, max 1280 px ------------------------------------------------------------------- */
 
 @media (min-width: 1024px) {
-  body.hq-page .hq-root { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-  /* Rows "auto 1fr": the side column spans the flexible row, so it never stretches the Right-now row. */
-  body.hq-page .hq-board { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto 1fr; align-items: start; }
-  body.hq-page .hq-board > .hq-now { grid-column: 1 / 9; grid-row: 1; }
-  body.hq-page .hq-board > .hq-side { grid-column: 9 / 13; grid-row: 1 / 3; grid-template-columns: minmax(0, 1fr); }
-  body.hq-page .hq-board > .hq-map { grid-column: 1 / 9; grid-row: 2; }
-  body.hq-page #calendar, body.hq-page #story { grid-column: 1 / 9; }
-  body.hq-page #money, body.hq-page #decide { grid-column: 9 / 13; }
+  /* Two independent columns (desktop check), with the page order (and every anchor) unchanged. Right now, the
+     map, Calendar and Story float down the left two thirds; Needs you + Up next float right. Money and Decide
+     are ordinary blocks that start at the top and step below the right-hand float, so each column flows on
+     its own: a long "Needs you" never opens a gap under the map, and a long map never pushes Money down. */
+  body.hq-page .hq-root { display: flow-root; }
+  body.hq-page .hq-root > *, body.hq-page #hq > *, body.hq-page .hq-board > * { margin: 0 0 1.25rem; }
+  /* Plain blocks that don't contain their floats (align-content other than normal would). */
+  body.hq-page #hq, body.hq-page .hq-board { display: block; align-content: normal; margin: 0; }
+  body.hq-page .hq-board > .hq-now, body.hq-page .hq-board > .hq-map, body.hq-page #calendar, body.hq-page #story {
+    float: left; clear: left; width: calc((100% - 1.25rem) * 2 / 3);
+  }
+  body.hq-page .hq-board > .hq-side {
+    float: right; clear: right; width: calc((100% - 1.25rem) / 3); grid-template-columns: minmax(0, 1fr);
+  }
+  /* A set width, so they wait below the float instead of squeezing into the gap beside it. */
+  body.hq-page #money, body.hq-page #decide {
+    width: calc((100% - 1.25rem) / 3); margin-left: calc((100% - 1.25rem) * 2 / 3 + 1.25rem);
+  }
+  body.hq-page .hq-footer { clear: both; }
   body.hq-page .hq-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.4rem; margin: 0 0 1rem; }
   body.hq-page .hq-decision-grid { grid-template-columns: minmax(0, 1fr); }
   body.hq-page .hq-room { min-height: 8.5rem; }
@@ -719,6 +736,8 @@ body.hq-page .hq-tab[aria-current="page"]::before {
   body.hq-page .hq-filters, body.hq-page .hq-anchors, body.hq-page .hq-cal-footer, body.hq-page .hq-story-footer { display: none !important; }
   .hq-js body.hq-page .hq-section { display: grid !important; }
   body.hq-page .hq-root { display: block; }
+  body.hq-page .hq-board > .hq-now, body.hq-page .hq-board > .hq-map, body.hq-page #calendar, body.hq-page #story,
+  body.hq-page .hq-board > .hq-side, body.hq-page #money, body.hq-page #decide { float: none; width: auto; margin-left: 0; }
   body.hq-page .hq-section, body.hq-page .hq-panel { margin-bottom: 1rem; break-inside: avoid; }
   body.hq-page .shell { padding-bottom: 0; }
 }
