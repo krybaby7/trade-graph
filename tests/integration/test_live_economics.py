@@ -201,3 +201,31 @@ def test_deterministically_zero_api_receipt_does_not_require_account_allocation(
     assert result["allocated_ai_expense"] == "0"
     assert result["net_result"] == "0"
     assert result["status"] == "covered"
+
+
+def test_economics_matches_overview_economic_result(tmp_path):
+    from trade_graph.api import live
+
+    runtime = _live_runtime(tmp_path)
+    other = runtime.ledger.create_portfolio(reporting_currency="EUR")
+    runtime.ledger.deposit(other, "EUR", Decimal("100"), "other-opening")
+    receipt = _receipt(runtime)
+    runtime.budget.allocate(receipt, {runtime.portfolio_id: Decimal("0.25"), other: Decimal("0.75")})
+    runtime.recovery_history = lambda: {"status": "PARTIAL_HISTORY"}
+
+    economics = live.economics(runtime)
+    overview = live.overview(runtime)
+
+    assert economics["economic_result"] == overview["economic_result"]
+    assert "unknown_reason_codes" not in overview["economic_result"]
+    assert economics["owner_expenses"] == overview["owner_expenses"]
+    assert economics["recovery_history"] == overview["recovery_history"]
+    assert economics["invoice_uncertainty"] == overview["health"]["invoice_uncertainty"]
+    reasons, codes = economics["economic_result"]["unknown_reasons"], economics["unknown_reason_codes"]
+    assert len(reasons) == len(codes)
+    assert codes[:2] == ["other_costs_unconfirmed", "subscription_bills_unconfirmed"]
+    assert codes[-1] == "history_gap"
+    assert set(codes) <= {"subscription_bills_unconfirmed", "other_costs_unconfirmed", "bill_matches_existing_records",
+                          "bill_euro_rate_missing", "bill_euro_rate_old", "shared_between_accounts",
+                          "valuation_not_final", "ai_usage_records_incomplete", "other_cost_value_unknown",
+                          "invoice_differences", "history_gap", "other"}

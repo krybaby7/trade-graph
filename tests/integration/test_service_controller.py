@@ -602,3 +602,36 @@ def test_launcher_retains_safe_diagnostics_without_raw_output(tmp_path):
     assert [event["event"] for event in events] == ["worker_start", "worker_exit"]
     assert events[-1]["stdout_bytes"] > 0
     assert child.stdout is None and child.stderr is None
+
+
+def test_status_composes_extracted_functions(tmp_path, monkeypatch):
+    from trade_graph.application import service_controller
+
+    runtime, _ = runtime_stack(tmp_path)
+    runtime.config = SimpleNamespace(automatic_schedule=True, optimisation_manual_only=True,
+                                     schedule_intervals=None)
+    runtime.database.execute(
+        """INSERT INTO graph_service_runs (run_id, portfolio_id, mode, status, pid, pid_start_ticks, requested_at)
+        VALUES ('gone', ?, 'paper', 'RUNNING', ?, 'other-birth', ?)""",
+        (runtime.portfolio_id, os.getpid(), utc_iso(runtime.clock.now())),
+    )
+    root = Scheduler(runtime.database, runtime.clock).add_task(
+        role="optimisation", objective="owner-optimisation-cycle", portfolio_id=runtime.portfolio_id)
+    calls = []
+    for name in ("observed_run", "automatic_optimisation_enabled", "cycle_state"):
+        original = getattr(service_controller, name)
+
+        def spy(*args, _name=name, _original=original):
+            calls.append(_name)
+            return _original(*args)
+
+        monkeypatch.setattr(service_controller, name, spy)
+    status = ServiceController(runtime, prerequisites=synthetic_ready).status()
+    assert {"observed_run", "automatic_optimisation_enabled", "cycle_state"} <= set(calls)
+    assert status["service"]["status"] == "INTERRUPTED"
+    assert status["service"]["error_type"] == "ProcessInterrupted"
+    assert status["automatic_optimisation"] is False
+    assert status["optimisation"]["task_id"] == root and status["optimisation"]["status"] == "QUEUED"
+    assert service_controller.observed_run(None, runtime.clock.now()) is None
+    assert service_controller.cycle_state([{"status": "SUCCEEDED"}, {"status": "BLOCKED_BUDGET"}]) == "BLOCKED"
+    assert service_controller.automatic_optimisation_enabled(None) is True

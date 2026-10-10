@@ -48,6 +48,56 @@ def database_owned(database) -> bool:
         return True
 
 
+_OBSERVED_FIELDS = ("run_id", "portfolio_id", "mode", "status", "requested_at", "heartbeat_at", "finished_at",
+                    "error_type", "stop_requested")
+
+
+def observed_run(row, now: datetime) -> dict | None:
+    """Project one persisted service run, checking the recorded PID birth identity.
+
+    A recorded active run whose process is gone (or was replaced) is INTERRUPTED; a
+    launch that never recorded a PID is interrupted after 30 seconds.
+    """
+    if row is None:
+        return None
+    result = {key: row[key] for key in _OBSERVED_FIELDS}
+    if row["status"] in ACTIVE_SERVICE:
+        identity = process_identity(row["pid"])
+        if row["pid"] and (identity is None or identity != row["pid_start_ticks"]):
+            result.update(status="INTERRUPTED", error_type="ProcessInterrupted")
+        elif not row["pid"]:
+            started = datetime.fromisoformat(row["requested_at"].replace("Z", "+00:00"))
+            if now - started > timedelta(seconds=30):
+                result.update(status="INTERRUPTED", error_type="LaunchInterrupted")
+    return result
+
+
+def automatic_optimisation_enabled(config):
+    """Whether the timetable may start optimisation reviews without an owner request."""
+    schedule_intervals = getattr(config, "schedule_intervals", None)
+    return (
+        getattr(config, "automatic_schedule", True)
+        and not getattr(config, "optimisation_manual_only", False)
+        and (schedule_intervals is None or "optimisation" in schedule_intervals)
+    )
+
+
+def cycle_state(rows: list) -> str:
+    """Summarise an optimisation cycle's task statuses, worst first."""
+    states = {row["status"] for row in rows}
+    return (
+        "FAILED"
+        if states & {"FAILED", "DEAD_LETTER", "CANCELLED"}
+        else "BLOCKED"
+        if states & {"BLOCKED_BUDGET", "WAITING_EXTERNAL"}
+        else "RUNNING"
+        if states & {"LEASED", "RUNNING"}
+        else "QUEUED"
+        if "QUEUED" in states
+        else "SUCCEEDED"
+    )
+
+
 def service_started(database, clock, portfolio_id: str, mode: str, run_id: str | None, *, ai_available: bool) -> str:
     run_id = run_id or str(uuid.uuid4())
     now, pid = utc_iso(clock.now()), os.getpid()
@@ -191,31 +241,7 @@ class ServiceController:
         return result
 
     def _observed(self, row) -> dict | None:
-        if row is None:
-            return None
-        result = {
-            key: row[key]
-            for key in (
-                "run_id",
-                "portfolio_id",
-                "mode",
-                "status",
-                "requested_at",
-                "heartbeat_at",
-                "finished_at",
-                "error_type",
-                "stop_requested",
-            )
-        }
-        if row["status"] in ACTIVE_SERVICE:
-            identity = process_identity(row["pid"])
-            if row["pid"] and (identity is None or identity != row["pid_start_ticks"]):
-                result.update(status="INTERRUPTED", error_type="ProcessInterrupted")
-            elif not row["pid"]:
-                started = datetime.fromisoformat(row["requested_at"].replace("Z", "+00:00"))
-                if self.clock.now() - started > timedelta(seconds=30):
-                    result.update(status="INTERRUPTED", error_type="LaunchInterrupted")
-        return result
+        return observed_run(row, self.clock.now())
 
     def status(self, *, refresh: bool = False) -> dict:
         for run_id, child in tuple(self._children.items()):
@@ -252,7 +278,6 @@ class ServiceController:
         ]
         selected = ready.get("selected_provider")
         quota_routes = ready.get("subscription", {}).get("quota_policy_routes", [])
-        schedule_intervals = getattr(getattr(self.runtime, "config", None), "schedule_intervals", None)
         available_routes = ready.get("available_subscription_routes")
         if available_routes is not None:
             paused = {provider["provider"] for provider in providers if provider["ai_paused"]}
@@ -290,11 +315,7 @@ class ServiceController:
             "pause_profile": self.runtime.execution.profile(self.runtime.portfolio_id),
             "prerequisites": ready,
             "optimisation": self._cycle(cycle["task_id"]) if cycle else None,
-            "automatic_optimisation": (
-                getattr(getattr(self.runtime, "config", None), "automatic_schedule", True)
-                and not getattr(getattr(self.runtime, "config", None), "optimisation_manual_only", False)
-                and (schedule_intervals is None or "optimisation" in schedule_intervals)
-            ),
+            "automatic_optimisation": automatic_optimisation_enabled(getattr(self.runtime, "config", None)),
             "ai_usage": {
                 "providers": providers,
                 "available_quota": "provider_reported" if any(route.get("readings") for route in quota_routes)
@@ -314,21 +335,9 @@ class ServiceController:
         root = next((row for row in rows if row["task_id"] == task_id), None)
         if root is None:
             raise StaleState("saved optimisation task is missing")
-        states = {row["status"] for row in rows}
-        state = (
-            "FAILED"
-            if states & {"FAILED", "DEAD_LETTER", "CANCELLED"}
-            else "BLOCKED"
-            if states & {"BLOCKED_BUDGET", "WAITING_EXTERNAL"}
-            else "RUNNING"
-            if states & {"LEASED", "RUNNING"}
-            else "QUEUED"
-            if "QUEUED" in states
-            else "SUCCEEDED"
-        )
         return {
             "task_id": task_id,
-            "status": state,
+            "status": cycle_state(rows),
             "created_at": root["created_at"],
             "deadline_at": root["deadline_at"],
             "bounded_attempts": root["max_attempts"],
