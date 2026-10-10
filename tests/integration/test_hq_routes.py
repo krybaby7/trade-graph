@@ -107,6 +107,17 @@ def test_hq_json_routes_authenticate_and_validate_parameters(env):
         assert "bad" not in response.text
 
 
+@pytest.mark.parametrize("before", ["0001-01-02T00:00:00Z", "0001-01-01T00:00:00+00:00",
+                                    "9999-12-31T23:59:59-01:00"])
+def test_story_route_refuses_out_of_range_dates_without_a_server_error(env, before):
+    client, token, *_ = env
+    response = client.get("/api/v1/hq/story", params={"before": before},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid story query"}
+    assert "Traceback" not in response.text
+
+
 def test_journal_survives_redaction_and_is_linked(env):
     client, token, *_ = env
     assert redact("/journal") == "/journal"

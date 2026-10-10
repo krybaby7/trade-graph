@@ -43,9 +43,9 @@ def parse(value) -> datetime | None:
         return None
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return moment.astimezone(UTC) if moment.tzinfo is not None else None
+        return moment.astimezone(UTC) if moment.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None  # e.g. 9999-12-31T23:59:59-01:00 cannot be expressed in UTC
 
 
 def seconds_between(later: datetime | None, earlier: datetime | None) -> int | None:
