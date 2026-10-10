@@ -5,8 +5,14 @@ iteration": ``ORDER BY rowid DESC`` without ``LIMIT``, stopping after ``cap`` ro
 or once a row is older than ``since - 10 min``. The first row is always kept, so
 the newest record is visible even when it is older than the window.
 
+A capped reader that hits its cap inside the story window reports a floor: the
+oldest moment it read completely. The story then covers only the time from the
+highest floor on, and the next page starts there (``story_floor``), so nothing
+is silently dropped.
+
 Nothing here reads the dashboard's cached readiness, probes a process other than
-the recorded service PID, or calls a provider.
+the recorded service PID, calls a provider, or takes a database lock (no
+ownership probe).
 """
 
 from __future__ import annotations
@@ -17,12 +23,8 @@ from datetime import UTC, datetime, timedelta
 
 from trade_graph.adapters.models.subscription import sanitize_quota
 from trade_graph.api import evidence, resources
-from trade_graph.application.service_controller import (
-    ACTIVE_SERVICE,
-    ACTIVE_TASK,
-    database_owned,
-    observed_run,
-)
+from trade_graph.api.hq_copy import SKIP_REASONS
+from trade_graph.application.service_controller import ACTIVE_TASK, observed_run
 from trade_graph.domain.clock import utc_iso
 
 SCAN_SLACK = timedelta(minutes=10)
@@ -30,9 +32,12 @@ TASK_WINDOW = timedelta(days=8)
 TASK_CAP = 400
 DECISION_CAP = 120
 EVENT_CAP = 3000
-STORY_EVENT_KINDS = ("subscription_quota_deferred", "subscription_ai_paused", "service_degraded",
-                     "service_recovered", "public_feed_health", "public_history_refresh", "role_failed",
-                     "portfolio_opened", "engineer_candidate")
+DEFERRAL_CAP = 60000
+DEFERRAL_STREAK_GAP = timedelta(seconds=90)
+# Allowance deferrals are read separately (deferral_streaks): one every 30 s per waiting turn would crowd
+# every other event out of the capped scan.
+STORY_EVENT_KINDS = ("subscription_ai_paused", "service_degraded", "service_recovered", "public_feed_health",
+                     "public_history_refresh", "role_failed", "portfolio_opened", "engineer_candidate")
 UNCLEAR_ORDER_STATES = frozenset({"UNKNOWN", "SUBMITTING", "CANCEL_PENDING"})
 OPEN_ORDER_STATES = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN",
                                "CANCEL_PENDING"})
@@ -47,9 +52,9 @@ def parse(value) -> datetime | None:
         return None
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return moment.astimezone(UTC) if moment.tzinfo is not None else None
+        return moment.astimezone(UTC) if moment.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None  # e.g. 9999-12-31T23:59:59-01:00 cannot be expressed in UTC
 
 
 def seconds_between(later: datetime | None, earlier: datetime | None) -> int | None:
@@ -76,6 +81,20 @@ def _scan(rows: Iterable, since: datetime, cap: int, column: str = "created_at")
     return result
 
 
+def _floor(rows: list[dict], cap: int, story_start: datetime) -> datetime | None:
+    """The oldest moment a capped reader read completely, when its cap cut into the story window."""
+    if len(rows) < cap:
+        return None
+    oldest = min((moment for row in rows if (moment := parse(row.get("created_at"))) is not None), default=None)
+    return oldest if oldest is not None and oldest >= story_start else None
+
+
+def story_floor(story_start: datetime, *readers: tuple[list[dict], int]) -> datetime | None:
+    """The latest floor of the capped story readers, or None when none was cut inside the window."""
+    floors = [floor for rows, cap in readers if (floor := _floor(rows, cap, story_start)) is not None]
+    return max(floors, default=None)
+
+
 # --- R1-R29 -------------------------------------------------------------------------------------
 
 
@@ -86,14 +105,15 @@ def portfolio(database, pid: str) -> dict | None:  # R1
 
 
 def current_run(database, now: datetime) -> dict:  # R2
+    """The newest recorded run, checked against its recorded PID only.
+
+    HQ never probes database ownership (D110): a probe takes the database lock for a
+    moment and could collide with the owner's Start. HQ therefore never reports
+    ``ATTACHED_EXISTING``; Mission Control still does.
+    """
     row = database.execute("SELECT * FROM graph_service_runs ORDER BY rowid DESC LIMIT 1").fetchone()
-    observed = observed_run(row, now)
-    if observed is None or observed["status"] not in ACTIVE_SERVICE:
-        if database_owned(database):
-            observed = {"run_id": None, "status": "ATTACHED_EXISTING", "heartbeat_at": None,
-                        "requested_at": None, "finished_at": None, "error_type": None}
-    return observed or {"run_id": None, "status": "IDLE", "heartbeat_at": None, "requested_at": None,
-                        "finished_at": None, "error_type": None}
+    return observed_run(row, now) or {"run_id": None, "status": "IDLE", "heartbeat_at": None,
+                                      "requested_at": None, "finished_at": None, "error_type": None}
 
 
 def recent_runs(database) -> list[dict]:  # R3
@@ -183,6 +203,71 @@ def findings(database, pid: str, now_iso: str) -> list[dict]:  # R13
     return [evidence._finding(row, now_iso) for row in rows]
 
 
+def deferral_streaks(database, pid: str, *, since: datetime, before: datetime | None = None,
+                     cap: int = DEFERRAL_CAP) -> list[dict]:  # R14b
+    """Allowance-wait streaks, newest first, counted in full back to ``since``.
+
+    Reads only the time, role and task of each ``subscription_quota_deferred`` row, newest first, until
+    a row is older than ``since`` (rows up to 90 s older are peeked at to see whether a streak goes on)
+    or ``cap`` rows were read. A department's streak breaks after a 90 s gap. A streak is
+    ``complete: False`` when it may continue before the oldest row read. Malformed payloads are skipped.
+    """
+    sql = """SELECT created_at,
+        CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.role') END AS role,
+        CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.task_id') END AS task_id
+        FROM activity_events WHERE (portfolio_id=? OR portfolio_id IS NULL) AND kind='subscription_quota_deferred'"""
+    params: list = [pid]
+    if before is not None:
+        sql += " AND created_at < ?"
+        params.append(utc_iso(before))
+    open_by_role: dict[str, dict] = {}
+    streaks: list[dict] = []
+    read, oldest_read = 0, None
+    for row in database.execute(sql + " ORDER BY rowid DESC", tuple(params)):
+        moment, role = parse(row["created_at"]), row["role"]
+        if moment is not None and moment < since:
+            # Peek: an older row of the same department within the gap means that streak goes on.
+            if moment < since - DEFERRAL_STREAK_GAP:
+                break
+            streak = open_by_role.get(role) if isinstance(role, str) else None
+            if streak is not None and streak["first_at"] - moment <= DEFERRAL_STREAK_GAP:
+                streak["complete"] = False
+            continue
+        if read >= cap:
+            for streak in open_by_role.values():  # the cap stopped the scan: streaks near its end may go on
+                if oldest_read is not None and streak["first_at"] - oldest_read <= DEFERRAL_STREAK_GAP:
+                    streak["complete"] = False
+            break
+        read += 1
+        if moment is None or not isinstance(role, str) or not role:
+            continue
+        oldest_read = moment if oldest_read is None else min(oldest_read, moment)
+        streak = open_by_role.get(role)
+        if streak is None or streak["first_at"] - moment > DEFERRAL_STREAK_GAP:
+            streak = {"role": role, "first_at": moment, "last_at": moment, "count": 0,
+                      "task_id": row["task_id"] if isinstance(row["task_id"], str) else None, "complete": True,
+                      "moments": []}
+            open_by_role[role] = streak
+            streaks.append(streak)
+        streak["first_at"] = min(streak["first_at"], moment)
+        streak["last_at"] = max(streak["last_at"], moment)
+        streak["count"] += 1
+        streak["moments"].append(moment)  # lets the story split a streak where a page is cut
+    return streaks
+
+
+def invocation_failures(database, task_ids: list[str]) -> dict[str, str]:  # R31
+    """The recorded failure (e.g. "unsupported", "rate_limit") of each task's subscription invocation."""
+    failures = {}
+    for task_id in list(dict.fromkeys(task_ids))[:20]:
+        row = database.execute("SELECT result_json FROM subscription_invocations WHERE task_id=? LIMIT 1",
+                               (task_id,)).fetchone()
+        failure = loads(row["result_json"]).get("failure") if row else None
+        if isinstance(failure, str):
+            failures[task_id] = failure
+    return failures
+
+
 def activity_events(database, pid: str, since: datetime) -> list[dict]:  # R14
     marks = ",".join("?" for _ in STORY_EVENT_KINDS)
     cursor = database.execute(
@@ -218,15 +303,13 @@ def orders(database, pid: str) -> dict:  # R17
             "unclear": sum(count for state, count in counts.items() if state in UNCLEAR_ORDER_STATES)}
 
 
-def fills(database, pid: str) -> list[dict]:  # R18
-    result = []
-    for row in database.execute(
-            """SELECT fill_id, intent_id, document_json, created_at FROM fills WHERE portfolio_id=?
-            ORDER BY rowid DESC LIMIT 40""", (pid,)).fetchall():
-        item = dict(row)
-        item["document"] = loads(item.pop("document_json"))
-        result.append(item)
-    return result
+def fills(database, pid: str, since: datetime) -> list[dict]:  # R18
+    rows = _scan(database.execute(
+        """SELECT fill_id, intent_id, document_json, created_at FROM fills WHERE portfolio_id=?
+        ORDER BY rowid DESC""", (pid,)), since, DECISION_CAP)
+    for row in rows:
+        row["document"] = loads(row.pop("document_json"))
+    return rows
 
 
 def secretary(database, pid: str) -> list[dict]:  # R19
@@ -308,8 +391,14 @@ def optimisation_cycle(database, pid: str) -> dict | None:  # R26
     if root is None:
         return None
     rows = database.execute("SELECT status, role FROM tasks WHERE root_task_id=?", (root["task_id"],)).fetchall()
+    # The controller refuses a new review while any task of any cycle is unresolved (service_controller.py).
+    active = database.execute(
+        """SELECT 1 FROM tasks WHERE portfolio_id=?
+        AND status IN ('QUEUED', 'LEASED', 'RUNNING', 'WAITING_EXTERNAL', 'BLOCKED_BUDGET')
+        AND root_task_id IN (SELECT task_id FROM tasks WHERE objective='owner-optimisation-cycle') LIMIT 1""",
+        (pid,)).fetchone() is not None
     return {"task_id": root["task_id"], "created_at": root["created_at"], "deadline_at": root["deadline_at"],
-            "state": cycle_state(rows) if rows else cycle_state([root])}
+            "state": cycle_state(rows) if rows else cycle_state([root]), "active": active}
 
 
 def resource_observation(runtime) -> dict:  # R27 (30 s cache)
@@ -348,10 +437,39 @@ def config(runtime) -> dict:  # R29
 
 
 
-def period_orders(database, pid: str, since: datetime) -> list[dict]:  # R17b: orders placed since a moment
-    cursor = database.execute(
-        "SELECT intent_id, state, created_at FROM order_intents WHERE portfolio_id=? ORDER BY rowid DESC", (pid,))
-    return _scan(cursor, since, DECISION_CAP)
+def period_counts(database, pid: str, since: datetime, until: datetime) -> dict:  # R30
+    """Exact counts for the review prompt's "since" line, from ``since`` to ``until`` inclusive.
+
+    COUNT(*) queries rather than the capped lists (an exception to the capped readers, D110): the
+    prompt states these numbers as exact.
+    """
+    bounds = (utc_iso(since), utc_iso(until))
+    window = "created_at >= ? AND created_at <= ?"
+
+    def count(sql: str, params: tuple) -> int:
+        return int(database.execute(sql, params).fetchone()[0] or 0)
+
+    decisions_row = database.execute(
+        f"""SELECT COUNT(*) AS total, COALESCE(SUM(action IN ('no_action', 'hold')), 0) AS waits
+        FROM decisions WHERE portfolio_id=? AND {window}""", (pid, *bounds)).fetchone()
+    skips = tuple(SKIP_REASONS)
+    marks = ",".join("?" for _ in skips)
+    problems = count(
+        f"""SELECT COUNT(*) FROM tasks WHERE (portfolio_id=? OR portfolio_id IS NULL) AND {window} AND (
+            status IN ('WAITING_EXTERNAL', 'BLOCKED_BUDGET') OR status = 'FAILED'
+            OR (status = 'DEAD_LETTER' AND COALESCE(CASE WHEN json_valid(output_json)
+                THEN json_extract(output_json, '$.reason') END, '') NOT IN ({marks})))""",
+        (pid, *bounds, *skips))
+    return {
+        "decisions": int(decisions_row["total"] or 0),
+        "waits": int(decisions_row["waits"] or 0),
+        "orders": count(f"SELECT COUNT(*) FROM order_intents WHERE portfolio_id=? AND {window}", (pid, *bounds)),
+        "completed_trades": count(f"SELECT COUNT(*) FROM fills WHERE portfolio_id=? AND {window}", (pid, *bounds)),
+        "research_notes": count(
+            f"SELECT COUNT(*) FROM findings WHERE (portfolio_id=? OR portfolio_id IS NULL) AND {window}",
+            (pid, *bounds)),
+        "problems": problems,
+    }
 
 
 def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datetime, owner: bool) -> dict:
@@ -362,6 +480,12 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
     providers = provider_states(database)
     tasks = active_tasks(database, pid)
     working = [task["task_id"] for task in tasks if task["status"] in {"LEASED", "RUNNING"}]
+    recent = recent_tasks(database, pid, now)
+    decision_rows = decisions(database, pid, min(story_start, prompt_from))
+    events = activity_events(database, pid, story_start)
+    fill_rows = fills(database, pid, story_start)
+    floor = story_floor(story_start, (recent, TASK_CAP), (decision_rows, DECISION_CAP), (events, EVENT_CAP),
+                        (fill_rows, DECISION_CAP))
     return {
         "now": now, "now_iso": now_iso,
         "portfolio": portfolio(database, pid),
@@ -372,17 +496,19 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
         "quota": latest_quota(database, providers, now),
         "schedules": schedules(database, pid),
         "active_tasks": tasks,
-        "recent_tasks": recent_tasks(database, pid, now),
+        "recent_tasks": recent,
         "attempt_starts": attempt_starts(database, working),
-        "decisions": decisions(database, pid, min(story_start, prompt_from)),
+        "decisions": decision_rows,
         "leader_decisions": leader_decisions(database, pid),
         "findings": findings(database, pid, now_iso),
-        "events": activity_events(database, pid, story_start),
+        "events": events,
+        # Allowance waits are counted from where the page starts, so an ongoing wait stays on the first page.
+        "deferrals": deferral_streaks(database, pid, since=max(story_start, floor or story_start)),
+        "story_floor": floor,
         "marks": latest_marks(database, pid),
         "fx": latest_fx(database),
         "orders": orders(database, pid),
-        "recent_orders": period_orders(database, pid, prompt_from),
-        "fills": fills(database, pid),
+        "fills": fill_rows,
         "secretary": secretary(database, pid),
         "rollout": rollout(database, pid),
         "improvements": improvements(database, pid),
@@ -423,4 +549,8 @@ def story_before(runtime, *, start: datetime, before: datetime) -> dict:
         fill_rows.append(row)
     runs = [row for row in recent_runs(database)
             if (moment := parse(row.get("requested_at"))) is not None and moment < before]
-    return {"recent_tasks": tasks, "decisions": rows, "events": events, "fills": fill_rows, "runs": runs}
+    floor = story_floor(start, (tasks, TASK_CAP), (rows, DECISION_CAP), (events, EVENT_CAP),
+                        (fill_rows, DECISION_CAP))
+    return {"recent_tasks": tasks, "decisions": rows, "events": events, "fills": fill_rows, "runs": runs,
+            "deferrals": deferral_streaks(database, pid, since=max(start, floor or start), before=before),
+            "story_floor": floor}

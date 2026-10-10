@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from tests.integration.test_dashboard import _client
 
-from trade_graph.api import hq, resources
+from trade_graph.api import hq, hq_facts, resources
 from trade_graph.api.auth import issue_session, role_for_token
 from trade_graph.api.hq_contract import DEPARTMENT_ORDER, ISO_MS_PATTERN, iso_ms, validate_snapshot
 from trade_graph.api.security import redact
@@ -65,8 +66,8 @@ def schedule(env, role, next_due: float, *, interval=14400, last_due: float | No
 
 
 def task(env, task_id, role, status, *, created: float = -60, objective=None, dedup_key=None, output=None,
-         lease: float | None = None, due: float | None = None, attempts=0, result=None):
-    insert(env, "tasks", task_id=task_id, root_task_id=task_id, portfolio_id=env.pid, role=role,
+         lease: float | None = None, due: float | None = None, attempts=0, result=None, root=None):
+    insert(env, "tasks", task_id=task_id, root_task_id=root or task_id, portfolio_id=env.pid, role=role,
            objective=objective or f"{role}-review", status=status, due_at=None if due is None else at(env, due),
            priority=0, dedup_key=dedup_key, max_steps=1, max_attempts=3, attempts_used=attempts,
            lease_expires_at=None if lease is None else at(env, lease), input_json="{}",
@@ -122,6 +123,8 @@ def snap(env, viewer=OWNER, **kwargs) -> dict:
     # Every projected string survives redaction; only the /journal route waits for its allowlist entry (B.11).
     changed = [(old, new) for old, new in zip(_strings(data), _strings(redact(data)), strict=True) if old != new]
     assert {old for old, _ in changed} <= {"/journal"}
+    for item in data["attention"]:  # "since" is when something began, never a future moment (U3)
+        assert item["since"] is None or item["since"] <= data["as_of"], item["id"]
     return data
 
 
@@ -226,6 +229,8 @@ def test_stale_heartbeat_is_silent_and_start_not_recommended(env):
     start = card(data, "start_trading")
     assert start["shown"] is True and start["available"] is False and start["recommended"] is False
     assert "only reconnect" in text(start["unavailable_because"])
+    assert "the team is on" not in text(start["preview"]["when"])
+    assert "isn't responding" in text(start["preview"]["when"])
     assert codes(data)[0] == "team_silent"
     assert all(item["light"] == "off" for item in data["departments"] if item["kind"] == "ai")
 
@@ -253,6 +258,81 @@ def test_system_pause_stuck_card_and_controls(env):
     assert softer["team"]["pause"]["departments_paused"] is False
 
 
+def _mark(env, asset, seconds_ago):
+    insert(env, "valuation_marks", mark_id=f"m-{asset}-{seconds_ago}", portfolio_id=env.pid, asset=asset,
+           quote_currency="USD", mark="62000", convention="mid", observed_at=at(env, -seconds_ago), stale=0,
+           source="synthetic")
+
+
+def test_old_run_feed_problem_does_not_colour_the_new_run(env):
+    run(env, "STOPPED", heartbeat=-610, run_id="r-old", requested=-7200, finished=-600)
+    env.runtime.ledger._activity(env.pid, "public_feed_health",
+                                 {"run_id": "r-old", "status": "degraded", "symbol": "BTC/USD",
+                                  "first_failed_at_utc": at(env, -1800), "error_type": "TimeoutError"},
+                                 created_at=at(env, -1700))
+    env.runtime.ledger._activity(env.pid, "service_degraded", {"run_id": "r-old", "failures": ["reconciliation:X"]},
+                                 created_at=at(env, -1650))
+    run(env, requested=-300)
+    _mark(env, "BTC", 5)
+    data = snap(env)
+    market = room(data, "market")
+    assert market["light"] == "ok" and text(market["now"]) == "Prices are arriving."
+    finished = iso_ms(at(env, -600))
+    spans = [item for item in data["story"]["items"] if item["kind"] in ("prices_problem", "routine_problem")]
+    assert sorted(item["kind"] for item in spans) == ["prices_problem", "routine_problem"]
+    for item in spans:
+        assert item["until"] == finished
+        assert "No longer tracked" in text(item["consequence"])
+        assert "Recovered" not in text(item["consequence"])
+    # The current run's own feed problem still turns the light.
+    env.runtime.ledger._activity(env.pid, "public_feed_health",
+                                 {"run_id": "r-1", "status": "degraded", "symbol": "BTC/USD",
+                                  "first_failed_at_utc": at(env, -20), "error_type": "TimeoutError"},
+                                 created_at=at(env, -10))
+    again = snap(env)
+    assert room(again, "market")["light"] == "attention"
+    current = [item for item in again["story"]["items"] if item["kind"] == "prices_problem"
+               and item["until"] is None]
+    assert len(current) == 1 and "No longer tracked" not in text(current[0]["consequence"])
+
+
+def test_safety_stop_cause_needs_evidence_close_in_time(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")
+    task(env, "t-old", "trader", "FAILED", created=-600 - 7200, output={"reason": "market feed blocks new exposure"})
+    data = snap(env)
+    why = text(data["attention"][0]["why"])
+    assert "a problem it recorded" in why and "Trader's turn failed" not in why
+
+
+def test_maintenance_mode_stop_is_not_blamed_on_an_old_failure(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="Subscription management service: retain existing paper orders and "
+                                               "positions; no new decisions.")
+    task(env, "t-old", "trader", "FAILED", created=-6 * 86400, output={"reason": "market feed blocks new exposure"})
+    data = snap(env)
+    assert data["now"]["code"] == "safety_stop"
+    why = text(data["attention"][0]["why"])
+    assert "maintenance mode" in why and "Trader's turn failed" not in why
+    assert "maintenance mode" in text(data["team"]["pause"]["reason"])
+
+
+def test_stop_during_a_safety_stop_is_partly_reversible_and_not_recommended(env):
+    run(env)
+    pause(env, "MANAGE_ONLY", "system", reason="role unavailable; manage positions")
+    stop = card(snap(env), "stop_safely")
+    assert stop["shown"] is True and stop["recommended"] is False
+    assert stop["facts"]["flat"] is True
+    preview = stop["preview"]
+    assert preview["reversible"] == "partly"
+    assert "Not recommended" in text(preview["when"])
+    assert "cause isn't fixed" in text(preview["undo"])
+    assert any("replaces the automatic safety stop" in text(line) for line in preview["what_happens"])
+    env.db.execute("DELETE FROM pause_states WHERE portfolio_id=?", (env.pid,))
+    normal = card(snap(env), "stop_safely")["preview"]
+    assert normal["reversible"] == "yes" and "Not recommended" not in text(normal["when"])
+
+
 def test_owner_pause_resume_shown_with_predicted_blockers(env):
     run(env)
     pause(env, "MANAGE_ONLY", "owner")
@@ -272,6 +352,37 @@ def test_owner_pause_resume_shown_with_predicted_blockers(env):
     assert {"orders_unclear", "owner_paused"} <= set(codes(data))
     assert data["money"]["holdings"]["unclear_orders"] == 1
     assert room(data, "accounts")["light"] == "attention"
+
+
+def test_pause_never_downgrades_a_stronger_leader_pause(env):
+    run(env)
+    reading(env, remaining=38)
+    pause(env, "FLATTEN", "leader", reason="Too volatile to hold anything")
+    data = snap(env)
+    pause_card = card(data, "pause_ai")
+    assert pause_card["shown"] is True and pause_card["available"] is False
+    assert pause_card["recommended"] is False
+    assert "stronger" in text(pause_card["unavailable_because"])
+    assert "'sell everything'" in text(pause_card["unavailable_because"])
+    allowance = next(item for item in data["attention"] if item["id"] == "allowance_near")
+    assert allowance["decision"] is None and allowance["can_fix_here"] is False
+    env.db.execute("UPDATE pause_states SET profile='PAUSE_DECISIONS' WHERE portfolio_id=?", (env.pid,))
+    softer = snap(env)
+    pause_card = card(softer, "pause_ai")
+    assert pause_card["available"] is True
+    assert any("replaces the Leader's 'decisions paused' setting" in text(line)
+               for line in pause_card["preview"]["what_happens"])
+    assert next(item for item in softer["attention"] if item["id"] == "allowance_near")["decision"] == "pause_ai"
+
+
+def test_review_is_unavailable_while_any_cycle_task_is_unresolved(env):
+    quiet(env)
+    assert card(snap(env), "start_optimisation")["available"] is True
+    task(env, "t-cycle", "optimisation", "SUCCEEDED", created=-900, objective="owner-optimisation-cycle")
+    task(env, "t-cycle-a", "optimisation", "FAILED", created=-800, root="t-cycle")
+    task(env, "t-cycle-b", "leader", "RUNNING", created=-700, root="t-cycle", lease=60)
+    review = card(snap(env), "start_optimisation")
+    assert review["available"] is False and "already in progress" in text(review["unavailable_because"])
 
 
 def test_resume_hidden_when_running(env):
@@ -317,6 +428,95 @@ def test_quota_deferrals_collapse(env):
     assert "50 retries" in text(waits[0]["headline"])
 
 
+def events(env, kind, rows):
+    """Bulk activity events: ``rows`` are (seconds from now, payload) pairs, inserted in time order."""
+    with env.db.transaction() as connection:
+        connection.executemany(
+            """INSERT INTO activity_events (event_id, portfolio_id, kind, payload_json, created_at, hash, prev_hash)
+            VALUES (?, ?, ?, ?, ?, ?, NULL)""",
+            [(f"e-{kind}-{index}", env.pid, kind, json.dumps(payload), at(env, seconds), f"h-{kind}-{index}")
+             for index, (seconds, payload) in enumerate(sorted(rows, key=lambda row: row[0]))])
+
+
+def _page_through(env, first: dict) -> tuple[list[dict], list[dict]]:
+    """Every story page from ``first`` back to the first uncut page: (pages, items de-duplicated by id)."""
+    pages, seen = [first], {}
+    while pages[-1]["next_before"] != pages[-1]["window_start"] and len(pages) < 12:
+        pages.append(hq.story_page(env.runtime, OWNER, before=pages[-1]["next_before"])["story"])
+    for page in pages:
+        for item in page["items"]:
+            seen.setdefault(item["id"], item)
+    return pages, list(seen.values())
+
+
+def test_long_allowance_wait_is_counted_and_older_problems_stay_reachable(env):
+    run(env)
+    reading(env)
+    window_start = env.runtime.clock.now() - timedelta(hours=72)
+    # 72 hours of trader deferrals every 30 s, beginning a minute before the story window.
+    first = -72 * 3600 - 60
+    events(env, "subscription_quota_deferred",
+           [(first + 30 * index, {"task_id": "t-77", "role": "trader", "inference_attempts": 0})
+            for index in range(8640)])
+    events(env, "subscription_ai_paused", [(-40 * 3600, {"task_id": "t-paused", "role": "trader"})])
+    data = snap(env)
+    assert data["team"]["ai"]["state"] == "waiting_for_allowance"
+    story = data["story"]
+    wait = next(item for item in story["items"] if item["kind"] == "allowance_wait")
+    assert wait["count"] >= 8600
+    assert abs((hq_facts.parse(wait["at"]) - window_start).total_seconds()) <= 60
+    assert "at least" in text(wait["headline"])
+    assert any(item["kind"] == "ai_paused" for item in story["items"])
+    assert story["next_before"] == story["window_start"]  # nothing was cut
+
+    # A capped reader: 130 decisions in the last day are more than the 120 the reader reads.
+    for index in reversed(range(130)):  # oldest first, as rows are written
+        decision(env, f"d-many-{index:03d}", created=-60 - 600 * index)
+    data = snap(env)
+    story = data["story"]
+    assert story["window_start"] > iso_ms(window_start)
+    assert story["next_before"] != story["window_start"]
+    pages, items = _page_through(env, story)
+    ids = {item["id"] for item in items}
+    assert {f"decision:d-many-{index:03d}" for index in range(130)} <= ids
+    assert any(item["kind"] == "ai_paused" for item in items)
+    waits = [item for item in items if item["kind"] == "allowance_wait"]
+    assert sum(item["count"] for item in waits) >= 8600  # split where a page starts, never dropped
+    for page in pages:
+        validate_snapshot({**data, "story": page})
+        if page is not pages[-1]:
+            assert page["next_before"] != page["window_start"]
+
+
+def test_deferral_streaks_skip_malformed_rows_and_split_by_department(env):
+    events(env, "subscription_quota_deferred",
+           [(-300 + 30 * index, {"task_id": "t-1", "role": "trader"}) for index in range(5)]
+           + [(-290 + 30 * index, {"task_id": "t-2", "role": "research"}) for index in range(3)])
+    insert(env, "activity_events", event_id="e-bad", portfolio_id=env.pid, kind="subscription_quota_deferred",
+           payload_json="{", created_at=at(env, -100), hash="h-bad", prev_hash=None)
+    streaks = hq_facts.deferral_streaks(env.db, env.pid, since=env.runtime.clock.now() - timedelta(hours=1))
+    assert sorted((streak["role"], streak["count"], streak["complete"]) for streak in streaks) == [
+        ("research", 3, True), ("trader", 5, True)]
+
+
+def test_story_paging_keeps_items_that_share_a_timestamp(env):
+    # 59 newer decisions, then 3 that share one millisecond: the 60-item page ends among those 3.
+    for index in range(59):
+        decision(env, f"d-{index:02d}", created=-60 - 60 * index)
+    shared = at(env, -60 - 60 * 59 - 120)
+    for suffix in ("a", "b", "c"):
+        insert(env, "decisions", decision_id=f"d-same-{suffix}", portfolio_id=env.pid, action="no_action",
+               payload_json=json.dumps({"action": "no_action", "rationale": "Waiting."}), mandate_revision="1",
+               policy_revision="1", snapshot_id="snap", system_version_id="v1", created_at=shared, task_id=None)
+    expected = {f"decision:d-{index:02d}" for index in range(59)} | {f"decision:d-same-{s}" for s in "abc"}
+    first = snap(env)["story"]
+    assert len(first["items"]) == 60 and first["next_before"] != first["window_start"]
+    second = hq.story_page(env.runtime, OWNER, before=first["next_before"], limit=60)["story"]
+    ids = [item["id"] for item in first["items"] + second["items"]]
+    found = [item_id for item_id in dict.fromkeys(ids) if item_id.startswith("decision:")]
+    assert set(found) == expected and len(found) == 62
+
+
 def test_probably_low_allowance_gate(env):
     run(env)
     reading(env, remaining=38)
@@ -351,11 +551,126 @@ def test_schedule_selection(env):
     assert not [item for item in data["calendar"]["items"] if item["dept"] == "optimisation"]
 
 
+def test_reserve_rule_unknown_is_not_none(env):
+    data = snap(env)  # no allowance reading and no readable reserve policy
+    assert data["team"]["allowance"]["stop_line_state"] == "unknown"
+    assert data["prompt_facts"]["allowance"] == "No allowance reading yet; the reserve rule couldn't be read"
+    run(env)
+    reading(env)
+    on = snap(env)
+    assert on["team"]["allowance"]["stop_line_state"] == "on" and on["team"]["allowance"]["stop_line_percent"] == 40
+    env.runtime.subscription_readonly_status = None
+    unknown = snap(env)
+    assert unknown["team"]["allowance"]["stop_line_state"] == "unknown"
+    assert unknown["team"]["allowance"]["stop_line_percent"] is None
+    assert "the reserve rule couldn't be read" in unknown["prompt_facts"]["allowance"]
+    assert "no reserve rule is set" not in unknown["prompt_facts"]["allowance"]
+    assert "No reserve rule is set." not in text(unknown["team"]["allowance"]["plain"])
+    env.runtime.subscription_readonly_status = lambda: {"subscription": {"quota_reserve_policy": {
+        "enabled": False, "admission_threshold_remaining_percent": 40}}}
+    off = snap(env)
+    assert off["team"]["allowance"]["stop_line_state"] == "off"
+    assert "No reserve rule is set." in text(off["team"]["allowance"]["plain"])
+    assert "no reserve rule is set" in off["prompt_facts"]["allowance"]
+
+
+def test_leftover_schedule_rows_are_ignored(env):
+    env.runtime.config = PaperRuntimeConfig(schedule_intervals={"trader": 14400})
+    run(env)
+    reading(env)
+    schedule(env, "trader", 3600)
+    schedule(env, "research", -3 * 86400, interval=86400)
+    data = snap(env)
+    assert room(data, "research")["next"] is None
+    assert not [item for item in data["calendar"]["items"] if item["dept"] == "research"]
+    assert next(turn for turn in data["prompt_facts"]["next_turns"] if turn["dept"] == "research")["at"] is None
+    assert "Overdue" not in json.dumps(data)
+    assert room(data, "trader")["next"]["status"] == "planned"
+
+
+def test_artifact_row_wins(env):
+    run(env)
+    schedule(env, "research", 7200, interval=86400, last_due=-600, schedule_id="s-plain")
+    schedule(env, "research", 9000, interval=86400, last_due=-5000, name="artifact-research-review",
+             schedule_id="s-artifact")
+    data = snap(env)
+    research = room(data, "research")["next"]
+    assert research["at"] == iso_ms(at(env, 9000)) and research["extra_rows"] == 1
+    assert [item["id"] for item in data["calendar"]["items"] if item["dept"] == "research"][0] == \
+        f"turn:s-artifact:{iso_ms(at(env, 9000))}"
+
+
+def test_overdue_projections_start_after_now(env):
+    run(env)
+    reading(env, remaining=38)
+    schedule(env, "trader", -5 * 3600)
+    data = snap(env)
+    estimated = sorted(item["at"] for item in data["calendar"]["items"]
+                       if item["dept"] == "trader" and item["status"] == "estimated")
+    assert estimated and all(moment > data["as_of"] for moment in estimated)
+    assert estimated[0] == iso_ms(at(env, 4 * 3600))
+
+
+def _first_trader_turn(data) -> dict:
+    return min((item for item in data["calendar"]["items"] if item["dept"] == "trader"
+                and item["kind"] == "dept_turn"), key=lambda item: item["at"])
+
+
+@pytest.mark.parametrize(("gate", "words"), [
+    ("G1", "Only if the team is running."), ("G2", "Only if the AI is back on."),
+    ("G3", "Only once AI allowance is available."), ("G5", "Only if Resume is possible."),
+])
+def test_first_turn_carries_its_condition(env, gate, words):
+    if gate == "G1":
+        run(env, heartbeat=-91)
+    else:
+        run(env)
+    reading(env, remaining=3, paused_reason="subscription quota exhausted" if gate == "G2" else None)
+    if gate == "G3":
+        events(env, "subscription_quota_deferred", [(-60, {"task_id": "t-q", "role": "research"})])
+    if gate == "G5":
+        pause(env, "MANAGE_ONLY", "owner")
+    schedule(env, "trader", 3600)
+    first = _first_trader_turn(snap(env))
+    assert first["status"] == "planned" and first["conditional"] is True
+    assert text(first["detail"]) == words
+
+
+def test_next_status(env):
+    run(env)
+    reading(env)
+    schedule(env, "trader", 3600)
+    assert room(snap(env), "trader")["next"]["status"] == "planned"
+    for due, status in ((-60, "due_now"), (-3600, "overdue")):
+        env.db.execute("UPDATE schedules SET next_due_at=? WHERE schedule_id='s-trader'", (at(env, due),))
+        trader = room(snap(env), "trader")["next"]
+        assert (trader["overdue"], trader["status"]) == (True, status)
+    env.db.execute("DELETE FROM subscription_provider_state")
+    reading(env, remaining=38)
+    assert room(snap(env), "trader")["next"]["status"] == "waiting"
+
+
+def test_management_only_is_a_gate(env):
+    run(env, status="MANAGEMENT_ONLY")
+    reading(env)
+    schedule(env, "trader", -3600)
+    schedule(env, "research", 7200, interval=86400)
+    data = snap(env)
+    assert data["now"]["code"] == "calm"
+    assert "started while AI wasn't ready" in text(data["now"]["detail"])
+    trader = room(data, "trader")["next"]
+    assert trader["status"] == "waiting" and "started without AI" in text(trader["waiting_because"])
+    research = min((item for item in data["calendar"]["items"] if item["dept"] == "research"),
+                   key=lambda item: item["at"])
+    assert text(research["detail"]) == "Only if AI becomes available." and research["conditional"] is True
+
+
 def test_notes_expiring_before_trader(env):
     quiet(env)
     finding(env, "f-90", created=-3600, expires=1800)
     data = snap(env)
     assert "notes_expire_early" in codes(data)
+    assert next(item for item in data["attention"] if item["id"] == "notes_expire_early")["since"] is None
     expiry = next(item for item in data["calendar"]["items"] if item["kind"] == "research_expiry")
     assert "Before the Trader's turn" in text(expiry["warning"])
     trader = room(data, "trader")
@@ -370,19 +685,23 @@ def test_unknown_money_is_null(env):
     money = data["money"]
     assert money["change"]["total"] is None
     assert money["change"]["unknown_reason"]
-    unknown = {"total", "currency_effect", "team_effect", "practice_value", "net"}
+    zero_money = []
 
-    def walk(value):
+    def walk(value, path):
+        # Every Money object and money segment in the whole snapshot (review T13), not only the money block.
         if isinstance(value, dict):
+            if "amount" in value and "currency" in value and Decimal(value["amount"]) == 0:
+                zero_money.append(path)
             for key, item in value.items():
-                if key in unknown:
-                    assert item is None or item["amount"] != "0", key
-                walk(item)
+                walk(item, f"{path}.{key}")
         elif isinstance(value, list):
-            for item in value:
-                walk(item)
+            for index, item in enumerate(value):
+                walk(item, f"{path}[{index}]")
 
-    walk(money)
+    walk(data, "snapshot")
+    assert zero_money == []
+    rendered = [value for value in _strings(data) if re.search(r"[$€£]0\.00", value)]
+    assert rendered == []
     assert money["practice_value"] is None
     assert "not known yet" in text(data["now"]["detail"])
     assert data["prompt_facts"]["practice_value"] is None
@@ -410,6 +729,8 @@ def test_history_gap_honest_note(env):
     assert "history_gap" in [notice["code"] for notice in data["notices"]]
     costs = next(item for item in data["attention"] if item["id"] == "costs_unconfirmed")
     assert "history gap" in text(costs["consequence"])
+    bill = card(data, "record_bill")
+    assert bill["recommended"] is True and not text(bill["recommended_because"]).startswith("Optional")
     env.runtime.recovery_history = lambda: {"status": "UNAVAILABLE"}
     assert "history_unverified" in [notice["code"] for notice in snap(env)["notices"]]
 
@@ -444,6 +765,40 @@ def test_live_mode_disables_decisions_and_paper_copy(env):
     assert "Paper results are simulated." not in encoded
     assert "live_mode" in [notice["code"] for notice in data["notices"]]
     assert "live account" in text(data["money"]["at_risk"])
+    assert "practice" not in encoded.lower().replace('"practice_value"', "")
+
+
+def _orders_and_problems(env, *, mode):
+    quiet(env, mode=mode)
+    insert(env, "order_intents", intent_id="i-unclear", portfolio_id=env.pid, client_order_id="c-unclear",
+           state="UNKNOWN", symbol="BTC/USD", payload_json='{"client_order_id":"c-unclear","symbol":"BTC/USD"}',
+           created_at=at(env, -30), updated_at=at(env, -30))
+    env.db.execute("UPDATE graph_service_runs SET error_type='reconciliation:X;dispatch:Y' WHERE run_id='r-1'")
+    task(env, "t-px", "trader", "FAILED", created=-900, dedup_key=f"schedule:s-trader:{at(env, -900)}",
+         output={"reason": "stale or missing quote for BTC/USD"})
+    env.runtime.recovery_history = lambda: {"status": "PARTIAL_HISTORY", "incidents": []}
+
+
+def test_live_mode_never_says_practice(env):
+    _orders_and_problems(env, mode="live")
+    data = snap(env)
+    assert data["now"]["code"] == "routine_failing"
+    assert {"orders_unclear", "routine_failing"} <= set(codes(data))
+    encoded = json.dumps(data).lower().replace('"practice_value"', "")
+    assert "practice" not in encoded
+    assert "1 order has an unclear status" in [text(item["title"]) for item in data["attention"]]
+    assert "Places orders" in text(room(data, "accounts")["job"])
+    assert "An order's status is unclear" in text(room(data, "accounts")["now"])
+    assert "the account's money" in text(room(data, "trader")["job"])
+    assert "prices were too old to place an order" in encoded
+
+
+def test_paper_mode_still_says_practice_order(env):
+    _orders_and_problems(env, mode="paper")
+    data = snap(env)
+    encoded = json.dumps(data).lower()
+    assert "practice order" in encoded
+    assert "1 practice order has an unclear status" in [text(item["title"]) for item in data["attention"]]
 
 
 def test_pause_preview_mentions_set_aside_when_working(env):
@@ -477,10 +832,14 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
              dedup_key=f"schedule:s-learning:{at(env, created)}",
              output={"reason": "model timeout_uncertain: no answer"}, attempts=3)
     data = snap(env)
-    assert data["attention"][0]["id"] == "turn_stuck:t-41"
-    assert "won't retry by itself" in text(data["attention"][0]["why"])
+    stuck = data["attention"][0]
+    assert stuck["id"] == "turn_stuck:t-41"
+    assert "won't retry by itself" in text(stuck["why"]) and "cost limit" in text(stuck["why"])
+    assert "out of allowance" not in text(stuck["why"])  # its own cost limit, not the AI allowance (U7)
+    assert stuck["consequence"] == []
+    assert room(data, "leader")["last"]["text"] == [{"t": "text", "v": "Its last turn got stuck."}]
     repeat = next(item for item in data["attention"] if item["id"] == "repeat_problems")
-    assert "(2 in a row)" in text(repeat["title"])
+    assert text(repeat["title"]) == "Learning's turn (daily) keeps having problems (2 in a row)"
     assert "didn't answer in time" in text(repeat["why"])
     assert room(data, "leader")["light"] == "stuck"
     assert room(data, "learning")["had_problem"] is True
@@ -490,6 +849,60 @@ def test_stuck_turns_and_repeat_problems_need_attention(env):
     review = next(item for item in data["calendar"]["items"] if item["kind"] == "extra_review")
     assert review["status"] == "stuck"
     assert "Leader's turn is stuck" in data["prompt_facts"]["flagged"]
+
+
+def test_old_problem_says_it_was_tried_again(env):
+    run(env)
+    schedule(env, "learning", 6 * 3600, interval=86400)
+    task(env, "t-lf", "learning", "FAILED", created=-50 * 3600, output={"reason": "model temporary: retry"},
+         dedup_key=f"schedule:s-learning:{at(env, -50 * 3600)}")
+    for task_id, created in (("t-ls1", -26 * 3600), ("t-ls2", -2 * 3600)):
+        task(env, task_id, "learning", "SUCCEEDED", created=created, result={"lesson_revision_ids": []},
+             dedup_key=f"schedule:s-learning:{at(env, created)}")
+    problem = next(item for item in snap(env)["story"]["items"] if item["id"] == "task:t-lf")
+    assert text(problem["headline"]) == "Learning's turn (daily) didn't work (a temporary AI error)."
+    assert "Tried again" in text(problem["consequence"]) and "Next try" not in text(problem["consequence"])
+    assert problem["consequence"][1] == {"t": "time", "at": iso_ms(at(env, -26 * 3600)), "style": "day_clock"}
+
+
+def test_ai_pause_story_uses_the_reason_recorded_then(env):
+    run(env)
+    reading(env, remaining=3, paused_reason="subscription quota exhausted")
+    insert(env, "subscription_invocations", invocation_id="inv-p", request_hash="h", task_id="t-paused",
+           root_task_id="t-paused", role="trader", run_id="r-1", system_version_id="v1",
+           provider="codex_subscription", requested_model="m", state="FAILED",
+           result_json=json.dumps({"ok": False, "failure": "unsupported"}), quota_json="{}",
+           created_at=at(env, -3700), updated_at=at(env, -3600))
+    events(env, "subscription_ai_paused", [(-3600, {"task_id": "t-paused", "role": "trader"}),
+                                           (-1800, {"task_id": "t-unknown", "role": "trader"})])
+    paused = sorted((item for item in snap(env)["story"]["items"] if item["kind"] == "ai_paused"),
+                    key=lambda item: item["at"])
+    assert [text(item["headline"]) for item in paused] == [
+        "AI paused: the AI model isn't available.", "AI paused: a provider stop."]
+
+
+def test_trade_decision_names_quantity_coin_and_limit(env):
+    run(env)
+    payload = {"action": "enter", "symbol": "ETH/USD", "quantity": {"amount": "0.5", "asset": "ETH"},
+               "limit_price": {"amount": "2418.70", "currency": "USD"}, "rationale": "Breakout confirmed."}
+    task(env, "t-buy", "trader", "SUCCEEDED", created=-400, output={"decision_id": "d-buy", "intent_id": "i-buy"},
+         result={"decision_id": "d-buy"})
+    insert(env, "decisions", decision_id="d-buy", portfolio_id=env.pid, action="enter",
+           payload_json=json.dumps(payload), mandate_revision="1", policy_revision="1", snapshot_id="snap",
+           system_version_id="v1", created_at=at(env, -300), task_id="t-buy")
+    insert(env, "fills", fill_id="fill-buy", venue="paper", account_id="paper", trade_id="tr-buy",
+           portfolio_id=env.pid, intent_id="i-buy", created_at=at(env, -200),
+           document_json=json.dumps({"symbol": "ETH/USD", "side": "buy", "quantity": "0.5", "price": "2418.70",
+                                     "fee_amount": "1.20", "fee_asset": "USD"}))
+    data = snap(env)
+    item = next(item for item in data["story"]["items"] if item["id"] == "decision:d-buy")
+    assert text(item["headline"]) == "Trader decided to buy 0.5 ETH at a limit of $2,418.70."
+    assert text(item["consequence"]) == "Bought 0.5 ETH at $2,418.70, fee $1.20."
+    assert text(room(data, "trader")["last"]["text"]) == "Decided to buy ETH."
+    env.db.execute("UPDATE decisions SET payload_json=? WHERE decision_id='d-buy'",
+                   (json.dumps({"action": "enter", "symbol": "ETH/USD", "rationale": "Breakout."}),))
+    plain = next(item for item in snap(env)["story"]["items"] if item["id"] == "decision:d-buy")
+    assert text(plain["headline"]) == "Trader decided to buy ETH."
 
 
 def test_story_pages_go_back_without_inventing(env):
@@ -576,6 +989,40 @@ def test_snapshot_validates_against_contract(env, name):
     assert set(data["team"]) == set(fixture["team"]) and set(data["money"]) == set(fixture["money"])
     assert (data["checkins"] is None) == (fixture["checkins"] is None)
     assert len(json.dumps(data)) < 80 * 1024
+
+
+def _checkin_store(monkeypatch, *, last_done, items=()):
+    import sys
+
+    import trade_graph.api
+
+    store = SimpleNamespace(available=lambda runtime: True, window=lambda runtime, start, end: list(items),
+                            last_done_at=lambda runtime: last_done)
+    monkeypatch.setitem(sys.modules, "trade_graph.api.owner_checkins", store)
+    monkeypatch.setattr(trade_graph.api, "owner_checkins", store, raising=False)
+    return store
+
+
+def test_prompt_since_counts_are_exact_beyond_reader_caps(env, monkeypatch):
+    run(env)
+    for index in range(45):
+        insert(env, "fills", fill_id=f"fill-{index}", venue="paper", account_id="paper", trade_id=f"tr-{index}",
+               portfolio_id=env.pid, intent_id=None, document_json="{}", created_at=at(env, -600 - 60 * index))
+        finding(env, f"f-{index}", created=-700 - 60 * index, expires=3600)
+    for index in reversed(range(130)):
+        decision(env, f"d-{index:03d}", "hold" if index % 5 == 0 else "enter", created=-60 - 300 * index)
+    began = time.perf_counter()
+    since = snap(env)["prompt_facts"]["since"]
+    print(f"snapshot with 130 decisions, 45 fills and 45 notes: {(time.perf_counter() - began) * 1000:.0f} ms")
+    assert since["label"] == "the last 24 hours"
+    assert (since["completed_trades"], since["research_notes"], since["decisions"]) == (45, 45, 130)
+    assert since["waits"] == 26
+    # The owner's last check-in was 9 days ago; a failure 8.5 days ago is older than the task reader's window.
+    _checkin_store(monkeypatch, last_done=iso_ms(at(env, -9 * 86400)))
+    task(env, "t-old-failure", "learning", "FAILED", created=-8.5 * 86400, output={"reason": "ValueError"})
+    since = snap(env)["prompt_facts"]["since"]
+    assert since["label"] == "my last check-in"
+    assert since["problems"] >= 1 and since["decisions"] == 130
 
 
 def test_owner_checkins_come_from_the_lazy_store(env, monkeypatch):

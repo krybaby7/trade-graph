@@ -140,7 +140,8 @@
           "t": "text",
           "v": "70% left this week. A second, shorter limit isn't reported."
         }
-      ]
+      ],
+      "stop_line_state": "on"
     },
     "automatic_turns": true,
     "automatic_optimisation": false
@@ -262,7 +263,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -309,7 +311,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -376,7 +379,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -428,7 +432,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -789,7 +794,7 @@
         ],
         "status": "planned",
         "exact": true,
-        "conditional": false,
+        "conditional": true,
         "past": false,
         "detail": [
           {
@@ -845,7 +850,8 @@
           "v": "Allowance refill time isn't reported."
         }
       ]
-    ]
+    ],
+    "estimates": []
   },
   "story": {
     "window_start": "2026-10-06T16:05:00.000Z",

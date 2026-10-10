@@ -7,6 +7,7 @@ The calendar and story modules read the derived facts from :class:`Projection`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -27,24 +28,53 @@ from trade_graph.api.hq_contract import (
     iso_ms,
 )
 from trade_graph.api.hq_facts import loads, parse, seconds_between
+from trade_graph.application.paper_service import DEFAULT_SCHEDULES
 from trade_graph.application.service_controller import automatic_optimisation_enabled
 
 SCHEDULED_ROLES = ("trader", "research", "learning", "leader", "optimisation")
 PROMPT_TURN_ROLES = ("trader", "research", "learning", "leader")
 TERMINAL = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "DEAD_LETTER"})
 STUCK = frozenset({"WAITING_EXTERNAL", "BLOCKED_BUDGET"})
+FINISHED_QUESTS_PER_DEPT = 5  # finished jobs listed per department (payload budget, B18)
 STALE_AFTER = timedelta(seconds=90)
 OVERDUE_GRACE = 120
 QUOTA_DEFERRAL_RECENT = 120
-QUOTA_STREAK_GAP = 90
 PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:")
 ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:")
 OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
+# Leader pauses that protect more than the owner's "Pause AI" (protect-only); HQ never offers to weaken them.
+STRONGER_PAUSES = ("CANCEL_ALL", "FLATTEN", "STOPPED")
 CHECKIN_SUGGESTION_DELAY = timedelta(minutes=20)
+ASSET_CODE = re.compile(r"^[A-Z0-9]{2,16}$")
 
 
 def _dt(value) -> datetime | None:
     return value if isinstance(value, datetime) else parse(value)
+
+
+def base_asset(symbol) -> str | None:
+    """The coin of a pair such as ``ETH/USD`` ("ETH"), when it reads as an asset code."""
+    if not isinstance(symbol, str):
+        return None
+    base = symbol.split("/", 1)[0]
+    return base if ASSET_CODE.fullmatch(base) else None
+
+
+def quote_asset(symbol) -> str | None:
+    """The pricing currency of a pair such as ``ETH/USD`` ("USD")."""
+    if not isinstance(symbol, str) or "/" not in symbol:
+        return None
+    quote = symbol.split("/", 1)[1]
+    return quote if ASSET_CODE.fullmatch(quote) else None
+
+
+def amount_and_unit(value, unit_key: str) -> tuple[Decimal | None, str | None]:
+    """A persisted ``{"amount", <unit_key>}`` object (Quantity or Money) or a plain decimal string (C12)."""
+    if isinstance(value, dict):
+        unit = value.get(unit_key)
+        unit = unit if isinstance(unit, str) and ASSET_CODE.fullmatch(unit) else None
+        return c.decimal_or_none(value.get("amount")), unit
+    return c.decimal_or_none(value), None
 
 
 def _iso(value) -> str | None:
@@ -94,6 +124,9 @@ class Projection:
         self.auto_optimisation = bool(automatic_optimisation_enabled(self.config["settings"]))
         self.unclear_orders = facts["orders"]["unclear"]
         self.open_orders = facts["orders"]["open"]
+        # Fresh on every poll: open orders (R17, the execution's outstanding states) plus cached holdings.
+        nonflat = cache.get("nonflat_positions")
+        self.flat = None if nonflat is None else (not nonflat and self.open_orders == 0)
         self.decision_by_task = {row["task_id"]: row for row in facts["decisions"] if row.get("task_id")}
         self.decision_by_id = {row["decision_id"]: row for row in facts["decisions"]}
         self.findings_by_id = {row["finding_id"]: row for row in facts["findings"]}
@@ -173,10 +206,10 @@ class Projection:
         self.deferred_tasks = [task for task in self.facts["active_tasks"]
                                if task["status"] == "QUEUED" and loads(task.get("output_json")).get(
                                    "_subscription_quota_deferred")]
-        deferrals = [event for event in self.facts["events"] if event["kind"] == "subscription_quota_deferred"]
-        recent_deferral = any(
-            (moment := parse(event["created_at"])) is not None
-            and 0 <= (self.now - moment).total_seconds() <= QUOTA_DEFERRAL_RECENT for event in deferrals)
+        streaks = self.facts.get("deferrals") or []  # newest first
+        self.newest_deferral = streaks[0] if streaks else None
+        recent_deferral = any(0 <= (self.now - streak["last_at"]).total_seconds() <= QUOTA_DEFERRAL_RECENT
+                              for streak in streaks)
         self.quota = self.facts["quota"]
         self.threshold = self.cache.get("threshold")
         self.windows, self.unreported = self._windows()
@@ -193,7 +226,7 @@ class Projection:
             state, self.ai_since = "paused_quota", _dt(quota[0]["updated_at"])
         elif self.deferred_tasks or recent_deferral:
             state = "waiting_for_allowance"
-            self.ai_since = self._deferral_streak_start(deferrals)
+            self.ai_since = self.newest_deferral["first_at"] if self.newest_deferral else None
         elif below:
             state = "probably_low"
         elif self.quota:
@@ -201,17 +234,6 @@ class Projection:
         else:
             state = "unknown"
         self.ai_state = state
-
-    def _deferral_streak_start(self, events: list) -> datetime | None:
-        start = None
-        for event in events:  # newest first
-            moment = parse(event["created_at"])
-            if moment is None:
-                continue
-            if start is not None and (start - moment).total_seconds() > QUOTA_STREAK_GAP:
-                break
-            start = moment
-        return start
 
     def _windows(self) -> tuple[list, list]:
         quota = self.quota or {}
@@ -279,13 +301,23 @@ class Projection:
             self.roles[dept] = role
 
     def _schedule(self, role: Role) -> None:
-        candidates = [row for row in self.facts["schedules"] if _schedule_role(row["name"]) == role.dept]
+        """The schedule row that books this department's turns (spec §B.5.3, C6).
+
+        Rows left over for a department the installation no longer schedules are ignored; an
+        ``artifact-`` row, when there is one, always wins over the plain row it replaced.
+        """
+        rows = [row for row in self.facts["schedules"] if _schedule_role(row["name"]) == role.dept]
+        intervals = self.config["schedule_intervals"]
+        configured = set(DEFAULT_SCHEDULES if intervals is None else intervals)
+        candidates = [row for row in rows if row["name"].startswith("artifact-") or role.dept in configured]
         if role.dept == "optimisation" and not self.auto_optimisation:
             candidates = []
+        artifacts = [row for row in candidates if row["name"].startswith("artifact-")]
+        candidates = artifacts or candidates
         if not candidates:
             return
-        chosen = max(candidates, key=lambda row: (row["last_due_at"] or "", row["name"].startswith("artifact-")))
-        role.schedule, role.extra_rows = chosen, len(candidates) - 1
+        chosen = max(candidates, key=lambda row: (row["last_due_at"] or "", row["name"]))
+        role.schedule, role.extra_rows = chosen, len(rows) - 1
         role.every = chosen["interval_seconds"] if chosen["interval_seconds"] and chosen["interval_seconds"] > 0 \
             else None
         role.next_at = _dt(chosen["next_due_at"])
@@ -305,6 +337,8 @@ class Projection:
     def _blocking_gate(self, dept: str) -> str | None:
         if not self.running_fresh:
             return "G1"
+        if self.status == "MANAGEMENT_ONLY":
+            return "GM"  # started while AI wasn't ready: turns run only if it becomes available (C13)
         if self.provider_paused:
             return "G2"
         if self.ai_state == "waiting_for_allowance":
@@ -321,6 +355,8 @@ class Projection:
         gate = role.blocking_gate
         if gate == "G1":
             return gate, c.says(c.GATE["G1"])
+        if gate == "GM":
+            return gate, c.says(c.GATE["GM"])
         if gate == "G2":
             return gate, c.says(c.GATE["G2"].format(reason=self.ai_pause_reason()))
         if gate == "G3":
@@ -479,11 +515,11 @@ class Projection:
         limit = max(60, 3 * int(poll))
         self.price_age = seconds_between(self.now, self.last_price_at)
         self.prices_old = self.price_age is not None and self.price_age > limit
-        degraded = False
-        for event in self.facts["events"]:  # newest first
-            if event["kind"] == "public_feed_health":
-                degraded = event["payload"].get("status") == "degraded"
-                break
+        # A previous run's feed problem is not this run's: the worker resets its counters on restart and
+        # never writes "recovered" for the old run (C2).
+        newest = next((event for event in self.facts["events"] if event["kind"] == "public_feed_health"), None)
+        degraded = (newest is not None and self.active and self.run_id is not None
+                    and newest["payload"].get("status") == "degraded" and self.event_run(newest) == self.run_id)
         self.feed_degraded = degraded
         if self.offline:
             self.market_light = "off"
@@ -495,6 +531,31 @@ class Projection:
                                    if event["kind"] == "public_history_refresh"), None)
 
     # --- Shared helpers ------------------------------------------------------------------------
+
+    def event_run(self, event: dict) -> str | None:
+        """The team run an activity event belongs to: its ``run_id``, else the newest run requested before it."""
+        run_id = event["payload"].get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return run_id
+        moment = _dt(event.get("created_at"))
+        if moment is None:
+            return None
+        if self.run_id is not None and self.requested is not None and moment >= self.requested:
+            return self.run_id
+        for run in self.facts["runs"]:  # newest first
+            requested = _dt(run.get("requested_at"))
+            if requested is not None and requested <= moment:
+                return run["run_id"]
+        return None
+
+    def run_end(self, run_id: str | None) -> datetime | None:
+        """When a recorded run ended: its finish time, otherwise its last sign of life."""
+        if run_id is None:
+            return None
+        if run_id == self.run_id:
+            return self.finished or self.heartbeat
+        run = next((row for row in self.facts["runs"] if row["run_id"] == run_id), None)
+        return (_dt(run.get("finished_at")) or _dt(run.get("heartbeat_at"))) if run else None
 
     def task_moment(self, task: dict) -> datetime:
         return _dt(task.get("result_created_at")) or _dt(task.get("created_at")) or self.started_at
@@ -639,7 +700,7 @@ def team(p: Projection) -> dict:
 def _service_block(p: Projection) -> dict:
     problems = []
     for prefix, code in p.problems:
-        words = c.PROBLEM_PREFIX[prefix][0]
+        words = c.problem_prefix(prefix, live=not p.paper)[0]
         problems.append({"prefix": prefix, "code": code,
                          "text": [c.text(words[:1].upper() + words[1:], code=f"{prefix}{code}"
                                          if prefix != "other" else code)]})
@@ -665,12 +726,27 @@ def _pause_block(p: Projection) -> dict:
             "plain": [c.text(c.PAUSE_PROFILE[p.profile], code=p.profile)], "reason": reason}
 
 
+ROLE_UNAVAILABLE_REASON = "role unavailable; manage positions"  # paper_service.py, after a failed turn
+MANAGEMENT_SERVICE_REASON = "Subscription management service"  # subscription_management.py (prefix)
+SAFETY_EVIDENCE_BEFORE = timedelta(minutes=10)
+SAFETY_EVIDENCE_AFTER = timedelta(seconds=5)
+
+
 def safety_trigger(p: Projection) -> str:
-    """The persisted task problem that most plausibly triggered the automatic stop, in plain words."""
-    since = p.pause_since or p.now
+    """What triggered the automatic stop, in plain words, from evidence close to it in time (C8).
+
+    Only the worker's "role unavailable" stop is explained by a task problem, and only by one
+    recorded from 10 minutes before the stop to 5 seconds after it. Anything else is unknown.
+    """
+    reason = p.pause_reason or ""
+    if reason.startswith(MANAGEMENT_SERVICE_REASON):
+        return c.SAFETY["management_service"]
+    if reason != ROLE_UNAVAILABLE_REASON or p.pause_since is None:
+        return c.SAFETY["unknown"]
+    since = p.pause_since
     for task in p.facts["recent_tasks"]:
         moment = p.task_moment(task)
-        if moment > since + timedelta(seconds=5):
+        if not since - SAFETY_EVIDENCE_BEFORE <= moment <= since + SAFETY_EVIDENCE_AFTER:
             continue
         if task["status"] == "BLOCKED_BUDGET":
             return c.SAFETY["out_of_allowance"].format(dept=c.dept_name(task["role"])) if task["role"] in c.ROOM \
@@ -690,7 +766,13 @@ def _ai_block(p: Projection) -> dict:
 def _allowance_block(p: Projection) -> dict:
     return {"status": p.allowance_status, "observed_at": _iso(p.reading_at),
             "age_seconds": seconds_between(p.now, p.reading_at), "stop_line_percent": p.threshold,
-            "windows": p.windows, "unreported_windows": p.unreported, "plain": allowance_plain(p)}
+            "windows": p.windows, "unreported_windows": p.unreported, "plain": allowance_plain(p),
+            "stop_line_state": stop_line_state(p)}
+
+
+def stop_line_state(p: Projection) -> str:
+    """The reserve rule: read and on, read and off, or unreadable, which is never "none" (contract 1.1)."""
+    return {True: "on", False: "off"}.get(p.cache.get("threshold_enabled"), "unknown")
 
 
 def allowance_plain(p: Projection) -> list:
@@ -779,11 +861,13 @@ def _now_copy(p: Projection) -> tuple[list, list, list, datetime | None]:
         return head, detail, c.says(copy["leader_pause"][2]), p.pause_since
     if code in ("model_unavailable", "quota_paused", "timetable_failing", "orders_unclear"):
         head, detail, nothing = copy[code]
+        if code == "orders_unclear" and not p.paper:
+            head = c.LIVE_NOW["orders_unclear"]
         since = p.ai_since if code in ("model_unavailable", "quota_paused") else None
         return c.says(head), c.says(detail), c.says(nothing), since
     if code == "routine_failing":
         prefix = next(prefix for prefix, _ in p.problems if prefix != "scheduler:")
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         return (c.says(copy["routine_failing"][0].format(problem=words)), c.says(consequence),
                 c.says(consequence), None)
     if code == "waiting_allowance":
@@ -813,9 +897,7 @@ def _now_copy(p: Projection) -> tuple[list, list, list, datetime | None]:
 
 def _waiting_dept(p: Projection) -> str:
     task = p.deferred_tasks[0] if p.deferred_tasks else None
-    role = task["role"] if task else next(
-        (event["payload"].get("role") for event in p.facts["events"]
-         if event["kind"] == "subscription_quota_deferred"), None)
+    role = task["role"] if task else (p.newest_deferral or {}).get("role")
     return c.dept_name(role) if role in c.ROOM else c.MISC["a_department"]
 
 
@@ -832,15 +914,21 @@ def _calm_copy(p: Projection) -> tuple[list, list, list]:
     head, next_label, nothing = c.NOW["calm"]
     upcoming = next_turn(p)
     if upcoming is None:
-        return c.says(head), c.says(c.NOW["calm_none"]), []
+        none = c.says(c.NOW["calm_none"])
+        if p.status == "MANAGEMENT_ONLY":
+            none = c.join(c.says(c.NOW["management_only"]), none)
+        return c.says(head), none, []
     dept, at = upcoming
     detail = c.says(next_label + c.TURN_PHRASE[dept] + " ", c.time(at, "relative_clock"), ".")
+    if p.status == "MANAGEMENT_ONLY":
+        detail = c.join(c.says(c.NOW["management_only"]), detail)
     if dept == "trader":
         if_nothing = c.says(nothing + "at ", c.time(at, "clock"), c.NOW["calm_trader"])
     else:
-        cadence = c.cadence(p.roles[dept].every) or "next"
-        if_nothing = c.says(nothing + c.NOW["calm_other"].format(dept=c.dept_name(dept), cadence=cadence),
-                            c.time(at, "clock"), ".")
+        cadence = c.cadence(p.roles[dept].every)
+        other = (c.NOW["calm_other"].format(dept=c.dept_name(dept), cadence=cadence) if cadence
+                 else c.NOW["calm_other_plain"].format(dept=c.dept_name(dept)))
+        if_nothing = c.says(nothing + other, c.time(at, "clock"), ".")
     return c.says(head), detail, if_nothing
 
 
@@ -853,7 +941,7 @@ def _now_facts(p: Projection, count: int) -> list:
     coins = c.decimal_or_none(cache.get("inventory")) if cache.get("available") else None
     if coins is None:
         holdings = c.says(c.FACTS["holdings_unknown"])
-    elif coins == 0 and cache.get("flat") is not False:
+    elif coins == 0 and p.flat is not False:
         holdings = c.says(c.FACTS["nothing_held"])
     else:
         holdings = c.says(c.money_segment(coins, p.reporting), c.FACTS["in_coins"])
@@ -921,9 +1009,9 @@ def attention(p: Projection, checkins: list[dict]) -> list:
                    key=lambda task: task["created_at"], reverse=True)
     for task in stuck[:TURN_STUCK_MAX_CARDS]:
         dept = c.dept_name(task["role"]) if task["role"] in c.ROOM else c.MISC["a_department"]
+        # The state text already says it won't retry by itself; no second sentence repeating it (U7).
         items.append(_card("turn_stuck", c.says(c.ATTENTION["turn_stuck"].format(dept=dept)),
-                           why=p.state_text(task),
-                           consequence=c.says(c.ATTENTION["turn_stuck_consequence"].format(dept=dept)),
+                           why=p.state_text(task), consequence=[],
                            how=c.says(c.ATTENTION["turn_stuck_how"]), link="/organization",
                            since=task["created_at"], suffix=c.technical(task["task_id"], 100).replace(" ", "_")))
     due = [item for item in checkins if item["state"] in ("due", "overdue")]
@@ -933,13 +1021,13 @@ def attention(p: Projection, checkins: list[dict]) -> list:
             title=first["title"], state=first["state"])), why=c.says(c.ATTENTION["checkin_due_why"]),
             checkin_id=first["checkin_id"], can_fix_here=True, since=first["planned_at"]))
     if p.unclear_orders:
-        forms = c.ATTENTION["orders_unclear"]
+        forms = c.ATTENTION["orders_unclear"] if p.paper else c.LIVE_ATTENTION["orders_unclear"]
         items.append(_card("orders_unclear", c.says(c.plural(forms, p.unclear_orders)),
                            why=c.says(c.ATTENTION["orders_unclear_why"]),
                            consequence=c.says(c.ATTENTION["orders_unclear_consequence"]), link="/trading"))
     others = [(prefix, code) for prefix, code in p.problems if prefix != "scheduler:"]
     for index, (prefix, code) in enumerate(dict.fromkeys(others)):
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         suffix = None if index == 0 else (prefix.rstrip(":") if prefix != "other" else f"other_{index}")
         items.append(_card("routine_failing", [c.text(words[:1].upper() + words[1:], code=code)],
                            consequence=c.says(consequence), suffix=suffix))
@@ -994,6 +1082,11 @@ def attention(p: Projection, checkins: list[dict]) -> list:
     trial = _trial_card(p)
     if trial:
         items.append(trial)
+    for item in items:
+        # "since" is when the situation began; a future moment (a note's expiry, a check-in up to 15 min ahead)
+        # is not one (U3).
+        if item["since"] is not None and item["since"] > p.as_of:
+            item["since"] = None
     ranks = {sev: index for index, sev in enumerate(SEVERITY_ORDER)}
     items.sort(key=lambda item: item["since"] or "", reverse=True)
     items.sort(key=lambda item: ranks[item["sev"]])
@@ -1010,7 +1103,8 @@ def _allowance_card(p: Projection) -> dict:
                        if refill else c.says(c.ATTENTION["allowance_below_unknown"]))
     else:
         consequence = c.says(c.ATTENTION["allowance_near_consequence"])
-    pause_possible = p.can_act and not p.system_pause and (p.profile == "RUNNING" or p.leader_pause)
+    pause_possible = p.can_act and not p.system_pause and (
+        p.profile == "RUNNING" or (p.leader_pause and p.profile not in STRONGER_PAUSES))
     return _card("allowance_near", c.says(title), why=c.says(c.ATTENTION["allowance_why"]),
                  consequence=consequence, decision="pause_ai" if pause_possible else None,
                  can_fix_here=pause_possible, since=p.reading_at)
@@ -1038,13 +1132,14 @@ def _repeat_problems(p: Projection) -> list:
                 continue
             latest = problems[0]
             dept = c.dept_name(role.dept)
-            cadence = p.task_cadence(latest) or "regular"
-            reason = c.reason_segment(p.raw_reason(latest)) or c.text(c.REASON["unknown"])
+            cadence = p.task_cadence(latest)
+            reason = c.reason_segment(p.raw_reason(latest), live=not p.paper) or c.text(c.REASON["unknown"])
             consequence = c.says(c.ATTENTION["repeat_problems_next"], c.time(role.next_at, "day_clock"), ".") \
                 if role.next_at else []
             cards.append(_card(
                 "repeat_problems",
-                c.says(c.ATTENTION["repeat_problems"].format(dept=dept, cadence=cadence, n=len(problems))),
+                c.says(c.ATTENTION["repeat_problems"].format(dept=dept, cadence=cadence, n=len(problems)) if cadence
+                       else c.ATTENTION["repeat_problems_plain"].format(dept=dept, n=len(problems))),
                 why=c.says(c.MISC["last_reason"][0], reason, c.MISC["last_reason"][1]), consequence=consequence,
                 how=c.says(c.ATTENTION["in_prompt"]), since=p.task_moment(latest),
                 suffix=None if not cards else f"{role.dept}_{len(cards)}"))
@@ -1086,7 +1181,7 @@ def _room_base(dept: str, kind: str, job: str) -> dict:
 
 def _ai_room(p: Projection, role: Role) -> dict:
     dept = role.dept
-    job = c.ROOM[dept][2]
+    job = c.room_job(dept, live=not p.paper)
     if dept == "optimisation" and not p.auto_optimisation:
         job = c.OPTIMISATION_MANUAL_JOB
     room = _room_base(dept, "ai", job)
@@ -1148,7 +1243,16 @@ def _room_next(p: Projection, role: Role) -> dict | None:
         note = c.says(c.CALENDAR["engineer_deadline"])
     return {"at": iso_ms(role.next_at), "exact": True, "every_seconds": role.every, "overdue": role.overdue,
             "waiting_because": role.gate_text if role.overdue else None, "note": note,
-            "extra_rows": role.extra_rows}
+            "extra_rows": role.extra_rows, "status": next_status(role)}
+
+
+def next_status(role: Role) -> str:
+    """planned, due_now (G9), waiting (a known gate holds) or overdue (a reason HQ can't see; contract 1.2)."""
+    if not role.overdue:
+        return "planned"
+    if role.dept == "engineer" or role.gate == "G10":
+        return "overdue"
+    return "due_now" if role.gate == "G9" else "waiting"
 
 
 def _room_last(p: Projection, role: Role) -> dict | None:
@@ -1174,12 +1278,12 @@ def _room_last(p: Projection, role: Role) -> dict | None:
         return {"at": at, "outcome": "done", "text": c.says(_done_words(p, task, cadence)),
                 "quote": c.quote(result.get("summary")), "link": link}
     if status in STUCK:
-        return {"at": at, "outcome": "stuck", "text": p.state_text(task), "quote": None, "link": link}
+        return {"at": at, "outcome": "stuck", "text": c.says(c.LAST["stuck_plain"]), "quote": None, "link": link}
     if p.is_skip(task) or status == "CANCELLED":
         reason = c.SKIP_PLAIN.get(p.skip_key(task) or "", c.MISC["cancelled"])
         return {"at": at, "outcome": "skipped", "text": c.says(c.LAST["skipped"].format(reason=reason)),
                 "quote": None, "link": link}
-    reason = c.reason_segment(p.raw_reason(task)) or c.text(c.REASON["unknown"])
+    reason = c.reason_segment(p.raw_reason(task), live=not p.paper) or c.text(c.REASON["unknown"])
     lead = c.LAST["problem"].format(cadence=cadence) if cadence else c.LAST["problem_plain"]
     return {"at": at, "outcome": "problem", "text": [c.text(lead), reason, c.text(".")], "quote": None,
             "link": link}
@@ -1208,8 +1312,9 @@ def _decision_last(p: Projection, decision: dict) -> dict:
         segment = c.term("wait", words, code=action) if action == "no_action" else c.text(words, code=action)
         text = [c.text(before.format(symbols=p.symbols_text(symbols))), segment, c.text(after)]
     elif action in ("enter", "exit"):
-        text = [c.text(c.LAST["decided_trade"].format(verb="buy" if action == "enter" else "sell",
-                                                      symbol=symbols[0] if symbols else c.MISC["a_coin"]), code=action)]
+        asset = (base_asset(symbols[0]) if symbols else None) or c.MISC["a_coin"]
+        text = [c.text(c.LAST["decided_trade"].format(verb="buy" if action == "enter" else "sell", symbol=asset),
+                       code=action)]
     else:
         text = [c.text(c.LAST["decided_other"].format(action=words[:1].upper() + words[1:]), code=action)]
     return {"at": iso_ms(_dt(decision["created_at"]) or p.now), "outcome": "decided", "text": text,
@@ -1253,7 +1358,7 @@ def _rules(p: Projection) -> list | None:
 
 
 def _software_room(p: Projection, dept: str) -> dict:
-    room = _room_base(dept, "software", c.ROOM[dept][2])
+    room = _room_base(dept, "software", c.room_job(dept, live=not p.paper))
     facts: list = []
     if dept == "secretary":
         light = "off" if p.offline else "ok"
@@ -1307,7 +1412,7 @@ def _software_room(p: Projection, dept: str) -> dict:
         if light == "off":
             now_text = c.says(c.ROOM_NOW["off"])
         elif p.unclear_orders:
-            now_text = c.says(c.ROOM_NOW["accounts_unclear"])
+            now_text = c.says(c.ROOM_NOW["accounts_unclear"] if p.paper else c.LIVE_ROOM_NOW["accounts_unclear"])
         elif coins is None:
             now_text = c.says(c.ROOM_NOW["accounts_unknown"])
         else:
@@ -1338,7 +1443,7 @@ def quests(p: Projection) -> list:
     for dept in c.ROOM:
         role = p.roles.get(dept)
         tasks = [task for task in (role.recent if role else [])
-                 if task["status"] in TERMINAL][:10]
+                 if task["status"] in TERMINAL][:FINISHED_QUESTS_PER_DEPT]
         items.extend(_quest(p, task) for task in tasks)
     for change in p.facts["improvements"]["proposed"]:
         expires = _dt(change["document"].get("expires_at_utc"))
@@ -1370,7 +1475,7 @@ def _quest(p: Projection, task: dict) -> dict:
     terminal = status in TERMINAL
     reason = None
     if (status in {"FAILED", "DEAD_LETTER"} and not p.is_skip(task)) or status in STUCK:
-        segment = c.reason_segment(p.raw_reason(task))
+        segment = c.reason_segment(p.raw_reason(task), live=not p.paper)
         reason = [segment] if segment else None
     finished = _dt(task.get("result_created_at")) if terminal else None
     return {"id": f"task:{task['task_id']}", "dept": task["role"], "origin": origin, "origin_text": origin_text,
@@ -1395,7 +1500,8 @@ def decisions(p: Projection, attention_items: list, checkins_block: dict | None,
 
 def _decision(key: str, *, shown: bool, available: bool = True, unavailable: str | None = None,
               recommended: str | None = None, what: list | None = None, cost: list | None = None,
-              when: list | None = None, right_now: list | None = None, facts: dict | None = None) -> dict:
+              when: list | None = None, right_now: list | None = None, facts: dict | None = None,
+              undo: list | None = None, reversible: str | None = None) -> dict:
     copy = c.DECISION[key]
     return {"id": key, "shown": shown, "available": available,
             "unavailable_because": None if available else c.says(unavailable),
@@ -1404,7 +1510,7 @@ def _decision(key: str, *, shown: bool, available: bool = True, unavailable: str
             "title": copy["title"], "button_label": copy["button"], "confirm_label": copy["confirm"],
             "weight": copy["weight"],
             "preview": {"what_happens": what or [c.says(copy["what"])], "cost": cost or c.says(copy["cost"]),
-                        "undo": c.says(copy["undo"]), "reversible": copy["reversible"],
+                        "undo": undo or c.says(copy["undo"]), "reversible": reversible or copy["reversible"],
                         "when": when or c.says(copy.get("when") or copy.get("not_needed")),
                         "right_now": right_now or []},
             "facts": facts or {}}
@@ -1415,7 +1521,7 @@ def _start_card(p: Projection) -> dict:
     shown = p.code in ("no_run", "crashed", "stopped", "silent", "attached_unknown")
     blocked = p.code in ("silent", "attached_unknown")
     recommended = copy["recommended"] if p.code in ("no_run", "crashed", "stopped") else None
-    when = c.says(recommended or copy["not_needed"])
+    when = c.says(recommended or (copy["not_needed_silent"] if blocked else copy["not_needed"]))
     return _decision("start_trading", shown=shown, available=not blocked,
                      unavailable=copy["silent"] if blocked else None, recommended=recommended, when=when)
 
@@ -1457,15 +1563,20 @@ def _pause_card(p: Projection, codes: set[str]) -> dict:
     if when_text is None:
         when_text = (copy["not_needed_off"] if p.offline and p.code != "silent"
                      else copy["not_needed_silent"] if p.code == "silent" else copy["not_needed"])
+    stronger = p.leader_pause and p.profile in STRONGER_PAUSES
+    available = not p.system_pause and not stronger
+    unavailable = (copy["system"] if p.system_pause
+                   else copy["leader_stronger"].format(profile=c.PAUSE_SHORT[p.profile]) if stronger else None)
     what = [c.says(copy["what"])]
+    if p.leader_pause and available:
+        what.insert(0, c.says(copy["replaces_leader"].format(profile=c.PAUSE_SHORT[p.profile])))
     working = [role for role in p.roles.values() if role.working]
     if working:
         what.append(c.says(copy["working"].format(dept=c.dept_name(working[0].dept))))
     what.append(c.says(copy["continues"]))
     right_now = _waiting_turns(p) if p.running_fresh and p.profile == "RUNNING" else []
-    return _decision("pause_ai", shown=shown, available=not p.system_pause,
-                     unavailable=copy["system"] if p.system_pause else None, recommended=recommended, what=what,
-                     when=c.says(when_text), right_now=right_now)
+    return _decision("pause_ai", shown=shown, available=available, unavailable=unavailable,
+                     recommended=recommended, what=what, when=c.says(when_text), right_now=right_now)
 
 
 def _repeat_dept(p: Projection) -> str:
@@ -1507,7 +1618,7 @@ def _optimisation_card(p: Projection) -> dict:
     copy = c.DECISION["start_optimisation"]
     cycle = p.facts["cycle"]
     eligible = (p.status == "RUNNING" and p.stale is False and p.profile == "RUNNING" and not p.provider_paused
-                and (cycle is None or cycle["state"] not in ("QUEUED", "RUNNING", "BLOCKED")))
+                and not (cycle and cycle["active"]))
     tries = p.cache.get("max_attempts")
     deadline = p.config.get("optimisation_deadline_seconds")
     deadline = deadline if type(deadline) is int and deadline > 0 else None
@@ -1520,7 +1631,7 @@ def _optimisation_card(p: Projection) -> dict:
 
 def _stop_card(p: Projection) -> dict:
     copy = c.DECISION["stop_safely"]
-    flat = p.cache.get("flat")
+    flat = p.flat
     if flat is True:
         what = [c.says(copy["what_flat"])]
         if p.system_pause:
@@ -1529,6 +1640,11 @@ def _stop_card(p: Projection) -> dict:
         what = [c.says(copy["what_held"])]
     else:
         what = [c.says(copy["what_unknown"])]
+    if p.system_pause:
+        # Never recommended during an automatic safety stop, and only partly undoable (spec §B.5.8).
+        return _decision("stop_safely", shown=p.active, what=what, facts={"flat": flat},
+                         undo=c.says(copy["undo_safety"]), reversible="partly",
+                         when=c.says(copy["not_recommended_safety"]))
     return _decision("stop_safely", shown=p.active, what=what, facts={"flat": flat})
 
 
@@ -1588,16 +1704,17 @@ def _zero_counts() -> dict:
 def money_block(p: Projection) -> dict:
     cache = p.cache
     at_risk = c.says(c.AT_RISK_PAPER if p.paper else c.AT_RISK_LIVE)
-    holdings = {"coins": None, "cash": None, "flat": cache.get("flat"), "open_orders": p.open_orders,
+    holdings = {"coins": None, "cash": None, "flat": p.flat, "open_orders": p.open_orders,
                 "unclear_orders": p.unclear_orders}
     counts = cache.get("counts") or _zero_counts()
     as_of = _iso(cache.get("as_of"))
     if not cache.get("available"):
-        return {"available": False, "unavailable_reason": c.says(c.MONEY["unavailable"]), "as_of": as_of,
+        unavailable = c.says(c.MONEY["unavailable"] if p.paper else c.LIVE_MONEY["unavailable"])
+        return {"available": False, "unavailable_reason": unavailable, "as_of": as_of,
                 "practice_value": None, "value_final": False, "estimate_notes": [],
                 "opening": {"native": [], "reporting": None, "at": None},
                 "change": {"total": None, "currency_effect": None, "team_effect": None,
-                           "unknown_reason": c.says(c.MONEY["unavailable"])},
+                           "unknown_reason": unavailable},
                 "holdings": holdings, "counts": counts,
                 "pays_for_itself": {"status": "unknown", "net": None, "missing": [], "honest_note": None},
                 "at_risk": at_risk}
@@ -1614,11 +1731,11 @@ def money_block(p: Projection) -> dict:
     value = c.money(cache.get("equity"), reporting)
     return {"available": True, "unavailable_reason": None, "as_of": as_of, "practice_value": value,
             "value_final": value is not None and not cache.get("valuation_provisional"),
-            "estimate_notes": _estimate_notes(cache), "opening": opening, "change": change,
+            "estimate_notes": _estimate_notes(cache, p.flat), "opening": opening, "change": change,
             "holdings": holdings, "counts": counts, "pays_for_itself": _pays(p, cache), "at_risk": at_risk}
 
 
-def _estimate_notes(cache: dict) -> list:
+def _estimate_notes(cache: dict, flat: bool | None) -> list:
     notes: dict[str, dict] = {}
     for fx in cache.get("fx") or []:
         if fx["expired"] and "euro_rate_too_old" not in notes:
@@ -1630,7 +1747,7 @@ def _estimate_notes(cache: dict) -> list:
             notes["euro_rate_from_earlier_day"] = {"code": "euro_rate_from_earlier_day", "tone": "calm",
                                                    "text": c.says(before, c.time(fx["valid_as_of"], "date"), after)}
     # Old or missing prices only make the total an estimate when something is held.
-    if cache.get("valuation_provisional") and cache.get("flat") is not True:
+    if cache.get("valuation_provisional") and flat is not True:
         marks = cache.get("marks") or []
         stale = [mark["age_seconds"] for mark in marks if mark["stale"] and mark.get("age_seconds") is not None]
         if stale:
@@ -1651,7 +1768,7 @@ def _pays(p: Projection, cache: dict) -> dict:
     unverified = cache.get("recovery_status") == "UNAVAILABLE"
     missing = []
     for code in codes:
-        words, fixable = c.ECON.get(code, c.ECON["other"])
+        words, fixable = c.econ(code, live=not p.paper)
         if code == "history_gap" and unverified:
             words = c.NOTICE["history_unverified"][1]
         missing.append({"code": code if code in c.ECON else "other", "text": c.says(words),
@@ -1711,17 +1828,20 @@ def checkins_block(p: Projection) -> dict | None:
             "last_done_at": _iso(facts["last_done_at"]) if available else None, "suggested_at": suggested}
 
 
-def prompt_facts(p: Projection, attention_items: list, story_items: list, money: dict) -> dict:
+def prompt_since(p: Projection) -> tuple[datetime, datetime | None]:
+    """(the review prompt's "since" moment, the last done check-in or None): that check-in, else 24 h ago."""
     last_done = _dt(p.checkin_facts.get("last_done_at")) if p.owner and p.checkin_facts["available"] else None
-    since = last_done or p.now - timedelta(hours=24)
+    return last_done or p.now - timedelta(hours=24), last_done
+
+
+def prompt_facts(p: Projection, attention_items: list, story_items: list, money: dict, counts: dict) -> dict:
+    """The review prompt's facts; ``counts`` are exact (``hq_facts.period_counts`` from ``prompt_since``)."""
+    since, last_done = prompt_since(p)
 
     def within(value) -> bool:
         moment = _dt(value)
         return moment is not None and since <= moment <= p.now
 
-    decisions = [row for row in p.facts["decisions"] if within(row["created_at"])]
-    problems = sum(1 for task in p.facts["recent_tasks"] if within(task["created_at"]) and (
-        task["status"] in STUCK or (task["status"] in {"FAILED", "DEAD_LETTER"} and not p.is_skip(task))))
     flagged = [c.cut(c.plain(item["title"]), 200) for item in attention_items if item["sev"] in ("act", "watch")]
     for item in story_items:
         if item["problem"] and within(item["at"]):
@@ -1737,12 +1857,9 @@ def prompt_facts(p: Projection, attention_items: list, story_items: list, money:
         "as_of": p.as_of, "team": _team_plain(p), "setting": _setting_plain(p), "allowance": _allowance_line(p),
         "next_turns": turns,
         "since": {"from": _iso(last_done), "label": c.PROMPT["since_checkin" if last_done else "last_24h"],
-                  "decisions": len(decisions),
-                  "waits": sum(row["action"] in ("no_action", "hold") for row in decisions),
-                  "orders": sum(1 for row in p.facts.get("recent_orders", []) if within(row["created_at"])),
-                  "completed_trades": sum(1 for row in p.facts["fills"] if within(row["created_at"])),
-                  "problems": problems,
-                  "research_notes": sum(1 for row in p.facts["findings"] if within(row.get("created_at")))},
+                  "decisions": counts["decisions"], "waits": counts["waits"], "orders": counts["orders"],
+                  "completed_trades": counts["completed_trades"], "problems": counts["problems"],
+                  "research_notes": counts["research_notes"]},
         "flagged": flagged, "practice_value": value["display"] if value else None,
         "value_final": money["value_final"], "pays_for_itself": pays_plain(money),
     }
@@ -1771,16 +1888,17 @@ def _setting_plain(p: Projection) -> str:
 
 def _allowance_line(p: Projection) -> str:
     window = p.lowest_window
+    unknown = stop_line_state(p) == "unknown"
     if window is None:
-        return (c.PROMPT["allowance_none"].format(line=c.pct(p.threshold)) if p.threshold is not None
-                else c.PROMPT["allowance_none_no_line"])
+        if p.threshold is not None:
+            return c.PROMPT["allowance_none"].format(line=c.pct(p.threshold))
+        return c.PROMPT["allowance_none_rule_unknown" if unknown else "allowance_none_no_line"]
     phrase = c.WINDOW_PHRASE[window["label"]]
+    reading = {"p": c.pct(window["remaining_percent"]), "window": phrase, "ago": p.reading_ago()}
     if p.threshold is not None:
-        line = c.PROMPT["allowance"].format(p=c.pct(window["remaining_percent"]), window=phrase,
-                                            ago=p.reading_ago(), line=c.pct(p.threshold))
+        line = c.PROMPT["allowance"].format(**reading, line=c.pct(p.threshold))
     else:
-        line = c.PROMPT["allowance_no_line"].format(p=c.pct(window["remaining_percent"]), window=phrase,
-                                                    ago=p.reading_ago())
+        line = c.PROMPT["allowance_rule_unknown" if unknown else "allowance_no_line"].format(**reading)
     return line + (c.PROMPT["allowance_unreported"] if p.unreported else "")
 
 

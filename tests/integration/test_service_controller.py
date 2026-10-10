@@ -635,3 +635,19 @@ def test_status_composes_extracted_functions(tmp_path, monkeypatch):
     assert service_controller.observed_run(None, runtime.clock.now()) is None
     assert service_controller.cycle_state([{"status": "SUCCEEDED"}, {"status": "BLOCKED_BUDGET"}]) == "BLOCKED"
     assert service_controller.automatic_optimisation_enabled(None) is True
+
+
+def test_concurrent_ownership_probes_never_report_owned(tmp_path):
+    from trade_graph.application.service_controller import database_owned
+
+    runtime, _ = runtime_stack(tmp_path)
+    start = threading.Barrier(8)
+
+    def probe(_index):
+        start.wait()
+        return [database_owned(runtime.database) for _ in range(50)]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = [value for batch in pool.map(probe, range(8)) for value in batch]
+    # Probes in one process are serialised; none may mistake another probe for an owner (S2).
+    assert len(results) == 400 and not any(results)

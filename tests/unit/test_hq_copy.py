@@ -107,8 +107,8 @@ def test_plain_text_renders_segments_for_the_review_prompt():
     ("stale or missing quote for BTC/USD", "prices were too old to place a practice order"),
     ("market feed blocks new exposure", "prices were too old to place a practice order"),
     ("unresolved execution blocks new exposure", "an earlier practice order was still being checked"),
-    ("room exhausted", "out of allowance for this job"),
-    ("BudgetExhausted", "out of allowance for this job"),
+    ("room exhausted", "this job reached its own cost limit"),
+    ("BudgetExhausted", "this job reached its own cost limit"),
     ("ValueError", "a technical error"),
     ("StaleState", "a technical error"),
     ("something odd happened", "a problem HQ can't describe in plain words"),
@@ -118,6 +118,34 @@ def test_reason_mapping_rows(raw, words):
     segment = hq_copy.reason_segment(raw)
     assert segment["v"] == words and segment["code"] == raw
     assert hq_copy.reason_plain(None) is None
+    live = hq_copy.reason_plain(raw, live=True)
+    assert "practice" not in live
+    assert hq_copy.reason_segment(raw, live=True) == {"t": "text", "v": live, "code": raw}
+
+
+@pytest.mark.parametrize(("raw", "words"), [
+    ("stale or missing quote for BTC/USD", "prices were too old to place an order"),
+    ("market feed blocks new exposure", "prices were too old to place an order"),
+    ("unresolved execution blocks new exposure", "an earlier order was still being checked"),
+    ("model rate_limit: 429", "the AI allowance ran out"),
+    ("room exhausted", hq_copy.REASON["budget"]),
+])
+def test_live_reason_rows_never_say_practice(raw, words):
+    assert hq_copy.reason_plain(raw, live=True) == words
+
+
+def test_live_twins_never_say_practice():
+    twins = {name: value for name, value in vars(hq_copy).items() if name.startswith("LIVE_") and name.isupper()}
+    assert set(twins) >= {"LIVE_ATTENTION", "LIVE_NOW", "LIVE_PROBLEM_PREFIX", "LIVE_STORY", "LIVE_ROOM_JOB",
+                          "LIVE_ROOM_NOW", "LIVE_REASON", "LIVE_ECON", "LIVE_MONEY"}
+    strings = list(_strings(twins, values_only=True))
+    assert strings and not [value for value in strings if "practice" in value.lower()]
+    assert hq_copy.problem_prefix("dispatch:", live=True)[0] == "couldn't send orders"
+    assert hq_copy.problem_prefix("dispatch:", live=False)[0] == "couldn't send practice orders"
+    assert hq_copy.problem_prefix("feed:", live=True) == hq_copy.PROBLEM_PREFIX["feed:"]
+    assert "practice" not in hq_copy.room_job("trader", live=True)
+    assert hq_copy.room_job("research", live=True) == hq_copy.ROOM["research"][2]
+    assert hq_copy.econ("nope", live=True) == hq_copy.ECON["other"]
 
 
 def test_cadence_names():

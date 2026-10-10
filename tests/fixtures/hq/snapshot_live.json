@@ -149,7 +149,8 @@
           "t": "text",
           "v": "72% left this week. A second, shorter limit isn't reported."
         }
-      ]
+      ],
+      "stop_line_state": "on"
     },
     "automatic_turns": true,
     "automatic_optimisation": false
@@ -281,7 +282,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -342,7 +344,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": [
         {
@@ -427,7 +430,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": [
         {
@@ -509,7 +513,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -1248,6 +1253,23 @@
           "v": "Allowance refill time isn't reported."
         }
       ]
+    ],
+    "estimates": [
+      {
+        "schedule_id": "s-trader",
+        "dept": "trader",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "first_at": "2026-10-11T17:56:26.000Z",
+        "every_seconds": 14400,
+        "count": 30,
+        "conditional": false,
+        "detail": null
+      }
     ]
   },
   "story": {

@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tests.integration.test_service_controller import runtime_stack
 
+from trade_graph.api import resources
 from trade_graph.api.app import create_app
 from trade_graph.api.auth import issue_session
 from trade_graph.application.service_controller import ServiceController
@@ -23,7 +24,10 @@ SPLIT_FIVE = {"leader": "0.2", "research": "0.2", "trader": "0.2", "learning": "
 
 
 @pytest.fixture
-def hq(tmp_path):
+def hq(tmp_path, monkeypatch):
+    # The host's own resource counters never leak into these tests (review T14).
+    monkeypatch.setattr(resources, "observation",
+                        lambda runtime: {"observed_at": utc_iso(runtime.clock.now()), "warnings": []})
     runtime, broker = runtime_stack(tmp_path)
     launched = []
     runtime.service_controller = ServiceController(

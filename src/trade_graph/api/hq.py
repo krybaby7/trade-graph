@@ -19,7 +19,7 @@ Wiring (WP4, ``api/app.py``)::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import HTTPException, Query, Request
@@ -39,6 +39,7 @@ from trade_graph.api.security import redact
 from trade_graph.domain.clock import utc_iso
 
 STORY_WINDOW = timedelta(hours=STORY_WINDOW_HOURS)
+EARLIEST_BEFORE = datetime(2000, 1, 1, tzinfo=UTC)  # older 'before' values are refused, never a server error
 CALENDAR_PAST = timedelta(hours=48)
 PROMPT_DEFAULT = timedelta(hours=24)
 CalendarDays = Annotated[int, Query(ge=1, le=CALENDAR_DAYS_MAX)]
@@ -89,6 +90,8 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
         money = hq_state.money_block(p)
         story = hq_story.story(p, window_start=now - STORY_WINDOW, window_end=now + timedelta(milliseconds=1),
                                checkins=items)
+        since, _ = hq_state.prompt_since(p)
+        counts = hq_facts.period_counts(runtime.database, runtime.portfolio_id, since, now)
         return {
             "schema": SCHEMA, "as_of": p.as_of, "poll_seconds": POLL_SECONDS, "mode": p.mode,
             "account": hq_state.account(p), "viewer": hq_state.viewer(p),
@@ -96,7 +99,8 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
             "departments": hq_state.departments(p), "quests": hq_state.quests(p),
             "calendar": hq_calendar.calendar(p, calendar_days, items), "story": story, "money": money,
             "market": hq_state.market(p), "decisions": hq_state.decisions(p, attention, checkin_block, barriers),
-            "checkins": checkin_block, "prompt_facts": hq_state.prompt_facts(p, attention, story["items"], money),
+            "checkins": checkin_block,
+            "prompt_facts": hq_state.prompt_facts(p, attention, story["items"], money, counts),
             "notices": hq_state.notices(p), "links": hq_state.links(p),
         }
 
@@ -104,12 +108,15 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
 def story_page(runtime, viewer: Viewer, *, before: str, limit: int = STORY_MAX_ITEMS) -> dict:
     """Earlier story items: the 72 hours before ``before`` (a timezone-aware ISO instant)."""
     end = hq_facts.parse(before)
-    if end is None or not 1 <= limit <= STORY_MAX_ITEMS:
+    if end is None or end < EARLIEST_BEFORE or not 1 <= limit <= STORY_MAX_ITEMS:
         raise ValueError("a timezone-aware 'before' instant and a limit of 1 to 60 are required")
     with runtime.database.snapshot():
         now = runtime.clock.now()
         end = min(end, now)
-        start = end - STORY_WINDOW
+        try:
+            start = end - STORY_WINDOW
+        except OverflowError:
+            raise ValueError("'before' is out of range") from None
         p, checkins = _projection(runtime, viewer, now, CALENDAR_DAYS_DEFAULT)
         p.use_story_inputs(hq_facts.story_before(runtime, start=start, before=end))
         page = hq_story.story(p, window_start=start, window_end=end,

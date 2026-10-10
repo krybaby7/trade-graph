@@ -11,22 +11,34 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trade_graph.api import hq_copy as c
+from trade_graph.api import hq_facts
 from trade_graph.api.hq_contract import AI_DEPARTMENTS, STORY_MAX_ITEMS, iso_ms
 from trade_graph.api.hq_facts import loads
-from trade_graph.api.hq_state import STUCK, TERMINAL, Projection, _dt
+from trade_graph.api.hq_state import STUCK, TERMINAL, Projection, _dt, amount_and_unit, base_asset, quote_asset
 
 WINDOW = timedelta(hours=72)
-QUOTA_GAP_SECONDS = 90
+ONE_MS = timedelta(milliseconds=1)
 CRASHED = frozenset({"FAILED", "INTERRUPTED"})
+AI_PAUSE_LOOKUPS = 20  # invocation reads per page for "AI paused" items
+# A subscription invocation's recorded failure -> the provider stop it caused (paper_service.py).
+INVOCATION_PAUSE = {"unsupported": "subscription model unavailable", "rate_limit": "subscription quota exhausted"}
 
 
 def story(p: Projection, *, window_start: datetime, window_end: datetime, checkins: list[dict],
           limit: int = STORY_MAX_ITEMS) -> dict:
+    """One page: the newest ``limit`` items from ``window_start`` (or a reader's floor) to ``window_end``.
+
+    Nothing is silently dropped (T1, T5):
+    - a capped reader cut inside the window sets a floor; the page covers only the time after it;
+    - when the item limit cuts the page, an allowance wait that runs across the cut keeps its newer part
+      here ("at least") and its older part goes to the next page;
+    - the next page starts 1 ms after the oldest item shown, so items sharing that moment come again;
+      clients de-duplicate by id.
+    """
     items: list[dict] = []
     items += _decisions(p)
     items += _fills(p)
     items += _tasks(p)
-    items += _allowance_waits(p)
     items += _ai_paused(p)
     items += _runs(p)
     items += _routine_problems(p)
@@ -36,18 +48,36 @@ def story(p: Projection, *, window_start: datetime, window_end: datetime, checki
     items += _owner_actions(p, checkins)
     items += _improvements(p)
     items += _account_opened(p)
+    floor = p.facts.get("story_floor")
+    start = max(window_start, floor) if floor is not None else window_start
+    cut: datetime | None = None
+    for _ in range(limit + 1):  # the cut only ever moves to a newer moment
+        ordered = _in_window([*items, *_allowance_waits(p, cut)], max(start, cut) if cut else start, window_end)
+        if len(ordered) <= limit:
+            break
+        oldest = _dt(ordered[limit - 1]["at"])
+        if cut is not None and oldest <= cut:
+            break
+        cut = oldest
+    ordered = ordered[:limit]
+    if cut is not None:
+        next_before = iso_ms(_dt(ordered[-1]["at"]) + ONE_MS)
+    elif start > window_start:
+        next_before = iso_ms(start + ONE_MS)
+    else:
+        next_before = iso_ms(window_start)
+    return {"window_start": iso_ms(start), "next_before": next_before, "items": ordered}
+
+
+def _in_window(items: list, start: datetime, end: datetime) -> list[dict]:
     unique: dict[str, dict] = {}
     for item in items:
         if item is None:
             continue
         moment = _dt(item["at"])
-        if moment is not None and window_start <= moment < window_end:
+        if moment is not None and start <= moment < end:
             unique.setdefault(item["id"], item)
-    ordered = sorted(unique.values(), key=lambda item: (item["at"], item["id"]), reverse=True)
-    truncated = len(ordered) > limit
-    ordered = ordered[:limit]
-    next_before = ordered[-1]["at"] if truncated else iso_ms(window_start)
-    return {"window_start": iso_ms(window_start), "next_before": next_before, "items": ordered}
+    return sorted(unique.values(), key=lambda item: (item["at"], item["id"]), reverse=True)
 
 
 def _story_item(item_id: str, at, kind: str, dept: str, tone: str, headline: list, *, until=None,
@@ -81,17 +111,20 @@ def _decisions(p: Projection) -> list:
         if action in ("no_action", "hold"):
             headline = c.says(c.STORY["decision_wait"].format(symbols=p.symbols_text(symbols), action=words))
         elif action in ("enter", "exit"):
-            symbol = symbols[0] if symbols else c.MISC["a_coin"]
-            head = c.STORY["decision_trade"].format(action=words, symbol=symbol)
-            quantity = c.decimal_or_none(payload.get("quantity"))
-            limit = c.decimal_or_none(payload.get("limit_price"))
-            quote = symbol.split("/")[1] if "/" in symbol else None
-            if quantity is not None and limit is not None and quote:
-                headline = c.says(head + c.TRADE["limit"].format(qty=c.quantity(quantity)),
-                                  c.money_segment(limit, quote), c.TRADE["limit_after"])
+            # Coins are named by their asset ("ETH"); quantity and limit are {amount, asset/currency} (C12).
+            symbol = symbols[0] if symbols else None
+            asset, quote = base_asset(symbol) or c.MISC["a_coin"], quote_asset(symbol)
+            quantity, quantity_asset = amount_and_unit(payload.get("quantity"), "asset")
+            limit, limit_currency = amount_and_unit(payload.get("limit_price"), "currency")
+            limit_currency = limit_currency or quote
+            if quantity is not None and limit is not None and limit_currency:
+                verb = "buy" if action == "enter" else "sell"
+                headline = c.says(c.STORY["decision_trade_qty"].format(
+                    verb=verb, qty=c.quantity(quantity), asset=quantity_asset or asset),
+                    c.money_segment(limit, limit_currency), ".")
             else:
-                headline = c.says(head + ".")
-            consequence = _order_consequence(p, tasks.get(row.get("task_id")), quote)
+                headline = c.says(c.STORY["decision_trade"].format(action=words, symbol=asset) + ".")
+            consequence = _order_consequence(p, tasks.get(row.get("task_id")), quote, asset)
         else:
             headline = c.says(c.STORY["decision_other"].format(action=words))
         items.append(_story_item(f"decision:{row['decision_id']}", row["created_at"], "trader_decision", "trader",
@@ -100,7 +133,7 @@ def _decisions(p: Projection) -> list:
     return items
 
 
-def _order_consequence(p: Projection, task: dict | None, quote: str | None) -> list | None:
+def _order_consequence(p: Projection, task: dict | None, quote: str | None, asset: str) -> list | None:
     intent_id = loads(task.get("output_json")).get("intent_id") if task else None
     if not intent_id:
         return None
@@ -111,14 +144,17 @@ def _order_consequence(p: Projection, task: dict | None, quote: str | None) -> l
         fee, fee_asset = c.decimal_or_none(document.get("fee_amount")), document.get("fee_asset")
         if quantity is not None and price is not None:
             side = "buy" if document.get("side") == "buy" else "sell"
-            parts: list = [c.TRADE["done"][side].format(qty=c.quantity(quantity)), c.money_segment(price, quote)]
+            coin = base_asset(document.get("symbol")) or asset
+            parts: list = [c.TRADE["done"][side].format(qty=c.quantity(quantity), asset=coin),
+                           c.money_segment(price, quote)]
             if fee is not None and isinstance(fee_asset, str) and fee_asset == quote:
                 parts += [c.TRADE["fee"], c.money_segment(fee, quote)]
             return c.says(*parts, ".")
     row = p.runtime.database.execute("SELECT state FROM order_intents WHERE intent_id=?", (intent_id,)).fetchone()
     if row is None:
         return None
-    return c.says(c.STORY["order_state"].format(state=c.ORDER_STATE.get(row["state"], row["state"].lower())))
+    template = c.STORY["order_state"] if p.paper else c.LIVE_STORY["order_state"]
+    return c.says(template.format(state=c.ORDER_STATE.get(row["state"], row["state"].lower())))
 
 
 def _fills(p: Projection) -> list:
@@ -169,7 +205,8 @@ def _tasks(p: Projection) -> list:
                                      c.says(c.STORY["turn_skipped"].format(dept=dept, reason=reason)),
                                      consequence=c.says(c.STORY["nothing_used"])))
         else:
-            reason = c.reason_plain(raw) or (c.REASON["budget"] if status == "BLOCKED_BUDGET" else c.REASON["unknown"])
+            reason = c.reason_plain(raw, live=not p.paper) or (c.REASON["budget"] if status == "BLOCKED_BUDGET"
+                                                               else c.REASON["unknown"])
             if extra:
                 headline = c.STORY["turn_problem_extra"].format(dept=dept, reason=reason)
             elif cadence:
@@ -227,8 +264,14 @@ def _problem_consequence(p: Projection, task: dict, role: str, at: datetime) -> 
         return c.says(c.STORY["stuck"])
     if role == "trader" and p.system_pause and p.pause_since and abs((p.pause_since - at).total_seconds()) < 300:
         return c.says(c.STORY["safety_after_trader"])
+    # What happened next, true to the time (C10): a later turn of the same department, else the booked one.
+    later = [moment for other in p.roles[role].recent
+             if other is not task and (moment := _dt(other.get("created_at"))) is not None and moment > at]
+    if later:
+        before, after = c.STORY["tried_again"]
+        return c.says(before, c.time(min(later), "day_clock"), after)
     next_at = p.roles[role].next_at
-    if next_at is not None and next_at > at:
+    if next_at is not None and next_at > p.now:
         return c.says(c.STORY["next_try"], c.time(next_at, "day_clock"), ".")
     return None
 
@@ -236,53 +279,59 @@ def _problem_consequence(p: Projection, task: dict, role: str, at: datetime) -> 
 # --- Allowance and AI pauses ----------------------------------------------------------------------------
 
 
-def _allowance_waits(p: Projection) -> list:
-    streaks: dict[str, list[list]] = {}
-    for event in sorted((event for event in p.facts["events"] if event["kind"] == "subscription_quota_deferred"),
-                        key=lambda event: event["created_at"]):
-        role = event["payload"].get("role")
-        moment = _dt(event["created_at"])
-        if moment is None or not isinstance(role, str):
-            continue
-        groups = streaks.setdefault(role, [])
-        if groups and (moment - groups[-1][-1][0]).total_seconds() <= QUOTA_GAP_SECONDS:
-            groups[-1].append((moment, event))
-        else:
-            groups.append([(moment, event)])
+def _allowance_waits(p: Projection, cut: datetime | None = None) -> list:
+    """One item per allowance-wait streak (hq_facts.deferral_streaks), counted in full.
+
+    With a ``cut``, a streak that runs across it keeps only its part from the cut on; its older part
+    belongs to the next page.
+    """
     items = []
-    for role, groups in streaks.items():
+    for streak in p.facts.get("deferrals") or []:
+        role, first, last, count = streak["role"], streak["first_at"], streak["last_at"], streak["count"]
+        complete = streak["complete"]
+        if cut is not None and first < cut <= last:
+            kept = [moment for moment in streak["moments"] if moment >= cut]
+            first, count, complete = min(kept), len(kept), False
         dept = c.dept_name(role) if role in c.ROOM else c.MISC["a_department"]
         story_dept = role if role in c.ROOM else "hq"
-        for group in groups:
-            first, last, count = group[0][0], group[-1][0], len(group)
-            if count == 1:
-                headline = c.says(c.STORY["allowance_wait_one"].format(dept=dept), c.time(first, "clock"), ".")
-            else:
-                before, middle, after = c.STORY["allowance_wait"]
-                headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
-                                  after.format(count=count))
-            consequence = [c.text(c.STORY["allowance_wait_consequence"])]
-            task_id = group[-1][1]["payload"].get("task_id")
-            started = p.facts.get("attempt_starts", {}).get(task_id) if task_id else None
-            if started and _dt(started) and _dt(started) >= last:
-                consequence = c.says(*consequence, c.STORY["allowance_wait_ran"], c.time(started, "clock"), ".")
-            items.append(_story_item(f"quota-wait:{role}:{iso_ms(first)}", first, "allowance_wait", story_dept,
-                                     "neutral", headline, until=last if count > 1 else None, consequence=consequence,
-                                     count=count, technical="subscription_quota_deferred"))
+        if not complete:
+            # The streak goes on before the oldest record read here: both its start and its count are floors.
+            before, middle, after = c.STORY["allowance_wait_at_least"]
+            headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
+                              after.format(count=count))
+        elif count == 1:
+            headline = c.says(c.STORY["allowance_wait_one"].format(dept=dept), c.time(first, "clock"), ".")
+        else:
+            before, middle, after = c.STORY["allowance_wait"]
+            headline = c.says(before.format(dept=dept), c.time(first, "clock"), middle, c.time(last, "clock"),
+                              after.format(count=count))
+        consequence = [c.text(c.STORY["allowance_wait_consequence"])]
+        task_id = streak.get("task_id")
+        started = p.facts.get("attempt_starts", {}).get(task_id) if task_id else None
+        if started and _dt(started) and _dt(started) >= last:
+            consequence = c.says(*consequence, c.STORY["allowance_wait_ran"], c.time(started, "clock"), ".")
+        until = last if count > 1 or not complete else None
+        items.append(_story_item(f"quota-wait:{role}:{iso_ms(first)}", first, "allowance_wait", story_dept,
+                                 "neutral", headline, until=until, consequence=consequence, count=count,
+                                 technical="subscription_quota_deferred"))
     return items
 
 
 def _ai_paused(p: Projection) -> list:
+    """Each AI pause with the reason recorded for the turn that caused it, never today's provider reason (C11)."""
+    events = [event for event in p.facts["events"] if event["kind"] == "subscription_ai_paused"]
+    task_ids = [task_id for event in events[:AI_PAUSE_LOOKUPS]
+                if isinstance(task_id := event["payload"].get("task_id"), str)]
+    failures = hq_facts.invocation_failures(p.runtime.database, task_ids)
     items = []
-    reason_raw = p.provider_reason or None
-    reason = c.AI_PAUSE_REASON.get(reason_raw or "", c.AI_PAUSE_REASON_OTHER)
-    for event in p.facts["events"]:
-        if event["kind"] != "subscription_ai_paused":
-            continue
+    for event in events:
+        failure = failures.get(event["payload"].get("task_id"))
+        reason_raw = INVOCATION_PAUSE.get(failure or "")
+        reason = c.AI_PAUSE_REASON.get(reason_raw or "", c.AI_PAUSE_REASON_OTHER)
         items.append(_story_item(f"ai-paused:{event['event_id']}", event["created_at"], "ai_paused", "hq",
                                  "attention", c.says(c.STORY["ai_paused"].format(reason=reason)),
                                  consequence=c.says(c.STORY["ai_paused_consequence"]), problem=True,
-                                 technical=reason_raw))
+                                 technical=reason_raw or failure))
     return items
 
 
@@ -337,27 +386,71 @@ def _runs(p: Projection) -> list:
     return items
 
 
-def _paired(events: list, start_kind_test, end_kind_test) -> list[tuple[dict, dict | None, list]]:
-    """Group oldest-first events into (first degraded, recovery or None, all degraded) spans."""
-    spans, current = [], []
+class _Span:
+    """One problem span: its degraded events, and how it ended (a recovery, or the end of its team run)."""
+
+    def __init__(self, run_id: str | None) -> None:
+        self.group: list[dict] = []
+        self.run_id = run_id
+        self.recovered: dict | None = None
+        self.run_ended = False  # closed because its team run ended, never told as a recovery
+
+    @property
+    def first(self) -> dict:
+        return self.group[0]
+
+
+def _paired(p: Projection, events: list, start_kind_test, end_kind_test) -> list[_Span]:
+    """Group oldest-first events into problem spans, each within one team run (C2).
+
+    A recovery in the same run closes a span. An event of another run closes it at its own run's end, and so
+    does the end of the list when its run is not the current active run: the worker forgets its problems on
+    restart and never records a recovery for the old run.
+    """
+    spans: list[_Span] = []
+    current: _Span | None = None
     for event in sorted(events, key=lambda event: event["created_at"]):
+        run_id = p.event_run(event)
+        if current is not None and run_id != current.run_id:
+            current.run_ended = True
+            spans.append(current)
+            current = None
         if start_kind_test(event):
-            current.append(event)
-        elif end_kind_test(event) and current:
-            spans.append((current[0], event, current))
-            current = []
-    if current:
-        spans.append((current[0], None, current))
+            if current is None:
+                current = _Span(run_id)
+            current.group.append(event)
+        elif end_kind_test(event) and current is not None:
+            current.recovered = event
+            spans.append(current)
+            current = None
+    if current is not None:
+        current.run_ended = current.run_id is None or not p.active or current.run_id != p.run_id
+        spans.append(current)
     return spans
+
+
+def _span_end(p: Projection, span: _Span, start: datetime) -> tuple[datetime | None, list]:
+    """(until, consequence tail) for a span: recovered at, or the end of its team run."""
+    if span.recovered is not None:
+        end = _dt(span.recovered["created_at"])
+        return end, c.says(c.STORY["recovered"], c.time(end, "clock"), ".") if end else []
+    if not span.run_ended:
+        return None, []
+    end = p.run_end(span.run_id)
+    if end is None or end < start:
+        return None, c.says(c.STORY["run_ended_unknown"])
+    before, after = c.STORY["run_ended"]
+    return end, c.says(before, c.time(end, "clock"), after)
 
 
 def _routine_problems(p: Projection) -> list:
     events = [event for event in p.facts["events"] if event["kind"] in ("service_degraded", "service_recovered")]
     items = []
-    for first, recovered, group in _paired(events, lambda e: e["kind"] == "service_degraded",
-                                           lambda e: e["kind"] == "service_recovered"):
+    for span in _paired(p, events, lambda e: e["kind"] == "service_degraded",
+                        lambda e: e["kind"] == "service_recovered"):
+        first = span.first
         failures = []
-        for event in group:
+        for event in span.group:
             for failure in event["payload"].get("failures") or []:
                 if isinstance(failure, str) and failure not in failures:
                     failures.append(failure)
@@ -366,13 +459,15 @@ def _routine_problems(p: Projection) -> list:
         if not prefixes or all(prefix == "feed:" for prefix in prefixes):
             continue  # missing prices are told by the price-feed story
         prefix = next(prefix for prefix in prefixes if prefix != "feed:")
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         start = _dt(first["created_at"])
-        end = _dt(recovered["created_at"]) if recovered else None
+        if start is None:
+            continue
+        end, ended = _span_end(p, span, start)
         headline = c.says(c.STORY["routine_problem"].format(prefix=words), " (", c.time(start, "clock"))
         headline = (c.says(*headline, c.MISC["range"][0], c.time(end, "clock"), c.MISC["range"][1]) if end
                     else c.says(*headline, c.MISC["range"][1]))
-        tail = c.says(consequence, c.STORY["recovered"], c.time(end, "clock"), ".") if end else c.says(consequence)
+        tail = c.says(consequence, *ended)
         items.append(_story_item(f"routine:{first['event_id']}", start, "routine_problem", "hq", "attention", headline,
                                  until=end, consequence=tail, problem=True, technical=";".join(failures)))
     return items
@@ -381,17 +476,18 @@ def _routine_problems(p: Projection) -> list:
 def _feed_problems(p: Projection) -> list:
     events = [event for event in p.facts["events"] if event["kind"] == "public_feed_health"]
     items = []
-    for first, recovered, _ in _paired(events, lambda e: e["payload"].get("status") == "degraded",
-                                       lambda e: e["payload"].get("status") == "recovered"):
+    for span in _paired(p, events, lambda e: e["payload"].get("status") == "degraded",
+                        lambda e: e["payload"].get("status") == "recovered"):
+        first = span.first
         start = _dt(first["payload"].get("first_failed_at_utc")) or _dt(first["created_at"])
-        end = _dt(recovered["created_at"]) if recovered else None
+        if start is None:
+            continue
+        end, ended = _span_end(p, span, start)
         symbol = first["payload"].get("symbol")
         headline = (c.STORY["prices_problem_symbol"].format(symbol=symbol)
                     if isinstance(symbol, str) and symbol in ("BTC/USD", "ETH/USD", "BTC/EUR", "ETH/EUR")
                     else c.STORY["prices_problem"])
-        consequence = c.says(c.STORY["prices_consequence"])
-        if end:
-            consequence = c.says(*consequence, c.STORY["recovered"], c.time(end, "clock"), ".")
+        consequence = c.says(c.STORY["prices_consequence"], *ended)
         items.append(_story_item(f"feed:{iso_ms(start)}", start, "prices_problem", "market", "attention",
                                  c.says(headline + "."), until=end, consequence=consequence, problem=True,
                                  technical=first["payload"].get("error_type")))

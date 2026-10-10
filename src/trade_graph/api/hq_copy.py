@@ -319,7 +319,8 @@ TASK_STATE: Final = {
     "running": "Working on it (try {used} of {max})",
     "lease_lost": "Lost track; will be picked up again when the team runs",
     "WAITING_EXTERNAL": "Stuck: its answer can't be confirmed. It won't retry by itself.",
-    "BLOCKED_BUDGET": "Stuck: out of allowance for this job. It won't retry by itself.",
+    "BLOCKED_BUDGET": ("Stuck: this job reached its own cost limit (not your AI allowance). It won't retry by "
+                       "itself."),
     "past_deadline": "Past its time limit; will be skipped",
     "SUCCEEDED": "Done",
     "FAILED": "Didn't work",
@@ -412,7 +413,7 @@ REASON: Final = {
     "mandate": "its trading permission had expired",
     "prices": "prices were too old to place a practice order",
     "unresolved": "an earlier practice order was still being checked",
-    "budget": "out of allowance for this job",
+    "budget": "this job reached its own cost limit",
     "error": "a technical error",
     "unknown": "a problem HQ can't describe in plain words",
 }
@@ -421,37 +422,45 @@ _HALT = re.compile(r"\b(?:owner|system) halt prevents")
 _ERROR_CLASS = re.compile(r"[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+")
 
 
-def reason_plain(raw) -> str | None:
-    """Map a persisted failure reason to plain words (§D.5); the raw text goes to ``code``."""
+def reason_plain(raw, *, live: bool = False) -> str | None:
+    """Map a persisted failure reason to plain words (§D.5); the raw text goes to ``code``.
+
+    ``live`` picks the live-account wording, which never says "practice" (C1).
+    """
     if raw is None or raw == "":
         return None
     value = str(raw)
     model = re.match(r"model (\w+):", value)
     if model and model.group(1) in MODEL_FAILURE:
         return MODEL_FAILURE[model.group(1)]
+    key = _reason_key(value)
+    return LIVE_REASON.get(key, REASON[key]) if live else REASON[key]
+
+
+def _reason_key(value: str) -> str:
     if "cites evidence outside" in value:
-        return REASON["outside_evidence"]
+        return "outside_evidence"
     if _CHANGED.search(value):
-        return REASON["changed"]
+        return "changed"
     if _HALT.search(value):
-        return REASON["halt"]
+        return "halt"
     if "attempt limit or root step limit" in value:
-        return REASON["tries"]
+        return "tries"
     if "mandate expired" in value:
-        return REASON["mandate"]
+        return "mandate"
     if "stale or missing quote" in value or "market feed blocks new exposure" in value:
-        return REASON["prices"]
+        return "prices"
     if "unresolved execution blocks new exposure" in value:
-        return REASON["unresolved"]
+        return "unresolved"
     if value.startswith(("room ", "BudgetExhausted")):
-        return REASON["budget"]
+        return "budget"
     if _ERROR_CLASS.fullmatch(value):
-        return REASON["error"]
-    return REASON["unknown"]
+        return "error"
+    return "unknown"
 
 
-def reason_segment(raw) -> dict | None:
-    words = reason_plain(raw)
+def reason_segment(raw, *, live: bool = False) -> dict | None:
+    words = reason_plain(raw, live=live)
     return None if words is None else text(words, code=technical(raw))
 
 
@@ -465,6 +474,7 @@ def cadence(seconds: int | None) -> str | None:
 
 GATE: Final = {
     "G1": "Waiting: the team isn't running.",
+    "GM": "Waiting: the team started without AI being ready; turns run only if it becomes available.",
     "G2": "Waiting: the AI is paused ({reason}).",
     "G3": "Waiting for AI allowance; it retries every 30 seconds.",
     "G4": "Automatic turns are switched off in the installation settings.",
@@ -500,14 +510,14 @@ ATTENTION: Final = {
     "in_prompt": "Added to your next review prompt.",
     "nothing_now": "Nothing to do now. It's added to your next review prompt.",
     "turn_stuck": "{dept}'s turn is stuck",
-    "turn_stuck_consequence": "{dept} won't retry by itself.",
     "turn_stuck_how": "Nothing to do right now; it's in your next review prompt.",
     "checkin_due": "Your '{title}' check-in is {state}",
     "checkin_due_why": "Send the review prompt to your review chat.",
     "orders_unclear": ("{n} practice order has an unclear status", "{n} practice orders have an unclear status"),
     "orders_unclear_why": "The team is double-checking.",
     "orders_unclear_consequence": "Resume is blocked until it's settled.",
-    "repeat_problems": "{dept}'s {cadence} turn keeps having problems ({n} in a row)",
+    "repeat_problems": "{dept}'s turn ({cadence}) keeps having problems ({n} in a row)",
+    "repeat_problems_plain": "{dept}'s turn keeps having problems ({n} in a row)",
     "repeat_problems_why": "Last reason: {reason}.",
     "repeat_problems_next": "Next try ",
     "notes_expire_early": "Research notes expire before the Trader reads them",
@@ -571,6 +581,7 @@ DECISION: Final = {
         "undo": "Yes: Stop safely.", "reversible": "yes",
         "recommended": "Recommended: nothing is being watched right now.",
         "not_needed": "Not needed right now: the team is on.",
+        "not_needed_silent": "Not needed: the team's program was started but isn't responding.",
         "silent": "Start would only reconnect to the stuck program. This needs a technical check.",
     },
     "pause_ai": {
@@ -586,6 +597,10 @@ DECISION: Final = {
         "not_needed_off": "Not needed right now: the team is off.",
         "not_needed_silent": "Not needed right now: the team isn't responding.",
         "system": "Can't pause over an automatic safety stop (it already protects).",
+        "leader_stronger": ("The Leader's '{profile}' setting is stronger and already protects. Pausing here would "
+                            "weaken it."),
+        "replaces_leader": ("This replaces the Leader's '{profile}' setting with your own pause. Only you can lift "
+                            "it (Resume)."),
         "wait_before": "These would wait: ",
         "wait_after": ". Each runs once after Resume.",
         "repeat_problems": "{dept} keeps having problems; pausing saves allowance while you look.",
@@ -639,6 +654,10 @@ DECISION: Final = {
                                  "own Stop. If the cause is still there, the system may stop itself again."),
         "cost": "No money.", "undo": "Yes: Start, then Resume.", "reversible": "yes",
         "when": "Only before PC maintenance or a long shutdown.",
+        "undo_safety": ("Partly. If nothing is held, Start and then Resume bring the team back without the safety "
+                        "stop, but its cause isn't fixed. If something is held, the safety stop stays."),
+        "not_recommended_safety": ("Not recommended during an automatic safety stop. Copy the technical steps from "
+                                   "its card first."),
     },
     "record_bill": {
         "title": "Record a bill", "button": "Record a bill", "confirm": "Yes, record this bill",
@@ -650,8 +669,8 @@ DECISION: Final = {
                  "so a mistake can't simply be replaced. Ask for help first if unsure."),
         "reversible": "no",
         "when": "Optional: it completes your record of real costs.",
-        "recommended": "Optional: your AI subscription bills aren't confirmed yet.",
-        "recommended_other": "Optional: your other running costs aren't confirmed yet.",
+        "recommended": "Your AI subscription bills aren't confirmed yet.",
+        "recommended_other": "Your other running costs aren't confirmed yet.",
     },
     "declare_bills_complete": {
         "title": "I've entered every bill for a month", "button": "I've entered every bill for a month",
@@ -744,8 +763,11 @@ NOW: Final = {
     "calm": ("All quiet. Nobody is working this minute.", "Next: ",
              "If you do nothing: "),
     "calm_none": "No department turn is booked yet.",
+    "management_only": ("The team started while AI wasn't ready: prices and protection run; turns happen only if "
+                        "AI becomes available."),
     "calm_trader": " the Trader may buy, sell or wait within its rules. Waiting is a normal choice.",
-    "calm_other": "{dept} takes its {cadence} turn at ",
+    "calm_other": "{dept} takes its next turn ({cadence}) at ",
+    "calm_other_plain": "{dept} takes its next turn at ",
 }
 TURN_PHRASE: Final = {
     "trader": "the Trader looks at prices",
@@ -828,12 +850,13 @@ TREND_TAIL: Final = " The Trader decides for itself what this means."
 STORY: Final = {
     "decision_wait": "Trader looked at {symbols} and {action}.",
     "decision_trade": "Trader {action} {symbol}",
+    "decision_trade_qty": "Trader decided to {verb} {qty} {asset} at a limit of ",
     "decision_other": "Trader {action}.",
     "no_money_moved": "No money moved.",
     "order_state": "Practice order {state}.",
     "fill": "Practice trade completed: {side} {qty} {asset} at ",
     "fill_consequence": "Practice money now includes this trade.",
-    "turn_done": "{dept} finished its {cadence} turn.",
+    "turn_done": "{dept} finished its turn ({cadence}).",
     "turn_done_plain": "{dept} finished its turn.",
     "research_notes": ("{n} note for the Trader, in use until ", "{n} notes for the Trader, in use until "),
     "research_none": "No notes were written.",
@@ -842,16 +865,19 @@ STORY: Final = {
     "optimisation_done": "Report filed; nothing changes automatically.",
     "leader_none": "No changes made.",
     "leader_engineer": "Asked the Engineer for an improvement.",
-    "turn_problem": "{dept}'s {cadence} turn didn't work ({reason}).",
+    "turn_problem": "{dept}'s turn ({cadence}) didn't work ({reason}).",
     "turn_problem_plain": "{dept}'s turn didn't work ({reason}).",
     "turn_problem_extra": "{dept}'s extra review didn't work ({reason}).",
     "next_try": "Next try ",
+    "tried_again": ("Tried again ", "."),
     "safety_after_trader": "The system switched to protect-only for safety.",
     "stuck": "It won't retry by itself.",
     "turn_skipped": "{dept}'s turn was skipped: {reason}.",
     "nothing_used": "Nothing was used.",
     "allowance_wait": ("{dept}'s turn waited for AI allowance from ", " to ", " ({count} retries)."),
     "allowance_wait_one": "{dept}'s turn waited for AI allowance at ",
+    "allowance_wait_at_least": ("{dept}'s turn waited for AI allowance from at least ", " to ",
+                                " (at least {count} retries)."),
     "allowance_wait_consequence": "No allowance was used while waiting.",
     "allowance_wait_ran": " It ran at ",
     "ai_paused": "AI paused: {reason}.",
@@ -868,6 +894,8 @@ STORY: Final = {
     "crashed_unknown": "The time of the last sign of life isn't recorded.",
     "routine_problem": "Problem while running: {prefix}",
     "recovered": " Recovered ",
+    "run_ended": (" No longer tracked after the team stopped at ", "."),
+    "run_ended_unknown": " No longer tracked after that team run ended.",
     "prices_problem": "Kraken prices stopped arriving",
     "prices_problem_symbol": "Kraken prices stopped arriving for {symbol}",
     "prices_consequence": "New buying was blocked; anything held stayed protected.",
@@ -989,15 +1017,16 @@ LAST: Final = {
     "decided_wait": ("Looked at {symbols} and ", ". No money moved."),
     "decided_trade": "Decided to {verb} {symbol}.",
     "decided_other": "{action}.",
-    "done": "Finished its {cadence} turn.",
+    "done": "Finished its turn ({cadence}).",
     "done_plain": "Finished its turn.",
     "research": ("Wrote {n} note for the Trader.", "Wrote {n} notes for the Trader."),
     "learning": ("Recorded {n} lesson.", "Recorded {n} lessons."),
     "optimisation": "Filed its report; nothing changes automatically.",
-    "problem": "Its {cadence} turn didn't work: ",
+    "problem": "Its turn ({cadence}) didn't work: ",
     "problem_plain": "Its turn didn't work: ",
     "skipped": "Its turn was skipped: {reason}.",
     "stuck": "Its turn is stuck: {state}",
+    "stuck_plain": "Its last turn got stuck.",
 }
 HEADS_UP: Final = {
     "trader_expired": ("Research notes expired at ", ", before this turn."),
@@ -1014,9 +1043,10 @@ SAFETY: Final = {
     "reason": "By the system (automatic safety stop) after {trigger}.",
     "why": "After {trigger}, the system switched to {profile}.",
     "trader_failed": "the Trader's turn failed",
-    "out_of_allowance": "{dept}'s turn ran out of allowance",
-    "out_of_allowance_plain": "a turn ran out of allowance",
+    "out_of_allowance": "{dept}'s turn reached its cost limit",
+    "out_of_allowance_plain": "a turn reached its cost limit",
     "unknown": "a problem it recorded",
+    "management_service": "the team was started in protect-only maintenance mode",
 }
 PAUSED_BY: Final = {
     "owner": "By you.",
@@ -1053,9 +1083,7 @@ VERSION_EVENT: Final = {
     "reload": "was reloaded",
 }
 TRADE: Final = {
-    "limit": " ({qty} at a limit of ",
-    "limit_after": ").",
-    "done": {"buy": "Bought {qty} at ", "sell": "Sold {qty} at "},
+    "done": {"buy": "Bought {qty} {asset} at ", "sell": "Sold {qty} {asset} at "},
     "fee": ", fee ",
     "side": {"buy": "bought", "sell": "sold"},
     "fill_live": "Trade completed: {side} {qty} {asset} at ",
@@ -1091,6 +1119,10 @@ CALENDAR: Final = {
     "waiting": "Waiting to finish.",
     "only_if_resume": "Only if Resume is possible.",
     "only_if_running": "Only if the team is running.",
+    "only_if_ai_on": "Only if the AI is back on.",
+    "only_if_allowance": "Only once AI allowance is available.",
+    "only_if_timetable": "Only if the timetable step works again.",
+    "only_if_ai_available": "Only if AI becomes available.",
 }
 
 # --- Notices, prompt facts --------------------------------------------------------------------
@@ -1114,6 +1146,8 @@ PROMPT: Final = {
     "allowance_no_line": "{p}% left {window} (checked {ago}); no reserve rule is set",
     "allowance_none": "No allowance reading yet; new AI work stops at {line}%",
     "allowance_none_no_line": "No allowance reading yet; no reserve rule is set",
+    "allowance_rule_unknown": "{p}% left {window} (checked {ago}); the reserve rule couldn't be read",
+    "allowance_none_rule_unknown": "No allowance reading yet; the reserve rule couldn't be read",
     "allowance_unreported": "; a shorter limit isn't reported",
     "safety_setting": "Automatic safety stop ({profile})",
     "pays_covered": "Yes: {net} left after costs",
@@ -1144,6 +1178,49 @@ SECTION_HELP: Final = {
     "decide": "Every button shows what will happen first and asks you to confirm. HQ never acts on its own.",
 }
 NO_RECORDED_ACTIVITY: Final = "No recorded activity"
+
+# --- Live-account twins (C1) ------------------------------------------------------------------
+# A live account's orders and money are never called "practice". Paper text above stays as it is.
+# BARRIER and DECISION copy appear only when the viewer can act, which is paper only, so they need none.
+
+LIVE_ATTENTION: Final = {
+    "orders_unclear": ("{n} order has an unclear status", "{n} orders have an unclear status"),
+}
+LIVE_NOW: Final = {"orders_unclear": "An order's status is unclear."}
+LIVE_PROBLEM_PREFIX: Final = {
+    "reconciliation:": ("couldn't double-check orders and balances", "No new orders are sent until this works."),
+    "dispatch:": ("couldn't send orders", "Orders wait until this works."),
+}
+LIVE_STORY: Final = {"order_state": "Order {state}."}
+LIVE_ROOM_JOB: Final = {
+    "trader": "Decides whether to buy, sell or wait with the account's money.",
+    "accounts": "Places orders, keeps the balances and double-checks them.",
+}
+LIVE_ROOM_NOW: Final = {"accounts_unclear": "An order's status is unclear; it's being double-checked."}
+LIVE_REASON: Final = {
+    "prices": "prices were too old to place an order",
+    "unresolved": "an earlier order was still being checked",
+}
+LIVE_ECON: Final = {
+    "shared_between_accounts": ("Bills cover more than one account; this account's share isn't set.", False),
+}
+LIVE_MONEY: Final = {
+    "unavailable": "The account's numbers couldn't be worked out just now. HQ will try again shortly.",
+}
+
+
+def problem_prefix(prefix: str, *, live: bool) -> tuple[str, str]:
+    """(what is failing, consequence) for a routine problem prefix."""
+    return LIVE_PROBLEM_PREFIX.get(prefix, PROBLEM_PREFIX[prefix]) if live else PROBLEM_PREFIX[prefix]
+
+
+def room_job(dept: str, *, live: bool) -> str:
+    return LIVE_ROOM_JOB.get(dept, ROOM[dept][2]) if live else ROOM[dept][2]
+
+
+def econ(code: str, *, live: bool) -> tuple[str, bool]:
+    table = {**ECON, **LIVE_ECON} if live else ECON
+    return table.get(code, ECON["other"])
 
 
 def plural(forms: tuple[str, str], count: int) -> str:
