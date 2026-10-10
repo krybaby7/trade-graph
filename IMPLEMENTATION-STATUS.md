@@ -1,18 +1,39 @@
-# Trade Graph HQ review fixes (backend), not deployed — 2026-10-10
+# Trade Graph HQ review fixes integrated in source, not deployed — 2026-10-10
 
-Branch `claude/hq-fix-wp1` from review base `721bc8a`. The backend half of the HQ review fix plan (49 findings, all real): B1–B20 in source and tests, decision D110. **Nothing was deployed, pushed or run against the installation**; every test uses temporary databases. The frontend half (F1–F13, `src/trade_graph/web/**`) is separate work; until it lands the page ignores the three new additive contract keys (`team.allowance.stop_line_state`, `departments[].next.status`, `calendar.estimates`), so estimated turns more than 48 hours ahead are not shown.
+Branch `claude/super-dashboard-20261009`. Review base `721bc8a`; `claude/hq-fix-wp1` (backend B1–B20, decision D110) merged as `9e60e8f` and `claude/hq-fix-wp2` (frontend F1–F13) as `b1252c5`, both `--no-ff` without conflicts; integration fix `070b0b4` plus this status commit. This closes the HQ review fix plan: 49 findings, all real. **Nothing was deployed, pushed or run against the installation**; every check used temporary databases or fixtures. Shipping still needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained ([D105](docs/DECISIONS.md)). By owner choice, the second independent review round was skipped.
 
-What changed for the owner: live accounts are never called "practice"; "Pause AI" never weakens a stronger Leader pause; the Stop card and holdings see a new open order at once; old price-feed or routine problems no longer colour a new team run; the safety-stop cause comes only from evidence close in time; the review prompt's "since" counts are exact; the calendar never shows impossible or past turns as normal; an unreadable reserve rule says so instead of "none"; stuck turns say "its own cost limit"; long AI-allowance waits are counted in full and older story pages are always reachable; the story endpoint answers 422, never 500, for odd dates; redaction now hides private file paths that only start like an app route (such as `/journal.sqlite`). HQ no longer probes database ownership (never takes the database lock).
+What changed for the owner:
+- **Wording and safety:** a live account is never called "practice", in the page, prompts or help. "Pause AI" never weakens a stronger Leader pause. The Stop card and holdings see a new open order at once. The safety-stop cause comes only from evidence close in time, and its Stop preview says "Partly reversible" and "Not recommended".
+- **Calendar and turns:** the calendar and room tiles never show an impossible or past turn as normal. Overdue tiles say Waiting, Due now or Overdue, and Up next shows each turn's condition. Overdue items sit under "Now", and estimated turns more than 48 hours ahead appear as one "about every …" series per department.
+- **Money and counts:** an unreadable reserve rule says so, never "none" (the review prompt says it too). "Since you last looked" says "at least" when the story was cut. Long AI-allowance waits are counted in full, and older story pages are always reachable.
+- **Using the page:** open panels and messages survive the 30-second refresh. Bill wizards move focus at each step and take the share as a percentage. Unsent requests expire after 24 h, and resent ones say "Already done". The page fits on a phone, with HQ's own footer.
+- **Robustness:** the story endpoint answers 422, never 500, for odd dates. Redaction is anchored. HQ never takes the database lock. A busy week fits the 80 KB payload budget.
 
-Commands (WSL2 Ubuntu, isolated temporary databases only):
-- `uv run ruff check src tests` — all checks passed.
-- `uv run pytest tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_owner_checkins.py tests/security/test_owner_checkin_boundary.py tests/integration/test_live_home.py tests/integration/test_dashboard_activity.py` — 311 passed.
-- Backend set `tests/integration/test_hq_{projection,routes,cost,owner_writes,payload}.py tests/unit/test_hq_{copy,contract}.py tests/unit/test_redaction_paths.py tests/integration/test_service_controller.py tests/integration/test_dashboard_boundary.py tests/security` — 604 passed.
-- The HQ test files also pass (237 passed) with the unpatched host resource observation forced to report a task-capacity warning (a throwaway pytest plugin), so host counters can't break them (review T14).
-- Busy synthetic week (`tests/integration/test_hq_payload.py`): compact snapshot 65.9 KB (7 days) and 66.5 KB (14 days), route 66.5 KB, within the 80 KB budget; snapshot about 25 ms.
-- `tests/e2e/test_dashboard_loop.py` still fails at line 37 with `KeyError: 'degraded'` (`/api/v1/overview` has no `degraded` key). It fails the same way on base `3504248`; not caused by HQ. The full suite was not rerun.
+Contract cross-check (FIX-PLAN §1): the backend emits all three additive keys: `team.allowance.stop_line_state`, `departments[].next.status` and `calendar.estimates`. All are omit-not-null and validated by `hq_contract.py`. All nine fixtures carry them. Real snapshots from a fresh database, the offline demo loop and the busy synthetic week (7 and 14 days) validate. Rendered through the HQ scripts in the Node harness, they show no script errors and no "undefined"/"NaN"/"null" text. The Story `window_start`/`next_before` meaning matches the client's "at least" logic. One mismatch was fixed (`070b0b4`): the review prompt ignored `stop_line_state`.
 
-Not done or still open: the frontend fixes F1–F13 and their manual browser checks; owner question Q1 (guided safety-stop recovery) is unchanged.
+Commands (WSL2 Ubuntu unless noted; temporary databases only):
+- `uv run ruff check src tests`: all checks passed.
+- **Full suite, run once at `b1252c5`:**
+  - Command: `uv run pytest -q -p no:cacheprovider`, which took 33.5 min.
+  - Totals: 3965 collected, **3940 passed, 17 failed, 8 skipped**. The failure count comes from the short summary. The project's `addopts -q` plus `-q` hides pytest's own total line, so the totals are derived from collect-only, the 17 listed failures and the 8 skips seen in a rerun of the only test files that can skip.
+  - All 17 failures are known and fail the same way on base `3504248`:
+    - 3 `test_progress_dashboard`
+    - 4 `test_progress_projection`
+    - 1 `test_subscription_smoke`
+    - 4 `test_paper_soak` (database open `ProgrammingError`)
+    - 4 of the 6 flaky `test_plugin_staging` 0.3 s cases
+    - `e2e/test_dashboard_loop`, failing at line 37 with `KeyError: 'degraded'`. A copy of that test without that one assertion passes, including the branch's added `/journal` page.
+  - The 8 skips are `tests/test_hq_js_behaviour.py` (no Node in WSL).
+- **After `070b0b4`:**
+  - `tests/test_hq_static.py tests/test_hq_template.py tests/test_dashboard_pages.py tests/test_hq_js_behaviour.py`: 87 passed, 8 skipped.
+  - With Windows Node v24.14.1: `node --check` passed on all 7 `hq*.js` files, and `node --test tests/js/hq_*.test.mjs` gave 36 passed.
+- **Synthetic smoke (FastAPI test client, 30 warm requests per route):**
+  - Fresh `trade-graph init` database: `/` 200 (30.4 KB, p95 6.7 ms), `/journal` 200 (83.1 KB, p95 10.8 ms), `/api/v1/hq` 200 (17.1 KB, p95 7.2 ms), `/api/v1/hq/story` 200 (p95 4.9 ms).
+  - Offline demo loop database: `/` 200 (59.7 KB, p95 9.2 ms), `/journal` 200 (120.4 KB, p95 21.0 ms), `/api/v1/hq` 200 (44.1 KB, p95 9.9 ms), `/api/v1/hq/story` 200 (p95 5.7 ms).
+  - Both databases: signed-out `/` and `/journal` redirect to `/login`, and extreme story dates give 422 (or 200 for the far future), never 500.
+  - Busy synthetic week: 65.9 KB (7 days) and 66.5 KB (14 days), within the 80 KB budget.
+
+Synthetic only. There was no real installation data, no Windows Edge or iPad check, and no 768 px or full light/dark browser pass. The Stop preview's "Partly reversible" wording was not checked in a browser. Owner question Q1 (guided safety-stop recovery) is unchanged. T17/T21, funded/economic/live and off-host acceptance are unchanged.
 
 ---
 
