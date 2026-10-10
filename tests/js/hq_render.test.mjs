@@ -30,7 +30,8 @@ test("an overdue tile says Waiting, Due now or Overdue as the server says; never
   delete next.departments.find(dept => dept.id === "trader").next.status;   // an older server
   page.show(next);
   assert.equal(line(), "Overdue");
-  for (const [status, words] of [["waiting", "Waiting"], ["due_now", "Due now"], ["overdue", "Overdue"]]) {
+  for (const [status, words] of [["waiting", "Waiting"], ["due_now", "Due now"], ["overdue", "Overdue"],
+    ["planned", "Overdue"], ["toString", "Overdue"]]) {
     next.departments.find(dept => dept.id === "trader").next.status = status;
     page.show(clone(next));
     assert.equal(line(), words);

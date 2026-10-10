@@ -270,8 +270,8 @@ def test_up_next_and_tiles_never_show_an_impossible_turn_as_normal():
     upnext = _view(code, "upnext")
     assert "item.detail" in upnext and "item.conditional" in upnext and "item.waiting_because" in upnext
     tile = _function(code, "roomLine")
-    assert "next.status" in tile and '|| "Overdue"' in tile and '"Due now"' not in tile
-    assert 'OVERDUE_WORDS = Object.freeze({waiting: "Waiting", due_now: "Due now", overdue: "Overdue"})' in code
+    assert "OVERDUE_WORDS.get(next.status)" in tile and '|| "Overdue"' in tile and '"Due now"' not in tile
+    assert 'OVERDUE_WORDS = new Map([["waiting", "Waiting"], ["due_now", "Due now"], ["overdue", "Overdue"]])' in code
 
 
 def test_calendar_now_group_strip_glyphs_and_estimate_series():

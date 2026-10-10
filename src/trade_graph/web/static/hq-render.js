@@ -64,8 +64,9 @@
     olderNote: "",
   };
   // Turn tiles: an overdue turn says why it hasn't happened (contract departments[].next.status). An older
-  // server without the field gets "Overdue", never "Due now" (review U1).
-  const OVERDUE_WORDS = Object.freeze({waiting: "Waiting", due_now: "Due now", overdue: "Overdue"});
+  // server without the field gets "Overdue", never "Due now" (review U1). A Map, so an unexpected value can
+  // only ever fall back to "Overdue" (never an inherited object property).
+  const OVERDUE_WORDS = new Map([["waiting", "Waiting"], ["due_now", "Due now"], ["overdue", "Overdue"]]);
   // Calendar items that are happening or holding things up now, whether or not their time has passed (C4).
   const CURRENT = new Set(["due", "overdue", "waiting"]);
 
@@ -388,7 +389,7 @@
     const next = dept.next;
     const ms = parseIso(next?.at);
     if (ms !== null) {
-      if (next.overdue) { line.append(OVERDUE_WORDS[next.status] || "Overdue"); return; }
+      if (next.overdue) { line.append(OVERDUE_WORDS.get(next.status) || "Overdue"); return; }
       // Tiles are about 100 px wide: today shows the clock, other days the short weekday (the sheet has the rest).
       const days = HQ.dayDiff(ms);
       const words = days === 0 ? fmt.clock(ms) : days > 0 && days <= 6 ? `${fmt.weekday(ms)} ${fmt.clock(ms)}` : fmt.dateWords(ms);
