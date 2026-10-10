@@ -738,7 +738,13 @@ def _ai_block(p: Projection) -> dict:
 def _allowance_block(p: Projection) -> dict:
     return {"status": p.allowance_status, "observed_at": _iso(p.reading_at),
             "age_seconds": seconds_between(p.now, p.reading_at), "stop_line_percent": p.threshold,
-            "windows": p.windows, "unreported_windows": p.unreported, "plain": allowance_plain(p)}
+            "windows": p.windows, "unreported_windows": p.unreported, "plain": allowance_plain(p),
+            "stop_line_state": stop_line_state(p)}
+
+
+def stop_line_state(p: Projection) -> str:
+    """The reserve rule: read and on, read and off, or unreadable, which is never "none" (contract 1.1)."""
+    return {True: "on", False: "off"}.get(p.cache.get("threshold_enabled"), "unknown")
 
 
 def allowance_plain(p: Projection) -> list:
@@ -1851,16 +1857,17 @@ def _setting_plain(p: Projection) -> str:
 
 def _allowance_line(p: Projection) -> str:
     window = p.lowest_window
+    unknown = stop_line_state(p) == "unknown"
     if window is None:
-        return (c.PROMPT["allowance_none"].format(line=c.pct(p.threshold)) if p.threshold is not None
-                else c.PROMPT["allowance_none_no_line"])
+        if p.threshold is not None:
+            return c.PROMPT["allowance_none"].format(line=c.pct(p.threshold))
+        return c.PROMPT["allowance_none_rule_unknown" if unknown else "allowance_none_no_line"]
     phrase = c.WINDOW_PHRASE[window["label"]]
+    reading = {"p": c.pct(window["remaining_percent"]), "window": phrase, "ago": p.reading_ago()}
     if p.threshold is not None:
-        line = c.PROMPT["allowance"].format(p=c.pct(window["remaining_percent"]), window=phrase,
-                                            ago=p.reading_ago(), line=c.pct(p.threshold))
+        line = c.PROMPT["allowance"].format(**reading, line=c.pct(p.threshold))
     else:
-        line = c.PROMPT["allowance_no_line"].format(p=c.pct(window["remaining_percent"]), window=phrase,
-                                                    ago=p.reading_ago())
+        line = c.PROMPT["allowance_rule_unknown" if unknown else "allowance_no_line"].format(**reading)
     return line + (c.PROMPT["allowance_unreported"] if p.unreported else "")
 
 

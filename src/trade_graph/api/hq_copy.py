@@ -1142,6 +1142,8 @@ PROMPT: Final = {
     "allowance_no_line": "{p}% left {window} (checked {ago}); no reserve rule is set",
     "allowance_none": "No allowance reading yet; new AI work stops at {line}%",
     "allowance_none_no_line": "No allowance reading yet; no reserve rule is set",
+    "allowance_rule_unknown": "{p}% left {window} (checked {ago}); the reserve rule couldn't be read",
+    "allowance_none_rule_unknown": "No allowance reading yet; the reserve rule couldn't be read",
     "allowance_unreported": "; a shorter limit isn't reported",
     "safety_setting": "Automatic safety stop ({profile})",
     "pays_covered": "Yes: {net} left after costs",

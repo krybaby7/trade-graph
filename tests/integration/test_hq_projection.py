@@ -539,6 +539,29 @@ def test_schedule_selection(env):
     assert not [item for item in data["calendar"]["items"] if item["dept"] == "optimisation"]
 
 
+def test_reserve_rule_unknown_is_not_none(env):
+    data = snap(env)  # no allowance reading and no readable reserve policy
+    assert data["team"]["allowance"]["stop_line_state"] == "unknown"
+    assert data["prompt_facts"]["allowance"] == "No allowance reading yet; the reserve rule couldn't be read"
+    run(env)
+    reading(env)
+    on = snap(env)
+    assert on["team"]["allowance"]["stop_line_state"] == "on" and on["team"]["allowance"]["stop_line_percent"] == 40
+    env.runtime.subscription_readonly_status = None
+    unknown = snap(env)
+    assert unknown["team"]["allowance"]["stop_line_state"] == "unknown"
+    assert unknown["team"]["allowance"]["stop_line_percent"] is None
+    assert "the reserve rule couldn't be read" in unknown["prompt_facts"]["allowance"]
+    assert "no reserve rule is set" not in unknown["prompt_facts"]["allowance"]
+    assert "No reserve rule is set." not in text(unknown["team"]["allowance"]["plain"])
+    env.runtime.subscription_readonly_status = lambda: {"subscription": {"quota_reserve_policy": {
+        "enabled": False, "admission_threshold_remaining_percent": 40}}}
+    off = snap(env)
+    assert off["team"]["allowance"]["stop_line_state"] == "off"
+    assert "No reserve rule is set." in text(off["team"]["allowance"]["plain"])
+    assert "no reserve rule is set" in off["prompt_facts"]["allowance"]
+
+
 def test_leftover_schedule_rows_are_ignored(env):
     env.runtime.config = PaperRuntimeConfig(schedule_intervals={"trader": 14400})
     run(env)
