@@ -17,7 +17,7 @@ and a number never passes for a string. Conventions:
 """
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Annotated, Any, ClassVar, Final, Literal, Protocol, get_args
 
@@ -33,6 +33,8 @@ STORY_WINDOW_HOURS: Final = 72
 STORY_MAX_ITEMS: Final = 60
 CALENDAR_MAX_ITEMS: Final = 200
 SERIES_MAX_PROJECTIONS: Final = 48
+# Estimated turns later than this are summarised per schedule in ``calendar.estimates`` (payload budget).
+ESTIMATE_ITEMS_HORIZON_HOURS: Final = 48
 QUEST_MAX_ITEMS: Final = 60
 UP_NEXT_MAX: Final = 5
 TURN_STUCK_MAX_CARDS: Final = 3
@@ -124,6 +126,12 @@ AiState = Literal["paused_model", "paused_quota", "waiting_for_allowance", "prob
                   "unknown"]
 AI_STATES: Final = get_args(AiState)
 AllowanceStatus = Literal["ok", "near_line", "below_line", "unknown"]
+# The reserve rule ("stop line"): read and on, read and off, or not readable (never shown as "none").
+StopLineState = Literal["on", "off", "unknown"]
+# A department's next turn: not overdue; overdue within the 120 s grace with nothing in the way; overdue
+# while a known gate holds; overdue for a reason HQ can't see (or a passed Engineer deadline).
+NextStatus = Literal["planned", "due_now", "waiting", "overdue"]
+NEXT_STATUSES: Final = get_args(NextStatus)
 WindowLabel = Literal["weekly", "5-hour", "other"]
 
 AttentionCode = Literal["team_off", "team_silent", "safety_stop", "model_unavailable", "timetable_failing",
@@ -267,6 +275,11 @@ def money_display(amount: str, currency: str) -> str:
 def _real_instant(value: str) -> str:
     datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
     return value
+
+
+def _instant(value: str) -> datetime:
+    """An already validated ``ISO`` string as an aware datetime."""
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
 
 
 def _canonical(value: str) -> str:
@@ -480,6 +493,7 @@ class AllowanceWindow(_Contract):
 
 
 class Allowance(_Contract):
+    _omit_not_null = frozenset({"stop_line_state"})
     status: AllowanceStatus
     observed_at: ISO | None
     age_seconds: int | None
@@ -487,6 +501,15 @@ class Allowance(_Contract):
     windows: list[AllowanceWindow]
     unreported_windows: list[str]
     plain: NonEmptyText
+    # Absent from older servers: then a null percent means "couldn't be read", never "none".
+    stop_line_state: StopLineState | None = None
+
+    @model_validator(mode="after")
+    def _stop_line(self):
+        if self.stop_line_state is not None and (self.stop_line_state == "on") != (
+                self.stop_line_percent is not None):
+            raise ValueError("stop_line_percent is a number exactly when stop_line_state is 'on'")
+        return self
 
 
 class Team(_Contract):
@@ -544,6 +567,7 @@ class DepartmentLast(_Contract):
 
 
 class DepartmentNext(_Contract):
+    _omit_not_null = frozenset({"status"})
     at: ISO | None
     exact: bool
     every_seconds: Positive | None
@@ -551,11 +575,15 @@ class DepartmentNext(_Contract):
     waiting_because: Text | None  # only for overdue turns (spec §B.5.4)
     note: Text | None
     extra_rows: NonNegative
+    # Absent from older servers: then an overdue tile says "Overdue", never "Due now".
+    status: NextStatus | None = None
 
     @model_validator(mode="after")
     def _waiting(self):
         if self.waiting_because is not None and not self.overdue:
             raise ValueError("waiting_because explains an overdue turn only")
+        if self.status is not None and (self.status == "planned") != (not self.overdue):
+            raise ValueError("next.status is 'planned' exactly when the turn is not overdue")
         return self
 
 
@@ -665,7 +693,31 @@ class CalendarRecurring(_Contract):
     machine: bool
 
 
+class CalendarEstimateSeries(_Contract):
+    """Estimated turns of one schedule beyond ``ESTIMATE_ITEMS_HORIZON_HOURS``, summarised.
+
+    The projections are ``first_at + k * every_seconds`` for ``k = 0 .. count - 1``: the same
+    ones the listed ``estimated`` items would have continued with.
+    """
+
+    schedule_id: Name
+    dept: DeptId
+    title: NonEmptyText  # the same title as the series' listed items, e.g. "Trader's turn"
+    first_at: ISO
+    every_seconds: Positive
+    count: Positive
+    conditional: bool  # as CalendarItem.conditional for these projections
+    detail: Text | None  # the text each projected item would have carried
+
+    @model_validator(mode="after")
+    def _dept(self):
+        if self.dept not in AI_DEPARTMENTS:
+            raise ValueError("estimate series belong to an AI department")
+        return self
+
+
 class Calendar(_Contract):
+    _omit_not_null = frozenset({"estimates"})
     from_: ISO = Field(alias="from")
     to: ISO
     truncated: bool
@@ -673,11 +725,21 @@ class Calendar(_Contract):
     items: Annotated[list[CalendarItem], Field(max_length=CALENDAR_MAX_ITEMS)]
     recurring: list[CalendarRecurring]
     notes: list[NonEmptyText]
+    # Absent from older servers: then far estimates are listed as ``estimated`` items.
+    estimates: list[CalendarEstimateSeries] | None = None
 
     @model_validator(mode="after")
     def _up_next(self):
         if self.to < self.from_:
             raise ValueError("calendar.to precedes calendar.from")
+        if self.estimates is not None:
+            if len({series.schedule_id for series in self.estimates}) != len(self.estimates):
+                raise ValueError("one estimate series per schedule")
+            end = _instant(self.to)
+            for series in self.estimates:
+                last = _instant(series.first_at) + timedelta(seconds=(series.count - 1) * series.every_seconds)
+                if last > end:
+                    raise ValueError("an estimate series ends within the calendar range")
         by_id = {item.id: item for item in self.items}
         if len(by_id) != len(self.items):
             raise ValueError("calendar item ids are unique")
@@ -709,6 +771,14 @@ class StoryItem(_Contract):
 
 
 class Story(_Contract):
+    """One page of the story, newest first.
+
+    - ``window_start`` is the oldest moment this page covers completely. It may be later than
+      ``as_of - 72 h`` when a capped reader hit its cap.
+    - ``next_before`` is the ``before`` value for the next older page. Pages may overlap by up to
+      1 ms; clients de-duplicate by ``id``. When nothing was cut, ``next_before == window_start``.
+    """
+
     window_start: ISO
     next_before: ISO | None
     items: Annotated[list[StoryItem], Field(max_length=STORY_MAX_ITEMS)]
