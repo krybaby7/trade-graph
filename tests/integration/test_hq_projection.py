@@ -537,6 +537,97 @@ def test_schedule_selection(env):
     assert not [item for item in data["calendar"]["items"] if item["dept"] == "optimisation"]
 
 
+def test_leftover_schedule_rows_are_ignored(env):
+    env.runtime.config = PaperRuntimeConfig(schedule_intervals={"trader": 14400})
+    run(env)
+    reading(env)
+    schedule(env, "trader", 3600)
+    schedule(env, "research", -3 * 86400, interval=86400)
+    data = snap(env)
+    assert room(data, "research")["next"] is None
+    assert not [item for item in data["calendar"]["items"] if item["dept"] == "research"]
+    assert next(turn for turn in data["prompt_facts"]["next_turns"] if turn["dept"] == "research")["at"] is None
+    assert "Overdue" not in json.dumps(data)
+    assert room(data, "trader")["next"]["status"] == "planned"
+
+
+def test_artifact_row_wins(env):
+    run(env)
+    schedule(env, "research", 7200, interval=86400, last_due=-600, schedule_id="s-plain")
+    schedule(env, "research", 9000, interval=86400, last_due=-5000, name="artifact-research-review",
+             schedule_id="s-artifact")
+    data = snap(env)
+    research = room(data, "research")["next"]
+    assert research["at"] == iso_ms(at(env, 9000)) and research["extra_rows"] == 1
+    assert [item["id"] for item in data["calendar"]["items"] if item["dept"] == "research"][0] == \
+        f"turn:s-artifact:{iso_ms(at(env, 9000))}"
+
+
+def test_overdue_projections_start_after_now(env):
+    run(env)
+    reading(env, remaining=38)
+    schedule(env, "trader", -5 * 3600)
+    data = snap(env)
+    estimated = sorted(item["at"] for item in data["calendar"]["items"]
+                       if item["dept"] == "trader" and item["status"] == "estimated")
+    assert estimated and all(moment > data["as_of"] for moment in estimated)
+    assert estimated[0] == iso_ms(at(env, 4 * 3600))
+
+
+def _first_trader_turn(data) -> dict:
+    return min((item for item in data["calendar"]["items"] if item["dept"] == "trader"
+                and item["kind"] == "dept_turn"), key=lambda item: item["at"])
+
+
+@pytest.mark.parametrize(("gate", "words"), [
+    ("G1", "Only if the team is running."), ("G2", "Only if the AI is back on."),
+    ("G3", "Only once AI allowance is available."), ("G5", "Only if Resume is possible."),
+])
+def test_first_turn_carries_its_condition(env, gate, words):
+    if gate == "G1":
+        run(env, heartbeat=-91)
+    else:
+        run(env)
+    reading(env, remaining=3, paused_reason="subscription quota exhausted" if gate == "G2" else None)
+    if gate == "G3":
+        events(env, "subscription_quota_deferred", [(-60, {"task_id": "t-q", "role": "research"})])
+    if gate == "G5":
+        pause(env, "MANAGE_ONLY", "owner")
+    schedule(env, "trader", 3600)
+    first = _first_trader_turn(snap(env))
+    assert first["status"] == "planned" and first["conditional"] is True
+    assert text(first["detail"]) == words
+
+
+def test_next_status(env):
+    run(env)
+    reading(env)
+    schedule(env, "trader", 3600)
+    assert room(snap(env), "trader")["next"]["status"] == "planned"
+    for due, status in ((-60, "due_now"), (-3600, "overdue")):
+        env.db.execute("UPDATE schedules SET next_due_at=? WHERE schedule_id='s-trader'", (at(env, due),))
+        trader = room(snap(env), "trader")["next"]
+        assert (trader["overdue"], trader["status"]) == (True, status)
+    env.db.execute("DELETE FROM subscription_provider_state")
+    reading(env, remaining=38)
+    assert room(snap(env), "trader")["next"]["status"] == "waiting"
+
+
+def test_management_only_is_a_gate(env):
+    run(env, status="MANAGEMENT_ONLY")
+    reading(env)
+    schedule(env, "trader", -3600)
+    schedule(env, "research", 7200, interval=86400)
+    data = snap(env)
+    assert data["now"]["code"] == "calm"
+    assert "started while AI wasn't ready" in text(data["now"]["detail"])
+    trader = room(data, "trader")["next"]
+    assert trader["status"] == "waiting" and "started without AI" in text(trader["waiting_because"])
+    research = min((item for item in data["calendar"]["items"] if item["dept"] == "research"),
+                   key=lambda item: item["at"])
+    assert text(research["detail"]) == "Only if AI becomes available." and research["conditional"] is True
+
+
 def test_notes_expiring_before_trader(env):
     quiet(env)
     finding(env, "f-90", created=-3600, expires=1800)

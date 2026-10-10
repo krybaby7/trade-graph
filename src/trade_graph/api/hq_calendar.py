@@ -23,6 +23,17 @@ PAST_WINDOW = timedelta(hours=48)
 MANDATE_HORIZON = timedelta(days=30)
 RESEARCH_EXPIRY_MAX = 10
 HISTORY_INTERVAL_SECONDS = 3600
+# Gates under which a department's turns may not happen at all, and what its next turn depends on (U1).
+CONDITIONAL_GATES = frozenset({"G1", "G2", "G3", "G4", "G5", "G6", "GM"})
+FIRST_TURN_CONDITION = {
+    "G1": c.CALENDAR["only_if_running"],
+    "G2": c.CALENDAR["only_if_ai_on"],
+    "G3": c.CALENDAR["only_if_allowance"],
+    "G4": c.GATE["G4"],
+    "G5": c.CALENDAR["only_if_resume"],
+    "G6": c.CALENDAR["only_if_timetable"],
+    "GM": c.CALENDAR["only_if_ai_available"],
+}
 
 
 def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
@@ -85,22 +96,23 @@ def _future_turns(p: Projection, role, end: datetime) -> list:
     schedule_id = role.schedule["schedule_id"]
     series = {"schedule_id": schedule_id, "every_seconds": role.every} if role.every else None
     gate = role.blocking_gate
-    first_detail = None
-    if not role.overdue:
-        if gate == "G1":
-            first_detail = c.says(c.CALENDAR["only_if_running"])
-        elif gate == "G5":
-            first_detail = c.says(c.CALENDAR["only_if_resume"])
+    conditional = gate in CONDITIONAL_GATES
+    upcoming = not role.overdue
+    first_detail = c.says(FIRST_TURN_CONDITION[gate]) if upcoming and gate in FIRST_TURN_CONDITION else None
     items: list = [_item(f"turn:{schedule_id}:{iso_ms(role.next_at)}", "dept_turn", role.dept, role.next_at,
-                   _turn_title(role.dept), "overdue" if role.overdue else "planned", p, detail=first_detail,
-                   waiting=role.gate_text if role.overdue else None, series=series)]
+                   _turn_title(role.dept), "planned" if upcoming else "overdue", p, detail=first_detail,
+                   conditional=conditional and upcoming, waiting=None if upcoming else role.gate_text,
+                   series=series)]
     if not role.every:
         return items
-    conditional = gate in {"G1", "G2", "G3", "G4", "G5", "G6"}
-    base = max(role.next_at, p.now) if conditional else role.next_at
+    # The scheduler books the next turn at the moment a turn fires, plus the interval
+    # (scheduler.py), so an overdue turn's successors count from now, never from the missed time (C3).
+    base = max(role.next_at, p.now)
     detail = c.says(c.CONDITIONAL) if conditional else None
     for step in range(1, SERIES_MAX_PROJECTIONS + 1):
         at = base + timedelta(seconds=role.every * step)
+        if at <= p.now:
+            continue
         if at > end:
             break
         items.append(_item(f"turn:{schedule_id}:{iso_ms(at)}", "dept_turn", role.dept, at, _turn_title(role.dept),

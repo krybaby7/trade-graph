@@ -27,6 +27,7 @@ from trade_graph.api.hq_contract import (
     iso_ms,
 )
 from trade_graph.api.hq_facts import loads, parse, seconds_between
+from trade_graph.application.paper_service import DEFAULT_SCHEDULES
 from trade_graph.application.service_controller import automatic_optimisation_enabled
 
 SCHEDULED_ROLES = ("trader", "research", "learning", "leader", "optimisation")
@@ -272,13 +273,23 @@ class Projection:
             self.roles[dept] = role
 
     def _schedule(self, role: Role) -> None:
-        candidates = [row for row in self.facts["schedules"] if _schedule_role(row["name"]) == role.dept]
+        """The schedule row that books this department's turns (spec §B.5.3, C6).
+
+        Rows left over for a department the installation no longer schedules are ignored; an
+        ``artifact-`` row, when there is one, always wins over the plain row it replaced.
+        """
+        rows = [row for row in self.facts["schedules"] if _schedule_role(row["name"]) == role.dept]
+        intervals = self.config["schedule_intervals"]
+        configured = set(DEFAULT_SCHEDULES if intervals is None else intervals)
+        candidates = [row for row in rows if row["name"].startswith("artifact-") or role.dept in configured]
         if role.dept == "optimisation" and not self.auto_optimisation:
             candidates = []
+        artifacts = [row for row in candidates if row["name"].startswith("artifact-")]
+        candidates = artifacts or candidates
         if not candidates:
             return
-        chosen = max(candidates, key=lambda row: (row["last_due_at"] or "", row["name"].startswith("artifact-")))
-        role.schedule, role.extra_rows = chosen, len(candidates) - 1
+        chosen = max(candidates, key=lambda row: (row["last_due_at"] or "", row["name"]))
+        role.schedule, role.extra_rows = chosen, len(rows) - 1
         role.every = chosen["interval_seconds"] if chosen["interval_seconds"] and chosen["interval_seconds"] > 0 \
             else None
         role.next_at = _dt(chosen["next_due_at"])
@@ -298,6 +309,8 @@ class Projection:
     def _blocking_gate(self, dept: str) -> str | None:
         if not self.running_fresh:
             return "G1"
+        if self.status == "MANAGEMENT_ONLY":
+            return "GM"  # started while AI wasn't ready: turns run only if it becomes available (C13)
         if self.provider_paused:
             return "G2"
         if self.ai_state == "waiting_for_allowance":
@@ -314,6 +327,8 @@ class Projection:
         gate = role.blocking_gate
         if gate == "G1":
             return gate, c.says(c.GATE["G1"])
+        if gate == "GM":
+            return gate, c.says(c.GATE["GM"])
         if gate == "G2":
             return gate, c.says(c.GATE["G2"].format(reason=self.ai_pause_reason()))
         if gate == "G3":
@@ -865,9 +880,14 @@ def _calm_copy(p: Projection) -> tuple[list, list, list]:
     head, next_label, nothing = c.NOW["calm"]
     upcoming = next_turn(p)
     if upcoming is None:
-        return c.says(head), c.says(c.NOW["calm_none"]), []
+        none = c.says(c.NOW["calm_none"])
+        if p.status == "MANAGEMENT_ONLY":
+            none = c.join(c.says(c.NOW["management_only"]), none)
+        return c.says(head), none, []
     dept, at = upcoming
     detail = c.says(next_label + c.TURN_PHRASE[dept] + " ", c.time(at, "relative_clock"), ".")
+    if p.status == "MANAGEMENT_ONLY":
+        detail = c.join(c.says(c.NOW["management_only"]), detail)
     if dept == "trader":
         if_nothing = c.says(nothing + "at ", c.time(at, "clock"), c.NOW["calm_trader"])
     else:
@@ -1182,7 +1202,16 @@ def _room_next(p: Projection, role: Role) -> dict | None:
         note = c.says(c.CALENDAR["engineer_deadline"])
     return {"at": iso_ms(role.next_at), "exact": True, "every_seconds": role.every, "overdue": role.overdue,
             "waiting_because": role.gate_text if role.overdue else None, "note": note,
-            "extra_rows": role.extra_rows}
+            "extra_rows": role.extra_rows, "status": next_status(role)}
+
+
+def next_status(role: Role) -> str:
+    """planned, due_now (G9), waiting (a known gate holds) or overdue (a reason HQ can't see; contract 1.2)."""
+    if not role.overdue:
+        return "planned"
+    if role.dept == "engineer" or role.gate == "G10":
+        return "overdue"
+    return "due_now" if role.gate == "G9" else "waiting"
 
 
 def _room_last(p: Projection, role: Role) -> dict | None:

@@ -473,6 +473,7 @@ def cadence(seconds: int | None) -> str | None:
 
 GATE: Final = {
     "G1": "Waiting: the team isn't running.",
+    "GM": "Waiting: the team started without AI being ready; turns run only if it becomes available.",
     "G2": "Waiting: the AI is paused ({reason}).",
     "G3": "Waiting for AI allowance; it retries every 30 seconds.",
     "G4": "Automatic turns are switched off in the installation settings.",
@@ -760,6 +761,8 @@ NOW: Final = {
     "calm": ("All quiet. Nobody is working this minute.", "Next: ",
              "If you do nothing: "),
     "calm_none": "No department turn is booked yet.",
+    "management_only": ("The team started while AI wasn't ready: prices and protection run; turns happen only if "
+                        "AI becomes available."),
     "calm_trader": " the Trader may buy, sell or wait within its rules. Waiting is a normal choice.",
     "calm_other": "{dept} takes its {cadence} turn at ",
 }
@@ -1112,6 +1115,10 @@ CALENDAR: Final = {
     "waiting": "Waiting to finish.",
     "only_if_resume": "Only if Resume is possible.",
     "only_if_running": "Only if the team is running.",
+    "only_if_ai_on": "Only if the AI is back on.",
+    "only_if_allowance": "Only once AI allowance is available.",
+    "only_if_timetable": "Only if the timetable step works again.",
+    "only_if_ai_available": "Only if AI becomes available.",
 }
 
 # --- Notices, prompt facts --------------------------------------------------------------------
