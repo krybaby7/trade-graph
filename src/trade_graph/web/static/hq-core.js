@@ -282,10 +282,36 @@
       default: return null;
     }
   }
+  // A tappable time or term is a button, and browsers may wrap before or after a button even next to "(" or
+  // ")", which left "(tomorrow 3:00" on one line and ")." alone on the next. Opening punctuation just before a
+  // time, term or amount, and closing punctuation just after it, stay on its line.
+  const OPENING = /[(\[‘“]+$/;
+  const CLOSING = /^[)\].,;:!?’”]+/;
+  const KEEPS_PUNCTUATION = new Set(["time", "term", "money"]);
   function renderText(container, text, options = {}) {
+    const items = [];
     for (const segment of list(text)) {
       const node = segmentNode(segment, Boolean(options.inert));
-      if (node) container.append(node);
+      if (!node) continue;
+      items.push(segment.t === "text" ? {words: str(segment.v), code: segment.code} : {node, keeps: KEEPS_PUNCTUATION.has(segment.t)});
+    }
+    items.forEach((item, index) => {
+      if (!item.keeps) return;
+      const before = items[index - 1];
+      const after = items[index + 1];
+      // A technical code stays right after its own words, so their opening punctuation stays with them too.
+      const lead = before?.words !== undefined && !(state.technical && before.code) ? OPENING.exec(before.words)?.[0] || "" : "";
+      const trail = after?.words !== undefined ? CLOSING.exec(after.words)?.[0] || "" : "";
+      if (!lead && !trail) return;
+      if (lead) before.words = before.words.slice(0, -lead.length);
+      if (trail) after.words = after.words.slice(trail.length);
+      const together = el("span", "hq-nobreak");
+      together.append(...[lead, item.node, trail].filter(part => part !== ""));
+      item.node = together;
+    });
+    for (const item of items) {
+      if (item.words === undefined) container.append(item.node);
+      else if (item.words || (state.technical && item.code)) container.append(withCode(doc.createTextNode(item.words), item.code));
     }
     return container;
   }

@@ -131,6 +131,11 @@ body.hq-page .hq-time-full {
   display: inline-block; margin: 0.15rem 0.3rem; padding: 0.05rem 0.5rem; border: 1px solid var(--border);
   border-radius: 0.4rem; background: var(--surface-soft); color: var(--muted); font-size: 0.875rem; font-weight: 400;
 }
+/* A time, term or amount keeps the closing punctuation after it on its line. An opened time's full-time box,
+   and a technical code, may still wrap, so neither can push past a narrow card. */
+body.hq-page .hq-nobreak { white-space: nowrap; }
+body.hq-page .hq-nobreak .hq-time-full, body.hq-page .hq-nobreak .hq-code { white-space: normal; }
+body.hq-page .hq-nobreak:has(.hq-time[aria-expanded="true"]) { white-space: normal; }
 body.hq-page .hq-time-text, body.hq-page .hq-num, body.hq-page .hq-money { font-variant-numeric: tabular-nums; }
 body.hq-page .hq-money { font-weight: 650; white-space: nowrap; }
 body.hq-page .hq-code { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.875em; overflow-wrap: anywhere; }
@@ -735,6 +740,18 @@ body.hq-page .hq-tab[aria-current="page"]::before {
   body.hq-page .hq-decide-more {
     display: grid; clear: both; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; align-items: start;
   }
+  /* From 1200 px, when the right-hand column runs far below Story, Your bills (then Review check-ins) join this
+     row (hq-render.js balanceDecide): stacked in its first third, at their right-column width, with Prompt
+     settings and Help & glossary in the other two thirds. */
+  body.hq-page .hq-decide-more[data-moved] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.hq-page .hq-decide-more[data-moved] > .hq-review, body.hq-page .hq-decide-more[data-moved] > .hq-bills { grid-column: 1; }
+  body.hq-page .hq-decide-more[data-moved] > .hq-review { grid-row: 1; }
+  body.hq-page .hq-decide-more[data-moved] > .hq-prompt { grid-column: 2; grid-row: 1; }
+  body.hq-page .hq-decide-more[data-moved] > .hq-help-panel { grid-column: 3; grid-row: 1; }
+  /* Two stacked: the second row takes any extra height, so Review check-ins and Your bills keep the usual gap. */
+  body.hq-page .hq-decide-more[data-moved="2"] { grid-template-rows: auto 1fr; }
+  body.hq-page .hq-decide-more[data-moved="2"] > .hq-prompt,
+  body.hq-page .hq-decide-more[data-moved="2"] > .hq-help-panel { grid-row: 1 / span 2; }
   body.hq-page .hq-footer { clear: both; }
   body.hq-page .hq-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; margin: 0 0 1rem; }
   body.hq-page .hq-decision-grid { grid-template-columns: minmax(0, 1fr); }

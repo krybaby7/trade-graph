@@ -318,3 +318,14 @@ None prevents offline development. Mark credentialed verification pending when c
   desktop, Prompt settings and Help & glossary are one full-width row below
   both columns (still part of Decide on phones and in the tab bar), so the
   right-hand column no longer runs up to 2 000 px below the left.
+
+- **D113 (2026-10-10, HQ visual check round 2):** On desktops at least
+  1 200 px wide, when the right-hand column would end more than 300 px below
+  Story, Your bills (then, if still needed, Review check-ins) moves into the
+  bottom row, stacked in its first third beside Prompt settings and Help &
+  glossary. The page script does this after each render or size change, and
+  never while the focus is inside the panel. The panels go just before Prompt
+  settings, so the document order, phone and iPad layouts, keyboard order and
+  anchors are unchanged; narrower than 1 200 px a third is too tight for the
+  prompt fields. Opening or closing punctuation that touches a tappable time,
+  term or amount stays on its line ("(tomorrow 3:00).").

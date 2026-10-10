@@ -8,6 +8,7 @@
 
   HQ.bindGlobal();
   HQ.use("render")?.initTabs();
+  HQ.use("render")?.initBalance();
 
   let data = null;
   try { data = JSON.parse(doc.getElementById("hq-snapshot")?.textContent || "null"); } catch (_) { data = null; }

@@ -177,3 +177,45 @@ test("a sheet whose first control is disabled puts focus on its title", () => {
   }});
   assert.equal(page.doc.activeElement.id, "hq-sheet-title");
 });
+
+test("punctuation around a time, term or amount stays on its line (round 2)", () => {
+  // The allowance-paused card wrapped as "(tomorrow 3:00" with ")." alone on the next line; with only the ")."
+  // kept, it wrapped as "(" then "tomorrow 3:00).".
+  const paused = fixture("allowance_paused");
+  const page = loadHQ({now: Date.parse(paused.as_of), bind: true});
+  page.show(paused);
+  const card = page.byText('[data-hq="attention"] p, [data-hq="attention"] div', "Turns wait until it refills");
+  const time = card.querySelector(".hq-time-wrap");
+  const together = time.parentNode;
+  assert.ok(together.classList.contains("hq-nobreak"), "the time and its brackets are kept together");
+  assert.deepEqual(together.childNodes.map(node => node.className ?? node.textContent), ["(", "hq-time-wrap", ")."]);
+  const siblings = together.parentNode.childNodes;
+  assert.ok(!siblings[siblings.indexOf(together) - 1].textContent.endsWith("("), "the '(' moved, it isn't shown twice");
+  assert.match(page.text(card), /Turns wait until it refills \(.+\)\.$/, "the words read as before");
+  time.querySelector(".hq-time").click();
+  assert.equal(time.querySelector(".hq-time").nextElementSibling.hidden, false, "the time still opens its full form");
+
+  const {HQ} = page;
+  const at = paused.as_of;
+  const render = text => HQ.renderText(HQ.el("p"), text);
+  const glued = render([
+    {t: "text", v: "Costs "}, {t: "money", display: "€1.20", amount: "1.20", currency: "EUR"}, {t: "text", v: ", the ["},
+    {t: "term", key: "allowance", v: "allowance"}, {t: "text", v: "]). Then “"}, {t: "time", at, style: "clock"},
+    {t: "text", v: "”"},
+  ]);
+  const parts = [...glued.querySelectorAll(".hq-nobreak")].map(node => node.childNodes.map(child => child.className ?? child.textContent));
+  assert.deepEqual(parts, [["hq-money", ","], ["[", "hq-term", "])."], ["“", "hq-time-wrap", "”"]]);
+  assert.equal(glued.textContent.replace(/“.+”$/, "“T”"), "Costs €1.20, the [allowance]). Then “T”",
+    "only the punctuation moves; every other word stays where it was");
+  // Words between a time and its punctuation, and punctuation away from a time, term or amount, are left alone.
+  const loose = render([{t: "text", v: "Seen ( "}, {t: "time", at, style: "clock"}, {t: "text", v: " and then (more)."},
+    {t: "text", v: "."}]);
+  assert.equal(loose.querySelectorAll(".hq-nobreak").length, 0);
+  assert.equal(loose.textContent.replace(/\( .+ and/, "( T and"), "Seen ( T and then (more)..");
+  const inert = HQ.renderText(HQ.el("p"), [{t: "text", v: "("}, {t: "term", key: "allowance", v: "allowance"}, {t: "text", v: "."}],
+    {inert: true});
+  assert.deepEqual(inert.childNodes.map(node => node.className), ["hq-nobreak"], "a '(' or '.' on its own leaves no empty text");
+  assert.equal(inert.textContent, "(allowance.");
+  const last = render([{t: "text", v: "Next "}, {t: "time", at, style: "clock"}]);
+  assert.equal(last.lastChild.className, "hq-time-wrap", "a time at the very end is still shown");
+});

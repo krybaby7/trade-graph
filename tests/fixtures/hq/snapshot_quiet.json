@@ -193,7 +193,16 @@
       "consequence": [
         {
           "t": "text",
-          "v": "At 20:56 it decides without research notes."
+          "v": "At "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-09T17:56:26.000Z",
+          "style": "clock"
+        },
+        {
+          "t": "text",
+          "v": " it decides without research notes."
         }
       ],
       "can_fix_here": false,
@@ -462,7 +471,16 @@
       "if_nothing": [
         {
           "t": "text",
-          "v": "It decides at 20:56 without research notes."
+          "v": "It decides at "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-09T17:56:26.000Z",
+          "style": "clock"
+        },
+        {
+          "t": "text",
+          "v": " without research notes."
         }
       ],
       "rules": [
@@ -2086,7 +2104,43 @@
           [
             {
               "t": "text",
-              "v": "These would wait: Trader 20:56, Research Sat 11:13. Each runs once after Resume."
+              "v": "These would wait: Trader "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-09T17:56:26.000Z",
+              "style": "clock"
+            },
+            {
+              "t": "text",
+              "v": ", Research "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-10T08:13:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ", Learning "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-12T18:40:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ", Leader "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-14T08:13:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ". Each runs once after Resume."
             }
           ]
         ]

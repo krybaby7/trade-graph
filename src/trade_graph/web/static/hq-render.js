@@ -1452,6 +1452,76 @@
     });
   }
 
-  HQ.define("render", {openRoom, initTabs, cadence, deptName, findDecision, lightBadge, LIGHT_LABEL, time, liveTime, chip, empty, plural,
-    sinceFacts, seriesTimes, estimateSeries});
+  // --- Desktop balance ---------------------------------------------------------------------------------
+  // On desktop, Right now, the map, Calendar and Story run down the left; Needs you, Up next, Money and Decide
+  // down the right; Prompt settings and Help & glossary form a row below both (hq.css). In quiet or empty states
+  // the right column ran up to 1 600 px below Story, leaving a blank under it. While it ends more than
+  // BALANCE_SLACK px below Story, Decide's last panels (Your bills, then Review check-ins) join the row, stacked
+  // in its first third. They go just before Prompt settings, so the document order (phones, iPads, keyboard,
+  // screen readers) and the anchors never change. Only from 1200 px: narrower, a third is too tight for the
+  // prompt fields, so iPads in landscape keep the usual two-column row.
+
+  const BALANCE_SLACK = 300;
+  const DESKTOP = "(min-width: 1200px)";
+  let balanceWaiting = false;
+  function balanceDecide() {
+    const section = doc.getElementById("decide");
+    const row = section?.querySelector(".hq-decide-more");
+    const story = doc.getElementById("story");
+    if (!row || !story) return 0;
+    const movable = [section.querySelector(".hq-review"), section.querySelector(".hq-bills")].filter(Boolean);
+    // Moving a panel would take the focus out of a field being typed in; try again once it leaves.
+    balanceWaiting = movable.some(panel => panel.contains(doc.activeElement));
+    if (balanceWaiting) return null;
+    let count = 0;
+    if (globalThis.matchMedia?.(DESKTOP)?.matches) {
+      const box = node => node.getBoundingClientRect();
+      const first = section.querySelector(".hq-panel");
+      const gap = (first && typeof globalThis.getComputedStyle === "function"
+        ? parseFloat(globalThis.getComputedStyle(first).marginBottom) : NaN) || 20;
+      const size = panel => (panel.hidden ? 0 : box(panel).height + gap);
+      const right = [...doc.querySelectorAll(".hq-board > .hq-side, #money > .hq-panel, #decide > .hq-panel")].filter(node => !node.hidden);
+      if (!right.length) return 0;
+      // How far the right column would end below Story with every panel in its usual place.
+      let excess = Math.max(...right.map(node => box(node).bottom)) - box(story).bottom;
+      for (const panel of movable) if (panel.parentNode === row) excess += size(panel);
+      for (const panel of [...movable].reverse()) {
+        if (excess <= BALANCE_SLACK) break;
+        count += 1;
+        excess -= size(panel);
+      }
+    }
+    const moving = movable.slice(movable.length - count);
+    movable.forEach((panel, index) => {
+      const inRow = moving.includes(panel);
+      if (panel.parentNode === (inRow ? row : section)) return;
+      if (!inRow) { section.insertBefore(panel, row); return; }
+      const next = movable.slice(index + 1).find(other => other.parentNode === row) || row.querySelector(".hq-prompt");
+      row.insertBefore(panel, next);
+    });
+    if (count) row.setAttribute("data-moved", String(count));
+    else row.removeAttribute("data-moved");
+    return count;
+  }
+  function initBalance() {
+    let frame = null;
+    const run = () => { frame = null; balanceDecide(); };
+    const schedule = () => {
+      if (frame !== null) return;
+      if (typeof globalThis.requestAnimationFrame === "function") frame = globalThis.requestAnimationFrame(run);
+      else run();
+    };
+    // Any change in either column's height: a render, an opened panel, a new width, fonts arriving.
+    if (typeof globalThis.ResizeObserver === "function") {
+      const observer = new globalThis.ResizeObserver(schedule);
+      for (const node of doc.querySelectorAll(".hq-board > *, #calendar, #story, #money > .hq-panel, #decide > .hq-panel")) observer.observe(node);
+    }
+    globalThis.matchMedia?.(DESKTOP)?.addEventListener?.("change", schedule);
+    HQ.on("snapshot", schedule);
+    doc.addEventListener("focusout", () => { if (balanceWaiting) schedule(); });
+    schedule();
+  }
+
+  HQ.define("render", {openRoom, initTabs, initBalance, balanceDecide, cadence, deptName, findDecision, lightBadge, LIGHT_LABEL, time,
+    liveTime, chip, empty, plural, sinceFacts, seriesTimes, estimateSeries});
 })();

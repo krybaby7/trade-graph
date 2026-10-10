@@ -1697,11 +1697,29 @@
           [
             {
               "t": "text",
-              "v": "These would wait: Trader (overdue), Research "
+              "v": "These would wait: Trader (overdue), Learning "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-12T06:40:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ", Research "
             },
             {
               "t": "time",
               "at": "2026-10-12T08:13:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ", Leader "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-14T08:13:00.000Z",
               "style": "day_clock"
             },
             {

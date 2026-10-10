@@ -326,3 +326,76 @@ test("the paper run keeps its practice wording (C1 counterpart)", () => {
   assert.match(page.text(page.$("[data-hq-sheet]")), /move \(practice\) money/);
   assert.match(page.text(page.view("bills")), /never touch the practice account/);
 });
+
+test("desktop: when the right column runs far below Story, Your bills then Review check-ins join the bottom row (round 2)", () => {
+  const {page} = open("safety_stop");
+  const {doc, HQ} = page;
+  const render = HQ.use("render");
+  // The template's Decide section: Team controls, Review check-ins, Your bills, then the row of Prompt settings
+  // and Help & glossary. The harness page has the panels; give them the template's classes and the row.
+  const section = doc.getElementById("decide");
+  const panel = name => page.view(name).closest(".hq-panel");
+  const [team, review, bills, prompt, help] = ["decide", "review", "bills", "prompt", "help"].map(panel);
+  for (const [node, name] of [[team, "hq-decide"], [review, "hq-review"], [bills, "hq-bills"], [prompt, "hq-prompt"], [help, "hq-help-panel"]]) {
+    node.classList.add(name);
+  }
+  const row = HQ.el("div", "hq-decide-more");
+  section.append(row);
+  row.append(prompt, help);
+  const board = HQ.el("div", "hq-board");
+  const side = HQ.el("div", "hq-side");
+  board.append(side);
+  doc.getElementById("hq").append(board);
+  // Geometry (px from the top of the page) as measured in the browser for the safety-stop state at 1440 px.
+  const story = doc.getElementById("story");
+  const heights = new Map([[team, 612], [review, 223], [bills, 452]]);
+  let storyEnd = 4149;
+  const layout = () => {
+    let y = 3657;
+    const rect = (top, height) => ({top, bottom: top + height, height, left: 0, right: 0, width: 0});
+    story.getBoundingClientRect = () => rect(storyEnd - 827, 827);
+    side.getBoundingClientRect = () => rect(615, 1000);
+    for (const node of [team, review, bills]) {
+      const height = heights.get(node);
+      const top = y;
+      if (node.parentNode === section) { node.getBoundingClientRect = () => rect(top, height); y += height + 20; }
+      else node.getBoundingClientRect = () => rect(9000, height);   // in the row below both columns
+    }
+  };
+  const order = () => [...section.childNodes].flatMap(node => node === row ? [`row[${row.children.map(child => child.className.split(" ").pop()).join(",")}]`]
+    : node.nodeType === 1 && node.classList.contains("hq-panel") ? [node.className.split(" ").pop()] : []);
+  const balance = () => { layout(); return render.balanceDecide(); };
+
+  assert.equal(balance(), 2, "834 px below Story: both move (Your bills first, then Review check-ins)");
+  assert.deepEqual(order(), ["hq-decide", "row[hq-review,hq-bills,hq-prompt,hq-help-panel]"], "document order is unchanged");
+  assert.equal(row.getAttribute("data-moved"), "2");
+  const before = bills.parentNode;
+  assert.equal(balance(), 2, "measured again from the row, the decision holds");
+  assert.equal(bills.parentNode, before);
+
+  storyEnd = 4400;   // the right column would end 583 px below Story: Your bills is enough
+  assert.equal(balance(), 1);
+  assert.deepEqual(order(), ["hq-decide", "hq-review", "row[hq-bills,hq-prompt,hq-help-panel]"]);
+  assert.equal(row.getAttribute("data-moved"), "1");
+  storyEnd = 4100;   // and back to both, still in document order
+  assert.equal(balance(), 2);
+  assert.deepEqual(order(), ["hq-decide", "row[hq-review,hq-bills,hq-prompt,hq-help-panel]"]);
+
+  storyEnd = 4800;   // within 300 px: everything in its usual place
+  assert.equal(balance(), 0);
+  assert.deepEqual(order(), ["hq-decide", "hq-review", "hq-bills", "row[hq-prompt,hq-help-panel]"]);
+  assert.equal(row.getAttribute("data-moved"), null);
+
+  storyEnd = 4149;
+  const field = HQ.el("input");
+  bills.append(field);
+  field.focus();
+  assert.equal(balance(), null, "a panel with the focus in it is never moved");
+  assert.deepEqual(order(), ["hq-decide", "hq-review", "hq-bills", "row[hq-prompt,hq-help-panel]"]);
+  field.blur();
+  assert.equal(balance(), 2);
+
+  page.sandbox.matchMedia = () => ({matches: false});   // phones and iPads: always the usual place
+  assert.equal(balance(), 0);
+  assert.deepEqual(order(), ["hq-decide", "hq-review", "hq-bills", "row[hq-prompt,hq-help-panel]"]);
+});

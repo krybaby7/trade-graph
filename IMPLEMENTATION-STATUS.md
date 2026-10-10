@@ -1,3 +1,14 @@
+# Trade Graph HQ visual-check fixes (round 2), not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `1021655` (decision D113). **Nothing was deployed, pushed or run against the installation.**
+- **Punctuation stays with a time or word:** opening or closing punctuation that touches a tappable time, term or amount is kept on its line with it (`span.hq-nobreak`, `white-space: nowrap`). The allowance card reads "(tomorrow 3:00)." instead of leaving ")." alone on the next line at 1 366, 1 440 and 1 600 px. An opened time's full-time box and technical codes may still wrap, so nothing overflows on a phone.
+- **Fixture copy and times:** the busy fixture's waiting turn says the real "Waiting to finish."; the "At … it decides without research notes." and "It decides at … without research notes." lines in quiet, live and reader, and every Pause card's "These would wait" list, use time tokens built with the real copy and `_waiting_turns` (so they show the reader's own time, not Cairo clock words). The real list names every scheduled department, so quiet, busy and allowance-paused now list four.
+- **Desktop balance (≥ 1 200 px):** when the right-hand column would end more than 300 px below Story, Your bills (then Review check-ins) moves into the bottom row, stacked in its first third (`balanceDecide` in `hq-render.js`, run after renders and size changes, never while the focus is in the panel). The document order, anchors, iPad and phone layouts are unchanged. At 1 440 px the blank under Story falls from 834 to 119 px (safety stop), 695 to 223 (allowance paused), 1 328 to 614 (silent), 1 615 to 901 (empty) and 1 671 to 956 (offline); quiet, busy, the busy week, live and reader are unchanged.
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` gave 284 passed, 8 skipped (Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 45 passed. Headless Edge at 1 440×900 (dark and light): no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty, silent, busy and live snapshots; no punctuation apart from its time or word at 1 024 to 1 600 px; resizing to 1 199, 1 023, 800 and 390 px puts the panels back.
+
+---
+
 # Trade Graph HQ visual-check fixes (round 1), not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009`, after `b14c8ee` (decision D112). **Nothing was deployed, pushed or run against the installation.**

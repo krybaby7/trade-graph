@@ -2,14 +2,17 @@
 
 import copy
 import json
+import re
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
 from trade_graph.api import hq_contract as contract
+from trade_graph.api import hq_copy, hq_state
 from trade_graph.api.security import _PRIVATE_KEYS
 from trade_graph.application.paper_service import PAUSED_WORK
 from trade_graph.application.service_controller import ACTIVE_SERVICE
@@ -196,6 +199,43 @@ def test_fixture_estimates_continue_where_the_listed_turns_stop():
             assert (first - max(future)).total_seconds() == series["every_seconds"], (name, series["schedule_id"])
             checked += 1
     assert checked >= 15
+
+
+def _segments(value):
+    if isinstance(value, dict):
+        if isinstance(value.get("t"), str):
+            yield value
+        for item in value.values():
+            yield from _segments(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _segments(item)
+
+
+def test_fixture_clock_times_are_time_tokens_and_copy_is_the_servers():
+    """A clock typed as words ("At 20:56 it decides ...") only looked right because previews ran in Cairo time;
+    the server sends a time token the page shows in the reader's own time (visual check round 2). Waiting turns
+    and the Pause card's waiting list say exactly what the server says."""
+    clock = re.compile(r"\b\d{1,2}:\d{2}\b")
+    for name in NAMES:
+        data = _load(name)
+        typed = [segment["v"] for segment in _segments(data) if segment["t"] == "text" and clock.search(segment["v"])]
+        assert not typed, (name, typed)
+        for item in data["calendar"]["items"]:
+            if item["kind"] == "dept_turn" and item["status"] == "waiting":
+                assert item["detail"] == hq_copy.says(hq_copy.CALENDAR["waiting"]), (name, item["id"])
+        now = hq_state._dt(data["as_of"])
+        roles = {dept["id"]: SimpleNamespace(dept=dept["id"], next_at=hq_state._dt(dept["next"]["at"]))
+                 for dept in data["departments"] if dept["id"] in hq_state.SCHEDULED_ROLES and dept.get("next")}
+        for decision in data["decisions"]:
+            if decision["id"] == "pause_ai" and decision["preview"]["right_now"]:
+                expected = hq_state._waiting_turns(SimpleNamespace(roles=roles, now=now))
+                assert decision["preview"]["right_now"] == expected, name
+    quiet = _load("snapshot_quiet.json")
+    trader = next(dept for dept in quiet["departments"] if dept["id"] == "trader")
+    assert trader["if_nothing"] == hq_copy.says(hq_copy.HEADS_UP["trader_if_nothing"][0],
+                                                hq_copy.time(trader["next"]["at"], "clock"),
+                                                hq_copy.HEADS_UP["trader_if_nothing"][1])
 
 
 def test_new_keys_are_emitted_in_every_fixture():

@@ -1185,7 +1185,7 @@
         "detail": [
           {
             "t": "text",
-            "v": "Waited for AI allowance until 08:13; working now."
+            "v": "Waiting to finish."
           }
         ],
         "warning": null,
@@ -2277,11 +2277,29 @@
             },
             {
               "t": "text",
+              "v": ", Research "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-11T07:13:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
               "v": ", Learning "
             },
             {
               "t": "time",
               "at": "2026-10-13T18:40:00.000Z",
+              "style": "day_clock"
+            },
+            {
+              "t": "text",
+              "v": ", Leader "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-14T08:13:00.000Z",
               "style": "day_clock"
             },
             {

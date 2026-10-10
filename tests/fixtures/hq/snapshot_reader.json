@@ -174,7 +174,16 @@
       "consequence": [
         {
           "t": "text",
-          "v": "At 20:56 it decides without research notes."
+          "v": "At "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-09T17:56:26.000Z",
+          "style": "clock"
+        },
+        {
+          "t": "text",
+          "v": " it decides without research notes."
         }
       ],
       "can_fix_here": false,
@@ -448,7 +457,16 @@
       "if_nothing": [
         {
           "t": "text",
-          "v": "It decides at 20:56 without research notes."
+          "v": "It decides at "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-09T17:56:26.000Z",
+          "style": "clock"
+        },
+        {
+          "t": "text",
+          "v": " without research notes."
         }
       ],
       "rules": [
