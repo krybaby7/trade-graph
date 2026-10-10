@@ -39,7 +39,7 @@
       <div class="metadata-list"><span class="badge neutral">{{ role|capitalize }} access</span>{% if data.get('as_of') %}<span class="small muted">As of <time>{{ data.as_of }}</time></span>{% endif %}</div>
     </div>{% endblock %}
     {% block content %}{% endblock %}
-    <footer class="page-footer">{% if operating_mode == 'live' %}This page shows the scoped live account journal. Displaying records does not grant live authority.{% else %}Paper results are simulated.{% endif %} Actual operating expenses use a separate real-money allowance. Paid calls and live trading remain subject to protected owner policy.</footer>
+    {% block page_footer %}<footer class="page-footer">{% if operating_mode == 'live' %}This page shows the scoped live account journal. Displaying records does not grant live authority.{% else %}Paper results are simulated.{% endif %} Actual operating expenses use a separate real-money allowance. Paid calls and live trading remain subject to protected owner policy.</footer>{% endblock %}
   </main>
 </body>
 </html>

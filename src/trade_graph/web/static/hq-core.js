@@ -10,6 +10,10 @@
 
   const SCHEMA = "trade-graph.hq.v1";
   const ISO_RE = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,6}))?Z$/;
+  // A saved "outcome unknown" request older than this is dropped instead of being resent (review S4).
+  const PENDING_MAX_AGE_MS = 86400000;
+  // Connection states that stop polling until the page is reloaded or the owner signs in again.
+  const HALTED = new Set(["signed_out", "forbidden", "outdated"]);
   // Same expression as hq_contract.ALLOWED_PATH_PATTERN; links from JSON are rendered only when they match.
   const ALLOWED_PATH = /^\/(?:$|journal$|progress$|trading$|organization$|costs$|changes(?:\/[^/]+)?$|owner$|decisions\/[^/]+$|api\/v1\/review-export$)/;
   const KEYS = Object.freeze({
@@ -48,6 +52,27 @@
     },
   });
   /* store:end */
+
+  // --- Saved requests whose outcome is unknown (tg-hq-pending:<id>) -----------------------------------
+  // An entry without a readable saved_at, or older than a day, is removed and never resent: an old
+  // "Start" replayed days later would otherwise be reported as a fresh success.
+
+  function readPending(id) {
+    const key = KEYS.pending(id);
+    const stored = store.getJson(key);
+    if (!stored || typeof stored !== "object") return null;
+    const saved = parseIso(stored.saved_at);
+    const age = saved === null ? null : serverNow() - saved;
+    if (age === null || age > PENDING_MAX_AGE_MS || age < -600000) {
+      store.remove(key);
+      return null;
+    }
+    return stored;
+  }
+  function savePending(id, value) {
+    return store.setJson(KEYS.pending(id), {...value, saved_at: toIso(serverNow())});
+  }
+  function clearPending(id) { store.remove(KEYS.pending(id)); }
 
   // --- Small helpers ---------------------------------------------------------------------------
 
@@ -282,7 +307,7 @@
   const state = {
     snapshot: null,
     skew: 0,
-    connection: "ok",        // ok | failed | signed_out
+    connection: "ok",        // ok | failed | server_error | signed_out | forbidden | outdated
     technical: store.get(KEYS.technical) === "1",
     calendarDays: 7,
     lastSeen: null,
@@ -329,6 +354,58 @@
 
   const views = new Map();
   function view(name, spec) { views.set(name, {deps: spec.deps || (snapshot => snapshot), render: spec.render, sig: null, version: 0}); }
+
+  // What the viewer expanded survives every re-render (review T3): <details> remember their own key in
+  // `kept`, and tapped time buttons are re-expanded by row and instant after the container is rebuilt.
+  const kept = new Set();
+  function keepOpen(box, key) {
+    if (!key) return box;
+    box.dataset.keep = key;
+    box.open = kept.has(key);
+    box.addEventListener("toggle", () => { if (box.open) kept.add(key); else kept.delete(key); });
+    return box;
+  }
+  function timeKey(control) {
+    return `${control.closest("[data-row]")?.dataset?.row || ""}|${control.querySelector("time")?.dataset?.at || ""}`;
+  }
+  function openTimes(container) {
+    return new Set([...container.querySelectorAll('.hq-time[aria-expanded="true"]')].map(timeKey));
+  }
+  function reopenTimes(container, keys) {
+    if (!keys.size) return;
+    for (const control of container.querySelectorAll(".hq-time")) {
+      if (!keys.has(timeKey(control))) continue;
+      control.setAttribute("aria-expanded", "true");
+      if (control.nextElementSibling) control.nextElementSibling.hidden = false;
+    }
+  }
+  // Keeps the reader's place when a container above or around them is rebuilt. Browsers with scroll
+  // anchoring handle a container wholly above the viewport themselves; Safari on iPad does not.
+  const anchoring = (() => {
+    try { return Boolean(globalThis.CSS?.supports?.("overflow-anchor", "auto")); } catch (_) { return false; }
+  })();
+  function scrollAnchor(container) {
+    if (typeof container.getBoundingClientRect !== "function" || typeof globalThis.scrollBy !== "function") return null;
+    const box = container.getBoundingClientRect();
+    if (!box || box.top >= 0 || !box.height) return null;
+    if (box.bottom <= 0) return anchoring ? null : {height: box.height};
+    for (const node of container.querySelectorAll("[data-row]")) {
+      const top = node.getBoundingClientRect().top;
+      if (top >= 0) return {row: node.dataset.row, top};
+    }
+    return null;
+  }
+  function restoreScroll(container, anchor) {
+    if (!anchor) return;
+    let shift = 0;
+    if (anchor.row === undefined) shift = container.getBoundingClientRect().height - anchor.height;
+    else {
+      const node = [...container.querySelectorAll("[data-row]")].find(item => item.dataset.row === anchor.row);
+      if (node) shift = node.getBoundingClientRect().top - anchor.top;
+    }
+    if (shift) globalThis.scrollBy(0, shift);
+  }
+
   function renderView(name, force) {
     const entry = views.get(name);
     const snapshot = state.snapshot;
@@ -342,6 +419,8 @@
     entry.sig = signature;
     const active = doc.activeElement;
     const focusKey = active && container.contains(active) ? active.dataset?.focusKey : null;
+    const times = openTimes(container);
+    const anchor = scrollAnchor(container);
     const fragment = doc.createDocumentFragment();
     try {
       entry.render(fragment, snapshot);
@@ -354,6 +433,8 @@
     container.classList.toggle("is-empty", empty);
     // Panels whose content only exists for some viewers (check-ins, welcome, notices) disappear when empty.
     if (container.hasAttribute("data-hq-hide-empty")) (container.closest(".hq-panel") || container).hidden = empty;
+    reopenTimes(container, times);
+    restoreScroll(container, anchor);
     if (focusKey) {
       const target = [...container.querySelectorAll("[data-focus-key]")].find(node => node.dataset.focusKey === focusKey);
       target?.focus({preventScroll: true});
@@ -421,17 +502,21 @@
     const pill = doc.querySelector("[data-hq-fresh]");
     if (!pill) return;
     const snapshot = state.snapshot;
+    const seenAt = snapshot ? `, showing what we saw at ${clock(parseIso(snapshot.as_of))}` : "";
     let tone = "ok";
     let mark = "●";
     let words;
     if (state.connection === "signed_out") { tone = "offline"; mark = "■"; words = "Signed out"; }
+    else if (state.connection === "forbidden") { tone = "offline"; mark = "■"; words = "This sign-in can't view HQ"; }
+    else if (state.connection === "outdated") { tone = "old"; mark = "▲"; words = "HQ was updated: reload the page"; }
+    else if (state.connection === "server_error") { tone = "offline"; mark = "■"; words = "HQ had a problem; retrying"; }
     else if (!snapshot) {
       tone = state.connection === "failed" ? "offline" : "ok";
       mark = state.connection === "failed" ? "■" : "●";
       words = state.connection === "failed" ? "Can't reach HQ yet" : "Loading…";
     } else if (state.connection === "failed") {
       tone = "offline"; mark = "■";
-      words = `Can't reach HQ, showing what we saw at ${clock(parseIso(snapshot.as_of))}`;
+      words = `Can't reach HQ${seenAt}`;
     } else {
       const age = Math.max(0, Math.round((serverNow() - parseIso(snapshot.as_of)) / 1000));
       if (age > 75) { tone = "old"; mark = "▲"; words = `Out of date: last update ${ageWords(age)} ago`; }
@@ -442,38 +527,76 @@
     glyph.setAttribute("aria-hidden", "true");
     pill.replaceChildren(glyph, el("span", "", words));
   }
-  function signedOut() {
-    if (state.connection === "signed_out") return;
+  // Signed out, a sign-in that may no longer view HQ, or a page older than the server: polling stops
+  // and a banner says what to do. No automatic redirect or reload ever happens (spec §C.3).
+  function halt(connection, build, tone = "danger") {
+    if (state.connection === connection) return;
     poller.stop();
-    setConnection("signed_out");
+    setConnection(connection);
     const banner = doc.querySelector("[data-hq-banner]");
     if (!banner) return;
-    const box = el("p", "hq-banner-text", "You're signed out. ");
+    banner.dataset.tone = tone;
+    banner.replaceChildren(build());
+    banner.hidden = false;
+  }
+  function signInLine(words) {
+    const box = el("p", "hq-banner-text", words);
     const anchor = el("a", "", "Sign in again ›");
     anchor.href = "/login";
     box.append(anchor);
-    banner.replaceChildren(box);
-    banner.hidden = false;
+    return box;
+  }
+  function signedOut() { halt("signed_out", () => signInLine("You're signed out. ")); }
+  function forbidden() { halt("forbidden", () => signInLine("This sign-in can't view HQ any more. ")); }
+  function outdated() {
+    halt("outdated", () => {
+      const box = el("div", "hq-banner-row");
+      const reload = button("button hq-banner-action", "Reload");
+      reload.addEventListener("click", () => globalThis.location?.reload());
+      box.append(el("p", "hq-banner-text", "HQ was updated. Reload the page."), reload);
+      return box;
+    }, "info");
   }
 
   // --- Polling: every 30 s while visible, never while a sheet is open -----------------------------
 
   let inflight = null;
+  let inflightDays = null;
+  // ok: a fresh snapshot; failed: no answer (network); server_error: an answer HQ can't use. Only these
+  // two back off; a 401, a 403 or a newer server stop polling instead (review T9).
+  function classify(result) {
+    if (result.network) return "failed";
+    if (result.status === 401) return "signed_out";
+    if (result.status === 403) return "forbidden";
+    if (result.ok && typeof result.body?.schema === "string" && result.body.schema !== SCHEMA) return "outdated";
+    if (result.ok && validSnapshot(result.body)) return "ok";
+    return "server_error";
+  }
   async function refresh() {
-    if (state.connection === "signed_out") return false;
+    // A request for another calendar range finishes first, then this one asks for the current range.
+    while (inflight && inflightDays !== state.calendarDays) {
+      try { await inflight; } catch (_) { /* The newer request below decides the state. */ }
+    }
+    if (HALTED.has(state.connection)) return false;
     if (inflight) return inflight;
-    inflight = (async () => {
-      const result = await api.get("hq", {days: state.calendarDays, timeout: 12000});
-      if (result.status === 401) return false;
-      if (result.ok && validSnapshot(result.body)) {
+    const days = state.calendarDays;
+    inflightDays = days;
+    const request = (async () => {
+      const result = await api.get("hq", {days, timeout: 12000});
+      const outcome = classify(result);
+      if (outcome === "ok") {
         setConnection("ok");
         setSnapshot(result.body, Date.now());
         return true;
       }
-      setConnection("failed");
+      if (outcome === "signed_out") signedOut();
+      else if (outcome === "forbidden") forbidden();
+      else if (outcome === "outdated") outdated();
+      else setConnection(outcome);
       return false;
     })();
-    try { return await inflight; } finally { inflight = null; }
+    inflight = request;
+    try { return await request; } finally { if (inflight === request) { inflight = null; inflightDays = null; } }
   }
   const poller = (() => {
     let timer = null;
@@ -481,6 +604,7 @@
     let stopped = false;
     let failures = 0;
     let fastUntil = 0;
+    let fastPending = false;
     function delay() {
       if (Date.now() < fastUntil) return 3000;
       if (failures) return [30000, 60000, 120000][Math.min(failures, 3) - 1];
@@ -499,12 +623,23 @@
     return Object.freeze({
       start() { schedule(); },
       now() { schedule(0); },
-      fast() { fastUntil = Date.now() + 30000; schedule(3000); },
+      // After a decision: poll every 3 s for 30 s. While a sheet holds polling, the window starts when it
+      // closes, so the result sheet staying open doesn't use it up (review T6).
+      fast() {
+        if (paused) { fastPending = true; return; }
+        fastUntil = Date.now() + 30000;
+        schedule(3000);
+      },
       pause() { paused = true; clearTimeout(timer); },
-      resume() { paused = false; schedule(0); },
+      resume() {
+        paused = false;
+        if (fastPending) { fastPending = false; fastUntil = Date.now() + 30000; }
+        schedule(0);
+      },
       stop() { stopped = true; clearTimeout(timer); },
     });
   })();
+  // "Show 2 weeks" during a poll: the poll finishes, then a request for the new range is always sent (T7).
   function setCalendarDays(days) {
     state.calendarDays = days === 14 ? 14 : 7;
     return refresh();
@@ -534,8 +669,14 @@
       close.dataset.hqClose = "";
       close.append(icon("close", "hq-icon hq-icon-small"));
       head.append(heading, close);
+      // Messages raised while a sheet is open appear here, between the title and the scrolling body:
+      // the page's own toast sits underneath the modal sheet where it can't be seen or tapped (review U4).
+      const notes = el("div", "hq-sheet-toast");
+      notes.setAttribute("role", "status");
+      notes.setAttribute("aria-live", "polite");
+      notes.dataset.hqSheetToast = "";
       const body = el("div", "hq-sheet-body");
-      content().replaceChildren(head, body);
+      content().replaceChildren(head, notes, body);
       box.dataset.kind = kind || "";
       build(body);
       const wasOpen = state.sheet;
@@ -552,7 +693,8 @@
           box.setAttribute("open", "");
         }
       }
-      const first = body.querySelector("[data-autofocus]");
+      // A disabled confirm button (careful decisions wait for the tick box) can't take focus: use the title.
+      const first = [...body.querySelectorAll("[data-autofocus]")].find(node => !node.disabled);
       (first || heading).focus({preventScroll: !modal()});
       if (!modal()) box.scrollIntoView({block: "nearest"});
       return body;
@@ -570,7 +712,7 @@
       if (!focusTarget && key) focusTarget = [...doc.querySelectorAll("[data-focus-key]")].find(node => node.dataset.focusKey === key);
       focusTarget?.focus({preventScroll: true});
       if (callback) { try { callback(); } catch (error) { console.error(error); } }
-      if (state.connection !== "signed_out") poller.resume();
+      if (!HALTED.has(state.connection)) poller.resume();
     }
     function close() {
       const box = dialog();
@@ -593,13 +735,19 @@
   let toastTimer = null;
   function hideToast() {
     const node = doc.querySelector("[data-hq-toast]");
-    if (!node) return;
-    node.classList.remove("is-visible");
-    node.replaceChildren();
+    if (node) {
+      node.classList.remove("is-visible");
+      node.replaceChildren();
+    }
+    for (const notes of doc.querySelectorAll("[data-hq-sheet-toast]")) notes.replaceChildren();
   }
+  // While a sheet is open the message goes inside it (its live region), so it is visible, tappable and
+  // announced; otherwise it uses the page's toast area above the tab bar.
   function toast(message, action) {
-    const node = doc.querySelector("[data-hq-toast]");
+    const inSheet = state.sheet ? doc.querySelector("[data-hq-sheet] [data-hq-sheet-toast]") : null;
+    const node = inSheet || doc.querySelector("[data-hq-toast]");
     if (!node) return;
+    hideToast();
     const box = el("div", "hq-toast-box");
     box.append(el("p", "hq-toast-text", message));
     const actions = el("div", "hq-toast-actions");
@@ -646,7 +794,7 @@
     });
     doc.addEventListener("visibilitychange", () => { if (!doc.hidden && !state.sheet) poller.now(); });
     globalThis.addEventListener("online", () => { if (!state.sheet) poller.now(); });
-    globalThis.addEventListener("offline", () => setConnection(state.connection === "signed_out" ? "signed_out" : "failed"));
+    globalThis.addEventListener("offline", () => { if (!HALTED.has(state.connection)) setConnection("failed"); });
     setInterval(tickTimes, 15000);
     setInterval(freshness, 5000);
   }
@@ -659,13 +807,14 @@
   function use(name) { return modules.get(name) || null; }
 
   const HQ = Object.freeze({
-    SCHEMA, KEYS, store,
+    SCHEMA, KEYS, store, PENDING_MAX_AGE_MS,
+    readPending, savePending, clearPending,
     define, use, on, emit,
     list, obj, str, count, uuid, randomHex,
     parseIso, isIso, toIso, serverNow, dayDiff, dayStart, localDayKey,
     fmt: Object.freeze({clock, rel, relClock, dayClock, dateWords, monthWords, weekday, styled, fullTime, duration,
       localDateTime, utcStamp, utcClock, timeZone}),
-    el, button, icon, link, safePath, renderText, textEl, plain, hasText,
+    el, button, icon, link, safePath, renderText, textEl, plain, hasText, keepOpen,
     api, csrf,
     snapshot: () => state.snapshot,
     connection: () => state.connection,

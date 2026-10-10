@@ -25,6 +25,13 @@
     bedtime: "Check overnight readiness: overnight turns, allowance reserve, recent problems, open practice positions, and the PC's sleep settings (report only). Recommend 'leave running' or 'pause the AI', naming the HQ button I would press.",
     next_day: "Compare the last 24 hours with the check-in a day ago; separate practice results from fees and unknown costs; one day does not establish profitability.",
   });
+  // A live account's prompt never calls its positions or results "practice" (review C1).
+  const KIND_PARAGRAPH_LIVE = Object.freeze({
+    ...KIND_PARAGRAPH,
+    bedtime: "Check overnight readiness: overnight turns, allowance reserve, recent problems, open positions, and the PC's sleep settings (report only). Recommend 'leave running' or 'pause the AI', naming the HQ button I would press.",
+    next_day: "Compare the last 24 hours with the check-in a day ago; separate trading results from fees and unknown costs; one day does not establish profitability.",
+  });
+  const kindParagraph = (kind, live) => (live ? KIND_PARAGRAPH_LIVE : KIND_PARAGRAPH)[kind] || null;
 
   function settings() {
     const saved = obj(HQ.store.getJson(HQ.KEYS.promptSettings));
@@ -84,7 +91,7 @@
       `Report: worker last sign of life; freshness of prices, euro rate and hourly history; each department's last and next turn; real successes and failures and why; Trader decisions; ${practice}orders and trades; balances and accounting; current AI allowance with its timestamp, whether the above-${typeof stopLine === "number" ? `${stopLine}%` : "configured"} admission rule is met, and which limits are not reported.`,
       `A valid "wait" is not a failure; no trades means trading behaviour is untested; keep unknown costs unknown; don't count my own chat use as team usage.`,
     ];
-    const paragraph = KIND_PARAGRAPH[checkin?.prompt_kind];
+    const paragraph = kindParagraph(checkin?.prompt_kind, live);
     if (paragraph) lines.push(paragraph);
     if (focus?.text) lines.push(`Focus: ${str(focus.text).replace(/\s+/g, " ").trim()} (${local(focus.at)}).`);
     lines.push("Save a redacted private summary with UTC times and my time zone. Return a short status, issues and one recommended next action for me to decide; do not apply changes.");
@@ -246,5 +253,5 @@
     },
   });
 
-  HQ.define("prompts", {reviewText, checkupText, safetyText, copy, copyReview, copyCheckup, copySafety, settings});
+  HQ.define("prompts", {reviewText, checkupText, safetyText, copy, copyReview, copyCheckup, copySafety, settings, kindParagraph});
 })();

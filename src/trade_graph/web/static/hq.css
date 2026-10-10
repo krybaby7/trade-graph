@@ -51,6 +51,13 @@ body.hq-page .hq-banner, body.hq-page .hq-noscript {
 body.hq-page .hq-noscript { border-color: var(--border); background: var(--surface-soft); color: var(--text); font-weight: 400; }
 body.hq-page .hq-banner-text { margin: 0; }
 body.hq-page .hq-banner a { color: inherit; font-weight: 700; }
+body.hq-page .hq-banner[data-tone="info"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+body.hq-page .hq-banner-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+/* Visually hidden, still read by screen readers (status words next to glyphs, the h1 on phones). */
+body.hq-page .hq-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
 
 /* --- Sections and panels ------------------------------------------------------------------------- */
 
@@ -163,7 +170,7 @@ body.hq-page .hq-notice[data-tone="attention"] .hq-notice-icon { color: var(--wa
 body.hq-page .hq-notice-words { min-width: 0; }
 body.hq-page .hq-notice-title { margin: 0; font-weight: 650; }
 body.hq-page .hq-notice-text { margin: 0; color: var(--muted); }
-body.hq-page .hq-notice .hq-more-link { min-height: 2.25rem; }
+body.hq-page .hq-notice .hq-more-link { display: inline-flex; align-items: center; min-height: 2.75rem; }
 
 /* --- Right now ----------------------------------------------------------------------------------- */
 
@@ -220,7 +227,10 @@ body.hq-page .hq-next-when { display: flex; flex-direction: column; font-weight:
 body.hq-page .hq-next-rel { color: var(--muted); font-size: 0.875rem; font-weight: 400; }
 body.hq-page .hq-next-what { display: flex; align-items: flex-start; gap: 0.45rem; min-width: 0; }
 body.hq-page .hq-next-what .hq-dept-icon { margin-top: 0.2rem; }
+body.hq-page .hq-next-body { display: grid; gap: 0.1rem; min-width: 0; }
 body.hq-page .hq-next-text { min-width: 0; }
+body.hq-page .hq-next-detail { color: var(--muted); font-size: 0.875rem; font-weight: 400; }
+body.hq-page .hq-next-detail.hq-warn-text { color: var(--warning); }
 body.hq-page .hq-next-item[data-kind="owner_checkin"] .hq-next-what { color: var(--accent); font-weight: 650; }
 body.hq-page .hq-next-item[data-kind="owner_checkin"] .hq-dept-icon { color: var(--accent); }
 
@@ -341,9 +351,17 @@ body.hq-page .hq-week-chip[data-status="problem"], body.hq-page .hq-week-chip[da
 body.hq-page .hq-week-chip[data-status="stuck"] { border-left-color: var(--warning); }
 body.hq-page .hq-week-chip[data-kind="owner_checkin"] { border-left-color: var(--accent); background: var(--accent-soft); }
 body.hq-page .hq-week-chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.hq-page .hq-week-now {
+body.hq-page .hq-week-chip-top { display: flex; align-items: baseline; gap: 0.3rem; min-width: 0; }
+body.hq-page .hq-week-chip .hq-cal-mark { flex: none; }
+body.hq-page .hq-week-chip[data-status="done"] .hq-cal-mark { color: var(--success); }
+body.hq-page .hq-week-chip[data-status="problem"] .hq-cal-mark, body.hq-page .hq-week-chip[data-status="overdue"] .hq-cal-mark,
+body.hq-page .hq-week-chip[data-status="stuck"] .hq-cal-mark { color: var(--warning); }
+body.hq-page .hq-week-chip[data-status="estimated"] .hq-cal-mark, body.hq-page .hq-week-chip[data-status="skipped"] .hq-cal-mark,
+body.hq-page .hq-week-chip[data-status="missed"] .hq-cal-mark, body.hq-page .hq-week-chip[data-status="cancelled"] .hq-cal-mark { color: var(--muted); }
+body.hq-page .hq-week-now, body.hq-page .hq-cal-now-line {
   padding-top: 0.1rem; border-top: 2px solid var(--danger); color: var(--danger); font-size: 0.875rem; font-weight: 700;
 }
+body.hq-page .hq-cal-now-line { margin: 0.25rem 0; list-style: none; }
 body.hq-page .hq-week-more, body.hq-page .hq-week-empty { color: var(--muted); font-size: 0.875rem; }
 
 /* --- Check-ins ------------------------------------------------------------------------------------- */
@@ -556,6 +574,9 @@ body.hq-page .hq-sheet-close, body.hq-page .hq-toast-close {
 body.hq-page .hq-sheet-body {
   flex: 1; min-height: 0; padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); overflow: auto; overscroll-behavior: contain;
 }
+/* Messages raised while a sheet is open: between the title and the scrolling body, always in view. */
+body.hq-page .hq-sheet-toast { flex: none; padding: 0.6rem 0.75rem 0; }
+body.hq-page .hq-sheet-toast:empty { display: none; }
 body.hq-page .hq-sheet-body > p:first-child { margin-top: 0; }
 body.hq-page .hq-sheet-actions { justify-content: flex-end; margin-top: 1rem; }
 body.hq-page .hq-sheet-notice { margin: 0 0 0.85rem; padding: 0.6rem 0.75rem; border-radius: var(--hq-radius-small); background: var(--accent-soft); color: var(--accent); }
@@ -605,11 +626,27 @@ body.hq-page .hq-tab[aria-current="page"]::before {
 /* --- Phones: one section at a time --------------------------------------------------------------------- */
 
 @media (max-width: 767px) {
-  body.hq-page .shell { width: calc(100% - 2rem); padding-bottom: calc(var(--hq-tab-height) + env(safe-area-inset-bottom, 0px) + 2rem); }
+  body.hq-page .shell { width: calc(100% - 2rem); padding-top: 0.75rem; padding-bottom: calc(var(--hq-tab-height) + env(safe-area-inset-bottom, 0px) + 2rem); }
   .hq-js body.hq-page .hq-section:not(.is-active) { display: none; }
   body.hq-page .hq-wide-only { display: none; }
   body.hq-page .hq-panel { padding: 0.9rem; }
   body.hq-page .hq-map { padding: 0.5rem; }
+  /* Right now comes first on a phone (review U10, spec §A.4 phone wireframe): one header row with the name,
+     "Detailed views" and Theme. The HQ link (this page; the tab bar has it) and the repeated "Paper" labels
+     give way to the chips, and the page title is kept for screen readers only. */
+  body.hq-page .site-header { position: relative; gap: 0.5rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  body.hq-page .site-header .brand-mark, body.hq-page .site-header .brand-copy small,
+  body.hq-page .header-actions .badge, body.hq-page .site-nav > .nav-link { display: none; }
+  body.hq-page .site-nav { position: static; order: 0; flex-basis: auto; }
+  body.hq-page .nav-more-list { left: 1rem; right: 1rem; }
+  body.hq-page .hq-title {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0);
+    white-space: nowrap; border: 0;
+  }
+  body.hq-page .hq-root, body.hq-page .hq-section { gap: 0.75rem; }
+  body.hq-page .hq-header { gap: 0.45rem; }
+  /* Calm notes (early history, view only) follow the map; a live-account notice stays on top. */
+  body.hq-page .hq-slot-notices.is-calm { order: 1; }
 }
 
 @media (max-width: 380px) {

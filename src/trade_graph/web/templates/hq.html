@@ -9,10 +9,17 @@
 {%- else -%}{{ s // 86400 }} d{% if (s % 86400) // 3600 %} {{ (s % 86400) // 3600 }} h{% endif %}
 {%- endif -%}
 {%- endmacro %}
+{#- First paint before the scripts run: dates in words ("9 Oct"), clock times as "16:05 UTC" (the server
+    doesn't know the viewer's time zone; hq-core.js rewrites both in local words). -#}
+{% macro day_month(at) -%}
+{%- set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] -%}
+{%- set m = at[5:7]|int(0) -%}{%- set d = at[8:10]|int(0) -%}
+{%- if 1 <= m <= 12 and 1 <= d <= 31 -%}{{ d }} {{ months[m - 1] }}{%- else -%}{{ at[:10] }}{%- endif -%}
+{%- endmacro %}
 {% macro segs(text) -%}
 {%- if text is sequence and text is not string -%}{%- for s in text -%}{%- if s is mapping -%}
 {%- if s.get('t') in ['text', 'term', 'link'] -%}{{ s.get('v', '') }}
-{%- elif s.get('t') == 'time' -%}{%- set at = s.get('at', '')|string -%}<time datetime="{{ at }}">{% if s.get('style') == 'date' %}{{ at[:10] }}{% else %}{{ at[11:16] }} UTC{% endif %}</time>
+{%- elif s.get('t') == 'time' -%}{%- set at = s.get('at', '')|string -%}<time datetime="{{ at }}">{% if s.get('style') == 'date' %}{{ day_month(at) }}{% else %}{{ at[11:16] }} UTC{% endif %}</time>
 {%- elif s.get('t') in ['money', 'percent'] -%}{{ s.get('display', '') }}
 {%- elif s.get('t') == 'duration' -%}{{ dur(s.get('seconds')) }}
 {%- endif -%}{%- endif -%}{%- endfor -%}{%- endif -%}
@@ -35,6 +42,8 @@
 {% block description %}What the team is doing, what needs you and what comes next.{% endblock %}
 {#- The HQ header below replaces the generic page heading once base.html wraps it in this block (WP4). -#}
 {% block page_heading %}{% endblock %}
+{#- HQ says it in plain words in its own footer (.hq-footer), so the generic journal footer is left out. -#}
+{% block page_footer %}{% endblock %}
 {% block content %}
 {% set snap = data if data is mapping else {} %}
 {% set live = operating_mode|default('paper') == 'live' %}
@@ -165,7 +174,7 @@
       <div data-hq="help"></div>
     </article>
   </section>
-  {% if not live %}<p class="hq-footer">This is practice: no real trades happen. Real costs are only the bills you enter.</p>{% endif %}
+  <p class="hq-footer">{% if live %}This page doesn't control a live account. Use Owner controls.{% else %}This is practice: no real trades happen. Real costs are only the bills you enter.{% endif %}</p>
 </div>
 <nav class="hq-tabs" aria-label="HQ sections">
   <a class="hq-tab" href="#hq"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-hq"></use></svg><span>HQ</span></a>
