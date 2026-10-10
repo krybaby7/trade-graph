@@ -10,7 +10,8 @@ import {webcrypto} from "node:crypto";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 // HQ_STATIC_DIR runs the same tests against another copy of the scripts (e.g. an older commit, to see them fail).
 export const STATIC = process.env.HQ_STATIC_DIR || path.join(ROOT, "src", "trade_graph", "web", "static");
-export const FIXTURES = path.join(ROOT, "tests", "fixtures", "hq");
+// HQ_FIXTURES_DIR runs them against other snapshots (e.g. fixtures with or without the optional contract keys).
+export const FIXTURES = process.env.HQ_FIXTURES_DIR || path.join(ROOT, "tests", "fixtures", "hq");
 export const SCRIPTS = ["hq-core.js", "hq-glossary.js", "hq-render.js", "hq-prompts.js", "hq-decide.js", "hq-checkins.js"];
 export const VIEWS = ["welcome", "notices", "now", "attention", "upnext", "map", "calendar", "checkins", "story", "money",
   "allowance", "market", "decide", "review", "bills", "prompt", "help"];

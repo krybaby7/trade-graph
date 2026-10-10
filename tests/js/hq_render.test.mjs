@@ -100,9 +100,12 @@ test("summarised estimates show one box per schedule and fill the week strip (T2
   assert.ok(stripEstimates.length >= 10, `projections within the week appear in the strip (${stripEstimates.length})`);
   assert.match(page.text(page.view("calendar").querySelector(".hq-notes")), /one catch-up turn/);
   // Without the field (an older server) the listed estimates are grouped as before.
-  page.show(data);
+  const older = clone(data);
+  delete older.calendar.estimates;
+  page.show(older);
   assert.equal(page.view("calendar").querySelector('details[data-keep="series:s-trader"]') === null,
-    !data.calendar.items.some(item => item.status === "estimated" && page.HQ.dayDiff(Date.parse(item.at)) > 1));
+    !older.calendar.items.some(item => item.status === "estimated" && item.series?.schedule_id === "s-trader" &&
+      page.HQ.dayDiff(Date.parse(item.at)) > 1));
 });
 
 test("the reserve rule is on, off or couldn't be read; unknown is never 'no rule' (U5)", () => {
@@ -149,11 +152,12 @@ test("'Since you last looked' never counts beyond what the story covers (C5)", (
 test("a 'since' time in the future is never printed (U3)", () => {
   const {page, data} = open("quiet");
   const next = clone(data);
+  next.attention[0].since = shiftIso(next.as_of, -2 * HOUR);
   next.attention[1].since = shiftIso(next.as_of, 2 * HOUR);
   page.show(next);
   const heads = page.view("attention").querySelectorAll(".hq-attn-head").map(head => page.text(head));
   assert.doesNotMatch(heads[1], /since/);
-  assert.match(heads[0], /since/);
+  assert.match(heads[0], /since 2 h ago/);
 });
 
 test("a stuck job says 'stuck', and 'try 0 of 3' is never shown (U7)", () => {
