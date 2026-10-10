@@ -102,8 +102,8 @@ pre { max-width: 100%; overflow: auto; padding: 1rem; border-radius: 0.35rem; ba
 .nav-more { position: relative; }
 .nav-more > summary { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.75rem; list-style: none; cursor: pointer; }
 .nav-more > summary::-webkit-details-marker { display: none; }
-.nav-more > summary::after { content: "\25BE"; font-size: 0.75em; }
-.nav-more[open] > summary::after { content: "\25B4"; }
+.nav-more > summary::after { content: ""; width: 0.4rem; height: 0.4rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-0.15rem) rotate(45deg); }
+.nav-more[open] > summary::after { transform: translateY(0.1rem) rotate(-135deg); }
 .nav-more-list { position: absolute; z-index: 50; top: calc(100% + 0.35rem); left: 0; display: grid; gap: 0.15rem; min-width: 18rem; margin: 0; padding: 0.4rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--surface); box-shadow: var(--shadow); list-style: none; }
 .nav-more-list .nav-link { display: flex; align-items: center; min-height: 2.75rem; }
 .header-actions { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }

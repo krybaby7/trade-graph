@@ -233,3 +233,44 @@ None prevents offline development. Mark credentialed verification pending when c
   Snapshot export and modest refresh are read-only and trigger no inference or
   native quota probe. Upgrade preserves original database/key/witness through
   supported continuity; schedules, strategy and routing remain unchanged.
+
+- **D105 (2026-10-10, owner dashboard request):** [Trade Graph HQ](HQ-DASHBOARD.md)
+  is the signed-in home at `/`: a plain-language, phone-first page built only from
+  persisted records. The previous home moves unchanged to `/journal` (keeping
+  `?end_at=`); Mission Control, trading, organisation, costs, improvements and
+  owner pages are unchanged and listed under "Detailed views". `/journal` is
+  allowlisted in redaction. Source integration is not deployment: shipping needs
+  the owner-approved financial-manifest transition with every portfolio in
+  MANAGE_ONLY and the service drained.
+
+- **D106 (2026-10-10):** HQ AI and allowance state comes only from persisted
+  evidence: provider pause state, quota-deferral events and the latest saved
+  allowance reading against the configured stop line, always shown with its age.
+  HQ never calls `ServiceController.status()`/`_readiness()` or reads the
+  dashboard's cached `ai_available`/`admitted` verdicts, which are usually stale in
+  browser reads. A reading at or below the line is "probably waiting", not a claim
+  that work was refused. Unreported windows are disclosed, never treated as zero.
+
+- **D107 (2026-10-10):** HQ owner actions reuse the existing endpoints with fixed
+  bodies: start-trading, pause (`MANAGE_ONLY` only), resume, start-optimisation,
+  stop-service (`manage-only`), expenses and check-ins. Pause and Resume send a
+  `request_id` and an `expected_revision` read from `/api/v1/owner/config` at
+  confirm time; Pause retries once with a new request id on a stale revision, and
+  Resume re-opens its preview. Uncertain outcomes resend the same request. Other
+  pause profiles, `flatten`, budgets, policy and live controls stay in Owner
+  controls. HQ adds no new authority.
+
+- **D108 (2026-10-10):** Owner review check-ins (migration `0025`,
+  `owner_checkins`) are owner-only and append-only, with request-id replay and
+  trigger-enforced plan/needs-plan/closed rules. They are not in the review
+  export, the financial checkpoint, `activity_events`, Secretary routing or any
+  agent context, and never bump the owner revision. A compromised process sharing
+  the SQLite file is not stopped by a module boundary; that residual risk is
+  accepted for these non-financial owner notes. Downgrade is not automatic.
+
+- **D109 (2026-10-10):** HQ discloses existing behaviour: on an account holding
+  nothing, Stop replaces an automatic safety stop with the owner's own Stop. HQ
+  offers no guided "Stop, Start, Resume" recovery and no button that lifts a
+  system pause until the owner decides (HQ open question Q1). The safety-stop card
+  says it can't be lifted from the dashboard by design, puts it in the next review
+  prompt and links Owner controls for the technical details.

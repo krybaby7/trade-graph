@@ -1,6 +1,8 @@
 # Owner service controls
 
-Mission Control at `/progress` now shows durable worker status and has **Start
+[Trade Graph HQ](HQ-DASHBOARD.md) at `/` offers the same paper controls as plain-language
+decision cards with a preview and confirm step; it calls the endpoints described here.
+Mission Control at `/progress` shows durable worker status and has **Start
 Trading**, **Start Optimisation**, **Pause AI · keep protection** and **Stop safely**
 controls. Dashboard serving starts no service or model call. Writes require an
 owner session; cookie writes also require the session's CSRF token.
@@ -33,16 +35,17 @@ artifact-managed schedules, are suppressed. Previously queued automatic
 Optimisation is retired with a retained cancellation outcome. Leader commissions
 cannot reopen this scheduling route in the running service. Start Optimisation
 requires an available isolated subscription runtime and an unpaused portfolio.
-It persists exactly one task with one attempt and a ten-minute deadline. The
-existing protected departmental consultation can return one Leader review and
-bounded descendants within the same root allocation and deadline. Engineer
+It persists exactly one task with up to `ordinary_max_paid_attempts` (default 3)
+tries; there is no deadline unless `optimisation_deadline_seconds` is configured.
+The existing protected departmental consultation can return one Leader review and
+bounded descendants within the same root allocation and any configured deadline. Engineer
 acceptance, artifact activation, delegation limits and accounting continue to
 apply. No change is automatically accepted merely because a cycle was requested.
 
 A repeated cycle request returns the same saved task and progress. A different
 request while an active or unresolved cycle remains receives an explicit
 conflict. The dashboard shows each task's result/failure and the overall cycle
-state. A deadline prevents fresh inference; it does not erase existing costs,
+state. A configured deadline prevents fresh inference; it does not erase existing costs,
 financial effects, applied artifacts or unresolved attempts.
 
 Pause AI keeps the service and deterministic management active. Stop safely

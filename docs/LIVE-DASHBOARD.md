@@ -8,7 +8,12 @@ run `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/copy_dashboard_sessio
 this applies only to that process. Paste into sign-in. It changes no
 session, worker or account state.
 
-The home separates operational health from economic evidence. A current worker
+After sign-in, `/` is [Trade Graph HQ](HQ-DASHBOARD.md), the plain-language home.
+The detailed account journal described below moved unchanged to
+<http://localhost:8000/journal> (it keeps `?end_at=` for a completed reporting
+cutoff). Every page is listed under **Detailed views** in the top navigation.
+
+The account journal separates operational health from economic evidence. A current worker
 heartbeat and RUNNING control do not prove successful application by every role
 or profitable trading. Department cards distinguish native generation from
 applied task outcomes and show due times, failures, retries and linked records.
@@ -51,7 +56,7 @@ excluded. An oversized export fails explicitly; it does not truncate records.
 Keep downloaded reviews private. Opening, refreshing and exporting initiate no
 inference or quota CLI probes.
 
-Home refreshes every 30 seconds while visible and idle, preserves open details,
+The journal refreshes every 30 seconds while visible and idle, preserves open details,
 and shows stale/offline status on failure. The last snapshot remains readable.
 Resource observations are cached for 30 seconds. Controller start/resume and
 native dispatch/retry retain their independent fresh quota admission checks.

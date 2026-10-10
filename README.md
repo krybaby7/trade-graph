@@ -124,6 +124,10 @@ milestones, recorded activity and Kraken test missions. It refreshes every five
 seconds and includes bounded owner-started local rehearsals and public Kraken API
 checks. Account/order/live tests remain pending. See [the dashboard guide](docs/MISSION-CONTROL.md).
 
+After sign-in, **Trade Graph HQ** at `/` is the plain-language home: what is happening, what needs
+you, the calendar, the story so far and the owner decisions. The detailed account journal is at `/journal`.
+See [the HQ guide](docs/HQ-DASHBOARD.md).
+
 Open `http://127.0.0.1:8000/login` and paste `session_token` from the private
 `runtime/owner-session.json` file. Keep that file outside Git. New runtime directories
 use mode 0700 and session files use 0600; existing database directories must be private.
