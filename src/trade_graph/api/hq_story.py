@@ -118,7 +118,8 @@ def _order_consequence(p: Projection, task: dict | None, quote: str | None) -> l
     row = p.runtime.database.execute("SELECT state FROM order_intents WHERE intent_id=?", (intent_id,)).fetchone()
     if row is None:
         return None
-    return c.says(c.STORY["order_state"].format(state=c.ORDER_STATE.get(row["state"], row["state"].lower())))
+    template = c.STORY["order_state"] if p.paper else c.LIVE_STORY["order_state"]
+    return c.says(template.format(state=c.ORDER_STATE.get(row["state"], row["state"].lower())))
 
 
 def _fills(p: Projection) -> list:
@@ -169,7 +170,8 @@ def _tasks(p: Projection) -> list:
                                      c.says(c.STORY["turn_skipped"].format(dept=dept, reason=reason)),
                                      consequence=c.says(c.STORY["nothing_used"])))
         else:
-            reason = c.reason_plain(raw) or (c.REASON["budget"] if status == "BLOCKED_BUDGET" else c.REASON["unknown"])
+            reason = c.reason_plain(raw, live=not p.paper) or (c.REASON["budget"] if status == "BLOCKED_BUDGET"
+                                                               else c.REASON["unknown"])
             if extra:
                 headline = c.STORY["turn_problem_extra"].format(dept=dept, reason=reason)
             elif cadence:
@@ -366,7 +368,7 @@ def _routine_problems(p: Projection) -> list:
         if not prefixes or all(prefix == "feed:" for prefix in prefixes):
             continue  # missing prices are told by the price-feed story
         prefix = next(prefix for prefix in prefixes if prefix != "feed:")
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         start = _dt(first["created_at"])
         end = _dt(recovered["created_at"]) if recovered else None
         headline = c.says(c.STORY["routine_problem"].format(prefix=words), " (", c.time(start, "clock"))

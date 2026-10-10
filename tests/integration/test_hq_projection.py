@@ -444,6 +444,40 @@ def test_live_mode_disables_decisions_and_paper_copy(env):
     assert "Paper results are simulated." not in encoded
     assert "live_mode" in [notice["code"] for notice in data["notices"]]
     assert "live account" in text(data["money"]["at_risk"])
+    assert "practice" not in encoded.lower().replace('"practice_value"', "")
+
+
+def _orders_and_problems(env, *, mode):
+    quiet(env, mode=mode)
+    insert(env, "order_intents", intent_id="i-unclear", portfolio_id=env.pid, client_order_id="c-unclear",
+           state="UNKNOWN", symbol="BTC/USD", payload_json='{"client_order_id":"c-unclear","symbol":"BTC/USD"}',
+           created_at=at(env, -30), updated_at=at(env, -30))
+    env.db.execute("UPDATE graph_service_runs SET error_type='reconciliation:X;dispatch:Y' WHERE run_id='r-1'")
+    task(env, "t-px", "trader", "FAILED", created=-900, dedup_key=f"schedule:s-trader:{at(env, -900)}",
+         output={"reason": "stale or missing quote for BTC/USD"})
+    env.runtime.recovery_history = lambda: {"status": "PARTIAL_HISTORY", "incidents": []}
+
+
+def test_live_mode_never_says_practice(env):
+    _orders_and_problems(env, mode="live")
+    data = snap(env)
+    assert data["now"]["code"] == "routine_failing"
+    assert {"orders_unclear", "routine_failing"} <= set(codes(data))
+    encoded = json.dumps(data).lower().replace('"practice_value"', "")
+    assert "practice" not in encoded
+    assert "1 order has an unclear status" in [text(item["title"]) for item in data["attention"]]
+    assert "Places orders" in text(room(data, "accounts")["job"])
+    assert "An order's status is unclear" in text(room(data, "accounts")["now"])
+    assert "the account's money" in text(room(data, "trader")["job"])
+    assert "prices were too old to place an order" in encoded
+
+
+def test_paper_mode_still_says_practice_order(env):
+    _orders_and_problems(env, mode="paper")
+    data = snap(env)
+    encoded = json.dumps(data).lower()
+    assert "practice order" in encoded
+    assert "1 practice order has an unclear status" in [text(item["title"]) for item in data["attention"]]
 
 
 def test_pause_preview_mentions_set_aside_when_working(env):

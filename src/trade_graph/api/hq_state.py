@@ -639,7 +639,7 @@ def team(p: Projection) -> dict:
 def _service_block(p: Projection) -> dict:
     problems = []
     for prefix, code in p.problems:
-        words = c.PROBLEM_PREFIX[prefix][0]
+        words = c.problem_prefix(prefix, live=not p.paper)[0]
         problems.append({"prefix": prefix, "code": code,
                          "text": [c.text(words[:1].upper() + words[1:], code=f"{prefix}{code}"
                                          if prefix != "other" else code)]})
@@ -779,11 +779,13 @@ def _now_copy(p: Projection) -> tuple[list, list, list, datetime | None]:
         return head, detail, c.says(copy["leader_pause"][2]), p.pause_since
     if code in ("model_unavailable", "quota_paused", "timetable_failing", "orders_unclear"):
         head, detail, nothing = copy[code]
+        if code == "orders_unclear" and not p.paper:
+            head = c.LIVE_NOW["orders_unclear"]
         since = p.ai_since if code in ("model_unavailable", "quota_paused") else None
         return c.says(head), c.says(detail), c.says(nothing), since
     if code == "routine_failing":
         prefix = next(prefix for prefix, _ in p.problems if prefix != "scheduler:")
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         return (c.says(copy["routine_failing"][0].format(problem=words)), c.says(consequence),
                 c.says(consequence), None)
     if code == "waiting_allowance":
@@ -933,13 +935,13 @@ def attention(p: Projection, checkins: list[dict]) -> list:
             title=first["title"], state=first["state"])), why=c.says(c.ATTENTION["checkin_due_why"]),
             checkin_id=first["checkin_id"], can_fix_here=True, since=first["planned_at"]))
     if p.unclear_orders:
-        forms = c.ATTENTION["orders_unclear"]
+        forms = c.ATTENTION["orders_unclear"] if p.paper else c.LIVE_ATTENTION["orders_unclear"]
         items.append(_card("orders_unclear", c.says(c.plural(forms, p.unclear_orders)),
                            why=c.says(c.ATTENTION["orders_unclear_why"]),
                            consequence=c.says(c.ATTENTION["orders_unclear_consequence"]), link="/trading"))
     others = [(prefix, code) for prefix, code in p.problems if prefix != "scheduler:"]
     for index, (prefix, code) in enumerate(dict.fromkeys(others)):
-        words, consequence = c.PROBLEM_PREFIX[prefix]
+        words, consequence = c.problem_prefix(prefix, live=not p.paper)
         suffix = None if index == 0 else (prefix.rstrip(":") if prefix != "other" else f"other_{index}")
         items.append(_card("routine_failing", [c.text(words[:1].upper() + words[1:], code=code)],
                            consequence=c.says(consequence), suffix=suffix))
@@ -1039,7 +1041,7 @@ def _repeat_problems(p: Projection) -> list:
             latest = problems[0]
             dept = c.dept_name(role.dept)
             cadence = p.task_cadence(latest) or "regular"
-            reason = c.reason_segment(p.raw_reason(latest)) or c.text(c.REASON["unknown"])
+            reason = c.reason_segment(p.raw_reason(latest), live=not p.paper) or c.text(c.REASON["unknown"])
             consequence = c.says(c.ATTENTION["repeat_problems_next"], c.time(role.next_at, "day_clock"), ".") \
                 if role.next_at else []
             cards.append(_card(
@@ -1086,7 +1088,7 @@ def _room_base(dept: str, kind: str, job: str) -> dict:
 
 def _ai_room(p: Projection, role: Role) -> dict:
     dept = role.dept
-    job = c.ROOM[dept][2]
+    job = c.room_job(dept, live=not p.paper)
     if dept == "optimisation" and not p.auto_optimisation:
         job = c.OPTIMISATION_MANUAL_JOB
     room = _room_base(dept, "ai", job)
@@ -1179,7 +1181,7 @@ def _room_last(p: Projection, role: Role) -> dict | None:
         reason = c.SKIP_PLAIN.get(p.skip_key(task) or "", c.MISC["cancelled"])
         return {"at": at, "outcome": "skipped", "text": c.says(c.LAST["skipped"].format(reason=reason)),
                 "quote": None, "link": link}
-    reason = c.reason_segment(p.raw_reason(task)) or c.text(c.REASON["unknown"])
+    reason = c.reason_segment(p.raw_reason(task), live=not p.paper) or c.text(c.REASON["unknown"])
     lead = c.LAST["problem"].format(cadence=cadence) if cadence else c.LAST["problem_plain"]
     return {"at": at, "outcome": "problem", "text": [c.text(lead), reason, c.text(".")], "quote": None,
             "link": link}
@@ -1253,7 +1255,7 @@ def _rules(p: Projection) -> list | None:
 
 
 def _software_room(p: Projection, dept: str) -> dict:
-    room = _room_base(dept, "software", c.ROOM[dept][2])
+    room = _room_base(dept, "software", c.room_job(dept, live=not p.paper))
     facts: list = []
     if dept == "secretary":
         light = "off" if p.offline else "ok"
@@ -1307,7 +1309,7 @@ def _software_room(p: Projection, dept: str) -> dict:
         if light == "off":
             now_text = c.says(c.ROOM_NOW["off"])
         elif p.unclear_orders:
-            now_text = c.says(c.ROOM_NOW["accounts_unclear"])
+            now_text = c.says(c.ROOM_NOW["accounts_unclear"] if p.paper else c.LIVE_ROOM_NOW["accounts_unclear"])
         elif coins is None:
             now_text = c.says(c.ROOM_NOW["accounts_unknown"])
         else:
@@ -1370,7 +1372,7 @@ def _quest(p: Projection, task: dict) -> dict:
     terminal = status in TERMINAL
     reason = None
     if (status in {"FAILED", "DEAD_LETTER"} and not p.is_skip(task)) or status in STUCK:
-        segment = c.reason_segment(p.raw_reason(task))
+        segment = c.reason_segment(p.raw_reason(task), live=not p.paper)
         reason = [segment] if segment else None
     finished = _dt(task.get("result_created_at")) if terminal else None
     return {"id": f"task:{task['task_id']}", "dept": task["role"], "origin": origin, "origin_text": origin_text,
@@ -1593,11 +1595,12 @@ def money_block(p: Projection) -> dict:
     counts = cache.get("counts") or _zero_counts()
     as_of = _iso(cache.get("as_of"))
     if not cache.get("available"):
-        return {"available": False, "unavailable_reason": c.says(c.MONEY["unavailable"]), "as_of": as_of,
+        unavailable = c.says(c.MONEY["unavailable"] if p.paper else c.LIVE_MONEY["unavailable"])
+        return {"available": False, "unavailable_reason": unavailable, "as_of": as_of,
                 "practice_value": None, "value_final": False, "estimate_notes": [],
                 "opening": {"native": [], "reporting": None, "at": None},
                 "change": {"total": None, "currency_effect": None, "team_effect": None,
-                           "unknown_reason": c.says(c.MONEY["unavailable"])},
+                           "unknown_reason": unavailable},
                 "holdings": holdings, "counts": counts,
                 "pays_for_itself": {"status": "unknown", "net": None, "missing": [], "honest_note": None},
                 "at_risk": at_risk}
@@ -1651,7 +1654,7 @@ def _pays(p: Projection, cache: dict) -> dict:
     unverified = cache.get("recovery_status") == "UNAVAILABLE"
     missing = []
     for code in codes:
-        words, fixable = c.ECON.get(code, c.ECON["other"])
+        words, fixable = c.econ(code, live=not p.paper)
         if code == "history_gap" and unverified:
             words = c.NOTICE["history_unverified"][1]
         missing.append({"code": code if code in c.ECON else "other", "text": c.says(words),

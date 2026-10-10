@@ -118,7 +118,7 @@ def _task_status(p: Projection, task: dict) -> tuple[str, list | None]:
     if status == "CANCELLED":
         return "cancelled", None
     if status in {"FAILED", "DEAD_LETTER"}:
-        reason = c.reason_plain(p.raw_reason(task)) or c.REASON["unknown"]
+        reason = c.reason_plain(p.raw_reason(task), live=not p.paper) or c.REASON["unknown"]
         return "problem", c.says(c.CALENDAR["done_problem"].format(reason=reason))
     if status in STUCK:
         return "stuck", c.says(c.CALENDAR["stuck"])
