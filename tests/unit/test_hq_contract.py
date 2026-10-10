@@ -121,12 +121,50 @@ def _broken(mutate):
     lambda d: d["viewer"].update(role="reader"),
     lambda d: d["viewer"].update(auth="bearer"),
     lambda d: d.update(mode="live"),
+    # The three additive keys may be absent but are never null (review fix plan section 1).
+    lambda d: d["team"]["allowance"].update(stop_line_state=None),
+    lambda d: _trader_next(d).update(status=None),
+    lambda d: d["calendar"].update(estimates=None),
+    # ... and each one agrees with the fields it describes.
+    lambda d: d["team"]["allowance"].update(stop_line_state="maybe"),
+    lambda d: d["team"]["allowance"].update(stop_line_percent=None),
+    lambda d: d["team"]["allowance"].update(stop_line_state="off"),
+    lambda d: _trader_next(d).update(overdue=True),
+    lambda d: _trader_next(d).update(status="due_now"),
+    lambda d: d["calendar"]["estimates"][0].update(count=31),
+    lambda d: d["calendar"]["estimates"][0].update(count=0),
+    lambda d: d["calendar"]["estimates"][0].update(dept="accounts"),
+    lambda d: d["calendar"]["estimates"].append(dict(d["calendar"]["estimates"][0])),
 ])
 def test_contract_rejects_drift(mutate):
     _broken(mutate)
+
+
+def _trader_next(data: dict) -> dict:
+    return next(dept for dept in data["departments"] if dept["id"] == "trader")["next"]
+
+
+def test_new_keys_are_emitted_in_every_fixture():
+    for name in NAMES:
+        data = _load(name)
+        assert data["team"]["allowance"]["stop_line_state"] in ("on", "off", "unknown"), name
+        assert all(dept["next"]["status"] for dept in data["departments"] if dept["next"]), name
+        assert isinstance(data["calendar"]["estimates"], list), name
+    quiet = _load("snapshot_quiet.json")["calendar"]
+    assert [series["schedule_id"] for series in quiet["estimates"]] == ["s-trader"]
 
 
 def test_omittable_keys_may_be_absent():
     data = copy.deepcopy(_load("snapshot_quiet.json"))
     data["decisions"][3]["facts"] = {}
     contract.validate_snapshot(data)
+    # An older server or fixture may omit the additive keys entirely.
+    del data["team"]["allowance"]["stop_line_state"]
+    for dept in data["departments"]:
+        if dept["next"]:
+            del dept["next"]["status"]
+    del data["calendar"]["estimates"]
+    contract.validate_snapshot(data)
+    unknown = copy.deepcopy(_load("snapshot_quiet.json"))
+    unknown["team"]["allowance"].update(stop_line_percent=None, stop_line_state="unknown")
+    contract.validate_snapshot(unknown)

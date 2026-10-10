@@ -49,10 +49,13 @@ On a phone, HQ shows one area at a time. Use the tab bar at the bottom: **HQ**, 
   never colour alone.
 
 **Calendar**: each department's next turns, your own check-ins, and deadlines. Items marked "≈" are estimates,
-because each turn sets the next one when it actually runs. "Show 2 weeks" looks further ahead.
+because each turn sets the next one when it actually runs. Estimates more than 48 hours ahead are grouped under
+"Later (estimates)", one line per department. A turn that can only happen under a condition (the team running, the
+AI back on, allowance available, Resume) says so. "Show 2 weeks" looks further ahead.
 
 **Story**: what happened, grouped by day, newest first. Short quotes labelled "In their words" are summaries the
-departments wrote themselves; HQ never rewrites them. "Load earlier" goes further back.
+departments wrote themselves; HQ never rewrites them. "Load earlier" goes further back; on a very busy day a page
+may stop short of 3 days and the next page continues from there, so nothing is skipped.
 
 **Money**: the scoreboard (practice money, what changed it, what is held), whether the run "pays for itself",
 "Is my money at risk?", the AI allowance gauge and the market weather (price and 20-hour / 50-hour averages).
@@ -73,10 +76,10 @@ you to tick "I've double-checked this".
 | Card | What it does |
 |---|---|
 | Start the team | Starts the practice team, or reconnects to it if it is already running. If the team has gone silent, Start would only reconnect, so HQ offers a check-up prompt instead. |
-| Pause the AI, keep protection | No new AI work and no new buying. Prices, record-keeping and protection continue. A turn in progress is set aside; allowance it already used stays used. |
+| Pause the AI, keep protection | No new AI work and no new buying. Prices, record-keeping and protection continue. A turn in progress is set aside; allowance it already used stays used. Not offered while the Leader has a stronger setting on (cancel all orders, sell everything, or stopped), because your pause would replace and weaken it. |
 | Resume | Double-checks every order and balance first. If anything is unclear, Resume is refused and nothing changes. |
 | Ask for an optimisation review | Asks Optimisation for one review of the team's work. Nothing changes automatically. |
-| Stop the team safely | Stops the team. If something is held, protection keeps running instead. On an account that holds nothing, this also replaces an automatic safety stop with your own Stop (existing behaviour). |
+| Stop the team safely | Stops the team. If something is held, protection keeps running instead. On an account that holds nothing, this also replaces an automatic safety stop with your own Stop (existing behaviour); during a safety stop HQ marks it "not recommended" and only partly reversible. |
 | Record a bill | Adds a real bill (AI subscription, hosting, electricity, internet or another service), with Trade Graph's share and either no split or an equal split across the five scheduled departments. |
 | I've entered every bill for a month | Says every bill for a finished month is entered, so the month's costs become known. |
 | Plan a review check-in | Puts a review time in your HQ calendar. |
@@ -104,7 +107,7 @@ A check-in is "due" from 15 minutes before its time until an hour after, "overdu
 
 ## Data rules (for reviewers)
 
-These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D109.
+These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 
 - **Only saved records.** Every state on HQ is projected on the server (`api/hq*.py`) from persisted records in one
   read snapshot. The browser never infers state. Quiet means idle.
@@ -115,7 +118,13 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D109.
 - **Practice money and real costs are never summed.**
 - **Reads are cheap.** One `GET /api/v1/hq` reads bounded records and a 60-second money cache (refreshed early when
   bills, fills or ledger events change). It never runs the activity, journal, health, service-status, configuration
-  or review-export projections. Target payload is at most 80 KB.
+  or review-export projections, and never probes database ownership, so it never takes the database lock (D110).
+  The payload stays at most 80 KB on a busy synthetic week (`tests/integration/test_hq_payload.py`, about 66 KB):
+  estimated turns more than 48 hours ahead are summarised in `calendar.estimates`. The review prompt's "since"
+  counts are exact `COUNT(*)` queries, not the capped lists.
+- **Story paging** (D110). A page's `window_start` is the oldest moment it covers completely; it may be later than
+  72 hours ago when a capped reader was full. `next_before` continues from there; pages may overlap by 1 ms and the
+  page de-duplicates by id.
 - **No new authority** (D107). Each decision card maps to one existing owner endpoint with a hard-coded body; the
   page never posts to a URL taken from data. Pause and Resume read the owner revision just before sending; Pause
   retries once with a fresh request id if the revision changed.

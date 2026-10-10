@@ -274,3 +274,24 @@ None prevents offline development. Mark credentialed verification pending when c
   system pause until the owner decides (HQ open question Q1). The safety-stop card
   says it can't be lifted from the dashboard by design, puts it in the next review
   prompt and links Owner controls for the technical details.
+
+- **D110 (2026-10-10, HQ review fixes):** Changes made after the HQ review
+  (49 findings, triaged in one fix plan):
+  - HQ never probes database ownership (deviation from HQ spec §B.4 R2), so a
+    page read never takes the database lock. It reports the run as recorded and
+    never says "attached". In-process ownership probes are now serialised.
+  - Estimated department turns more than 48 hours ahead are summarised per
+    schedule in the additive `calendar.estimates` key instead of being listed,
+    so a busy week stays within the 80 KB payload budget.
+  - Leftover schedule rows for roles that are not configured are ignored
+    (§B.5.3); an `artifact-` schedule wins over the default one for its role.
+  - A team started in management-only mode is turn gate GM (§B.5.4): its turns
+    happen only if AI becomes available.
+  - The review prompt's "since" counts use exact `COUNT(*)` queries (reader
+    R30), an exception to the capped readers of §B.4.
+  - Story pages: `window_start` is the oldest moment a page covers completely
+    and can be later than 72 hours ago when a capped reader was full;
+    `next_before` continues from there, pages may overlap by 1 ms and clients
+    de-duplicate by id. Long allowance waits are counted in full, never cut.
+  - "Pause AI" is never offered while the Leader has a stronger pause on
+    (cancel all, flatten or stopped), because it would weaken it.

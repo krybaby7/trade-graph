@@ -116,7 +116,8 @@
           "t": "text",
           "v": "No allowance reading yet. New AI work stops at 40% (it needs more than that)."
         }
-      ]
+      ],
+      "stop_line_state": "on"
     },
     "automatic_turns": true,
     "automatic_optimisation": false
@@ -549,7 +550,8 @@
           "v": "Department turns appear here once the team has been started."
         }
       ]
-    ]
+    ],
+    "estimates": []
   },
   "story": {
     "window_start": "2026-10-02T17:20:00.000Z",

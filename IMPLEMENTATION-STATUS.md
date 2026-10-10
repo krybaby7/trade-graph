@@ -1,3 +1,21 @@
+# Trade Graph HQ review fixes (backend), not deployed — 2026-10-10
+
+Branch `claude/hq-fix-wp1` from review base `721bc8a`. The backend half of the HQ review fix plan (49 findings, all real): B1–B20 in source and tests, decision D110. **Nothing was deployed, pushed or run against the installation**; every test uses temporary databases. The frontend half (F1–F13, `src/trade_graph/web/**`) is separate work; until it lands the page ignores the three new additive contract keys (`team.allowance.stop_line_state`, `departments[].next.status`, `calendar.estimates`), so estimated turns more than 48 hours ahead are not shown.
+
+What changed for the owner: live accounts are never called "practice"; "Pause AI" never weakens a stronger Leader pause; the Stop card and holdings see a new open order at once; old price-feed or routine problems no longer colour a new team run; the safety-stop cause comes only from evidence close in time; the review prompt's "since" counts are exact; the calendar never shows impossible or past turns as normal; an unreadable reserve rule says so instead of "none"; stuck turns say "its own cost limit"; long AI-allowance waits are counted in full and older story pages are always reachable; the story endpoint answers 422, never 500, for odd dates; redaction now hides private file paths that only start like an app route (such as `/journal.sqlite`). HQ no longer probes database ownership (never takes the database lock).
+
+Commands (WSL2 Ubuntu, isolated temporary databases only):
+- `uv run ruff check src tests` — all checks passed.
+- `uv run pytest tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_owner_checkins.py tests/security/test_owner_checkin_boundary.py tests/integration/test_live_home.py tests/integration/test_dashboard_activity.py` — 311 passed.
+- Backend set `tests/integration/test_hq_{projection,routes,cost,owner_writes,payload}.py tests/unit/test_hq_{copy,contract}.py tests/unit/test_redaction_paths.py tests/integration/test_service_controller.py tests/integration/test_dashboard_boundary.py tests/security` — 604 passed.
+- The HQ test files also pass (237 passed) with the unpatched host resource observation forced to report a task-capacity warning (a throwaway pytest plugin), so host counters can't break them (review T14).
+- Busy synthetic week (`tests/integration/test_hq_payload.py`): compact snapshot 65.9 KB (7 days) and 66.5 KB (14 days), route 66.5 KB, within the 80 KB budget; snapshot about 25 ms.
+- `tests/e2e/test_dashboard_loop.py` still fails at line 37 with `KeyError: 'degraded'` (`/api/v1/overview` has no `degraded` key). It fails the same way on base `3504248`; not caused by HQ. The full suite was not rerun.
+
+Not done or still open: the frontend fixes F1–F13 and their manual browser checks; owner question Q1 (guided safety-stop recovery) is unchanged.
+
+---
+
 # Trade Graph HQ integrated in source, not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009`, based on deployed source `3504248` plus the frozen HQ contract `35da7f4`. Work packages merged in spec order: WP3 owner check-ins (`5c9b534`), WP1 HQ read model (`88c75f8`), WP2 HQ page (`3a984bb`); WP4 integration `a313014` and its docs commit. **Nothing was deployed, pushed or run against the installation.** Shipping needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained ([D105](docs/DECISIONS.md)); implementers do not deploy.

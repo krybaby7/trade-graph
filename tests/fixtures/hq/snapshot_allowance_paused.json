@@ -126,7 +126,8 @@
           "t": "text",
           "v": "3% left this week. Refills Mon 00:00 UTC. A second, shorter limit isn't reported."
         }
-      ]
+      ],
+      "stop_line_state": "on"
     },
     "automatic_turns": true,
     "automatic_optimisation": false
@@ -234,7 +235,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -281,7 +283,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -359,7 +362,8 @@
             "v": "If several turns were missed, the team does one catch-up turn, not all of them."
           }
         ],
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "waiting"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -411,7 +415,8 @@
         "overdue": false,
         "waiting_because": null,
         "note": null,
-        "extra_rows": 0
+        "extra_rows": 0,
+        "status": "planned"
       },
       "heads_up": null,
       "if_nothing": null,
@@ -861,7 +866,8 @@
         "machine": true
       }
     ],
-    "notes": []
+    "notes": [],
+    "estimates": []
   },
   "story": {
     "window_start": "2026-10-08T19:05:00.000Z",

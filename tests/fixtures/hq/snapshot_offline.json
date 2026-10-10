@@ -144,7 +144,8 @@
           "t": "text",
           "v": "72% left this week. A second, shorter limit isn't reported."
         }
-      ]
+      ],
+      "stop_line_state": "on"
     },
     "automatic_turns": true,
     "automatic_optimisation": false
@@ -767,7 +768,8 @@
           "v": "Allowance refill time isn't reported."
         }
       ]
-    ]
+    ],
+    "estimates": []
   },
   "story": {
     "window_start": "2026-10-06T22:40:00.000Z",
