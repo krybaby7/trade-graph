@@ -49,6 +49,8 @@
     "Buttons always show what will happen before anything happens.",
   ]);
 
+  // Open panels (Story days, "More", calendar "Earlier" and estimate series, help blocks) are remembered by
+  // HQ.keepOpen, so a 30-second refresh never snaps them shut (review T3).
   const ui = {
     attentionExpanded: false,
     calendarFilters: {depts: true, you: true, deadlines: true, machine: false},
@@ -60,8 +62,12 @@
     olderDone: false,
     olderBusy: false,
     olderNote: "",
-    openDays: new Set(),
   };
+  // Turn tiles: an overdue turn says why it hasn't happened (contract departments[].next.status). An older
+  // server without the field gets "Overdue", never "Due now" (review U1).
+  const OVERDUE_WORDS = Object.freeze({waiting: "Waiting", due_now: "Due now", overdue: "Overdue"});
+  // Calendar items that are happening or holding things up now, whether or not their time has passed (C4).
+  const CURRENT = new Set(["due", "overdue", "waiting"]);
 
   // --- Shared pieces ----------------------------------------------------------------------------
 
@@ -159,6 +165,9 @@
   HQ.view("notices", {
     deps: snapshot => snapshot.notices,
     render(root, snapshot) {
+      // Only calm notes: on a phone they follow the map so Right now comes first (hq.css .is-calm).
+      const calm = list(snapshot.notices).every(notice => notice?.tone !== "attention");
+      doc.querySelector('[data-hq="notices"]')?.classList.toggle("is-calm", calm);
       for (const notice of list(snapshot.notices)) {
         const card = el("div", "hq-notice");
         card.dataset.tone = notice.tone === "attention" ? "attention" : "info";
@@ -175,32 +184,47 @@
 
   // --- Right now ------------------------------------------------------------------------------------
 
-  function sinceLastLooked(snapshot) {
-    const last = HQ.lastSeen();
-    const lastMs = parseIso(last);
+  /* "Since you last looked" counts only what the snapshot's story really covers (review C5):
+     - the last look is older than the story window (72 h, or later when a busy reader was capped): no counts;
+     - the page was cut (next_before differs from window_start) and the last look is older than the oldest
+       item shown: the counts are a floor, "at least". */
+  function sinceFacts(snapshot) {
+    const lastMs = parseIso(HQ.lastSeen());
     // Nothing to report when the last look was the same few minutes (or the very first visit).
     if (lastMs === null || (parseIso(snapshot.as_of) ?? 0) - lastMs < 5 * 60000) return null;
+    const story = obj(snapshot.story);
+    const windowStart = parseIso(story.window_start);
+    if (windowStart !== null && lastMs < windowStart) return {beyond: true};
+    const items = list(story.items).filter(item => parseIso(item?.at) !== null);
+    const fresh = items.filter(item => parseIso(item.at) > lastMs);
+    const truncated = HQ.isIso(story.next_before) && story.next_before !== story.window_start;
+    const oldest = items.length ? Math.min(...items.map(item => parseIso(item.at))) : null;
+    return {
+      beyond: false,
+      atLeast: truncated && (oldest === null || lastMs < oldest),
+      decisions: fresh.filter(item => item.kind === "trader_decision").length,
+      trades: fresh.filter(item => item.kind === "fill").length,
+      problems: fresh.filter(item => item.problem === true).length,
+    };
+  }
+  function sinceLastLooked(facts) {
+    if (!facts) return null;
     const line = el("p", "hq-now-since");
-    line.append(el("strong", "", "Since you last looked"));
-    const windowStart = parseIso(snapshot.story?.window_start);
-    if (windowStart !== null && lastMs < windowStart) {
-      line.append(" (more than 3 days ago): see the ");
+    line.append(el("strong", "", "Since you last looked"), " (", time(HQ.lastSeen(), "relative"), ")");
+    if (facts.beyond) {
+      line.append(": more happened than HQ can count here; see the ");
       const anchor = el("a", "", "Story tab");
       anchor.href = "#story";
       line.append(anchor, ".");
       return line;
     }
-    const fresh = list(snapshot.story?.items).filter(item => (parseIso(item.at) ?? 0) > lastMs);
-    const decisions = fresh.filter(item => item.kind === "trader_decision").length;
-    const trades = fresh.filter(item => item.kind === "fill").length;
-    const problems = fresh.filter(item => item.problem === true).length;
-    line.append(" (", time(last, "relative"), `): ${plural(decisions, "decision")}, ${plural(trades, "trade")}, ${plural(problems, "problem")}.`);
+    const counts = `${plural(facts.decisions, "decision")}, ${plural(facts.trades, "trade")}, ${plural(facts.problems, "problem")}`;
+    line.append(facts.atLeast ? `: at least ${counts} (the Story tab has more).` : `: ${counts}.`);
     return line;
   }
 
   HQ.view("now", {
-    deps: snapshot => [snapshot.now, snapshot.viewer, findDecision(snapshot, snapshot.now?.primary_decision),
-      list(snapshot.story?.items).map(item => [item.at, item.kind, item.problem]), snapshot.story?.window_start],
+    deps: snapshot => [snapshot.now, snapshot.viewer, findDecision(snapshot, snapshot.now?.primary_decision), sinceFacts(snapshot)],
     render(root, snapshot) {
       const now = obj(snapshot.now);
       const card = doc.querySelector("[data-hq-now-card]");
@@ -221,7 +245,7 @@
       }
       if (hasText(now.detail)) root.append(textEl("p", "hq-now-detail", now.detail));
       if (hasText(now.if_nothing)) root.append(textEl("p", "hq-now-if", now.if_nothing));
-      const since = sinceLastLooked(snapshot);
+      const since = sinceLastLooked(sinceFacts(snapshot));
       if (since) root.append(since);
       const primary = findDecision(snapshot, now.primary_decision);
       if (primary?.shown && snapshot.viewer?.can_act && decide()) {
@@ -246,9 +270,12 @@
     const code = str(item.id).split(":")[0];
     const card = el("li", "hq-attn");
     card.dataset.sev = str(item.sev);
+    card.dataset.row = `attn:${str(item.id)}`;
     const head = el("p", "hq-attn-head");
     head.append(icon(severity.icon, "hq-icon hq-sev-icon"), el("span", "hq-sev-label", severity.label));
-    if (parseIso(item.since) !== null) head.append(el("span", "hq-attn-since", " · since "), time(item.since, "relative"));
+    // "since" is a moment that has passed; a future time ("since in 2 h") is never printed (review U3).
+    const since = parseIso(item.since);
+    if (since !== null && since <= HQ.serverNow()) head.append(el("span", "hq-attn-since", " · since "), time(item.since, "relative"));
     card.append(head, textEl("h3", "hq-attn-title", item.title));
     if (hasText(item.why) || hasText(item.consequence)) {
       const body = el("p", "hq-attn-body");
@@ -322,6 +349,7 @@
       items.forEach((item, index) => {
         const row = el("li", "hq-next-item");
         row.dataset.kind = str(item.kind);
+        row.dataset.row = `next:${str(item.id)}`;
         if (index >= 3) row.classList.add("hq-wide-only");
         const ms = parseIso(item.at);
         const days = HQ.dayDiff(ms);
@@ -331,11 +359,18 @@
         else if (days === 1 && ms - HQ.serverNow() < 86400000) later.append("tomorrow · ", time(item.at, "relative"));
         else later.append(time(item.at, "date"));
         when.append(time(item.at, "clock"), later);
+        // A turn that can only happen if something changes says so right here, not only in the Calendar
+        // tab (review U1): the item's own condition, its waiting reason, or at least "only if running".
         const what = el("span", "hq-next-what");
+        const body = el("span", "hq-next-body");
         const words = el("span", "hq-next-text");
         renderText(words, item.title);
         if (item.status === "due" || item.status === "overdue") words.append(" ", chip(item.status === "due" ? "due now" : "overdue", "hq-chip-warn"));
-        what.append(deptIcon(item.dept === "you" ? "you" : item.dept), words);
+        if (item.conditional && !hasText(item.detail)) words.append(" ", chip("only if running", "hq-chip-soft"));
+        body.append(words);
+        if (hasText(item.detail)) body.append(textEl("span", "hq-next-detail", item.detail));
+        if (hasText(item.waiting_because)) body.append(textEl("span", "hq-next-detail hq-warn-text", item.waiting_because));
+        what.append(deptIcon(item.dept === "you" ? "you" : item.dept), body);
         row.append(when, what);
         rows.append(row);
       });
@@ -353,7 +388,7 @@
     const next = dept.next;
     const ms = parseIso(next?.at);
     if (ms !== null) {
-      if (next.overdue) { line.append("Due now"); return; }
+      if (next.overdue) { line.append(OVERDUE_WORDS[next.status] || "Overdue"); return; }
       // Tiles are about 100 px wide: today shows the clock, other days the short weekday (the sheet has the rest).
       const days = HQ.dayDiff(ms);
       const words = days === 0 ? fmt.clock(ms) : days > 0 && days <= 6 ? `${fmt.weekday(ms)} ${fmt.clock(ms)}` : fmt.dateWords(ms);
@@ -400,16 +435,19 @@
     container.append(row);
     return row;
   }
+  // A stuck job is marked "stuck", not "needs you": the owner usually can't fix it here, and the Needs-you
+  // card already says what to do (review U7). "try 0 of 3" (never tried) is left out.
   function questRow(quest) {
     const row = el("li", "hq-quest");
     if (quest.needs_you) row.classList.add("is-needs-you");
     const title = el("p", "hq-quest-title");
     renderText(title, quest.state_text);
-    if (quest.needs_you) title.append(" ", chip("needs you", "hq-chip-warn"));
+    if (quest.needs_you) title.append(" ", chip("stuck", "hq-chip-warn"));
     row.append(title);
     const meta = el("p", "hq-quest-meta");
     renderText(meta, quest.origin_text);
-    if (quest.attempts) meta.append(` · try ${quest.attempts.used} of ${quest.attempts.max}`);
+    const used = HQ.count(quest.attempts?.used);
+    if (used) meta.append(` · try ${used} of ${quest.attempts.max}`);
     if (quest.finished_at) meta.append(" · finished ", time(quest.finished_at, "day_clock"));
     else if (quest.due_at) meta.append(" · due ", time(quest.due_at, "day_clock"));
     if (quest.deadline_at) meta.append(" · time limit ", time(quest.deadline_at, "day_clock"));
@@ -430,7 +468,7 @@
     badge.append(icon(ROOMS.has(dept.id) ? dept.id : "hq", "hq-icon"));
     intro.append(badge, textEl("p", "hq-room-job", dept.job));
     body.append(intro);
-    const why = glossary()?.ROOM_WHY[dept.id];
+    const why = glossary()?.roomWhy(dept.id, snapshot.mode === "live");
     if (why) body.append(el("p", "hq-muted", why));
     const facts = el("dl", "hq-kv");
     if (hasText(dept.rules)) {
@@ -527,21 +565,27 @@
     if (DEADLINES.has(item.kind)) return ui.calendarFilters.deadlines;
     return ui.calendarFilters.depts;
   }
+  // Status is a glyph plus words everywhere, never colour alone (spec §C.11, review U14).
+  function statusMark(item) {
+    const [mark, words] = CALENDAR_STATUS[item.status] || ["•", str(item.status)];
+    const glyph = el("span", "hq-cal-mark", item.kind === "owner_checkin" && !item.past ? "◆" : mark);
+    glyph.setAttribute("aria-hidden", "true");
+    return {glyph, words};
+  }
   function calendarRow(item, snapshot) {
     const row = el("li", "hq-cal-item");
     row.dataset.status = str(item.status);
     row.dataset.kind = str(item.kind);
-    const [mark, words] = CALENDAR_STATUS[item.status] || ["•", str(item.status)];
+    row.dataset.row = `cal:${str(item.id)}`;
+    const {glyph, words} = statusMark(item);
     const when = el("span", "hq-cal-when");
     when.append(time(item.at, "clock"));
-    const glyph = el("span", "hq-cal-mark", item.kind === "owner_checkin" && !item.past ? "◆" : mark);
-    glyph.setAttribute("aria-hidden", "true");
     const main = el("div", "hq-cal-main");
     const title = el("p", "hq-cal-title");
     renderText(title, item.title);
     title.append(el("span", "hq-cal-status", ` · ${words}`));
     if (!item.exact && item.status !== "estimated") title.append(" ", chip("estimate", "hq-chip-soft"));
-    if (item.conditional) title.append(" ", chip("only if running", "hq-chip-soft"));
+    if (item.conditional && !hasText(item.detail)) title.append(" ", chip("only if running", "hq-chip-soft"));
     main.append(title);
     if (hasText(item.detail)) main.append(textEl("p", "hq-cal-detail", item.detail));
     if (hasText(item.warning)) {
@@ -575,6 +619,60 @@
     control.addEventListener("click", () => { ui.calendarFilters[key] = !ui.calendarFilters[key]; HQ.rerender("calendar"); });
     return control;
   }
+
+  /* Contract calendar.estimates (optional; older servers leave it out): estimated turns more than 48 h ahead
+     arrive as one series per schedule, first_at + k·every_seconds for k = 0 … count−1, instead of one item each
+     (review T2). Times are worked out in milliseconds from parseIso, so they never drift with the local zone. */
+  const SERIES_SHOWN_MAX = 120;
+  function seriesTimes(series) {
+    const first = parseIso(series?.first_at);
+    const every = Number.isSafeInteger(series?.every_seconds) && series.every_seconds > 0 ? series.every_seconds * 1000 : null;
+    const count = HQ.count(series?.count);
+    if (first === null || every === null || !count) return [];
+    return Array.from({length: Math.min(count, SERIES_SHOWN_MAX)}, (_, index) => first + index * every);
+  }
+  function estimateSeries(calendar) {
+    if (!Array.isArray(calendar.estimates)) return [];
+    return calendar.estimates.filter(series => series && typeof series.schedule_id === "string" && seriesTimes(series).length);
+  }
+  // One summarised projection as a calendar item, for the week strip and the "Later" rows.
+  function projectionItem(series, ms, index) {
+    return {
+      id: `estimate:${series.schedule_id}:${index}`, kind: "dept_turn", dept: series.dept, at: HQ.toIso(ms),
+      title: series.title, status: "estimated", exact: false, conditional: series.conditional === true, past: false,
+      detail: null, warning: null, waiting_because: null, link: null, checkin_id: null,
+      series: {schedule_id: series.schedule_id, every_seconds: series.every_seconds},
+    };
+  }
+  // A "Later" row: the day as well as the time, and no per-row condition (the series says it once).
+  function laterRow(item, snapshot) {
+    const row = calendarRow({...item, detail: null, conditional: false}, snapshot);
+    row.querySelector(".hq-cal-when")?.replaceChildren(time(item.at, "day_clock"));
+    return row;
+  }
+  function seriesBox(key, listed, series, snapshot) {
+    const first = listed[0] || null;
+    const dept = first ? first.dept : series?.dept;
+    const every = cadence(first?.series?.every_seconds ?? series?.every_seconds);
+    const projected = series ? seriesTimes(series).map((ms, index) => projectionItem(series, ms, index)) : [];
+    const total = listed.length + (series ? HQ.count(series.count) || 0 : 0);
+    const box = HQ.keepOpen(el("details", "hq-cal-series"), `series:${key}`);
+    box.dataset.row = `series:${key}`;
+    box.append(el("summary", "", `${deptName(dept, snapshot)}: about ${every || "regularly"} (${plural(total, "turn")})`));
+    const detail = listed.find(item => hasText(item.detail))?.detail || (hasText(series?.detail) ? series.detail : null);
+    if (detail) box.append(textEl("p", "hq-cal-detail", detail));
+    else if (listed.some(item => item.conditional) || series?.conditional === true) {
+      const note = el("p", "hq-cal-detail");
+      note.append(chip("only if running", "hq-chip-soft"));
+      box.append(note);
+    }
+    const rows = el("ul", "hq-cal-list");
+    for (const item of [...listed, ...projected]) rows.append(laterRow(item, snapshot));
+    if (total > listed.length + projected.length) rows.append(el("li", "hq-cal-detail", `+${total - listed.length - projected.length} more`));
+    box.append(rows);
+    return box;
+  }
+
   function weekStrip(items, snapshot) {
     const strip = el("div", "hq-week");
     strip.setAttribute("role", "group");
@@ -605,8 +703,11 @@
         const entry = el("li", "hq-week-chip");
         entry.dataset.status = str(item.status);
         entry.dataset.kind = str(item.kind);
+        const {glyph, words: status} = statusMark(item);
+        const top = el("span", "hq-week-chip-top");
+        top.append(glyph, time(item.at, "clock"));
         const words = item.kind === "dept_turn" ? deptName(item.dept, snapshot) : item.kind === "owner_checkin" ? "Your check-in" : plain(item.title);
-        entry.append(time(item.at, "clock"), el("span", "hq-week-chip-title", words));
+        entry.append(top, el("span", "hq-week-chip-title", words), el("span", "hq-sr", `, ${status}`));
         chips.append(entry);
       });
       if (!nowPlaced) chips.append(el("li", "hq-week-now", "Now"));
@@ -619,8 +720,16 @@
   }
 
   HQ.view("calendar", {
-    deps: snapshot => [snapshot.calendar, snapshot.checkins, snapshot.viewer?.can_act, ui.calendarFilters, ui.calendarBusy,
-      HQ.calendarDays(), list(snapshot.departments).map(dept => dept.name)],
+    deps: snapshot => {
+      const calendar = obj(snapshot.calendar);
+      const now = HQ.serverNow();
+      // The window's own from/to move with every request, so they are left out: only real changes rebuild
+      // the calendar (review T3). The count of passed items moves the "Now" lines as the clock passes them.
+      return [calendar.items, calendar.recurring, calendar.notes, calendar.truncated, calendar.estimates ?? null,
+        snapshot.checkins, snapshot.viewer?.can_act, ui.calendarFilters, ui.calendarBusy, HQ.calendarDays(),
+        list(snapshot.departments).map(dept => dept.name),
+        list(calendar.items).filter(item => (parseIso(item?.at) ?? Infinity) <= now).length];
+    },
     render(root, snapshot) {
       const calendar = obj(snapshot.calendar);
       const filters = el("div", "hq-filters");
@@ -629,9 +738,13 @@
       filters.append(filterChip("depts", "Departments"), filterChip("you", "You"), filterChip("deadlines", "Deadlines"),
         filterChip("machine", "Machine routines"));
       root.append(filters);
-      const items = list(calendar.items).filter(item => parseIso(item.at) !== null && calendarVisible(item))
+      const items = list(calendar.items).filter(item => parseIso(item?.at) !== null && calendarVisible(item))
         .sort((a, b) => parseIso(a.at) - parseIso(b.at));
-      root.append(weekStrip(items.filter(item => HQ.dayDiff(parseIso(item.at)) >= 0), snapshot));
+      const series = ui.calendarFilters.depts ? estimateSeries(calendar) : [];
+      const projections = series.flatMap(entry => seriesTimes(entry).map((ms, index) => projectionItem(entry, ms, index)));
+      const ahead = [...items, ...projections].filter(item => HQ.dayDiff(parseIso(item.at)) >= 0)
+        .sort((a, b) => parseIso(a.at) - parseIso(b.at));
+      root.append(weekStrip(ahead, snapshot));
       const earlier = [];
       const current = [];
       const days = new Map();
@@ -639,7 +752,7 @@
       for (const item of items) {
         const ms = parseIso(item.at);
         const diff = HQ.dayDiff(ms);
-        if (!item.past && ["due", "overdue", "waiting"].includes(item.status)) current.push(item);
+        if (CURRENT.has(item.status)) current.push(item);
         else if (diff < 0) earlier.push(item);
         else if (diff > 1 && item.status === "estimated" && item.series?.schedule_id) {
           const key = item.series.schedule_id;
@@ -652,43 +765,43 @@
         }
       }
       const agenda = el("div", "hq-agenda");
-      const group = (label, entries, id) => {
+      const group = (label, entries, id, nowLine) => {
         const block = el("section", "hq-cal-group");
         if (id) block.id = id;
         block.append(el("h3", "hq-cal-day", label));
         const rows = el("ul", "hq-cal-list");
-        for (const item of entries) rows.append(calendarRow(item, snapshot));
+        const nowMs = HQ.serverNow();
+        let placed = !nowLine;
+        for (const item of entries) {
+          // Today's list shows where "now" falls, like the week strip (review U14).
+          if (!placed && parseIso(item.at) > nowMs) { rows.append(el("li", "hq-cal-now-line", "Now")); placed = true; }
+          rows.append(calendarRow(item, snapshot));
+        }
+        if (!placed) rows.append(el("li", "hq-cal-now-line", "Now"));
         block.append(rows);
         return block;
       };
       if (earlier.length) {
-        const box = el("details", "hq-cal-earlier");
+        const box = HQ.keepOpen(el("details", "hq-cal-earlier"), "cal:earlier");
+        box.dataset.row = "cal:earlier";
         box.append(el("summary", "", `Earlier (${earlier.length})`));
         const rows = el("ul", "hq-cal-list");
         for (const item of earlier) rows.append(calendarRow(item, snapshot));
         box.append(rows);
         agenda.append(box);
       }
-      if (current.length) agenda.append(group("Now", current, "hq-cal-now"));
-      for (const [key, day] of days) agenda.append(group(dayLabel(day.ms), day.items, `hq-cal-${key}`));
-      if (later.size) {
+      if (current.length) agenda.append(group("Now", current, "hq-cal-now", false));
+      const todayKey = HQ.localDayKey(HQ.serverNow());
+      for (const [key, day] of days) agenda.append(group(dayLabel(day.ms), day.items, `hq-cal-${key}`, key === todayKey));
+      const byId = new Map(series.map(entry => [entry.schedule_id, entry]));
+      const keys = [...new Set([...later.keys(), ...byId.keys()])];
+      if (keys.length) {
+        const firstAt = key => later.has(key) ? parseIso(later.get(key)[0].at) : parseIso(byId.get(key).first_at);
+        keys.sort((a, b) => firstAt(a) - firstAt(b));
         const block = el("section", "hq-cal-group");
         block.id = "hq-cal-later";
         block.append(el("h3", "hq-cal-day", "Later (estimates)"));
-        for (const entries of later.values()) {
-          const first = entries[0];
-          const box = el("details", "hq-cal-series");
-          const every = cadence(first.series.every_seconds);
-          box.append(el("summary", "", `${deptName(first.dept, snapshot)}: about ${every || "regularly"} (${plural(entries.length, "turn")})`));
-          const rows = el("ul", "hq-cal-list");
-          for (const item of entries) {
-            const row = calendarRow(item, snapshot);
-            row.querySelector(".hq-cal-when")?.replaceChildren(time(item.at, "day_clock"));
-            rows.append(row);
-          }
-          box.append(rows);
-          block.append(box);
-        }
+        for (const key of keys) block.append(seriesBox(key, later.get(key) || [], byId.get(key), snapshot));
         agenda.append(block);
       }
       if (!agenda.childNodes.length) agenda.append(empty("Nothing to show for this period with these filters."));
@@ -723,7 +836,7 @@
       root.append(footer);
       const notes = el("ul", "hq-notes");
       for (const note of list(calendar.notes)) notes.append(textEl("li", "", note));
-      if (items.some(item => item.conditional || item.status === "overdue")) {
+      if (items.some(item => item.conditional || item.status === "overdue") || series.some(entry => entry.conditional === true)) {
         notes.append(el("li", "", "If several turns were missed, the team does one catch-up turn, not all of them."));
       }
       if (calendar.truncated) notes.append(el("li", "", "Only the first 200 items are shown."));
@@ -750,6 +863,7 @@
   function storyRow(item, snapshot) {
     const row = el("li", "hq-story-item");
     row.dataset.tone = str(item.tone);
+    row.dataset.row = `story:${str(item.id)}`;
     if (item.problem) row.classList.add("is-problem");
     const when = el("span", "hq-story-when");
     when.append(time(item.at, "clock"));
@@ -762,7 +876,7 @@
     if (Number.isSafeInteger(item.count) && item.count > 1) who.append(chip(`×${item.count}`, "hq-chip-soft"));
     main.append(who, textEl("p", "hq-story-headline", item.headline));
     if (hasText(item.consequence)) main.append(textEl("p", "hq-story-consequence", item.consequence));
-    const more = el("details", "hq-story-more");
+    const more = HQ.keepOpen(el("details", "hq-story-more"), `story-more:${str(item.id)}`);
     more.append(el("summary", "", item.quote?.text ? "In their words" : "More"));
     if (item.quote?.text) more.append(el("blockquote", "", item.quote.text));
     const record = detailLink(item.link, "Open the record");
@@ -807,8 +921,16 @@
   }
 
   HQ.view("story", {
-    deps: snapshot => [snapshot.story, ui.storyFilter, ui.older.size, ui.olderBusy, ui.olderDone, ui.olderNote,
-      list(snapshot.departments).map(dept => dept.name)],
+    // window_start and next_before move with every request; only what they change on screen counts: the
+    // first day shown, and whether this page was cut short (review T3).
+    deps: snapshot => {
+      const story = obj(snapshot.story);
+      const start = parseIso(story.window_start);
+      const next = story.next_before;
+      return [list(story.items), !HQ.isIso(next) ? null : next === story.window_start ? "window" : next,
+        start === null ? null : HQ.localDayKey(start), ui.storyFilter, ui.older.size, ui.olderBusy, ui.olderDone,
+        ui.olderNote, list(snapshot.departments).map(dept => dept.name)];
+    },
     render(root, snapshot) {
       const filters = el("div", "hq-filters");
       filters.setAttribute("role", "group");
@@ -851,9 +973,8 @@
           timeline.append(block);
           continue;
         }
-        const block = el("details", "hq-story-day");
-        block.open = ui.openDays.has(key);
-        block.addEventListener("toggle", () => { if (block.open) ui.openDays.add(key); else ui.openDays.delete(key); });
+        const block = HQ.keepOpen(el("details", "hq-story-day"), `story-day:${key}`);
+        block.dataset.row = `day:${key}`;
         const summary = el("summary", "");
         summary.append(el("span", "hq-story-day-title", label), el("span", "hq-story-summary",
           dayItems.length ? daySummary(dayItems) : "No recorded activity"));
@@ -1042,10 +1163,16 @@
         box.append(refill);
         root.append(box);
       }
+      // The reserve rule is on (with its line), off, or unreadable (contract team.allowance.stop_line_state).
+      // An unreadable rule is never shown as "no rule"; an older server without the field falls back on the
+      // line itself: a number means on, null means it couldn't be read (review U5).
       const facts = el("ul", "hq-plain-list");
       const stop = el("li", "");
-      if (line !== null) stop.append(term("stop_line", "New AI work stops"), ` at ${percentText(line)} (it needs more than that).`);
-      else stop.append("No reserve rule is set.");
+      const rule = ["on", "off", "unknown"].includes(allowance.stop_line_state) ? allowance.stop_line_state :
+        line !== null ? "on" : "unknown";
+      if (rule === "on" && line !== null) stop.append(term("stop_line", "New AI work stops"), ` at ${percentText(line)} (it needs more than that).`);
+      else if (rule === "off") stop.append("No reserve rule is set.");
+      else stop.append("The reserve rule couldn't be read.");
       facts.append(stop);
       if (list(allowance.unreported_windows).length && !/isn't reported/.test(plain(allowance.plain))) {
         facts.append(el("li", "", "A second, shorter limit isn't reported."));
@@ -1147,19 +1274,20 @@
         views.append(report);
       }
       root.append(views);
-      const sections = el("details", "hq-help-block");
+      const live = snapshot.mode === "live";
+      const sections = HQ.keepOpen(el("details", "hq-help-block"), "help:sections");
       sections.append(el("summary", "", "What each part of HQ shows"));
       const list_ = el("dl", "hq-glossary");
-      for (const entry of Object.values(glossary()?.SECTION_HELP || {})) {
+      for (const entry of Object.values(glossary()?.sectionHelp(live) || {})) {
         const row = el("div", "hq-glossary-row");
         row.append(el("dt", "", entry.title), el("dd", "", entry.text));
         list_.append(row);
       }
       sections.append(list_);
       root.append(sections);
-      const words_ = el("details", "hq-help-block");
+      const words_ = HQ.keepOpen(el("details", "hq-help-block"), "help:glossary");
       words_.append(el("summary", "", "Glossary: every underlined word"));
-      const entries = glossary()?.glossaryList();
+      const entries = glossary()?.glossaryList(live);
       if (entries) words_.append(entries);
       root.append(words_);
     },
@@ -1223,5 +1351,6 @@
     });
   }
 
-  HQ.define("render", {openRoom, initTabs, cadence, deptName, findDecision, lightBadge, LIGHT_LABEL, time, liveTime, chip, empty, plural});
+  HQ.define("render", {openRoom, initTabs, cadence, deptName, findDecision, lightBadge, LIGHT_LABEL, time, liveTime, chip, empty, plural,
+    sinceFacts, seriesTimes, estimateSeries});
 })();

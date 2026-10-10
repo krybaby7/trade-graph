@@ -16,6 +16,8 @@
   });
   const TERMINAL = new Set(["done", "skipped", "cancelled"]);
   const UNCERTAIN = "We don't know if it went through. Pressing again resends the same request, which is safe.";
+  const SAME_AGAIN = "Sending again uses what you sent before.";
+  const REPLAYED = "Already saved earlier.";
   const ACTION_WORDS = Object.freeze({done: "mark it done", skip: "skip it", reschedule: "move it", cancel: "cancel it", plan: "plan it"});
   const pad = number => String(number).padStart(2, "0");
 
@@ -23,9 +25,14 @@
   const find = id => list(store()?.items).find(item => item.checkin_id === id) || null;
   const canWrite = () => Boolean(HQ.snapshot()?.viewer?.can_act && store()?.available);
   const pendingKey = id => `checkin:${id}`;
+  // HQ.readPending drops saved requests older than a day, so an old one is never resent (review S4).
   const readPending = key => {
-    const stored = HQ.store.getJson(HQ.KEYS.pending(key));
+    const stored = HQ.readPending(key);
     return stored && stored.body && typeof stored.body.request_id === "string" ? stored : null;
+  };
+  const readPlanPending = () => {
+    const stored = HQ.readPending("plan_checkin");
+    return stored && Array.isArray(stored.items) ? stored : null;
   };
 
   // --- Sending ---------------------------------------------------------------------------------------
@@ -39,7 +46,7 @@
   }
   function classify(result) {
     if (result.network || result.status >= 500) return {kind: "uncertain", message: UNCERTAIN};
-    if (result.ok) return {kind: "done", checkin: result.body?.checkin || null};
+    if (result.ok) return {kind: "done", checkin: result.body?.checkin || null, replayed: result.body?.replayed === true};
     if (result.status === 401) return {kind: "failed", message: "You're signed out. Sign in again, then try once more."};
     if (result.status === 409) return {kind: "failed", message: conflict(result.body?.detail)};
     if (result.status === 404 || result.status === 405) {
@@ -50,16 +57,19 @@
     }
     return {kind: "failed", message: "That wasn't accepted. Nothing changed."};
   }
+  // Returns the outcome plus the body actually sent, so success messages describe what was saved, not
+  // what the form shows now (review S5).
   async function sendOne(key, build) {
     let body = readPending(key)?.body || null;
     if (!body) {
       body = {request_id: HQ.uuid(), ...build()};
-      HQ.store.setJson(HQ.KEYS.pending(key), {request_id: body.request_id, body, saved_at: HQ.toIso(HQ.serverNow())});
+      HQ.savePending(key, {request_id: body.request_id, body});
     }
     const outcome = classify(await HQ.api.post("checkins", body));
-    if (outcome.kind !== "uncertain") HQ.store.remove(HQ.KEYS.pending(key));
-    return outcome;
+    if (outcome.kind !== "uncertain") HQ.clearPending(key);
+    return {...outcome, sent: body};
   }
+  const saved = (outcome, words) => outcome.kind !== "done" ? null : outcome.replayed ? REPLAYED : words;
   // Owner notes may not contain control characters (owner_checkins validation), so line breaks become " / ".
   const cleanNote = value => str(value).replace(/\r\n|\r|\n/g, " / ").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 500);
   const cleanTitle = value => str(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -85,13 +95,23 @@
     row.append(cancel, go);
     return {row, go, cancel};
   }
-  function finish(row, go, cancel, note, outcome, message) {
+  /* After an unknown outcome the saved request is what gets resent, so `lock` makes the form read-only
+     and the note says so; edits can't be silently dropped (review S5). `extra` buttons join Close. */
+  function finish(row, go, cancel, note, outcome, message, {lock, extra} = {}) {
     note.textContent = message || outcome.message || "";
     note.dataset.tone = outcome.kind;
-    if (outcome.kind === "uncertain") { go.disabled = false; go.textContent = "Send again"; return; }
+    if (outcome.kind === "uncertain") {
+      go.disabled = false;
+      go.textContent = "Send again";
+      if (lock) {
+        lock();
+        note.textContent = `${note.textContent} ${SAME_AGAIN}`;
+      }
+      return;
+    }
     const close = HQ.button("button", "Close");
     close.dataset.hqClose = "";
-    row.replaceChildren(close);
+    row.replaceChildren(...(extra || []), close);
     close.focus();
     HQ.poller.fast();
     HQ.renderAll(true);
@@ -146,19 +166,27 @@
           note.textContent = "Saving…";
           const text = cleanNote(area.value);
           const outcome = await sendOne(pendingKey(id), () => ({checkin_id: id, action: "done", ...(text ? {note: text} : {})}));
-          finish(row, go, cancel, note, outcome, outcome.kind === "done" ? "Marked done." : null);
-          if (outcome.kind === "done") offerNext();
+          // The follow-up offer lives in the finished sheet itself; a toast would sit under the sheet (U4).
+          const next = outcome.kind === "done" && canWrite() ? planNextButton() : null;
+          finish(row, go, cancel, note, outcome, saved(outcome, "Marked done."), {
+            lock: () => { area.readOnly = true; },
+            extra: next ? [next] : [],
+          });
         });
         body.append(note, row);
       },
     });
   }
-  function offerNext() {
-    HQ.toast("Marked done. Plan the next one in 4 h?", {label: "Plan it", run: control => {
-      const at = new Date(HQ.serverNow() + 4 * 3600000);
-      at.setMinutes(Math.ceil(at.getMinutes() / 5) * 5, 0, 0);
-      plan(control, [{at: at.getTime(), kind: "interval", title: "Follow-up review"}]);
-    }});
+  // "Plan the next one in 4 h": one tap after Mark done, rounded up to the next 5 minutes.
+  function nextSlot() {
+    const at = new Date(HQ.serverNow() + 4 * 3600000);
+    at.setMinutes(Math.ceil(at.getMinutes() / 5) * 5, 0, 0);
+    return {at: at.getTime(), kind: "interval", title: "Follow-up review"};
+  }
+  function planNextButton() {
+    const control = HQ.button("button button-secondary", "Plan the next one in 4 h");
+    control.addEventListener("click", () => plan(control, [nextSlot()]));
+    return control;
   }
   function more(id, opener) {
     const item = find(id);
@@ -178,7 +206,7 @@
               if (!guard(go, note)) return;
               go.disabled = true;
               const outcome = await sendOne(pendingKey(id), () => stored.body);
-              finish(row, go, cancel, note, outcome, outcome.kind === "done" ? "Saved." : null);
+              finish(row, go, cancel, note, outcome, saved(outcome, "Saved."));
             });
             body.append(note, row);
             return;
@@ -221,7 +249,10 @@
             go.disabled = true;
             note.textContent = "Saving…";
             const outcome = await sendOne(pendingKey(id), () => ({checkin_id: id, action: "reschedule", planned_at: HQ.toIso(ms)}));
-            finish(row, go, cancel, note, outcome, outcome.kind === "done" ? `Moved to ${fmt.localDateTime(ms)}.` : null);
+            const sentAt = parseIso(outcome.sent?.planned_at);
+            finish(row, go, cancel, note, outcome, saved(outcome, sentAt === null ? "Moved." : `Moved to ${fmt.localDateTime(sentAt)}.`), {
+              lock: () => { input.disabled = true; },
+            });
           }, {back: menu});
           body.append(note, row);
         };
@@ -241,7 +272,9 @@
             go.disabled = true;
             const text = cleanNote(area.value);
             const outcome = await sendOne(pendingKey(id), () => ({checkin_id: id, action: "skip", ...(text ? {note: text} : {})}));
-            finish(row, go, cancel, note, outcome, outcome.kind === "done" ? "Skipped." : null);
+            finish(row, go, cancel, note, outcome, saved(outcome, "Skipped."), {
+              lock: () => { area.readOnly = true; },
+            });
           }, {back: menu});
           body.append(note, row);
         };
@@ -253,7 +286,7 @@
             if (!guard(go, note)) return;
             go.disabled = true;
             const outcome = await sendOne(pendingKey(id), () => ({checkin_id: id, action: "cancel"}));
-            finish(row, go, cancel, note, outcome, outcome.kind === "done" ? "Cancelled." : null);
+            finish(row, go, cancel, note, outcome, saved(outcome, "Cancelled."), {lock: () => {}});
           }, {back: menu});
           body.append(note, row);
           go.focus();
@@ -314,8 +347,8 @@
       kind: "checkin",
       from: opener,
       build: body => {
-        const stored = HQ.store.getJson(HQ.KEYS.pending("plan_checkin"));
-        if (stored && Array.isArray(stored.items) && stored.items.some(entry => entry.state === "pending")) {
+        const stored = readPlanPending();
+        if (stored && stored.items.some(entry => entry.state === "pending")) {
           previewPlan(body, card, stored.items.map(entry => entry.body), true);
           return;
         }
@@ -435,30 +468,42 @@
       if (!guard(go, note)) return;
       go.disabled = true;
       note.textContent = "Saving…";
-      let stored = HQ.store.getJson(HQ.KEYS.pending("plan_checkin"));
-      if (!stored || !Array.isArray(stored.items)) {
+      let stored = readPlanPending();
+      if (!stored) {
         stored = {saved_at: HQ.toIso(HQ.serverNow()), items: bodies.map(entry => ({body: {request_id: HQ.uuid(), ...entry}, state: "pending"}))};
         HQ.store.setJson(HQ.KEYS.pending("plan_checkin"), stored);
       }
       const failures = [];
       let uncertain = false;
+      let replayed = 0;
       for (const entry of stored.items) {
         if (entry.state !== "pending") continue;
         const outcome = classify(await HQ.api.post("checkins", entry.body));
         if (outcome.kind === "uncertain") { uncertain = true; break; }
         entry.state = outcome.kind === "done" ? "done" : "failed";
+        if (outcome.replayed) replayed += 1;
         if (outcome.kind !== "done") failures.push(`${entry.body.title}: ${outcome.message}`);
-        HQ.store.setJson(HQ.KEYS.pending("plan_checkin"), stored);
+        HQ.store.setJson(HQ.KEYS.pending("plan_checkin"), stored);   // keeps its first saved_at
       }
       const added = stored.items.filter(entry => entry.state === "done").length;
       if (uncertain) {
-        finish(row, go, cancel, note, {kind: "uncertain", message: UNCERTAIN});
+        // Going back to pick other times would resend these same requests, so the way back closes (S5).
+        finish(row, go, cancel, note, {kind: "uncertain", message: UNCERTAIN}, null, {lock: () => {
+          if (!back) return;
+          const close = HQ.button("button button-secondary", "Close");
+          close.dataset.hqClose = "";
+          cancel.replaceWith(close);
+        }});
         return;
       }
-      HQ.store.remove(HQ.KEYS.pending("plan_checkin"));
-      const message = `${added ? `Added ${added} check-in${added === 1 ? "" : "s"}.` : "Nothing was added."}${failures.length ? ` ${failures.join(" ")}` : ""}`;
-      finish(row, go, cancel, note, {kind: failures.length ? "failed" : "done"}, message);
-      if (added) HQ.toast(`Added ${added} check-in${added === 1 ? "" : "s"}. Re-download your calendar file if you use one.`);
+      HQ.clearPending("plan_checkin");
+      const fresh = added - replayed;
+      const words = [];
+      if (fresh > 0) words.push(`Added ${fresh} check-in${fresh === 1 ? "" : "s"}. Re-download your calendar file if you use one.`);
+      if (replayed > 0) words.push(REPLAYED);
+      if (!added) words.push("Nothing was added.");
+      // The finished sheet says it (role="status"); a toast here would only repeat it.
+      finish(row, go, cancel, note, {kind: failures.length ? "failed" : "done"}, [...words, ...failures].join(" "));
     }, {back: resending ? null : back});
     go.dataset.autofocus = "";
     body.append(note, row);

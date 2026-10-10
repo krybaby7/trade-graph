@@ -48,7 +48,6 @@ def test_quiet_snapshot_renders_island_headline_and_needs_you_titles():
         title = "".join(segment.get("v", "") for segment in item["title"])
         assert html.escape(title, quote=True) in needs or title in html.unescape(needs)
     assert 'data-hq-attention-count>2</span>' in page
-    assert "Paper results are simulated" in page
     assert "This is practice: no real trades happen. Real costs are only the bills you enter." in page
     assert "Practice money" in page and "Real trading: off" in page
 
@@ -93,6 +92,43 @@ def test_live_mode_shows_no_paper_copy():
     assert "Paper results are simulated" not in page
     assert "This is practice" not in page
     assert "Live account" in page
+    assert "This page doesn't control a live account. Use Owner controls." in page
+
+
+def visible_text(page: str) -> str:
+    """The page's words as a reader sees them: no JSON island, scripts, tags or attribute values."""
+    page = re.sub(r"<script\b.*?</script>", " ", page, flags=re.S)
+    page = re.sub(r"<template\b.*?</template>", " ", page, flags=re.S)
+    return html.unescape(re.sub(r"<[^>]+>", " ", page))
+
+
+def test_live_page_never_says_practice_anywhere_a_reader_sees():
+    # Review C1: a live account is never called "practice" (case-insensitive), in any visible text.
+    page = render(fixture("snapshot_live"), operating_mode="live")
+    assert "practice" not in visible_text(page).lower()
+    assert "practice" in visible_text(render(fixture("snapshot_quiet"))).lower()
+
+
+def test_first_paint_dates_are_words_and_clocks_stay_utc():
+    # Review U15: before the scripts run a date reads "9 Oct", not "2026-10-09"; clock times keep "16:05 UTC".
+    data = fixture("snapshot_quiet")
+    data["now"]["headline"] = [
+        {"t": "text", "v": "Opened "}, {"t": "time", "at": "2026-10-09T13:59:10.506Z", "style": "date"},
+        {"t": "text", "v": " at "}, {"t": "time", "at": "2026-10-09T16:05:00.000Z", "style": "clock"},
+    ]
+    headline = text_of(render(data), "data-hq-now-headline")
+    assert headline == "Opened 9 Oct at 16:05 UTC"
+    data["now"]["headline"] = [{"t": "time", "at": "2026-12-01T00:00:00.000Z", "style": "date"}]
+    assert text_of(render(data), "data-hq-now-headline") == "1 Dec"
+
+
+def test_only_hq_drops_the_journal_footer():
+    environment = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["html"]))
+    journal = environment.get_template("overview.html").render(data={}, page="overview", role="owner")
+    assert 'class="page-footer"' in journal and "Paper results are simulated." in journal
+    page = render(fixture("snapshot_quiet"))
+    assert 'class="page-footer"' not in page and "protected owner policy" not in page
+    assert '<p class="hq-footer">This is practice: no real trades happen.' in page
 
 
 def test_reader_render_has_no_csrf_and_still_renders():
@@ -116,7 +152,9 @@ def test_every_fixture_renders_with_its_headline(name):
     assert island(page) == data
     expected = "".join(segment.get("v", "") for segment in data["now"]["headline"] if segment["t"] in ("text", "term"))
     assert expected.split(" ")[0] in text_of(page, "data-hq-now-headline")
-    assert ("Paper results are simulated" in page) is (data["mode"] == "paper")
+    assert ("This is practice: no real trades happen" in page) is (data["mode"] == "paper")
+    # HQ has its own plain footer; the journal footer (and its "protected owner policy" jargon) is left out.
+    assert "protected owner policy" not in page and 'class="page-footer"' not in page
 
 
 def test_empty_data_renders_the_shell_without_invented_values():
@@ -124,7 +162,7 @@ def test_empty_data_renders_the_shell_without_invented_values():
     assert '<main id="main"' in page
     assert '<meta name="viewport"' in page
     assert 'href="/static/dashboard.css"' in page and 'src="/static/dashboard.js"' in page
-    assert "Paper results are simulated" in page
+    assert "This is practice: no real trades happen" in page
     assert "10000" not in page
     assert island(page) == {}
     assert "Reading the latest records" in page

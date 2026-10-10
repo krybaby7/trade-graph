@@ -15,6 +15,7 @@
   const TEAM = ["start_trading", "resume", "pause_ai", "stop_safely", "start_optimisation"];
   const BILLS = ["record_bill", "declare_bills_complete"];
   const UNCERTAIN = "We don't know if it went through. Pressing again resends the same request, which is safe.";
+  const SAME_AGAIN = "Sending again uses what you sent before.";
   const IN_PROGRESS = "Another owner action is still being processed. Try again in a moment; it resends the same request.";
   const NOT_ACCEPTED = "That wasn't accepted. Nothing changed.";
   const OFFLINE = "Can't confirm the current state.";
@@ -27,6 +28,13 @@
     "requested pause management is incomplete": "The stop step hasn't finished. Start the team and wait about a minute.",
     "owner state changed during reconciliation; newer pause retained": "Another change happened at the same time",
   });
+  // Live twins of the copy above and below: a live account's orders and bills are never "practice" (review C1).
+  const BARRIERS_LIVE = Object.freeze({...BARRIERS, "unresolved orders": "An order's status is unclear"});
+  const BILLS_INTRO = "Bills are real costs you paid, such as your AI subscription. They never touch the practice account.";
+  const BILLS_INTRO_LIVE = "Bills are real costs you paid, such as your AI subscription.";
+  const BILL_UNTOUCHED = "Spends nothing and doesn't touch the practice account.";
+  const BILL_UNTOUCHED_LIVE = "Spends nothing and doesn't touch the account's money.";
+  const isLive = () => HQ.snapshot()?.mode === "live";
   const DETAILS = [
     [/system pause requires controller recovery/i, "Can't pause over an automatic safety stop (it already protects)."],
     [/owner state changed/i, "Another change happened at the same time; the newer setting stays."],
@@ -41,15 +49,17 @@
   const DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
   // --- Pending requests (tg-hq-pending:<decisionId>) ------------------------------------------------
+  // HQ.readPending drops entries older than a day (or without a readable time), so an old press is never
+  // resent and reported as new (review S4).
 
   const pending = Object.freeze({
     get(id) {
-      const stored = HQ.store.getJson(HQ.KEYS.pending(id));
+      const stored = HQ.readPending(id);
       return stored && typeof stored.request_id === "string" && stored.body && typeof stored.body === "object" &&
         stored.body.request_id === stored.request_id ? stored : null;
     },
-    set(id, body) { HQ.store.setJson(HQ.KEYS.pending(id), {request_id: body.request_id, body, saved_at: HQ.toIso(HQ.serverNow())}); },
-    clear(id) { HQ.store.remove(HQ.KEYS.pending(id)); },
+    set(id, body) { HQ.savePending(id, {request_id: body.request_id, body}); },
+    clear(id) { HQ.clearPending(id); },
   });
 
   const cardFor = id => list(HQ.snapshot()?.decisions).find(card => card && card.id === id) || null;
@@ -97,7 +107,8 @@
       }
       if (detail && typeof detail === "object" && detail.reason === "resume blocked") {
         pending.clear(id);
-        const reasons = list(detail.barriers).map(item => BARRIERS[item] || "a check HQ can't describe in plain words");
+        const barriers = isLive() ? BARRIERS_LIVE : BARRIERS;
+        const reasons = list(detail.barriers).map(item => barriers[item] || "a check HQ can't describe in plain words");
         return {kind: "failed", message: `Resume was refused: ${reasons.join("; ") || "a check didn't pass"}. Nothing changed.`};
       }
       if (typeof detail === "string" && /in progress/i.test(detail)) return {kind: "uncertain", message: IN_PROGRESS};
@@ -133,10 +144,17 @@
     start_optimisation: async () => ({}),
     stop_safely: async () => ({position_policy: "manage-only"}),
   });
+  // The server answered a resent request with the result it recorded the first time.
+  function replayedMessage(sentAt) {
+    const when = sentAt === null ? "" : ` (sent ${fmt.rel(sentAt)})`;
+    return `Already done when you first pressed it${when}. Check Right now for the current state.`;
+  }
   async function submit(id, build) {
     const endpoint = ENDPOINT[id];
     if (!endpoint) return {kind: "failed", message: NOT_ACCEPTED};
-    let body = pending.get(id)?.body || null;
+    const stored = pending.get(id);
+    const sentAt = stored ? parseIso(stored.saved_at) : null;
+    let body = stored?.body || null;
     if (!body) {
       const builder = build || BUILD[id];
       if (!builder) return {kind: "failed", message: NOT_ACCEPTED};
@@ -152,7 +170,9 @@
       pending.set(id, body);
       result = await HQ.api.post(endpoint, body);
     }
-    return classify(id, result);
+    const outcome = classify(id, result);
+    if (outcome.kind === "done" && result.body?.replayed === true) outcome.message = replayedMessage(sentAt);
+    return outcome;
   }
 
   // --- Buttons and cards -----------------------------------------------------------------------------
@@ -211,11 +231,14 @@
   });
 
   HQ.view("bills", {
-    deps: snapshot => [snapshot.decisions, snapshot.viewer?.can_act, pendingIds()],
+    deps: snapshot => [snapshot.decisions, snapshot.viewer, snapshot.mode, pendingIds()],
     render(root, snapshot) {
-      root.append(el("p", "hq-muted", "Bills are real costs you paid, such as your AI subscription. They never touch the practice account."));
+      const live = snapshot.mode === "live";
+      root.append(el("p", "hq-muted", live ? BILLS_INTRO_LIVE : BILLS_INTRO));
       if (!snapshot.viewer?.can_act) {
-        root.append(el("p", "hq-muted", "Bills can be recorded by the owner on a signed-in device."));
+        // Live mode (and any viewer who can't act) shows the server's own reason, e.g. "Use Owner controls".
+        if (live && hasText(snapshot.viewer?.act_block_reason)) root.append(textEl("p", "hq-muted", snapshot.viewer.act_block_reason));
+        else if (!live) root.append(el("p", "hq-muted", "Bills can be recorded by the owner on a signed-in device."));
         return;
       }
       const cards = BILLS.map(cardFor).filter(card => card?.shown);
@@ -254,6 +277,26 @@
   }
   const REVERSIBLE = Object.freeze({yes: "Reversible", partly: "Partly reversible", no: "Permanent"});
 
+  // "HQ says" always starts by saying whether HQ recommends it (review U9): recommended, not available
+  // (and why, nothing else), or the server's own advice on when it makes sense.
+  function hqSays(card) {
+    const says = el("div", "");
+    if (card.recommended) {
+      const line = el("p", "");
+      line.append(el("strong", "", "Recommended: "));
+      renderText(line, card.recommended_because);
+      says.append(line);
+    } else if (!card.available) {
+      const line = el("p", "hq-warn-text");
+      line.append(el("strong", "", "Not available: "));
+      if (hasText(card.unavailable_because)) renderText(line, card.unavailable_because);
+      else line.append("HQ can't offer this right now.");
+      says.append(line);
+    } else if (hasText(card.preview?.when)) says.append(textEl("p", "", card.preview.when));
+    else says.append(el("p", "hq-muted", "HQ has no recommendation; it's your choice."));
+    return says;
+  }
+
   /* options: {notice, summary: Node[], build: () => Promise<body>, back: () => void} */
   function preview(body, card, options = {}) {
     if (options.notice) body.append(el("p", "hq-sheet-notice", options.notice));
@@ -265,6 +308,9 @@
         "Confirming resends that same request, which is safe."));
     }
     const facts = el("dl", "hq-preview");
+    // A wizard's last step lands keyboard and screen-reader focus here, at the top of what will happen.
+    facts.tabIndex = -1;
+    facts.dataset.stepFocus = "";
     const what = el("div", "");
     for (const node of options.summary || []) what.append(node);
     const listed = bullets(options.summary?.length ? card.preview?.what_happens?.slice(1) : card.preview?.what_happens);
@@ -272,14 +318,10 @@
     section(facts, "What happens", what);
     section(facts, "Cost", textEl("p", "", card.preview?.cost));
     const undo = textEl("p", "", card.preview?.undo);
-    undo.append(" ", el("span", `hq-chip ${card.preview?.reversible === "no" ? "hq-chip-warn" : "hq-chip-soft"}`,
+    undo.append(" ", el("span", `hq-chip ${card.preview?.reversible === "yes" ? "hq-chip-soft" : "hq-chip-warn"}`,
       REVERSIBLE[card.preview?.reversible] || "Check first"));
     section(facts, "Can I undo?", undo);
-    const says = el("div", "");
-    if (card.recommended) says.append(textEl("p", "", card.recommended_because));
-    else if (hasText(card.preview?.when)) says.append(textEl("p", "", card.preview.when));
-    if (!card.available && hasText(card.unavailable_because)) says.append(textEl("p", "hq-warn-text", card.unavailable_because));
-    section(facts, "HQ says", says);
+    section(facts, "HQ says", hqSays(card));
     const now = el("div", "");
     const listedNow = bullets(card.preview?.right_now);
     if (listedNow) now.append(listedNow);
@@ -346,9 +388,9 @@
       status.textContent = outcome.message;
       status.dataset.tone = outcome.kind;
       if (outcome.kind === "done") {
+        // The status line above (role="status") says what happened; no second copy as a toast.
         finished = true;
         HQ.poller.fast();
-        HQ.toast(outcome.message);
         HQ.renderAll(true);
         const close = HQ.button("button", "Close");
         close.dataset.hqClose = "";
@@ -356,6 +398,13 @@
         close.focus();
       } else if (outcome.kind === "uncertain") {
         confirm.textContent = "Send again";
+        if (options.back || BILLS.includes(card.id)) {
+          // The saved request is what gets resent, so going back to edit it would be silently ignored (S5).
+          status.textContent = `${outcome.message} ${SAME_AGAIN}`;
+          const close = HQ.button("button button-secondary", "Close");
+          close.dataset.hqClose = "";
+          cancel.replaceWith(close);
+        }
         HQ.renderAll(true);
       } else {
         finished = true;
@@ -401,12 +450,37 @@
     const rest = digits.slice(2).replace(/0+$/, "");
     return rest ? `${integer}.${rest}` : integer;
   }
+  // A share is at most 1 (100%): compared as a decimal string, never as a binary float.
+  function atMostOne(share) {
+    const [whole, fraction = ""] = share.split(".");
+    return /^0+$/.test(whole) || (/^0*1$/.test(whole) && /^0*$/.test(fraction));
+  }
+  // "40" → "0.4", "12.5" → "0.125", "100" → "1": the custom share is typed as a percentage, like the preset
+  // buttons, and converted with string arithmetic only (review U11). Zero and anything above 100 give null.
+  function percentToShare(text) {
+    const match = /^(\d{1,3})(?:\.(\d{1,4}))?$/.exec(str(text).trim());
+    if (!match) return null;
+    const fraction = match[2] || "";
+    const digits = `${match[1]}${fraction}`.replace(/^0+/, "");
+    if (!digits) return null;
+    const scale = fraction.length + 2;
+    const padded = digits.padStart(scale + 1, "0");
+    const whole = padded.slice(0, padded.length - scale);
+    const rest = padded.slice(padded.length - scale).replace(/0+$/, "");
+    const share = rest ? `${whole}.${rest}` : whole;
+    return DECIMAL.test(share) && atMostOne(share) ? share : null;
+  }
+  // Bill months are UTC calendar months, the boundaries the server uses for completeness and the Story
+  // (review C14). Only the bill date itself is a calendar date in the owner's own time zone.
+  const UTC_MONTH = new Intl.DateTimeFormat("en-GB", {month: "long", year: "numeric", timeZone: "UTC"});
+  const monthWords = ms => UTC_MONTH.format(ms);
+  const monthValue = ms => { const date = new Date(ms); return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}`; };
   function monthOptions(pastOnly) {
     const now = new Date(HQ.serverNow());
     const options = [];
     for (let back = pastOnly ? 1 : 0; back < 19; back += 1) {
-      const start = new Date(now.getFullYear(), now.getMonth() - back, 1);
-      options.push({value: `${start.getFullYear()}-${pad(start.getMonth() + 1)}`, label: fmt.monthWords(start.getTime())});
+      const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1);
+      options.push({value: monthValue(start), label: monthWords(start)});
     }
     return options;
   }
@@ -415,9 +489,20 @@
     if (!match) return null;
     const year = Number(match[1]);
     const month = Number(match[2]) - 1;
-    const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 1);
-    return {start: HQ.toIso(start.getTime()), end: HQ.toIso(end.getTime()), label: fmt.monthWords(start.getTime()), key: `${year}${pad(month + 1)}`};
+    if (year < 2000 || month < 0 || month > 11) return null;
+    const start = Date.UTC(year, month, 1);
+    const end = Date.UTC(year, month + 1, 1);
+    return {start: HQ.toIso(start), end: HQ.toIso(end), label: monthWords(start), key: `${year}${pad(month + 1)}`};
+  }
+  // Each wizard step moves keyboard and screen-reader focus to its first field, or else to the top of the
+  // step, so nobody is left on the page behind the sheet (review U6).
+  function focusStep(body) {
+    body.scrollTop = 0;
+    const target = [...body.querySelectorAll("[data-autofocus]")].find(node => !node.disabled) ||
+      body.querySelector("[data-step-focus]") || body.querySelector(".hq-sheet-label");
+    if (!target) return;
+    if (!target.matches("input, select, textarea, button")) target.tabIndex = -1;
+    target.focus();
   }
   function field(label, control, hint) {
     const box = el("label", "hq-field");
@@ -479,13 +564,13 @@
     const box = el("p", "hq-bill-summary");
     if (id === "record_bill") {
       const period = parseIso(data.period_start);
-      const month = period === null ? "the chosen period" : fmt.monthWords(period);
+      const month = period === null ? "the chosen period" : monthWords(period);
       const share = typeof data.graph_share === "string" ? percent(data.graph_share) : "?";
       box.textContent = `Saves a real bill of ${money(str(data.amount_native), str(data.native_currency))} for ${month}; ` +
-        `${share}% counts as Trade Graph's cost. Spends nothing and doesn't touch the practice account.`;
+        `${share}% counts as Trade Graph's cost. ${isLive() ? BILL_UNTOUCHED_LIVE : BILL_UNTOUCHED}`;
     } else {
       const period = parseIso(data.period_start);
-      const month = period === null ? "that month" : fmt.monthWords(period);
+      const month = period === null ? "that month" : monthWords(period);
       const kinds = list(data.expense_kinds);
       const words = kinds.length === 2 ? "AI subscription or other running-cost" : kinds[0] === "other" ? "other running-cost" : "AI subscription";
       box.textContent = `Tells HQ there are no other ${words} bills for ${month}. A later bill for that month cancels this until you confirm again.`;
@@ -496,7 +581,7 @@
     const today = new Date(HQ.serverNow());
     const draft = {
       kind: "subscription", preset: "hosting", amount: "", currency: "USD",
-      month: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
+      month: monthValue(today.getTime()),
       date: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
       share: "1", custom: "", split: "shared",
     };
@@ -522,6 +607,7 @@
           ], draft.kind, value => { draft.kind = value; renderPresets(); }), presetBox);
           renderPresets();
           wizardActions(body, null, () => { stepAmount(); return ""; });
+          focusStep(body);
         };
         const stepAmount = () => {
           wizardFrame(body, 2, 3, "Amount and dates");
@@ -555,19 +641,22 @@
             stepShare();
             return "";
           });
+          focusStep(body);
         };
         const stepShare = () => {
           wizardFrame(body, 3, 3, "Trade Graph's share");
           body.append(el("p", "hq-muted", "Only this share counts as Trade Graph's cost. For example 50% of a $20 bill is $10."));
           const custom = el("input", "");
           custom.inputMode = "decimal";
-          custom.placeholder = "0.4";
+          custom.autocomplete = "off";
+          custom.placeholder = "40";
           custom.value = draft.custom;
-          const customBox = field("Custom share (a number from 0 to 1)", custom);
+          const customBox = field("Custom share (%)", custom, "A percentage above 0 and up to 100, for example 40 or 12.5.");
           customBox.hidden = draft.share !== "custom";
           body.append(choices("bill-share", [...shares, {value: "custom", label: "Another share"}], draft.share, value => {
             draft.share = value;
             customBox.hidden = value !== "custom";
+            if (value === "custom") custom.focus();
           }), customBox);
           body.append(el("h3", "hq-sheet-label", "Split between departments"));
           body.append(choices("bill-split", [
@@ -576,11 +665,20 @@
           ], draft.split, value => { draft.split = value; }));
           wizardActions(body, () => { draft.custom = custom.value.trim(); stepAmount(); }, () => {
             draft.custom = custom.value.trim();
-            const share = draft.share === "custom" ? draft.custom : draft.share;
-            if (!DECIMAL.test(share) || Number(share) > 1) return "Enter the share as a number from 0 to 1, for example 0.5.";
+            let share = draft.share;
+            if (draft.share === "custom") {
+              const typed = draft.custom.replace(/\s*%$/, "");
+              if (/^0*(?:\.0*)?$/.test(typed) && /\d/.test(typed)) return "Enter a share above 0%, for example 50.";
+              share = percentToShare(typed);
+              if (share === null) return "Enter the share as a percentage up to 100, for example 40.";
+            }
+            if (!DECIMAL.test(share) || !atMostOne(share) || !/[1-9]/.test(share)) {
+              return "Choose one of the shares, or enter a percentage up to 100.";
+            }
             stepPreview(share);
             return "";
           }, "Review");
+          focusStep(body);
         };
         const stepPreview = share => {
           const period = monthPeriod(draft.month);
@@ -606,6 +704,7 @@
           };
           body.replaceChildren();
           preview(body, card, {summary: [billSummary("record_bill", data)], build: async () => data, back: stepShare});
+          focusStep(body);
         };
         stepKind();
       },
@@ -616,8 +715,7 @@
     const suggested = parseIso(card.facts?.suggested_period?.start);
     const draft = {month: months[0]?.value, kinds: "subscription"};
     if (suggested !== null) {
-      const date = new Date(suggested);
-      const value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+      const value = monthValue(suggested);
       if (months.some(option => option.value === value)) draft.month = value;
     }
     HQ.sheet.open({
@@ -648,13 +746,16 @@
             };
             body.replaceChildren();
             preview(body, card, {summary: [billSummary("declare_bills_complete", data)], build: async () => data, back: stepChoose});
+            focusStep(body);
             return "";
           }, "Review");
+          focusStep(body);
         };
         stepChoose();
       },
     });
   }
 
-  HQ.define("decide", {button, open, pending, submit, classify, cardFor, preview});
+  HQ.define("decide", {button, open, pending, submit, classify, cardFor, preview, hqSays, monthPeriod, monthOptions,
+    percentToShare, focusStep, billSummary, replayedMessage});
 })();

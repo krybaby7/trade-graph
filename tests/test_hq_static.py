@@ -206,3 +206,166 @@ def test_copy_never_uses_banned_jargon_in_static_strings():
                 continue  # identifiers, keys and class names are not owner-facing copy
             for word in banned:
                 assert word not in text, f"{name}: {word!r} in {text!r}"
+
+
+# --- Review fixes (FIX-PLAN F1–F12): static guards; tests/js/*.test.mjs checks the behaviour -----------------
+
+
+def _function(source: str, name: str) -> str:
+    """The text of one `function name(` up to the next function (or view) at the same indent."""
+    match = re.search(rf"(?m)^(\s*)(?:async )?function {name}\(", source)
+    assert match, f"function {name} missing"
+    indent = match.group(1)
+    rest = source[match.start():]
+    following = re.search(rf"(?m)^{indent}(?:async )?function \w+\(|^{indent}HQ\.(?:view|define)\(", rest[1:])
+    return rest if not following else rest[: following.start() + 1]
+
+
+def _view(source: str, name: str) -> str:
+    start = source.index(f'HQ.view("{name}"')
+    return source[start: source.index("\n  });\n", start)]
+
+
+@pytest.mark.parametrize("name", ["hq-prompts.js", "hq-glossary.js", "hq-decide.js", "hq-render.js", "hq-checkins.js"])
+def test_practice_copy_always_sits_behind_a_mode_branch(name):
+    # Review C1: every owner-facing literal that says "practice" is on a line that branches on the mode, or
+    # lives in a constant with a live twin (NAME_LIVE / LIVE_NAME), or is a paper-only glossary word.
+    code = _code(_read(name))
+    current = None
+    for line in code.splitlines():
+        declared = re.match(r"^  const ([A-Z_]+) = ", line)
+        if declared:
+            current = declared.group(1)
+        elif re.match(r"^  (?:async function|function|HQ\.|const [a-z])", line):
+            current = None
+        for parts in re.findall(r'"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`', line):
+            words = re.sub(r"\$\{[^}]*\}", "", "".join(parts))  # interpolations are code, not copy
+            words = re.sub(r"\b[a-z]+_[a-z_]+\b", "", words)  # keys such as practice_money
+            if "practice" not in words.lower() or re.search(r"\blive\b|isLive\(\)", line):
+                continue
+            if current == "GLOSSARY":
+                assert re.match(r"^\s*(?:practice_money:|example:)", line), line
+                continue
+            assert current and (f"{current}_LIVE" in code or f"LIVE_{current}" in code), f"{name}: {line.strip()}"
+    if name == "hq-glossary.js":
+        assert 'PAPER_ONLY_TERMS = new Set(["practice_money", "real_trading_off"])' in code
+
+
+def test_live_twins_exist_for_every_practice_line():
+    assert "KIND_PARAGRAPH_LIVE" in _read("hq-prompts.js")
+    glossary = _read("hq-glossary.js")
+    assert "ROOM_WHY_LIVE" in glossary and "SECTION_HELP_LIVE" in glossary
+    assert '"The only department that can move the account\'s money."' in glossary
+    assert "Account money and real costs are kept apart. Unknown is never shown as zero." in glossary
+    decide = _read("hq-decide.js")
+    for name in ["BARRIERS_LIVE", "BILLS_INTRO_LIVE", "BILL_UNTOUCHED_LIVE"]:
+        assert f"const {name} = " in decide
+    bills = _view(_code(decide), "bills")
+    assert "act_block_reason" in bills and "BILLS_INTRO_LIVE" in bills
+
+
+def test_up_next_and_tiles_never_show_an_impossible_turn_as_normal():
+    # Review U1: Up next shows the item's condition; an overdue tile says Waiting / Due now / Overdue.
+    code = _code(_read("hq-render.js"))
+    upnext = _view(code, "upnext")
+    assert "item.detail" in upnext and "item.conditional" in upnext and "item.waiting_because" in upnext
+    tile = _function(code, "roomLine")
+    assert "next.status" in tile and '|| "Overdue"' in tile and '"Due now"' not in tile
+    assert 'OVERDUE_WORDS = Object.freeze({waiting: "Waiting", due_now: "Due now", overdue: "Overdue"})' in code
+
+
+def test_calendar_now_group_strip_glyphs_and_estimate_series():
+    code = _code(_read("hq-render.js"))
+    calendar = _view(code, "calendar")
+    assert "!item.past" not in calendar and "CURRENT.has(item.status)" in calendar  # review C4
+    strip = _function(code, "weekStrip")
+    assert "statusMark(item)" in strip and '"hq-sr"' in strip  # review U14: glyph and words, not colour alone
+    assert '"hq-cal-now-line", "Now"' in calendar
+    assert "calendar.estimates" in code and "seriesTimes" in calendar  # review T2
+
+
+def test_open_panels_survive_a_poll():
+    # Review T3: the moving window fields are not render inputs, and open <details> are remembered.
+    code = _code(_read("hq-render.js"))
+    story_deps = _view(code, "story").split("render(root", 1)[0]
+    calendar_deps = _view(code, "calendar").split("render(root", 1)[0]
+    assert "snapshot.story," not in story_deps and "story.window_start ?" in story_deps
+    assert "calendar.from" not in calendar_deps and "calendar.to" not in calendar_deps
+    assert "snapshot.calendar," not in calendar_deps
+    for key in ["story-more:", "story-day:", "cal:earlier", "series:", "help:sections", "help:glossary"]:
+        assert key in code, key
+    core = _code(_read("hq-core.js"))
+    assert "function keepOpen(" in core and "reopenTimes(container, times)" in core
+    assert "restoreScroll(container, anchor)" in core
+
+
+def test_toasts_show_inside_an_open_sheet_and_done_offers_the_next_plan():
+    toast = _function(_code(_read("hq-core.js")), "toast")
+    assert "state.sheet" in toast and "[data-hq-sheet-toast]" in toast  # review U4
+    checkins = _code(_read("hq-checkins.js"))
+    assert "Plan the next one in 4 h" in checkins and "offerNext" not in checkins
+
+
+def test_reserve_rule_unknown_is_never_none():
+    allowance = _view(_code(_read("hq-render.js")), "allowance")
+    assert "allowance.stop_line_state" in allowance  # review U5
+    assert "The reserve rule couldn't be read." in allowance and "No reserve rule is set." in allowance
+
+
+def test_bill_wizard_steps_move_focus_and_use_utc_months_and_percentages():
+    decide = _code(_read("hq-decide.js"))
+    for step in ["stepKind", "stepAmount", "stepShare", "stepPreview", "stepChoose"]:
+        body = decide.split(f"const {step} = ", 1)[1].split("\n        };", 1)[0]
+        assert "focusStep(body)" in body, step  # review U6
+    assert "Date.UTC(year, month, 1)" in decide and 'timeZone: "UTC"' in decide  # review C14
+    assert "new Date(year, month" not in decide
+    assert '"Custom share (%)"' in decide and 'placeholder = "40"' in decide  # review U11
+    assert "Enter a share above 0%, for example 50." in decide
+
+
+def test_outcome_unknown_requests_expire_and_resends_cannot_drop_edits():
+    core = _code(_read("hq-core.js"))
+    assert "PENDING_MAX_AGE_MS = 86400000" in core and "function readPending(" in core  # review S4
+    for name in ["hq-decide.js", "hq-checkins.js"]:
+        code = _code(_read(name))
+        assert "HQ.readPending(" in code and "HQ.store.getJson(HQ.KEYS.pending" not in code, name
+        assert "replayed" in code and "Sending again uses what you sent before." in code, name  # review S5
+    checkins = _code(_read("hq-checkins.js"))
+    move = checkins.split("const moveForm = ", 1)[1].split("const skipForm = ", 1)[0]
+    assert "outcome.sent?.planned_at" in move and "input.disabled = true" in move
+    assert "Already done when you first pressed it" in _read("hq-decide.js")
+
+
+def test_previews_say_whether_hq_recommends_and_quests_do_not_say_needs_you():
+    decide = _code(_read("hq-decide.js"))
+    says = _function(decide, "hqSays")
+    assert '"Recommended: "' in says and '"Not available: "' in says  # review U9
+    assert "hqSays(card)" in _function(decide, "preview")
+    quest = _function(_code(_read("hq-render.js")), "questRow")
+    assert 'chip("needs you"' not in quest and 'chip("stuck", "hq-chip-warn")' in quest  # review U7
+    assert "if (used)" in quest
+
+
+def test_polling_states_are_honest():
+    core = _code(_read("hq-core.js"))
+    for state in ['"server_error"', '"forbidden"', '"outdated"', "fastPending"]:
+        assert state in core, state  # review T6, T9
+    assert "HQ had a problem; retrying" in core and "HQ was updated. Reload the page." in core
+    assert "inflightDays !== state.calendarDays" in core  # review T7
+
+
+def test_since_counts_are_honest():
+    code = _code(_read("hq-render.js"))
+    facts = _function(code, "sinceFacts")
+    assert "next_before" in facts and "window_start" in facts  # review C5
+    assert "at least" in _function(code, "sinceLastLooked")
+    assert "HQ.serverNow()" in _function(code, "attentionCard")  # review U3
+
+
+def test_notice_link_is_a_full_size_tap_target_and_phones_lead_with_right_now():
+    text = _read("hq.css")
+    rule = re.search(r"body\.hq-page \.hq-notice \.hq-more-link \{([^}]*)\}", text)
+    assert rule and "min-height: 2.75rem" in rule.group(1) and "inline-flex" in rule.group(1)  # review U15
+    phone = text.split("@media (max-width: 767px) {", 1)[1].split("\n}\n", 1)[0]
+    assert ".hq-title" in phone and "clip: rect(0, 0, 0, 0)" in phone  # review U10: the h1 stays for screen readers
+    assert ".site-header .brand-copy small" in phone and ".header-actions .badge" in phone

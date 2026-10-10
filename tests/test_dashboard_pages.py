@@ -22,7 +22,8 @@ def test_pages_render_empty_journal_without_invented_values(name: str) -> None:
     assert '<meta name="viewport"' in page
     assert 'href="/static/dashboard.css"' in page
     assert 'src="/static/dashboard.js"' in page
-    assert "Paper results are simulated" in page
+    # HQ replaces the journal footer with its own plain one (review U15); every other page keeps it.
+    assert ("This is practice: no real trades happen" if name == "hq" else "Paper results are simulated") in page
     assert "10000" not in page
 
 

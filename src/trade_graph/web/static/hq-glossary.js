@@ -77,6 +77,11 @@
     accounts: "If an order's status is unclear, Resume waits until it's settled.",
   });
 
+  // A live account never hears about "practice" money (review C1): these twins replace the paper lines.
+  const ROOM_WHY_LIVE = Object.freeze({...ROOM_WHY, trader: "The only department that can move the account's money."});
+  // Words that only exist in a practice run; a live account's glossary leaves them out.
+  const PAPER_ONLY_TERMS = new Set(["practice_money", "real_trading_off"]);
+
   const SECTION_HELP = Object.freeze({
     now: {title: "Right now", text: "Built from the system's own records every 30 seconds. Quiet means nobody is working; it doesn't mean broken."},
     attention: {title: "Needs you", text: "Only things that need a person are listed. An empty list means you can relax."},
@@ -87,6 +92,14 @@
     money: {title: "Money", text: "Practice money and real costs are kept apart. Unknown is never shown as zero."},
     decide: {title: "Decide", text: "Every button shows what will happen first and asks you to confirm. HQ never acts on its own."},
   });
+  const SECTION_HELP_LIVE = Object.freeze({
+    ...SECTION_HELP,
+    money: {title: "Money", text: "Account money and real costs are kept apart. Unknown is never shown as zero."},
+  });
+
+  const isLive = () => HQ.snapshot()?.mode === "live";
+  const roomWhy = (id, live = isLive()) => (live ? ROOM_WHY_LIVE : ROOM_WHY)[id] || null;
+  const sectionHelp = (live = isLive()) => live ? SECTION_HELP_LIVE : SECTION_HELP;
 
   const LIGHT_LEGEND = Object.freeze([
     ["working", "Working"], ["waiting", "Waiting"], ["resting", "Resting or OK"], ["paused", "Paused"],
@@ -155,7 +168,7 @@
   }
 
   function help(section, opener) {
-    const entry = SECTION_HELP[section];
+    const entry = sectionHelp()[section];
     if (!entry) return;
     HQ.sheet.open({
       title: `What am I looking at? ${entry.title}`,
@@ -179,9 +192,10 @@
     });
   }
 
-  function glossaryList() {
+  function glossaryList(live = isLive()) {
     const box = el("dl", "hq-glossary");
     for (const [key, entry] of Object.entries(GLOSSARY)) {
+      if (live && PAPER_ONLY_TERMS.has(key)) continue;
       const row = el("div", "hq-glossary-row");
       const term = el("dt", "");
       const control = button("hq-term", entry.term);
@@ -206,5 +220,6 @@
     if (helper) help(helper.dataset.hqHelp, helper);
   });
 
-  HQ.define("glossary", {GLOSSARY, ROOM_WHY, SECTION_HELP, explain, help, legend, glossaryList});
+  HQ.define("glossary", {GLOSSARY, ROOM_WHY, ROOM_WHY_LIVE, SECTION_HELP, SECTION_HELP_LIVE, roomWhy, sectionHelp, explain, help,
+    legend, glossaryList});
 })();
