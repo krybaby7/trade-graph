@@ -143,7 +143,16 @@
       "plain": [
         {
           "t": "text",
-          "v": "46% left this week. Refills Mon 00:00 UTC. A second, shorter limit isn't reported."
+          "v": "46% left this week. Refills "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-12T00:00:00.000Z",
+          "style": "day_clock"
+        },
+        {
+          "t": "text",
+          "v": ". A second, shorter limit isn't reported."
         }
       ],
       "stop_line_state": "on"
@@ -164,15 +173,10 @@
       "why": [
         {
           "t": "text",
-          "v": "Stuck: out of allowance for this job. It won't retry by itself."
+          "v": "Stuck: this job reached its own cost limit (not your AI allowance). It won't retry by itself."
         }
       ],
-      "consequence": [
-        {
-          "t": "text",
-          "v": "Leader won't retry by itself."
-        }
-      ],
+      "consequence": [],
       "can_fix_here": false,
       "how": [
         {
@@ -357,7 +361,7 @@
       "now": [
         {
           "t": "text",
-          "v": "Stuck: out of allowance for this job. It won't retry by itself."
+          "v": "Stuck: this job reached its own cost limit (not your AI allowance). It won't retry by itself."
         }
       ],
       "last": {
@@ -366,7 +370,7 @@
         "text": [
           {
             "t": "text",
-            "v": "Its weekly turn didn't work: "
+            "v": "Its turn (weekly) didn't work: "
           },
           {
             "t": "text",
@@ -956,7 +960,7 @@
       "state_text": [
         {
           "t": "text",
-          "v": "Stuck: out of allowance for this job. It won't retry by itself."
+          "v": "Stuck: this job reached its own cost limit (not your AI allowance). It won't retry by itself."
         }
       ],
       "needs_you": true,
@@ -972,7 +976,7 @@
       "reason": [
         {
           "t": "text",
-          "v": "out of allowance for this job",
+          "v": "this job reached its own cost limit",
           "code": "room budget"
         }
       ],
@@ -1055,10 +1059,32 @@
       "research-expiry:f-90",
       "turn:s-trader:2026-10-10T09:56:26.000Z",
       "checkin:c-20261010-midday",
-      "refill:limit_1_primary",
-      "turn:s-learning:2026-10-13T18:40:00.000Z"
+      "turn:s-research:2026-10-11T07:13:00.000Z",
+      "refill:limit_1_primary"
     ],
     "items": [
+      {
+        "id": "checkin:c-20261009-evening",
+        "kind": "owner_checkin",
+        "dept": "you",
+        "at": "2026-10-09T19:30:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Your check-in: Evening review"
+          }
+        ],
+        "status": "done",
+        "exact": true,
+        "conditional": false,
+        "past": true,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": "c-20261009-evening",
+        "series": null
+      },
       {
         "id": "turn:s-trader:2026-10-10T05:56:26.000Z",
         "kind": "dept_turn",
@@ -1282,14 +1308,114 @@
         }
       },
       {
-        "id": "turn:s-learning:2026-10-13T18:40:00.000Z",
+        "id": "turn:s-trader:2026-10-10T17:56:26.000Z",
         "kind": "dept_turn",
-        "dept": "learning",
-        "at": "2026-10-13T18:40:00.000Z",
+        "dept": "trader",
+        "at": "2026-10-10T17:56:26.000Z",
         "title": [
           {
             "t": "text",
-            "v": "Learning's turn"
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-10T21:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-10T21:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T01:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T01:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T05:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T05:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-research:2026-10-11T07:13:00.000Z",
+        "kind": "dept_turn",
+        "dept": "research",
+        "at": "2026-10-11T07:13:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
           }
         ],
         "status": "planned",
@@ -1302,8 +1428,108 @@
         "link": null,
         "checkin_id": null,
         "series": {
-          "schedule_id": "s-learning",
-          "every_seconds": 302400
+          "schedule_id": "s-research",
+          "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T09:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T09:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T13:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T13:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T17:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T17:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-11T21:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-11T21:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
         }
       },
       {
@@ -1329,6 +1555,106 @@
         "series": null
       },
       {
+        "id": "turn:s-trader:2026-10-12T01:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T01:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T05:56:26.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T05:56:26.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-research:2026-10-12T07:13:00.000Z",
+        "kind": "dept_turn",
+        "dept": "research",
+        "at": "2026-10-12T07:13:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-research",
+          "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-learning:2026-10-13T18:40:00.000Z",
+        "kind": "dept_turn",
+        "dept": "learning",
+        "at": "2026-10-13T18:40:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Learning's turn"
+          }
+        ],
+        "status": "planned",
+        "exact": true,
+        "conditional": false,
+        "past": false,
+        "detail": null,
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-learning",
+          "every_seconds": 302400
+        }
+      },
+      {
         "id": "turn:s-leader:2026-10-14T08:13:00.000Z",
         "kind": "dept_turn",
         "dept": "leader",
@@ -1352,28 +1678,6 @@
           "schedule_id": "s-leader",
           "every_seconds": 604800
         }
-      },
-      {
-        "id": "checkin:c-20261009-evening",
-        "kind": "owner_checkin",
-        "dept": "you",
-        "at": "2026-10-09T19:30:00.000Z",
-        "title": [
-          {
-            "t": "text",
-            "v": "Your check-in: Evening review"
-          }
-        ],
-        "status": "done",
-        "exact": true,
-        "conditional": false,
-        "past": true,
-        "detail": null,
-        "warning": null,
-        "waiting_because": null,
-        "link": null,
-        "checkin_id": "c-20261009-evening",
-        "series": null
       }
     ],
     "recurring": [
@@ -1404,6 +1708,36 @@
         "first_at": "2026-10-12T09:56:26.000Z",
         "every_seconds": 14400,
         "count": 30,
+        "conditional": false,
+        "detail": null
+      },
+      {
+        "schedule_id": "s-research",
+        "dept": "research",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
+          }
+        ],
+        "first_at": "2026-10-13T07:13:00.000Z",
+        "every_seconds": 86400,
+        "count": 5,
+        "conditional": false,
+        "detail": null
+      },
+      {
+        "schedule_id": "s-learning",
+        "dept": "learning",
+        "title": [
+          {
+            "t": "text",
+            "v": "Learning's turn"
+          }
+        ],
+        "first_at": "2026-10-17T06:40:00.000Z",
+        "every_seconds": 302400,
+        "count": 1,
         "conditional": false,
         "detail": null
       }
@@ -1475,7 +1809,7 @@
         "headline": [
           {
             "t": "text",
-            "v": "Leader's extra review didn't work (out of allowance for this job)."
+            "v": "Leader's extra review didn't work (this job reached its own cost limit)."
           }
         ],
         "consequence": [

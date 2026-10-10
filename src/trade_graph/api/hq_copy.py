@@ -1100,7 +1100,7 @@ CALENDAR: Final = {
     "extra_review": "{dept}'s extra review",
     "extra_review_detail": "The Secretary flagged a problem.",
     "checkin": "Your check-in: {title}",
-    "research_expiry": "Research notes stop being used",
+    "research_expiry": "A research note stops being used",
     "research_expiry_many": "{n} research notes stop being used",
     "research_expiry_warning": "Before the Trader's turn at ",
     "allowance_refill": "AI allowance refills ({label} limit)",

@@ -165,6 +165,9 @@
       <div class="hq-panel-head"><h2 id="hq-h-bills" class="hq-panel-title">Your bills</h2></div>
       <div data-hq="bills"></div>
     </article>
+    {#- Long, rarely needed panels: on desktop one full-width row below both columns (hq.css), so the
+        right-hand column doesn't run far below the left; elsewhere they simply follow the bills. -#}
+    <div class="hq-decide-more">
     <article class="hq-panel hq-prompt" aria-labelledby="hq-h-prompt">
       <div class="hq-panel-head"><h2 id="hq-h-prompt" class="hq-panel-title">Prompt settings (this device only)</h2></div>
       <div data-hq="prompt"></div>
@@ -173,6 +176,7 @@
       <div class="hq-panel-head"><h2 id="hq-h-help" class="hq-panel-title">Help &amp; glossary</h2></div>
       <div data-hq="help"></div>
     </article>
+    </div>
   </section>
   <p class="hq-footer">{% if live %}This page doesn't control a live account. Use Owner controls.{% else %}This is practice: no real trades happen. Real costs are only the bills you enter.{% endif %}</p>
 </div>

@@ -683,9 +683,9 @@ def test_close_research_expiries_are_one_calendar_item(env):
     quiet(env)  # the Trader's next turn is in 4 hours
     for index in range(3):  # expire before that turn: a group of their own, with the warning
         finding(env, f"f-early-{index}", created=-3600, expires=1800 + index * 60)
-    for index in range(18):  # written together, expiring 8 h to 9 h 25 min from now
+    for index in range(18):  # written one after another, expiring 8 h to 9 h 25 min from now
         finding(env, f"f-batch-{index}", created=-3600, expires=8 * 3600 + index * 300)
-    finding(env, "f-later", created=-3600, expires=8 * 3600 + 7300)  # more than 2 h after the batch's first
+    finding(env, "f-later", created=-3600, expires=8 * 3600 + 17 * 300 + 3601)  # over an hour after the run's last
     data = snap(env)
     expiries = [item for item in data["calendar"]["items"] if item["kind"] == "research_expiry"]
     assert [item.get("count") for item in expiries] == [3, 18, None]
@@ -696,9 +696,28 @@ def test_close_research_expiries_are_one_calendar_item(env):
     assert batch["id"] == "research-expiry:f-batch-0"
     assert batch["at"] == iso_ms(at(env, 8 * 3600)) and batch["until"] == iso_ms(at(env, 8 * 3600 + 17 * 300))
     assert "count" not in later and "until" not in later
-    assert text(later["title"]) == "Research notes stop being used"
+    assert text(later["title"]) == "A research note stops being used"  # one note, said in the singular
     assert early["id"] in data["calendar"]["up_next"]
     assert data["money"]["counts"]["notes_in_use"] == 22
+
+
+def test_a_continuous_run_of_expiries_is_one_item_up_to_twelve_hours(env):
+    """Gaps of up to an hour chain, however long the run (desktop check: a 6-hour run was split into
+    identical 2-hour rows); a run is cut after 12 hours, which may end on the next day."""
+    quiet(env)
+    for index in range(25):  # every 40 minutes from 5 h to 21 h from now: no gap is over an hour
+        finding(env, f"f-run-{index:02d}", created=-3600, expires=5 * 3600 + index * 2400)
+    finding(env, "f-gap", created=-3600, expires=5 * 3600 + 24 * 2400 + 3660)  # 61 min after the run's last
+    data = snap(env)
+    expiries = [item for item in data["calendar"]["items"] if item["kind"] == "research_expiry"]
+    assert [item.get("count") for item in expiries] == [19, 6, None]
+    first, rest, alone = expiries
+    assert first["id"] == "research-expiry:f-run-00" and rest["id"] == "research-expiry:f-run-19"
+    assert first["at"] == iso_ms(at(env, 5 * 3600)) and first["until"] == iso_ms(at(env, 5 * 3600 + 18 * 2400))
+    assert first["until"] == iso_ms(at(env, 17 * 3600))  # exactly 12 h: the cap is inclusive
+    assert rest["at"] == iso_ms(at(env, 5 * 3600 + 19 * 2400)) and rest["until"] == iso_ms(at(env, 21 * 3600))
+    assert text(rest["title"]) == "6 research notes stop being used"
+    assert alone["id"] == "research-expiry:f-gap" and "count" not in alone
 
 
 def test_research_expiries_keep_the_ten_soonest_groups(env):

@@ -5,8 +5,8 @@ Only the next turn of a schedule is exact. Later turns are estimates
 runs; when the team cannot run them they are also marked conditional. Estimates
 more than 48 hours ahead are not listed one by one: each schedule's later
 projections are summarised in one ``calendar.estimates`` series (payload budget, D110).
-Close deadlines of one kind (research notes written together expire together) are one
-item with a ``count`` and an ``until`` (D111).
+A run of deadlines of one kind (research notes written one after another expire one
+after another) is one item with a ``count`` and an ``until`` (D111, D112).
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from datetime import datetime, timedelta
 from trade_graph.api import hq_copy as c
 from trade_graph.api.hq_contract import (
     AI_DEPARTMENTS,
-    CALENDAR_GROUP_WINDOW_SECONDS,
+    CALENDAR_GROUP_GAP_SECONDS,
+    CALENDAR_GROUP_SPAN_SECONDS,
     CALENDAR_GROUPED_KINDS,
     CALENDAR_MAX_ITEMS,
     ESTIMATE_ITEMS_HORIZON_HOURS,
@@ -30,7 +31,8 @@ from trade_graph.api.hq_state import SCHEDULED_ROLES, STUCK, Projection, _dt
 PAST_WINDOW = timedelta(hours=48)
 ESTIMATE_ITEMS_HORIZON = timedelta(hours=ESTIMATE_ITEMS_HORIZON_HOURS)
 MANDATE_HORIZON = timedelta(days=30)
-GROUP_WINDOW = timedelta(seconds=CALENDAR_GROUP_WINDOW_SECONDS)
+GROUP_GAP = timedelta(seconds=CALENDAR_GROUP_GAP_SECONDS)
+GROUP_SPAN = timedelta(seconds=CALENDAR_GROUP_SPAN_SECONDS)
 RESEARCH_EXPIRY_MAX = 10  # research-note expiry items (single or grouped), soonest first
 HISTORY_INTERVAL_SECONDS = 3600
 # Gates under which a department's turns may not happen at all, and what its next turn depends on (U1).
@@ -250,11 +252,13 @@ def _deadlines(p: Projection) -> list:
 
 
 def _grouped(items: list[dict]) -> list[dict]:
-    """Close deadlines of one kind become one item with ``count`` and ``until`` (contract ``CalendarItem``).
+    """A run of deadlines of one kind becomes one item with ``count`` and ``until`` (contract ``CalendarItem``).
 
-    An item joins the open group with the same kind, department, status, link and texts while it is
-    within ``GROUP_WINDOW`` of that group's earliest member; otherwise it starts a new group. Groups keep
-    their earliest member's id. Research-note expiries are then capped at ``RESEARCH_EXPIRY_MAX`` items.
+    An item joins the open group with the same kind, department, status, link and texts when it is at most
+    ``GROUP_GAP`` after that group's latest member and at most ``GROUP_SPAN`` after its earliest (the server
+    doesn't know the viewer's day, so 12 hours stands in for "the same day"); otherwise it starts a new group.
+    So one continuous run is one row, however long, up to that cap. Groups keep their earliest member's id.
+    Research-note expiries are then capped at ``RESEARCH_EXPIRY_MAX`` items.
     """
     open_groups: dict[tuple, list[dict]] = {}
     groups: list[list[dict]] = []
@@ -264,7 +268,9 @@ def _grouped(items: list[dict]) -> list[dict]:
             key = (item["kind"], item["dept"], item["status"], item["past"], item["link"],
                    json.dumps([item["title"], item["detail"], item["warning"]], sort_keys=True))
             members = open_groups.get(key)
-            if members and _dt(item["at"]) - _dt(members[0]["at"]) <= GROUP_WINDOW:
+            moment = _dt(item["at"])
+            if (members and moment - _dt(members[-1]["at"]) <= GROUP_GAP
+                    and moment - _dt(members[0]["at"]) <= GROUP_SPAN):
                 members.append(item)
                 continue
         groups.append([item])

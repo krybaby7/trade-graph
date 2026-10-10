@@ -35,10 +35,13 @@ CALENDAR_MAX_ITEMS: Final = 200
 SERIES_MAX_PROJECTIONS: Final = 48
 # Estimated turns later than this are summarised per schedule in ``calendar.estimates`` (payload budget).
 ESTIMATE_ITEMS_HORIZON_HOURS: Final = 48
-# Deadlines of one of these kinds that fall within this many seconds of each other are one calendar item with a
-# ``count`` and an ``until`` (e.g. several research notes written together expire together).
+# Deadlines of one of these kinds that follow each other with gaps of at most ``CALENDAR_GROUP_GAP_SECONDS`` are one
+# calendar item with a ``count`` and an ``until`` (e.g. research notes written one after another expire one after
+# another). A group runs at most ``CALENDAR_GROUP_SPAN_SECONDS`` from its first to its last deadline: the server
+# doesn't know the viewer's time zone, so a long run is cut after 12 hours rather than at the end of a local day.
 CALENDAR_GROUPED_KINDS: Final = ("research_expiry", "proposal_expiry", "engineer_deadline")
-CALENDAR_GROUP_WINDOW_SECONDS: Final = 7200
+CALENDAR_GROUP_GAP_SECONDS: Final = 3600
+CALENDAR_GROUP_SPAN_SECONDS: Final = 43200
 QUEST_MAX_ITEMS: Final = 60
 UP_NEXT_MAX: Final = 5
 TURN_STUCK_MAX_CARDS: Final = 3
@@ -667,9 +670,10 @@ class CalendarItem(_Contract):
     """One calendar entry.
 
     ``count`` and ``until`` (additive; absent on older servers and on single items) mark a group: ``count``
-    deadlines of one ``CALENDAR_GROUPED_KINDS`` kind, with the same department, status and texts, from ``at``
-    (the earliest) to ``until`` (the latest, at most ``CALENDAR_GROUP_WINDOW_SECONDS`` later). The group keeps
-    its earliest member's ``id`` and its title already says how many, e.g. "18 research notes stop being used".
+    deadlines of one ``CALENDAR_GROUPED_KINDS`` kind, with the same department, status and texts, each at most
+    ``CALENDAR_GROUP_GAP_SECONDS`` after the one before, from ``at`` (the earliest) to ``until`` (the latest, at
+    most ``CALENDAR_GROUP_SPAN_SECONDS`` later, so possibly on the next day). The group keeps its earliest
+    member's ``id`` and its title already says how many, e.g. "18 research notes stop being used".
     """
 
     _omit_not_null = frozenset({"count", "until"})
@@ -703,8 +707,8 @@ class CalendarItem(_Contract):
             if self.kind not in CALENDAR_GROUPED_KINDS:
                 raise ValueError("only close deadlines of one kind are grouped")
             spread = (_instant(self.until) - _instant(self.at)).total_seconds()
-            if not 0 <= spread <= CALENDAR_GROUP_WINDOW_SECONDS:
-                raise ValueError("a group runs from at to until, within the group window")
+            if not 0 <= spread <= CALENDAR_GROUP_SPAN_SECONDS:
+                raise ValueError("a group runs from at to until, within the 12-hour group span")
         return self
 
 

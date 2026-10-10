@@ -2,6 +2,7 @@
 
 import copy
 import json
+from datetime import timedelta
 from pathlib import Path
 from typing import get_args
 
@@ -156,7 +157,7 @@ def _group(data: dict) -> dict:
     lambda item: item.update(count=True),
     lambda item: item.update(kind="trial_end"),
     lambda item: item.update(until="2026-10-10T09:29:59.999Z"),  # before the group's first deadline
-    lambda item: item.update(until="2026-10-10T11:30:00.001Z"),  # beyond the two-hour group window
+    lambda item: item.update(until="2026-10-10T21:30:00.001Z"),  # beyond the 12-hour group span
 ])
 def test_grouped_calendar_items_carry_a_count_and_a_range(mutate):
     data = _load("snapshot_busy.json")
@@ -170,6 +171,31 @@ def test_grouped_calendar_items_carry_a_count_and_a_range(mutate):
     group = _group(single)
     del group["count"], group["until"]
     contract.validate_snapshot(single)  # an older server's single items carry neither key
+    longest = _load("snapshot_busy.json")
+    _group(longest)["until"] = "2026-10-10T21:30:00.000Z"  # a run of up to 12 hours is one group (D112)
+    contract.validate_snapshot(longest)
+
+
+def test_fixture_estimates_continue_where_the_listed_turns_stop():
+    """As on the real server, estimated turns are listed up to 48 h ahead and each summarised series starts one
+    interval after the last turn listed (desktop check: the fixtures jumped 40 to 56 hours). The exact next
+    turn is always listed, even beyond 48 h."""
+    checked = 0
+    for name in NAMES:
+        data = _load(name)
+        horizon = contract._instant(data["as_of"]) + timedelta(hours=contract.ESTIMATE_ITEMS_HORIZON_HOURS)
+        for series in data["calendar"]["estimates"]:
+            listed = {item["status"]: [] for item in data["calendar"]["items"]}
+            for item in data["calendar"]["items"]:
+                if item["kind"] == "dept_turn" and (item["series"] or {}).get("schedule_id") == series["schedule_id"]:
+                    listed[item["status"]].append(contract._instant(item["at"]))
+            future = listed.get("planned", []) + listed.get("estimated", [])
+            first = contract._instant(series["first_at"])
+            assert future and all(moment <= horizon for moment in listed.get("estimated", [])), name
+            assert horizon < first, (name, series["schedule_id"])
+            assert (first - max(future)).total_seconds() == series["every_seconds"], (name, series["schedule_id"])
+            checked += 1
+    assert checked >= 15
 
 
 def test_new_keys_are_emitted_in_every_fixture():
@@ -179,7 +205,7 @@ def test_new_keys_are_emitted_in_every_fixture():
         assert all(dept["next"]["status"] for dept in data["departments"] if dept["next"]), name
         assert isinstance(data["calendar"]["estimates"], list), name
     quiet = _load("snapshot_quiet.json")["calendar"]
-    assert [series["schedule_id"] for series in quiet["estimates"]] == ["s-trader"]
+    assert [series["schedule_id"] for series in quiet["estimates"]] == ["s-trader", "s-research", "s-learning"]
 
 
 def test_omittable_keys_may_be_absent():

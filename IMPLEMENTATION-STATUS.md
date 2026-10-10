@@ -1,3 +1,16 @@
+# Trade Graph HQ visual-check fixes (round 1), not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `b14c8ee` (decision D112). **Nothing was deployed, pushed or run against the installation.**
+- **Calendar groups chain by gap:** a deadline joins its group when it is at most 1 hour after the group's latest member, up to 12 hours from its first (`CALENDAR_GROUP_GAP_SECONDS`, `CALENDAR_GROUP_SPAN_SECONDS`; the contract checks `until` against the 12 hours). The busy synthetic week's 40 note expiries are now one row ("40 research notes stop being used", 19:30 to 02:00 tomorrow in Cairo) instead of four identical ones; 63.6 KB for 14 days. A range ending on another day says so in the agenda ("to 2:00 tomorrow") and Up next. One note reads "A research note stops being used".
+- **Week strip:** chip titles keep words whole (no break inside a word; a non-breaking hyphen in "Your check‑in"; soft hyphens only where a short label needs one on an iPad, e.g. "Allow-ance refill"; a department name stays on one line with an ellipsis if its column is too narrow). Chips show only the start time. Short labels for allowance refills, extra reviews, review time limits, trial ends and permission ends.
+- **Desktop columns:** Prompt settings and Help & glossary are one full-width, two-column row below both columns (`.hq-decide-more`; phones, the tab bar and iPad portrait unchanged). The left-column gap under Story on the busy week went from about 770 px under Story to none, with about 700 px under Your bills instead; on quiet it fell from about 1 950 px to about 200 px.
+- **Small fixes:** the "Authorised model" field's placeholder is "the model I authorised for Trade Graph", not this page's address; a calendar warning is one text beside its icon ("at 12:56." without a gap).
+- **Fixtures:** future department turns, estimates and Up next regenerated with the real `_future_turns` (no 40–56 h gap; research and learning series too), allowance lines from the real `allowance_plain` ("Refills tomorrow 3:00", a time, not "Mon 00:00 UTC"), and the real copy for the stuck Leader job (no second "won't retry"), the safety-stop turn problem and the Leader's last turn.
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -q -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` passed (8 Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 43 passed. Headless Edge at 1440×900 (light and dark) and 1024: no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty, silent, busy and live snapshots; 900 and 375 px layouts match the previous commit except the one extra "tomorrow" line.
+
+---
+
 # Trade Graph HQ desktop-check fixes, not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009`, after `6aa968d`. Five issues from the owner's desktop visual check (decision D111). **Nothing was deployed, pushed or run against the installation.**

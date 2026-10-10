@@ -305,3 +305,16 @@ None prevents offline development. Mark credentialed verification pending when c
   not the ten newest notes. On desktop the two HQ columns flow independently
   (floats, no change to the page order), so a tall "Needs you" never opens a
   gap under the map.
+
+- **D112 (2026-10-10, HQ visual check):** A group of deadlines (D111) now
+  chains by gap: a deadline joins its group when it is at most one hour after
+  the group's latest member, so one continuous run of research-note expiries
+  is one row however long it is, instead of several identical two-hour rows.
+  A group spans at most 12 hours (`CALENDAR_GROUP_SPAN_SECONDS`, which the
+  contract checks for `until`): the server doesn't know the viewer's time
+  zone, so 12 hours stands in for "the same day", and a range that ends on the
+  next local day says so ("to 01:50 tomorrow"). One note reads "A research
+  note stops being used", matching the week strip's "Note expires". On
+  desktop, Prompt settings and Help & glossary are one full-width row below
+  both columns (still part of Decide on phones and in the tab bar), so the
+  right-hand column no longer runs up to 2 000 px below the left.

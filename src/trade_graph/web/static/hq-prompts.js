@@ -19,6 +19,7 @@
     ["authorised_model", "Authorised model", "Leave empty to say “the model I authorised for Trade Graph”."],
     ["dashboard_address", "Dashboard address", "The address your review chat should open."],
   ]);
+  const EMPTY_MEANS = Object.freeze({authorised_model: "the model I authorised for Trade Graph"});
   const KIND_PARAGRAPH = Object.freeze({
     baseline: "This is a baseline: record current values for later comparison.",
     interval: "Compare with my previous check-in.",
@@ -220,7 +221,10 @@
         input.autocomplete = "off";
         input.spellcheck = false;
         input.value = typeof saved[key] === "string" ? saved[key] : "";
-        input.placeholder = chosen[key] && !saved[key] ? chosen[key] : DEFAULTS[key] || location.origin;
+        // The placeholder is what the prompt says when the field is left empty. Only the dashboard address falls
+        // back to this page's address; an empty model field means "the model I authorised" (desktop check).
+        input.placeholder = (!saved[key] && chosen[key]) || EMPTY_MEANS[key] ||
+          (key === "dashboard_address" ? location.origin : DEFAULTS[key]);
         input.dataset.focusKey = `prompt:${key}`;
         input.addEventListener("change", () => save(key, input.value.trim()));
         field.append(input, el("span", "hq-field-hint", hint));

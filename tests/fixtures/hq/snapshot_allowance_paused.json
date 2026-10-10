@@ -124,7 +124,16 @@
       "plain": [
         {
           "t": "text",
-          "v": "3% left this week. Refills Mon 00:00 UTC. A second, shorter limit isn't reported."
+          "v": "3% left this week. Refills "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-12T00:00:00.000Z",
+          "style": "day_clock"
+        },
+        {
+          "t": "text",
+          "v": ". A second, shorter limit isn't reported."
         }
       ],
       "stop_line_state": "on"
@@ -777,6 +786,36 @@
         "series": null
       },
       {
+        "id": "turn:s-trader:2026-10-12T03:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T03:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
         "id": "turn:s-learning:2026-10-12T06:40:00.000Z",
         "kind": "dept_turn",
         "dept": "learning",
@@ -789,9 +828,14 @@
         ],
         "status": "planned",
         "exact": true,
-        "conditional": false,
+        "conditional": true,
         "past": false,
-        "detail": null,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the AI is back on."
+          }
+        ],
         "warning": null,
         "waiting_because": null,
         "link": null,
@@ -799,6 +843,36 @@
         "series": {
           "schedule_id": "s-learning",
           "every_seconds": 302400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T07:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T07:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
         }
       },
       {
@@ -814,9 +888,14 @@
         ],
         "status": "planned",
         "exact": true,
-        "conditional": false,
+        "conditional": true,
         "past": false,
-        "detail": null,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the AI is back on."
+          }
+        ],
         "warning": null,
         "waiting_because": null,
         "link": null,
@@ -824,6 +903,306 @@
         "series": {
           "schedule_id": "s-research",
           "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T11:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T11:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T15:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T15:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T19:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T19:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-12T23:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-12T23:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-13T03:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-13T03:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-13T07:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-13T07:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-research:2026-10-13T08:13:00.000Z",
+        "kind": "dept_turn",
+        "dept": "research",
+        "at": "2026-10-13T08:13:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-research",
+          "every_seconds": 86400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-13T11:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-13T11:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-13T15:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-13T15:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
+        }
+      },
+      {
+        "id": "turn:s-trader:2026-10-13T19:05:00.000Z",
+        "kind": "dept_turn",
+        "dept": "trader",
+        "at": "2026-10-13T19:05:00.000Z",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "status": "estimated",
+        "exact": false,
+        "conditional": true,
+        "past": false,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ],
+        "warning": null,
+        "waiting_because": null,
+        "link": null,
+        "checkin_id": null,
+        "series": {
+          "schedule_id": "s-trader",
+          "every_seconds": 14400
         }
       },
       {
@@ -839,9 +1218,14 @@
         ],
         "status": "planned",
         "exact": true,
-        "conditional": false,
+        "conditional": true,
         "past": false,
-        "detail": null,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the AI is back on."
+          }
+        ],
         "warning": null,
         "waiting_because": null,
         "link": null,
@@ -867,7 +1251,68 @@
       }
     ],
     "notes": [],
-    "estimates": []
+    "estimates": [
+      {
+        "schedule_id": "s-trader",
+        "dept": "trader",
+        "title": [
+          {
+            "t": "text",
+            "v": "Trader's turn"
+          }
+        ],
+        "first_at": "2026-10-13T23:05:00.000Z",
+        "every_seconds": 14400,
+        "count": 30,
+        "conditional": true,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ]
+      },
+      {
+        "schedule_id": "s-research",
+        "dept": "research",
+        "title": [
+          {
+            "t": "text",
+            "v": "Research's turn"
+          }
+        ],
+        "first_at": "2026-10-14T08:13:00.000Z",
+        "every_seconds": 86400,
+        "count": 5,
+        "conditional": true,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ]
+      },
+      {
+        "schedule_id": "s-learning",
+        "dept": "learning",
+        "title": [
+          {
+            "t": "text",
+            "v": "Learning's turn"
+          }
+        ],
+        "first_at": "2026-10-15T18:40:00.000Z",
+        "every_seconds": 302400,
+        "count": 1,
+        "conditional": true,
+        "detail": [
+          {
+            "t": "text",
+            "v": "Only if the team is running and not paused. Missed turns are merged into one."
+          }
+        ]
+      }
+    ]
   },
   "story": {
     "window_start": "2026-10-08T19:05:00.000Z",

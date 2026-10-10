@@ -118,19 +118,73 @@ test("close deadlines are one counted item with a time range; an older server's 
   assert.equal(row.querySelector(".hq-cal-until time").dateTime, group.until);
   const chip = () => calendar.querySelectorAll(".hq-week-chip").find(entry => entry.dataset.kind === "research_expiry");
   assert.equal(page.text(chip().querySelector(".hq-week-chip-title")), "2 notes expire");
-  assert.deepEqual(chip().querySelectorAll(".hq-week-when time").map(node => node.dateTime), [group.at, group.until]);
+  // Only the start time fits a chip; the range is in the agenda and Up next (desktop check: it always wrapped).
+  assert.deepEqual(chip().querySelectorAll(".hq-week-when time").map(node => node.dateTime), [group.at]);
   const next = () => page.view("upnext").querySelector(`[data-row="next:${group.id}"]`);
   assert.match(page.text(next()), /2 research notes stop being used.*Between .+ and .+\./);
   const older = clone(data);
   const single = older.calendar.items.find(item => item.id === group.id);
   delete single.count;
   delete single.until;
-  single.title = [{t: "text", v: "Research notes stop being used"}];
+  single.title = [{t: "text", v: "A research note stops being used"}];
   page.show(older);
   assert.equal(calendar.querySelector(`[data-row="cal:${group.id}"] .hq-cal-until`), null);
   assert.equal(page.text(chip().querySelector(".hq-week-chip-title")), "Note expires");
   assert.equal(chip().querySelectorAll(".hq-week-when time").length, 1);
   assert.doesNotMatch(page.text(next()), /Between/);
+});
+
+test("a run of deadlines that ends on the next day says so in the agenda and Up next (D112)", () => {
+  const {page, data} = open("busy");   // as of 08:14 UTC; the harness runs in UTC
+  const next = clone(data);
+  const group = next.calendar.items.find(item => item.count);
+  Object.assign(group, {at: shiftIso(next.as_of, 13 * HOUR), until: shiftIso(next.as_of, 18 * HOUR), warning: null});
+  next.calendar.items.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  page.show(next);
+  const calendar = page.view("calendar");
+  const until = calendar.querySelector(`[data-row="cal:${group.id}"] .hq-cal-until`);
+  assert.match(page.text(until), /^to .+ tomorrow$/);
+  assert.equal(until.querySelector("time").dateTime, group.until);
+  assert.match(page.text(page.view("upnext").querySelector(`[data-row="next:${group.id}"]`)), /Between .+ and .+ tomorrow\./);
+  // The same day: just the clock time.
+  group.until = shiftIso(next.as_of, 14 * HOUR);
+  page.show(clone(next));
+  assert.match(page.text(calendar.querySelector(`[data-row="cal:${group.id}"] .hq-cal-until`)), /^to [^a-z]+(?: [AP]M)?$/);
+});
+
+test("week-strip chips keep words whole: a non-breaking hyphen, short refill words, one-line names (desktop check)", () => {
+  const {page} = open("busy");
+  const chips = page.view("calendar").querySelectorAll(".hq-week-chip");
+  const title = kind => page.text(chips.find(chip => chip.dataset.kind === kind).querySelector(".hq-week-chip-title"));
+  assert.equal(title("owner_checkin"), "Your check‑in");
+  assert.equal(title("allowance_refill"), "Allow­ance refill");   // may break only as "Allow-" / "ance"
+  assert.equal(title("extra_review"), "Leader review");
+  for (const chip of chips) assert.doesNotMatch(page.text(chip.querySelector(".hq-week-chip-title")), /-/);
+  const names = chips.filter(chip => chip.dataset.kind === "dept_turn").map(chip => chip.querySelector(".hq-week-chip-title"));
+  assert.ok(names.length && names.every(name => name.classList.contains("is-name")));
+  assert.ok(chips.filter(chip => chip.dataset.kind !== "dept_turn")
+    .every(chip => !chip.querySelector(".hq-week-chip-title").classList.contains("is-name")));
+});
+
+test("a calendar warning is one text beside its icon, so its full stop stays on the words", () => {
+  const {page, data} = open("busy");
+  const item = data.calendar.items.find(entry => entry.warning);
+  const warning = page.view("calendar").querySelector(`[data-row="cal:${item.id}"] .hq-cal-warning`);
+  assert.equal(warning.children.length, 2);
+  const words = warning.querySelector(".hq-cal-warning-text");
+  assert.match(page.text(words), /^Before the Trader's turn at \S.*\S\.$/);
+  assert.ok(words.querySelector("time"), "the time is inside the same text");
+});
+
+test("prompt settings: only the dashboard address shows this page's address as its placeholder", () => {
+  const {page} = open("quiet");
+  const field = key => page.view("prompt").querySelector(`[data-focus-key="prompt:${key}"]`);
+  assert.equal(field("authorised_model").placeholder, "the model I authorised for Trade Graph");
+  assert.equal(field("dashboard_address").placeholder, "http://hq.test");
+  assert.equal(field("project_folder").placeholder, "my Trade Graph project folder");
+  assert.equal(field("review_notes_folder").placeholder, "my private review notes");
+  // The prompt itself still says "the model I authorised" when the field is empty.
+  assert.match(page.use("prompts").reviewText({}), /Use only the model I authorised for Trade Graph\./);
 });
 
 test("a condition is said once: one caveat for estimates, and an equal condition is not repeated row after row", () => {

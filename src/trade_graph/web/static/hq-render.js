@@ -91,14 +91,25 @@
     }
   }
   /* Contract calendar items[].count and .until (optional; older servers and single items leave them out):
-     close deadlines of one kind arrive as one item, from `at` to `until`, whose title already says how many
-     (D111). Returns the `until` worth showing as a range, or null when there is none or it reads the same. */
+     a run of deadlines of one kind arrives as one item, from `at` to `until` (at most 12 hours later), whose
+     title already says how many (D111, D112). Returns the `until` worth showing as a range, or null when there
+     is none or it reads the same. */
   function groupUntil(item) {
     if (!(HQ.count(item?.count) > 1)) return null;
     const from = parseIso(item.at);
     const to = parseIso(item.until);
     if (from === null || to === null || to < from || fmt.clock(to) === fmt.clock(from)) return null;
     return item.until;
+  }
+  // The end of a range: its clock time, and the day too when it isn't the start's day ("01:50 tomorrow").
+  function untilWords(item, until) {
+    const from = parseIso(item.at);
+    const to = parseIso(until);
+    const words = [time(until, "clock")];
+    if (HQ.localDayKey(from) === HQ.localDayKey(to)) return words;
+    const days = HQ.dayDiff(to);
+    words.push(days === 0 ? " today" : days === 1 ? " tomorrow" : days === -1 ? " yesterday" : ` on ${fmt.weekday(to)}`);
+    return words;
   }
   function lightBadge(light, text) {
     const badge = el("span", "hq-light");
@@ -383,7 +394,7 @@
         const until = groupUntil(item);
         if (until) {
           const range = el("span", "hq-next-detail", "Between ");
-          range.append(time(item.at, "clock"), " and ", time(until, "clock"), ".");
+          range.append(time(item.at, "clock"), " and ", ...untilWords(item, until), ".");
           body.append(range);
         }
         if (hasText(item.detail)) body.append(textEl("span", "hq-next-detail", item.detail));
@@ -603,7 +614,7 @@
     const until = groupUntil(item);
     if (until) {
       const to = el("span", "hq-cal-until", "to ");
-      to.append(time(until, "clock"));
+      to.append(...untilWords(item, until));
       when.append(to);
     }
     const main = el("div", "hq-cal-main");
@@ -615,9 +626,12 @@
     main.append(title);
     if (hasText(item.detail) && !hideDetail) main.append(textEl("p", "hq-cal-detail", item.detail));
     if (hasText(item.warning)) {
+      // One text box beside the icon: the row is a flex row, and loose words, times and the full stop
+      // would each become a flex item with gaps between them ("at 12:56 .").
       const warning = el("p", "hq-cal-warning");
-      warning.append(icon("sev-watch", "hq-icon hq-icon-small"));
-      renderText(warning, item.warning);
+      const words = el("span", "hq-cal-warning-text");
+      renderText(words, item.warning);
+      warning.append(icon("sev-watch", "hq-icon hq-icon-small"), words);
       main.append(warning);
     }
     if (hasText(item.waiting_because)) main.append(textEl("p", "hq-cal-detail", item.waiting_because));
@@ -719,17 +733,25 @@
     return box;
   }
 
-  // Week-strip chips are narrow: a deadline says what ends in two or three words, with its count when grouped.
+  // Week-strip chips are narrow: a deadline says what ends in two or three words, with its count when grouped
+  // (singular for one, like the agenda's title). Words are never broken at an arbitrary letter (desktop check):
+  // a hyphen is a non-breaking one, and a word too long for an iPad's column has a soft hyphen (U+00AD) where it
+  // may break properly ("Allow-ance"), since browsers without a hyphenation dictionary would just cut it.
   const SHORT_DEADLINE = new Map([
     ["research_expiry", ["Note expires", "notes expire"]],
     ["proposal_expiry", ["Idea expires", "ideas expire"]],
     ["engineer_deadline", ["Engineer limit", "Engineer limits"]],
+    ["allowance_refill", ["Allow­ance refill", "allow­ance refills"]],
+    ["optimisation_deadline", ["Review limit", "review limits"]],
+    ["mandate_expiry", ["Permis­sion ends", "permis­sions end"]],
   ]);
   function chipWords(item, snapshot) {
     if (item.kind === "dept_turn") return deptName(item.dept, snapshot);
-    if (item.kind === "owner_checkin") return "Your check-in";
+    if (item.kind === "extra_review") return `${deptName(item.dept, snapshot)} review`;
+    if (item.kind === "owner_checkin") return "Your check‑in";
+    if (item.kind === "trial_end") return /reload/i.test(plain(item.title)) ? "Reload limit" : "Trial ends";
     const short = SHORT_DEADLINE.get(item.kind);
-    if (!short) return plain(item.title);
+    if (!short) return plain(item.title).replace(/-/g, "‑");
     const count = HQ.count(item.count);
     return count > 1 ? `${count} ${short[1]}` : short[0];
   }
@@ -765,13 +787,15 @@
         entry.dataset.status = str(item.status);
         entry.dataset.kind = str(item.kind);
         const {glyph, words: status} = statusMark(item);
+        // Only the start time fits a chip (desktop check: "12:30–" / "12:40" wrapped); a group's range is in the
+        // agenda and Up next. A department's one-word name stays on one line (an ellipsis if it can't fit).
         const top = el("span", "hq-week-chip-top");
         const when = el("span", "hq-week-when");
         when.append(time(item.at, "clock"));
-        const until = groupUntil(item);
-        if (until) when.append("–", time(until, "clock"));
         top.append(glyph, when);
-        entry.append(top, el("span", "hq-week-chip-title", chipWords(item, snapshot)), el("span", "hq-sr", `, ${status}`));
+        const title = el("span", "hq-week-chip-title", chipWords(item, snapshot));
+        if (item.kind === "dept_turn") title.classList.add("is-name");
+        entry.append(top, title, el("span", "hq-sr", `, ${status}`));
         chips.append(entry);
       });
       if (!nowPlaced) chips.append(el("li", "hq-week-now", "Now"));
