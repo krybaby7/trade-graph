@@ -111,19 +111,22 @@ test("summarised estimates show one box per schedule and fill the week strip (T2
 test("the reserve rule is on, off or couldn't be read; unknown is never 'no rule' (U5)", () => {
   const {page, data} = open("quiet");
   const words = () => page.text(page.view("allowance"));
+  // The review prompt says the same: the line when on, "really off" when off, "couldn't read it" otherwise.
+  const prompt = () => page.use("prompts").reviewText({checkin: {title: "Check", prompt_kind: "interval", planned_at: data.as_of}});
   const cases = [
-    [{stop_line_state: "on", stop_line_percent: 40}, /New AI work stops at 40%/],
-    [{stop_line_percent: 40}, /New AI work stops at 40%/],
-    [{stop_line_state: "off", stop_line_percent: null}, /No reserve rule is set\./],
-    [{stop_line_state: "unknown", stop_line_percent: null}, /The reserve rule couldn't be read\./],
-    [{stop_line_percent: null}, /The reserve rule couldn't be read\./],
+    [{stop_line_state: "on", stop_line_percent: 40}, /New AI work stops at 40%/, /above-40% admission rule is met/],
+    [{stop_line_percent: 40}, /New AI work stops at 40%/, /above-40% admission rule is met/],
+    [{stop_line_state: "off", stop_line_percent: null}, /No reserve rule is set\./, /reserve admission rule is really off/],
+    [{stop_line_state: "unknown", stop_line_percent: null}, /The reserve rule couldn't be read\./, /HQ couldn't read it/],
+    [{stop_line_percent: null}, /The reserve rule couldn't be read\./, /HQ couldn't read it/],
   ];
-  for (const [fields, expected] of cases) {
+  for (const [fields, expected, prompted] of cases) {
     const next = clone(data);
     delete next.team.allowance.stop_line_state;
     Object.assign(next.team.allowance, fields);
     page.show(next);
     assert.match(words(), expected, JSON.stringify(fields));
+    assert.match(prompt(), prompted, JSON.stringify(fields));
     if (fields.stop_line_state !== "off") assert.doesNotMatch(words(), /No reserve rule is set/);
   }
 });

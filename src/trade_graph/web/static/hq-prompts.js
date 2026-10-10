@@ -78,6 +78,10 @@
     const turns = list(facts.next_turns).map(turn => `${str(turn.name)} ${localShort(turn.at)}`).join("; ") || "none planned";
     const flagged = list(facts.flagged).map(str).filter(Boolean).join("; ") || "nothing";
     const stopLine = snapshot.team?.allowance?.stop_line_percent;
+    // The reserve rule as HQ read it (contract team.allowance.stop_line_state): on with its line, off, or unreadable.
+    const reserve = typeof stopLine === "number" ? `whether the above-${stopLine}% admission rule is met` :
+      snapshot.team?.allowance?.stop_line_state === "off" ? "whether the reserve admission rule is really off (HQ read it as off)" :
+        "whether the configured admission rule is met (HQ couldn't read it)";
     const lines = [
       `Review my running Trade Graph ${live ? "live account" : "paper test"} — check-in "${title}" planned for ${planned} (${zone}); now ${nowStamp()}.`,
       `${header(chosen)} Read IMPLEMENTATION-STATUS.md, docs/NORMAL-PAPER-OPERATION.md and ${chosen.review_notes_folder}. Verify the actual running database and image through the owner launcher; repository source may be newer than what is deployed.`,
@@ -88,7 +92,7 @@
       `- Next turns: ${turns}.`,
       `- ${live ? "Account value" : "Practice money"} ${str(facts.practice_value) || "not known yet"} (${facts.value_final ? "final" : "estimate"}); pays for itself: ${str(facts.pays_for_itself) || "not known yet"}.`,
       `- HQ flagged: ${flagged}.`,
-      `Report: worker last sign of life; freshness of prices, euro rate and hourly history; each department's last and next turn; real successes and failures and why; Trader decisions; ${practice}orders and trades; balances and accounting; current AI allowance with its timestamp, whether the above-${typeof stopLine === "number" ? `${stopLine}%` : "configured"} admission rule is met, and which limits are not reported.`,
+      `Report: worker last sign of life; freshness of prices, euro rate and hourly history; each department's last and next turn; real successes and failures and why; Trader decisions; ${practice}orders and trades; balances and accounting; current AI allowance with its timestamp, ${reserve}, and which limits are not reported.`,
       `A valid "wait" is not a failure; no trades means trading behaviour is untested; keep unknown costs unknown; don't count my own chat use as team usage.`,
     ];
     const paragraph = kindParagraph(checkin?.prompt_kind, live);
