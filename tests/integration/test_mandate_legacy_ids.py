@@ -208,6 +208,15 @@ def test_cleanup_cli_previews_then_writes_only_on_confirm(tmp_path, capsys) -> N
     assert active_revisions() == (2, 2)
 
 
+def test_cleanup_cli_preview_names_a_strategy_it_adds(tmp_path, capsys) -> None:
+    _, database, _, _ = _legacy_db(tmp_path, strategy_ids=["s"])
+    database.close()
+    assert main(["mandate-cleanup", "--database", str(tmp_path / "paper.sqlite")]) == 0
+    preview = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert preview["removed_strategy_ids"] == ["s"]
+    assert preview["added_strategy_ids"] == ["slow-trend-pullback"]
+
+
 def test_cleanup_cli_refuses_to_write_while_the_paper_service_holds_its_lease(tmp_path, capsys) -> None:
     _, database, _, portfolio = _legacy_db(tmp_path)
     database.execute("INSERT INTO process_leases (lease_name, owner, expires_at) VALUES (?, ?, ?)",

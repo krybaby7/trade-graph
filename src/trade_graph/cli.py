@@ -247,6 +247,8 @@ def _mandate_cleanup(args, parser) -> int:
         "current_revision": current.revision,
         "new_revision": revised.revision if revised else None,
         "removed_strategy_ids": [item for item in current.strategy_ids if item not in resulting.strategy_ids],
+        # A mandate naming only test IDs falls back to the default list rather than becoming empty.
+        "added_strategy_ids": [item for item in resulting.strategy_ids if item not in current.strategy_ids],
         "strategy_ids": resulting.strategy_ids,
         "history": "decisions keep the mandate revision they were made under",
         "paid_calls_enabled": False,

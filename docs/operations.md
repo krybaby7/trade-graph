@@ -534,8 +534,10 @@ uv run trade-graph mandate-cleanup --database runtime/trade_graph.sqlite --confi
 ```
 
 The first command only shows the proposed new mandate revision; only `--confirm`
-installs it, and older revisions and decisions stay unchanged. The runtime never
-revises a mandate on its own.
+installs it, and older revisions and decisions stay unchanged. `--confirm` is
+refused while the paper service holds its lease. A mandate that named only test
+IDs gets the default `slow-trend-pullback` instead of an empty list; the output's
+`added_strategy_ids` says so. The runtime never revises a mandate on its own.
 
 ## Offline restore drill
 
