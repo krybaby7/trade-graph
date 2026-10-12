@@ -42,6 +42,8 @@ from trade_graph.live_gate import LivePilotScope
 from trade_graph.live_pilot import ProtectedPilotLifecycle
 
 TAKER = Decimal("0.008")
+# Owner/system FLATTEN exits are pause management, not a Trader strategy.
+FLATTEN_STRATEGY_ID = "pause-flatten"
 
 
 def _fill_reservation_debits(fill: FillRecord) -> dict[str, Decimal]:
@@ -979,7 +981,7 @@ class Execution:
                 rationale="close verified remaining inventory",
                 invalidation="owner flatten",
                 horizon_seconds=3600,
-                strategy_id="slow-trend",
+                strategy_id=FLATTEN_STRATEGY_ID,
                 snapshot_id="pause",
                 mandate_revision=str(mandate.revision),
                 policy_revision=policy.revision_id,

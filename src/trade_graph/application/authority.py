@@ -184,8 +184,11 @@ class AuthorityRecord:
         order_type = "limit" if decision.limit_price is not None else "market"
         if decision.action in {"enter", "exit"} and order_type not in mandate.allowed_order_types:
             raise AuthorityDenied("order type is outside the active mandate")
+        # D18 names the strategies that may add exposure. Exits only reduce
+        # long-only spot holdings, as under an expired mandate.
         if (
-            mandate.strategy_ids
+            decision.action == "enter"
+            and mandate.strategy_ids
             and not mandate.discretionary_experiment
             and decision.strategy_id not in mandate.strategy_ids
         ):

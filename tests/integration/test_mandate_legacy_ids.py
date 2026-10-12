@@ -1,10 +1,12 @@
 """Test-only strategy IDs leave the default mandate; old databases get a new revision, never rewritten history."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from tests.integration.test_pause_profiles import _fill_entry, _quote, _stack
 
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.persistence.db import Database
@@ -205,3 +207,26 @@ def test_cleanup_cli_previews_then_writes_only_on_confirm(tmp_path, capsys) -> N
     assert refused.value.code == 2
     assert active_revisions() == (2, 2)
 
+
+def test_owner_flatten_exits_under_non_discretionary_mandate(tmp_path) -> None:
+    clock, execution, broker, portfolio = _stack(tmp_path)
+    _fill_entry(clock, execution, portfolio)
+    execution.authority.install_mandate(paper_mandate(
+        portfolio, revision=2, mandate_id="closed", discretionary_experiment=False,
+        strategy_ids=["slow-trend-pullback"],
+    ), role="owner")
+    submitted = broker.submit_count
+    execution.save_observation(_quote(clock, "100", "100.1", observation_id="flatten-quote"))
+    execution.set_pause(portfolio, "FLATTEN", "owner", "close")
+    assert asyncio.run(execution.advance_pause(portfolio)) == "flattening"
+    assert broker.submit_count == submitted + 1
+    assert execution.database.execute(
+        "SELECT COUNT(*) FROM activity_events WHERE kind = 'flatten_exit_not_submitted'"
+    ).fetchone()[0] == 0
+    flatten = [json.loads(row["payload_json"]) for row in execution.database.execute(
+        "SELECT payload_json FROM decisions WHERE decision_id LIKE 'flatten-%'"
+    ).fetchall()]
+    assert flatten and all(item["strategy_id"] != "slow-trend" for item in flatten)
+    clock.advance(1)
+    execution.on_observation(_quote(clock, "99", "100", observation_id="flatten-fill"))
+    assert execution.owned_quantity(portfolio, "BTC") == Decimal("0")
