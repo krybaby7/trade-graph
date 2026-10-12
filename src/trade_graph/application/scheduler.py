@@ -6,12 +6,19 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trade_graph.adapters.persistence.db import Database, atomic
-from trade_graph.domain.clock import Clock, utc_iso
+from trade_graph.domain.clock import Clock, parse_utc, utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
+
+
+def next_occurrence(due: datetime, now: datetime, interval_seconds: int) -> datetime:
+    """First occurrence on the persisted grid strictly after now; missed occurrences coalesce."""
+    step = timedelta(seconds=interval_seconds)
+    # timedelta // timedelta is an exact integer: no loop and no binary float.
+    return due + step * ((now - due) // step + 1) if now >= due else due
 
 
 @dataclass(frozen=True)
@@ -296,12 +303,31 @@ class Scheduler:
             role=role, objective=name, portfolio_id=portfolio_id,
             dedup_key=f"schedule:{row['schedule_id']}:{row['next_due_at']}",
         )
-        next_due = utc_iso(self.clock.now() + timedelta(seconds=interval))
+        # Advance from the persisted occurrence, not from now: tick latency and
+        # restarts cannot drift or re-phase the schedule.
+        next_due = utc_iso(next_occurrence(parse_utc(row["next_due_at"]), self.clock.now(), interval))
         self.database.execute(
             "UPDATE schedules SET last_due_at = ?, next_due_at = ? WHERE schedule_id = ?",
             (self.now(), next_due, row["schedule_id"]),
         )
         return task_id
+
+    @atomic
+    def advance_due(self, portfolio_id: str, name: str) -> bool:
+        """Skip a due occurrence whose previous task is still active, keeping the grid."""
+        row = self.database.execute(
+            "SELECT * FROM schedules WHERE portfolio_id = ? AND name = ?", (portfolio_id, name)
+        ).fetchone()
+        if row is None or row["next_due_at"] > self.now():
+            return False
+        interval = int(row["interval_seconds"])
+        self._positive(interval, "interval_seconds")
+        next_due = utc_iso(next_occurrence(parse_utc(row["next_due_at"]), self.clock.now(), interval))
+        self.database.execute(
+            "UPDATE schedules SET last_due_at = ?, next_due_at = ? WHERE schedule_id = ?",
+            (self.now(), next_due, row["schedule_id"]),
+        )
+        return True
 
     @atomic
     def acquire_process_lease(self, name: str, owner: str, ttl_seconds: int = 30) -> bool:

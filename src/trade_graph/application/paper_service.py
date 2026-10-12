@@ -384,12 +384,7 @@ class PaperService:
                         (pid, role, name),
                     ).fetchone()
                     if active:
-                        self.database.execute(
-                            """UPDATE schedules SET last_due_at = ?, next_due_at = ?
-                            WHERE portfolio_id = ? AND name = ? AND next_due_at <= ?""",
-                            (self.scheduler.now(), utc_iso(self.clock.now() + timedelta(
-                                seconds=settings.get(role, interval))), pid, name, self.scheduler.now()),
-                        )
+                        self.scheduler.advance_due(pid, name)
                         continue
                     if role == "leader":
                         task_id = self.secretary.scheduled(pid, interval)
