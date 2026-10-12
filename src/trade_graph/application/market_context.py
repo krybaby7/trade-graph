@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 
 from trade_graph.adapters.market.replay import quote_features
+from trade_graph.application.candle_readiness import expected_candle_status
 from trade_graph.application.price_history import FEATURE_VERSION, HistoryStore
 from trade_graph.domain.clock import utc_iso
 
@@ -49,7 +50,8 @@ def _unsupported_history(symbol: str, as_of: datetime, requested: list[str], sou
     return result
 
 
-def market_context(execution, guard: dict, templates: dict, *, as_of: datetime) -> dict:
+def market_context(execution, guard: dict, templates: dict, *, as_of: datetime,
+                   candle_wait: dict | None = None) -> dict:
     requested = list(dict.fromkeys(feature for item in active_templates(templates, guard).values()
                                    for feature in item["features"]))
     maximum_quote_age = min(guard["policy"]["maximum_quote_age_seconds"],
@@ -62,6 +64,10 @@ def market_context(execution, guard: dict, templates: dict, *, as_of: datetime) 
         history = (history_store.snapshot(symbol, as_of, requested, source=source) if symbol in {"BTC/USD", "ETH/USD"}
                    else _unsupported_history(symbol, as_of, requested, source))
         history = _compact_history(history)
+        if symbol in {"BTC/USD", "ETH/USD"}:
+            # A service fact beside the hashed features; the retained snapshot keeps it.
+            history["expected_candle"] = expected_candle_status(execution.database, symbol, as_of, candle_wait,
+                                                                source=source)
         features = quote_features([quote]) if quote and quote.bid is not None and quote.ask is not None else {}
         age = (as_of - quote.event_time_utc).total_seconds() if quote else None
         market[symbol] = {

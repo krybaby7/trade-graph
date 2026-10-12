@@ -10,10 +10,17 @@ import asyncio
 from datetime import UTC, timedelta
 from pathlib import Path
 
+from trade_graph.application.candle_readiness import (
+    DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
+    MAX_DECISION_CANDLE_WAIT_SECONDS,
+    candle_wait,
+)
 from trade_graph.application.collect_price_history import collect_public_hourly_history
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
+from trade_graph.application.scheduler import TaskLease
 from trade_graph.domain.clock import utc_iso
+from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
 from trade_graph.paper_runtime import PaperRuntimeConfig, assemble_paper_runtime
 
@@ -36,6 +43,10 @@ class _HistoryRefreshingFeed:
 
     def __getattr__(self, name):
         return getattr(self.feed, name)
+
+    @property
+    def history_symbols(self) -> tuple[str, ...]:
+        return tuple(self._next_by_symbol)
 
     def history_due(self) -> bool:
         now = self.runtime.clock.now()
@@ -83,6 +94,26 @@ class _HistoryRefreshingFeed:
 
 
 class _NormalSubscriptionService(PaperService):
+    def __init__(self, *args, candle_wait_seconds: int = DEFAULT_DECISION_CANDLE_WAIT_SECONDS, **kwargs):
+        super().__init__(*args, **kwargs)
+        if type(candle_wait_seconds) is not int or not 0 <= candle_wait_seconds <= MAX_DECISION_CANDLE_WAIT_SECONDS:
+            raise ValidationFailure("decision candle wait must be 0 to 3000 whole seconds")
+        self.candle_wait_seconds = candle_wait_seconds
+
+    def _input_wait(self, lease: TaskLease, row) -> tuple[int, dict] | None:
+        # A fresh Trader decision waits, boundedly, for the hour that just closed.
+        # Started or reclaimed tasks keep their pinned snapshot and recovery path.
+        if (row["role"] != "trader" or lease.reclaimed or row["attempts_used"] != 0
+                or not isinstance(self.public_feed, _HistoryRefreshingFeed)):
+            return None
+        try:
+            mandate = self.execution.authority.active_mandate(row["portfolio_id"])
+        except (TradeGraphError, ValueError):
+            return None  # Authority errors surface at decision time, never as a wait.
+        symbols = [symbol for symbol in self.public_feed.history_symbols if symbol in mandate.symbols]
+        return candle_wait(self.database, symbols, self.clock.now(), wait_seconds=self.candle_wait_seconds,
+                           previous_output_json=row["output_json"])
+
     async def _tick(self, *, wait_roles: bool, wait_feed: bool):
         # Finish due hourly history before schedules capture new role inputs.
         # _consume_feed keeps deterministic management running while it waits.
@@ -170,6 +201,7 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             public_feed=feed, secretary=runtime.secretary, schedule_intervals=config.schedule_intervals,
             automatic_schedule=config.automatic_schedule, optimisation_manual_only=config.optimisation_manual_only,
             tick_interval_seconds=config.tick_interval_seconds,
+            candle_wait_seconds=config.decision_candle_wait_seconds,
             recover_commands=lambda: recover_owner_commands(runtime), prepare_runtime=prepare,
             runtime_ready=runtime.runtime_ready,
             subscription_provider=getattr(runtime, "subscription_provider", None), service_run_id=service_run_id)

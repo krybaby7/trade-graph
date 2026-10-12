@@ -455,6 +455,11 @@ class PaperService:
         ):
             self.scheduler.defer(lease, {"reason": "discretionary work paused"}, 30)
             return 0
+        wait = self._input_wait(lease, row)
+        if wait is not None:
+            # Before any snapshot or attempt: a durable recheck keeps attempts and allocations.
+            self.scheduler.defer(lease, wait[1], wait[0])
+            return 0
         with self._lease_lock:
             self._active_lease = lease
         try:
@@ -604,6 +609,10 @@ class PaperService:
     async def _prepare_role_inputs(self) -> tuple[int, tuple[str, ...]]:
         """Runtime-specific acquisitions required before capturing new inputs."""
         return 0, ()
+
+    def _input_wait(self, lease: TaskLease, row) -> tuple[int, dict] | None:
+        """Runtime-specific bounded wait for a claimed task's inputs: (delay seconds, output)."""
+        return None
 
     async def _tick(self, *, wait_roles: bool, wait_feed: bool) -> TickResult:
         if self._heartbeat_task and self._heartbeat_task.done():

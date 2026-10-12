@@ -170,6 +170,7 @@ intended fields and preserve unrelated owner settings:
   "public_history_enabled": true,
   "public_history_hours": 168,
   "public_history_interval_seconds": 3600,
+  "decision_candle_wait_seconds": 300,
   "optimisation_deadline_seconds": null
 }
 ```
@@ -177,10 +178,19 @@ intended fields and preserve unrelated owner settings:
 Default cadence is Trader every four hours, Research daily, Learning twice weekly,
 Leader weekly and Optimisation weekly. `schedule_intervals` and activated permitted
 artifacts may configure supported role intervals. New schedules are immediately
-due; persisted schedules retain their due times. Active work is coalesced, not
-multiplied each tick. Existing mandate authority is reused; a forced Leader
-initialization or per-trade committee is unnecessary. A valid hold/no-trade is a
-normal outcome, and a model/provider failure is never relabeled as a hold.
+due; persisted schedules retain their due times. Later occurrences stay on that
+persisted grid: tick latency and restarts do not drift them, and missed occurrences
+coalesce into one task. Active work is coalesced, not multiplied each tick.
+Existing mandate authority is reused; a forced Leader initialization or per-trade
+committee is unnecessary. A valid hold/no-trade is a normal outcome, and a
+model/provider failure is never relabeled as a hold.
+
+Kraken commits the hourly candle that closed at HH:00 a few minutes later. A fresh
+Trader task claimed before that candle is stored waits, rechecking every 5 seconds,
+until it is stored or until `decision_candle_wait_seconds` after the hour (default
+300, at most 3000; 0 never waits). The wait keeps attempts and makes no model call.
+Each snapshot's `history.expected_candle` states plainly whether that candle was
+stored and how long the decision waited.
 
 The subscription profile defaults to 600 seconds, a requested 16,384 output
 tokens, eight turns and 2 MiB captured output per dispatch. Application dispatch

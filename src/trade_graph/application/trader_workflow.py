@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import Field, ValidationError
 
 from trade_graph.adapters.persistence.db import atomic
+from trade_graph.application.candle_readiness import wait_record
 from trade_graph.application.leadership import GatewayRole
 from trade_graph.application.market_context import active_templates, market_context
 from trade_graph.application.model_invocations import InvocationJournal
@@ -68,7 +69,11 @@ class TraderHandler(GatewayRole):
         research = research[:20]
         execution = self.office.execution
         templates = self.artifact_runtime.templates(bundle)
-        market = market_context(execution, guard, templates, as_of=observed_at)
+        # This task's own claim-time candle wait, read inside the same snapshot.
+        pending = self.database.execute("SELECT output_json FROM tasks WHERE task_id = ?",
+                                        (task["task_id"],)).fetchone()
+        market = market_context(execution, guard, templates, as_of=observed_at,
+                                candle_wait=wait_record(pending["output_json"] if pending else None))
         books = execution.ledger.books(task["portfolio_id"], as_of)
         equity = execution.ledger.equity(task["portfolio_id"], as_of)
         assets = {lot.asset for lot in books.lots}
@@ -156,7 +161,9 @@ class TraderHandler(GatewayRole):
                 "available at as_of, recent_candles lists the completed hourly candles available at as_of "
                 "oldest first, and recent_missing_close_times_utc names expected hours that were not available. "
                 "A history feature status of stale means its value is computed through the newest available "
-                "candle while a newer hour is still pending. Return only the structured choice.\n"
+                "candle while a newer hour is still pending. Each market history.expected_candle says plainly "
+                "whether the hourly candle that closed at the latest whole UTC hour was stored at as_of, and how "
+                "long this decision waited for it. Return only the structured choice.\n"
                 "Validated Trader guidance within these fixed permissions:\n" + prompt)
 
     def invoke(self, task: dict, request: ModelRequest):

@@ -17,6 +17,10 @@ from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
 from trade_graph.application.artifact_runtime import ArtifactRuntime
 from trade_graph.application.budget import BudgetGateway
+from trade_graph.application.candle_readiness import (
+    DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
+    MAX_DECISION_CANDLE_WAIT_SECONDS,
+)
 from trade_graph.application.engineer import ArtifactEngineer
 from trade_graph.application.execution import Execution
 from trade_graph.application.leader import LeaderOffice
@@ -41,6 +45,9 @@ class PaperRuntimeConfig(BaseModel):
     public_history_enabled: bool = True
     public_history_hours: int = Field(default=168, ge=1, le=719)
     public_history_interval_seconds: int = Field(default=3600, ge=1)
+    # 0 never waits for the just-closed hour; snapshots still say whether it is stored.
+    decision_candle_wait_seconds: int = Field(default=DEFAULT_DECISION_CANDLE_WAIT_SECONDS, ge=0,
+                                              le=MAX_DECISION_CANDLE_WAIT_SECONDS)
     paper_symbols: list[str] = Field(default_factory=lambda: ["BTC/USD", "ETH/USD"], min_length=1, max_length=10)
     tick_interval_seconds: float = Field(default=1, gt=0, le=60, allow_inf_nan=False)
     public_poll_interval_seconds: int = Field(default=10, ge=1, le=3600)
