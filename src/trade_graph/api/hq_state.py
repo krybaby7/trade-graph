@@ -1313,8 +1313,11 @@ def _decision_last(p: Projection, decision: dict) -> dict:
         text = [c.text(before.format(symbols=p.symbols_text(symbols))), segment, c.text(after)]
     elif action in ("enter", "exit"):
         asset = (base_asset(symbols[0]) if symbols else None) or c.MISC["a_coin"]
-        text = [c.text(c.LAST["decided_trade"].format(verb="buy" if action == "enter" else "sell", symbol=asset),
-                       code=action)]
+        task = p.runtime.database.execute("SELECT output_json FROM tasks WHERE task_id=?",
+                                          (decision.get("task_id"),)).fetchone()
+        # The software refused this order before anything was sent or held (trader.py).
+        key = "decided_trade_refused" if task and isinstance(loads(task[0]).get("refusal"), dict) else "decided_trade"
+        text = [c.text(c.LAST[key].format(verb="buy" if action == "enter" else "sell", symbol=asset), code=action)]
     else:
         text = [c.text(c.LAST["decided_other"].format(action=words[:1].upper() + words[1:]), code=action)]
     return {"at": iso_ms(_dt(decision["created_at"]) or p.now), "outcome": "decided", "text": text,

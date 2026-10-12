@@ -1049,6 +1049,7 @@ FACT_TEXT: Final = {
 LAST: Final = {
     "decided_wait": ("Looked at {symbols} and ", ". No money moved."),
     "decided_trade": "Decided to {verb} {symbol}.",
+    "decided_trade_refused": "Decided to {verb} {symbol}, but the software didn't place the order. No money moved.",
     "decided_other": "{action}.",
     "done": "Finished its turn ({cadence}).",
     "done_plain": "Finished its turn.",

@@ -69,3 +69,10 @@ def test_refused_live_order_never_says_practice(env):
     assert words == ("The software didn't place this order: the order was smaller than the exchange's minimum. "
                      "No money moved.")
     assert "practice" not in words.lower()
+
+
+def test_trader_room_last_turn_says_the_order_was_not_placed(env):
+    t.run(env)
+    _refused(env)
+    words = t.text(t.room(t.snap(env), "trader")["last"]["text"])
+    assert words == "Decided to buy BTC, but the software didn't place the order. No money moved."
