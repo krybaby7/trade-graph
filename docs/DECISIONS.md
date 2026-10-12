@@ -419,3 +419,12 @@ None prevents offline development. Mark credentialed verification pending when c
   research budget, a money limit rather than an activity cap; paid calls stay
   disabled until it exists. The key is installed through a local private file,
   never chat, Git or model context.
+
+- **D125 (2026-10-12, owner decision; amends D124):** During testing,
+  Perplexity research calls are enabled without a spending limit, so natural
+  costs can be observed. Every call still gets a reservation and receipt
+  (unknown usage is unresolved, not free), and HQ shows the spend. The owner
+  adds budgets afterwards. The owner knowingly supplied a temporary test key
+  in chat. It is stored only in an owner-only private file outside Git, is
+  never committed or logged, and the owner revokes it after testing. Later
+  keys use the local private-file route.

@@ -1,7 +1,7 @@
 # Day-trader engine direction
 
 Status: owner-approved direction, 2026-10-12. This is a design record. No
-runtime behavior has changed. Decisions D114–D124 are in
+runtime behavior has changed. Decisions D114–D125 are in
 [DECISIONS.md](DECISIONS.md).
 
 ## Why the engine changes
@@ -201,16 +201,16 @@ Owner decision (D124):
   - $0.0005 per `fetch_url` call
 
   Record them as a dated price card.
-- The owner sets a monthly research budget, which is a money limit and not an
-  activity cap. Spending uses the existing reservation and receipt
-  accounting.
-- The key goes in a private runtime file through a local command. It never
-  passes through chat, Git or model context.
+- During testing there is no Perplexity spending limit (D125). Every call
+  still gets a receipt, and HQ shows the actual spend. The owner adds a
+  budget after seeing natural costs. Perplexity's prepaid credit, with
+  automatic top-up off, is the outer bound.
+- The test key is stored outside Git in an owner-only file (D125). It is
+  never committed or logged, and the owner revokes it after testing.
 
 ## Pending owner decisions
 
-- Monthly research budget for Perplexity, and installing the key privately
-  (D124).
+- A Perplexity budget, once testing shows natural costs (D125).
 - Daily loss limit, per-coin exposure and the paper fee ladder (deferred
   session).
 
