@@ -1,8 +1,10 @@
 # Day-trader engine direction
 
-Status: owner-approved direction, 2026-10-12. This is a design record. No
-runtime behavior has changed. Decisions D114–D128 are in
-[DECISIONS.md](DECISIONS.md).
+Status: owner-approved direction, 2026-10-12. This is a design record. The
+D114 fix list is implemented in source (D129, 2026-10-13) but not deployed; the
+running installation is unchanged. Decisions D114–D129 are in
+[DECISIONS.md](DECISIONS.md), and the build order is in
+[the build plan](DAY-TRADER-BUILD-PLAN.md).
 
 ## Why the engine changes
 

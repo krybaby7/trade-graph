@@ -1,6 +1,8 @@
 # Day-trader build plan
 
-Status: plan, 2026-10-12. Nothing in the running system has changed.
+Status: plan, 2026-10-12. Phase D0 (T23, T24) is built and tested in source
+on 2026-10-13 (D129) but not deployed. Nothing in the running system has
+changed.
 
 This plan turns decisions D114–D128 into build steps. The reasons are in
 [the day-trader engine record](DAY-TRADER-ENGINE.md) and
@@ -447,7 +449,9 @@ may cost money.
   pages. You download it, or permit an agent to. The importer only reads a
   local file.
 - **Update the current mandate.** T24 fixes the default. The running
-  installation keeps its old strategy list until you or the Leader revise it.
+  installation keeps its old strategy list until you approve a new revision:
+  with the service stopped, `trade-graph mandate-cleanup` shows the change and
+  `--confirm` installs it (an agent can run it on your yes).
 - **Approve each upgrade.** As before, new software is installed only with
   your approval, while the paper account only looks after what it already
   holds.

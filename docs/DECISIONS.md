@@ -450,3 +450,41 @@ None prevents offline development. Mark credentialed verification pending when c
 - **D128 (2026-10-12, owner decision):** No Shariah business-activity screen
   is applied to the stock scanner, because positions are intraday trades, not
   holdings. D127's product exclusions still apply.
+
+- **D129 (2026-10-13, implements D114 in source; not deployed):** The fix list
+  is built with these recommended defaults (build plan tasks T23 and T24):
+  - Hourly features are `hourly-price-features-v2`. All windows end at the
+    newest completed candle available at as-of when it is at most 2 hours
+    behind the latest completed hour, otherwise at that hour (v1 behaviour).
+    Each field keeps its exact lookback and formula, gets status `stale` while
+    newer hours are pending, and lists its own missing hours. Snapshots also
+    carry `latest_close`, up to 24 recent completed candles available at as-of
+    and the missing slots. The D89 wording in KRAKEN-PRICE-HISTORY is updated.
+  - Recurring schedules advance on their persisted grid (no "now + interval"
+    drift; missed runs still coalesce into one task). In the normal
+    subscription operation a fresh Trader task waits for the candle that
+    closed at the last whole hour, rechecking every 5 s, for at most
+    `decision_candle_wait_seconds` (default 300: in the first run Kraken
+    committed each hour 2.6 to 3.3 minutes after it closed). Research is not
+    gated. `history.expected_candle` says `present`, `missing_after_wait` or
+    `missing` in one plain sentence.
+  - Exposure checks compare the order's quote currency (USD) with native
+    equity. Other-currency holdings use a direct rate or the inverse of the
+    identified opposite reference rate, keeping its stale flag; missing or
+    stale needed marks or FX still block. Stale EUR reporting FX only labels
+    EUR views. D16 is unchanged. A Frankfurter outage still sets the feed
+    failure that blocks buys; that coupling is a follow-up.
+  - `AuthorityDenied`, `StaleState` or `ValidationFailure` raised by
+    `Execution.authorize` for a Trader choice is recorded as a decision plus an
+    `order_refused` event, shown to the next turn as
+    `portfolio.recent_order_refusals` (newest 5) and in HQ, and the task
+    succeeds without a pause. Model contract errors, research cited outside
+    the snapshot, stale snapshots and role unavailability keep FAILED plus the
+    system MANAGE_ONLY pause. A refused turn still counts as a failed
+    version-trial sample, as before.
+  - The default mandate names only `slow-trend-pullback`. An older database is
+    revised only by the owner command `trade-graph mandate-cleanup --confirm`
+    (new revision N+1, refused while the service holds its lease; old
+    revisions and decisions stay untouched). Synthetic FLATTEN exits use
+    strategy id `pause-flatten`, and the D18 named-strategy check applies to
+    entries only, so owner FLATTEN works under a non-discretionary mandate.
