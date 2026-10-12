@@ -446,3 +446,7 @@ None prevents offline development. Mark credentialed verification pending when c
   other interest-bearing borrowing, and lending, earn or interest on idle
   balances. Spot crypto and cash-account stocks remain, and the long-only and
   no-leverage rules stay. The owner may revise this with a scholar's opinion.
+
+- **D128 (2026-10-12, owner decision):** No Shariah business-activity screen
+  is applied to the stock scanner, because positions are intraday trades, not
+  holdings. D127's product exclusions still apply.

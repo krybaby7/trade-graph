@@ -1,7 +1,7 @@
 # Day-trader engine direction
 
 Status: owner-approved direction, 2026-10-12. This is a design record. No
-runtime behavior has changed. Decisions D114–D127 are in
+runtime behavior has changed. Decisions D114–D128 are in
 [DECISIONS.md](DECISIONS.md).
 
 ## Why the engine changes
@@ -255,7 +255,8 @@ Spot crypto and cash-account stocks remain. The existing long-only and
 no-leverage rules stay. The owner may revise this with a scholar's opinion.
 With shorting excluded, a falling market means holding cash. The scanner's
 breadth partly compensates, because some liquid coins usually rise while the
-majors fall. Bybit's certified Islamic Account (spot-only) is the only
+majors fall. No business-activity screen is applied to stocks (D128). The
+owner's reasoning is that positions are intraday, not holdings. Bybit's certified Islamic Account (spot-only) is the only
 dedicated option found; whether an EU account can use it is unverified.
 
 ## Pending owner decisions
