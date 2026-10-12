@@ -423,13 +423,16 @@ REASON: Final = {
     "not_permitted": "its trading permission doesn't cover that order",
     "checking": "the account's balances were still being double-checked",
     "unknown_coin": "the exchange's rules for that coin aren't known",
+    "paused": "a pause was on that doesn't allow this order",
     "error": "a technical error",
     "unknown": "a problem HQ can't describe in plain words",
 }
 _CHANGED = re.compile(r"\b(?:authority|version|pause|budget) changed after snapshot")
 _HALT = re.compile(r"\b(?:owner|system) halt prevents")
 _ERROR_CLASS = re.compile(r"[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+")
-_VALUATION = re.compile(r"\bprovisional valuation\b|\bnative \S+ valuation\b")
+_VALUATION = re.compile(r"\bprovisional valuation\b|\bnative \S+ valuation\b|\bFX for native exposure\b"
+                        r"|\bno price for exposure valuation\b")
+_PAUSE_REFUSAL = re.compile(r"\bpause \S+ blocks (?:new exposure|reduction)\b")
 
 
 def reason_plain(raw, *, live: bool = False) -> str | None:
@@ -463,6 +466,8 @@ def _reason_key(value: str) -> str:
         return "prices"
     if "unresolved execution blocks new exposure" in value:
         return "unresolved"
+    if _PAUSE_REFUSAL.search(value):
+        return "paused"
     if "below venue minimum" in value or "rounding would exceed authorization" in value:
         return "minimum"
     if "single asset exposure" in value:
