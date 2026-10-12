@@ -850,24 +850,55 @@ class Execution:
         if decision.action not in {"hold", "no_action"}:
             raise ValidationFailure("only non-order decisions are recorded here")
         with self.database.immediate() as conn:
-            conn.execute(
-                """INSERT INTO decisions
-                (decision_id, portfolio_id, action, payload_json, mandate_revision, policy_revision,
-                 snapshot_id, system_version_id, created_at, task_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    decision.record_id,
-                    portfolio_id,
-                    decision.action,
-                    decision.model_dump_json(),
-                    decision.mandate_revision,
-                    decision.policy_revision,
-                    decision.snapshot_id,
-                    decision.system_version_id,
-                    self.now(),
-                    decision.task_id,
-                ),
-            )
+            self._insert_decision(conn, portfolio_id, decision, self.now())
+
+    def record_refusal(self, portfolio_id: str, decision: Decision, error: TradeGraphError) -> dict:
+        """Keep an order that authorize refused as a visible outcome. A refusal creates no
+        intent, reservation or outbox row: nothing was sent and nothing was held."""
+        if decision.action not in {"enter", "exit"}:
+            raise ValidationFailure("only refused orders are recorded here")
+        now = self.now()
+        refusal = {
+            "decision_id": decision.record_id,
+            "task_id": decision.task_id,
+            "snapshot_id": decision.snapshot_id,
+            "action": decision.action,
+            "side": "buy" if decision.action == "enter" else "sell",
+            "symbol": decision.symbol,
+            "quantity": canonical_decimal(decision.quantity.amount) if decision.quantity else None,
+            "order_type": "limit" if decision.limit_price else "market",
+            "limit_price": canonical_decimal(decision.limit_price.amount) if decision.limit_price else None,
+            "strategy_id": decision.strategy_id,
+            "code": error.code,
+            "error": type(error).__name__,
+            "reason": str(error)[:500],
+            "refused_at": now,
+        }
+        with self.database.immediate() as conn:
+            self._insert_decision(conn, portfolio_id, decision, now)
+            self.ledger._activity(portfolio_id, "order_refused", refusal, created_at=now)
+        return refusal
+
+    @staticmethod
+    def _insert_decision(conn: sqlite3.Connection, portfolio_id: str, decision: Decision, now: str) -> None:
+        conn.execute(
+            """INSERT INTO decisions
+            (decision_id, portfolio_id, action, payload_json, mandate_revision, policy_revision,
+             snapshot_id, system_version_id, created_at, task_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                decision.record_id,
+                portfolio_id,
+                decision.action,
+                decision.model_dump_json(),
+                decision.mandate_revision,
+                decision.policy_revision,
+                decision.snapshot_id,
+                decision.system_version_id,
+                now,
+                decision.task_id,
+            ),
+        )
 
     _OUTSTANDING = frozenset({
         "SUBMISSION_PENDING",

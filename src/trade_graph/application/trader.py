@@ -10,7 +10,7 @@ from trade_graph.application.execution import Execution
 from trade_graph.application.research import ResearchStore
 from trade_graph.contracts.models import Decision, ModelResult
 from trade_graph.domain.clock import utc_iso
-from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 from trade_graph.domain.money import Quantity
 from trade_graph.roles.strategies import counterfactual, template
 
@@ -21,6 +21,7 @@ class TraderTurn:
     action: str | None
     decision_id: str | None = None
     intent_id: str | None = None
+    refusal: dict | None = None
 
 
 class Trader:
@@ -113,7 +114,13 @@ class Trader:
             return TraderTurn(kind="decision", action=decision.action, decision_id=decision.record_id)
         if choice["action"] not in {"enter", "exit"}:
             raise ValidationFailure("trader action is not executable")
-        intent_id = self.execution.authorize(portfolio_id, decision)
+        try:
+            intent_id = self.execution.authorize(portfolio_id, decision)
+        except (AuthorityDenied, StaleState, ValidationFailure) as exc:
+            # authorize checks everything before it writes, so its refusal of a
+            # well-formed order is an outcome to record, not a failed turn.
+            return TraderTurn(kind="refused", action=decision.action, decision_id=decision.record_id,
+                              refusal=self.execution.record_refusal(portfolio_id, decision, exc))
         return TraderTurn(
             kind="decision",
             action=decision.action,

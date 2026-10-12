@@ -222,12 +222,14 @@ class ArtifactRuntime:
         except (StaleState, ValidationFailure):
             return
         status = output.get("_status", "SUCCEEDED")
+        # A refused order is a recorded outcome of the turn, not a healthy trial sample.
+        refusal = output.get("refusal")
         self.versions.observe(
-            task["portfolio_id"], bundle, decision_id or task["task_id"],
-            ok=status == "SUCCEEDED" and bool(decision_id),
+            task["portfolio_id"], bundle, task["task_id"] if refusal else decision_id or task["task_id"],
+            ok=status == "SUCCEEDED" and bool(decision_id) and not refusal,
             context_bytes=output.get("context_bytes", 0), input_tokens=output.get("input_tokens", 0),
             output_tokens=output.get("output_tokens", 0), required_retained=bool(
                 snapshot.get("selected_context", {}).get("mandate_obligations")
                 and snapshot.get("selected_context", {}).get("active_safety")),
-            reason=output.get("reason", ""),
+            reason=refusal["reason"] if refusal else output.get("reason", ""),
         )

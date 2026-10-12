@@ -158,9 +158,16 @@ def test_unavailable_data_or_budget_cannot_create_a_hold_decision(tmp_path, caus
         flow.handler.price_card_id = card.price_card_id
     task_id = flow.add_turn()
     assert flow.run() == 1
-    assert flow.row(task_id)["status"] in {"FAILED", "BLOCKED_BUDGET"}
     assert flow.db.execute("SELECT COUNT(*) FROM decisions WHERE action = 'hold'").fetchone()[0] == holds
-    assert flow.db.execute("SELECT COUNT(*) FROM decisions WHERE task_id = ?", (task_id,)).fetchone()[0] == 0
+    actions = [row[0] for row in flow.db.execute("SELECT action FROM decisions WHERE task_id = ?", (task_id,))]
+    if cause == "missing-data":
+        # The Trader's buy is kept as a refused buy with its reason; it never becomes a fabricated hold.
+        assert flow.row(task_id)["status"] == "SUCCEEDED"
+        assert actions == ["enter"]
+        assert json.loads(flow.row(task_id)["output_json"])["refusal"]["reason"] == "stale or missing quote"
+    else:
+        assert flow.row(task_id)["status"] in {"FAILED", "BLOCKED_BUDGET"}
+        assert actions == []
     assert flow.db.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
     assert flow.office.execution.broker.submit_count == 0
     flow.db.close()

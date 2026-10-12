@@ -369,11 +369,14 @@ class VersionController:
                 raise ValidationFailure("decision has no reconciled consumer reload")
         else:
             failure = self.database.execute(
-                """SELECT r.status FROM role_results r JOIN tasks t ON t.task_id = r.task_id
+                """SELECT r.status, r.document_json FROM role_results r JOIN tasks t ON t.task_id = r.task_id
                 WHERE r.task_id = ? AND r.portfolio_id = ? AND t.portfolio_id = ?
                 AND r.role = 'trader' AND t.role = 'trader'""",
                 (observation_id, portfolio_id, portfolio_id),
             ).fetchone()
+            # A turn whose order software refused finished normally but is not a healthy sample.
+            refused = (failure is not None and failure["status"] == "SUCCEEDED"
+                       and "refusal" in json.loads(failure["document_json"]))
             snapshot = self.database.execute(
                 """SELECT payload_json FROM snapshots WHERE portfolio_id = ?
                 AND json_extract(payload_json, '$.task_id') = ? ORDER BY created_at DESC LIMIT 1""",
@@ -381,7 +384,8 @@ class VersionController:
             ).fetchone()
             expected = {"version_id": bundle["version_id"], "artifact_hash": bundle["artifact_hash"],
                         "generation": bundle["generation"], "manifest_sha256": bundle["manifest"]["sha256"]}
-            if (failure is None or failure["status"] not in {"FAILED", "BLOCKED_BUDGET", "WAITING_EXTERNAL"}
+            if (failure is None
+                    or (failure["status"] not in {"FAILED", "BLOCKED_BUDGET", "WAITING_EXTERNAL"} and not refused)
                     or snapshot is None or json.loads(snapshot["payload_json"]).get("artifact") != expected):
                 raise ValidationFailure("failure observation requires a scoped persisted Trader failure")
             snapshot = json.loads(snapshot["payload_json"])

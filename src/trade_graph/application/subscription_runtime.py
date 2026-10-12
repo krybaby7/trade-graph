@@ -249,11 +249,12 @@ class SubscriptionTraderHandler(SubscriptionDepartmentMixin, TraderHandler):
         context = public_context({key: value for key, value in original.items() if key in allowed})
         usage = result.usage
         report_id = self.secretary.report(
-            task["portfolio_id"], role="trader", kind="decision", summary=reply.rationale,
+            task["portfolio_id"], role="trader", kind="decision", summary=self._report_summary(reply, turn),
             evidence_refs=[turn.decision_id, task["snapshot_id"]], source_key=task["task_id"], material=False,
         )
         output = {
             "decision_id": turn.decision_id, "intent_id": turn.intent_id, "action": turn.action,
+            **({"refusal": turn.refusal} if turn.refusal else {}),
             "report_id": report_id,
             "artifact": task["snapshot"]["artifact"],
             "context_bytes": len(json.dumps(context, sort_keys=True, ensure_ascii=False).encode()),
