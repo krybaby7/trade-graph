@@ -159,7 +159,14 @@ def test_flagged_stale_native_mark_still_blocks_new_exposure(stack):
         authorize(stack, "1")
 
 
-def test_non_usd_cash_without_a_usd_conversion_still_blocks(stack):
-    stack.ledger.deposit(stack.portfolio, "EUR", D("100"), "eur")  # only USD->EUR rates exist
-    with pytest.raises(StaleState, match="native USD valuation lacks a mark or FX for EUR"):
-        authorize(stack, "1")
+def test_non_usd_cash_is_valued_by_inverting_the_reference_rate(stack):
+    # Only USD->EUR reference rates are ever stored; EUR cash (as a live Kraken
+    # account would hold) is valued with their inverse, never left unknown.
+    stack.ledger.deposit(stack.portfolio, "EUR", D("100"), "eur")
+    with pytest.raises(StaleState, match="stale native USD valuation"):
+        authorize(stack, "1", record_id="weekend")  # needed FX is still the carried Friday rate
+    today = stack.clock.now().date().isoformat()
+    fresh = f'{{"date":"{today}","base":"USD","quote":"EUR","rate":"0.86"}}'
+    PublicPaperFeed(stack.execution, [stack.portfolio], ["BTC/USD"],
+                    transport=ScriptedTransport({FX_URL: fresh}))._reference_fx()
+    assert authorize(stack, "1", record_id="fresh")

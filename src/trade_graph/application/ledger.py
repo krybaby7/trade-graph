@@ -26,6 +26,7 @@ from trade_graph.kernel.books import (
     _convert,
     add_expense,
     apply_fill,
+    convert_native,
     deposit,
     internal_transfer,
     mark_equity,
@@ -410,7 +411,7 @@ class Ledger:
 
     def native_value(self, amount: Decimal, currency: str, native: str) -> Decimal:
         at = self.now()
-        value, stale = _convert(amount, currency, native, self._rates(at), at)
+        value, stale = convert_native(amount, currency, native, self._rates(at), at)
         if value is None or stale:
             raise StaleState(f"missing or stale {currency} to {native} FX for native exposure")
         return value

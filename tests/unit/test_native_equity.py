@@ -52,13 +52,30 @@ def test_other_currency_cash_needs_an_identified_conversion() -> None:
     books = Books()
     deposit(books, "USD", D("100"), FRIDAY, "seed")
     deposit(books, "EUR", D("10"), FRIDAY, "eur")
-    missing = native_equity(books, currency="USD", marks=[], rates=[STALE_USD_EUR], at=AT)
+    missing = native_equity(books, currency="USD", marks=[], rates=[], at=AT)
     assert missing.equity is None
     assert missing.missing == ("EUR",)
     stale_eur_usd = FxRate("EUR", "USD", D("1.16"), FRIDAY, True, "fixture", "eur-usd", AT)
     view = native_equity(books, currency="USD", marks=[], rates=[stale_eur_usd], at=AT)
     assert view.equity == D("111.60")
     assert view.stale is True
+    # A direct rate is preferred over inverting the opposite reference rate.
+    both = native_equity(books, currency="USD", marks=[], rates=[STALE_USD_EUR, stale_eur_usd], at=AT)
+    assert both.equity == D("111.60")
+
+
+def test_other_currency_cash_inverts_the_identified_reference_rate() -> None:
+    books = Books()
+    deposit(books, "USD", D("100"), FRIDAY, "seed")
+    deposit(books, "EUR", D("10"), FRIDAY, "eur")
+    stale = native_equity(books, currency="USD", marks=[], rates=[STALE_USD_EUR], at=AT)
+    assert stale.equity == D("100") + D("10") / D("0.86")
+    assert stale.missing == ()
+    assert stale.stale is True
+    fresh_usd_eur = FxRate("USD", "EUR", D("0.86"), AT, False, "fixture", "usd-eur-today", AT)
+    fresh = native_equity(books, currency="USD", marks=[], rates=[STALE_USD_EUR, fresh_usd_eur], at=AT)
+    assert fresh.equity == stale.equity
+    assert fresh.stale is False
 
 
 def test_zero_other_currency_balance_needs_no_fx() -> None:

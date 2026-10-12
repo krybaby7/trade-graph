@@ -572,6 +572,27 @@ class NativeEquityView:
     missing: tuple[str, ...]
 
 
+def convert_native(
+    amount: Decimal,
+    currency: str,
+    native: str,
+    rates: list[FxRate],
+    at: str,
+) -> tuple[Decimal | None, bool]:
+    """Convert for exposure checks: a direct rate, else the inverse of the identified opposite rate.
+
+    Only USD->EUR reference rates are recorded, so EUR cash in a USD account is
+    valued as amount / rate with that rate's provenance and stale flag.
+    """
+    value, stale = _convert(amount, currency, native, rates, at)
+    if value is not None:
+        return value, stale
+    opposite, stale = _convert(Decimal("1"), native, currency, rates, at)
+    if opposite is None or opposite <= 0:
+        return None, True
+    return amount / opposite, stale
+
+
 def native_equity(
     books: Books,
     *,
@@ -591,7 +612,7 @@ def native_equity(
     for asset, amount in books.cash.items():
         if amount == 0:
             continue
-        converted, bad = _convert(amount, asset, currency, rates, at)
+        converted, bad = convert_native(amount, asset, currency, rates, at)
         if converted is None:
             missing.add(asset)
             continue
@@ -606,7 +627,7 @@ def native_equity(
         if mark is None:
             missing.add(lot.asset)
             continue
-        value, bad = _convert(qty * mark.price, mark.quote, currency, rates, at)
+        value, bad = convert_native(qty * mark.price, mark.quote, currency, rates, at)
         if value is None:
             missing.add(lot.asset)
             continue
