@@ -1148,24 +1148,25 @@ class Execution:
         exclude_intent_id: str | None = None,
     ) -> None:
         books = self.ledger.books(portfolio_id)
-        equity = self.ledger.equity(portfolio_id)
-        if equity.equity is None or equity.provisional:
-            raise StaleState("provisional valuation")
-        if equity.equity <= 0:
+        # Caps compare matching units (D16) in the instruction's native quote
+        # currency. Reporting-FX staleness only flags EUR views (D114); a
+        # missing or flagged-stale native mark or needed FX still blocks.
+        native = self.ledger.native_equity(portfolio_id, quote_asset)
+        if native.missing:
+            raise StaleState(f"native {quote_asset} valuation lacks a mark or FX for {', '.join(native.missing)}")
+        if native.stale or native.equity is None or native.inventory is None:
+            raise StaleState(f"stale native {quote_asset} valuation")
+        if native.equity <= 0:
             raise AuthorityDenied("no equity")
-
-        def reporting(amount: Decimal) -> Decimal:
-            return self.ledger.reporting_value(portfolio_id, amount, quote_asset)
-
         pending_gross, pending_asset = self._pending_exposure(
-            portfolio_id, base_asset, exclude_intent_id=exclude_intent_id
+            portfolio_id, base_asset, quote_asset, exclude_intent_id=exclude_intent_id
         )
-        proposed = reporting(price * quantity)
-        projected_asset = reporting(self._position_value(books, symbol, price)) + pending_asset + proposed
-        projected_gross = (equity.inventory_reporting or Decimal("0")) + pending_gross + proposed
-        if projected_asset / equity.equity > asset_cap:
+        proposed = price * quantity
+        projected_asset = self._position_value(books, symbol, price) + pending_asset + proposed
+        projected_gross = native.inventory + pending_gross + proposed
+        if projected_asset / native.equity > asset_cap:
             raise AuthorityDenied("single asset exposure")
-        if projected_gross / equity.equity > gross_cap:
+        if projected_gross / native.equity > gross_cap:
             raise AuthorityDenied("gross exposure")
 
     @atomic
@@ -1288,6 +1289,7 @@ class Execution:
         self,
         portfolio_id: str,
         asset: str,
+        native: str,
         *,
         exclude_intent_id: str | None = None,
     ) -> tuple[Decimal, Decimal]:
@@ -1311,7 +1313,7 @@ class Execution:
                 price = max(price or Decimal("0"), Decimal(intent["limit_price"]))
             if price is None:
                 raise StaleState("pending order has no price for exposure valuation")
-            value = self.ledger.reporting_value(portfolio_id, remaining * price, rules.quote_asset)
+            value = self.ledger.native_value(remaining * price, rules.quote_asset, native)
             gross += value
             if rules.base_asset == asset:
                 single += value

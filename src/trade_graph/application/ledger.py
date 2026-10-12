@@ -19,6 +19,7 @@ from trade_graph.kernel.books import (
     Expense,
     FxRate,
     Mark,
+    NativeEquityView,
     Performance,
     Posting,
     _apply_group,
@@ -28,6 +29,7 @@ from trade_graph.kernel.books import (
     deposit,
     internal_transfer,
     mark_equity,
+    native_equity,
     performance,
     withdraw,
 )
@@ -394,6 +396,23 @@ class Ledger:
         value, stale = _convert(amount, currency, self._reporting(portfolio_id), self._rates(at), at)
         if value is None or stale:
             raise StaleState(f"missing or stale reporting FX for {currency}")
+        return value
+
+    def native_equity(self, portfolio_id: str, currency: str, at: str | None = None) -> NativeEquityView:
+        at = at or self.now()
+        return native_equity(
+            self._books(portfolio_id, at),
+            currency=currency,
+            marks=self._marks(portfolio_id, at),
+            rates=self._rates(at),
+            at=at,
+        )
+
+    def native_value(self, amount: Decimal, currency: str, native: str) -> Decimal:
+        at = self.now()
+        value, stale = _convert(amount, currency, native, self._rates(at), at)
+        if value is None or stale:
+            raise StaleState(f"missing or stale {currency} to {native} FX for native exposure")
         return value
 
     def performance(self, portfolio_id: str, start: str, end: str) -> Performance:

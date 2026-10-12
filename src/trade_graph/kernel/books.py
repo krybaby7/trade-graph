@@ -562,6 +562,61 @@ def mark_equity(
     )
 
 
+@dataclass
+class NativeEquityView:
+    currency: str
+    equity: Decimal | None
+    cash: Decimal | None
+    inventory: Decimal | None
+    stale: bool
+    missing: tuple[str, ...]
+
+
+def native_equity(
+    books: Books,
+    *,
+    currency: str,
+    marks: list[Mark],
+    rates: list[FxRate],
+    at: str,
+) -> NativeEquityView:
+    """Equity in one native account currency for exposure checks.
+
+    Same-currency cash and marks need no FX; another currency needs an
+    identified conversion. A missing mark or conversion is unknown, not zero.
+    """
+    stale = False
+    missing: set[str] = set()
+    cash_total = Decimal("0")
+    for asset, amount in books.cash.items():
+        if amount == 0:
+            continue
+        converted, bad = _convert(amount, asset, currency, rates, at)
+        if converted is None:
+            missing.add(asset)
+            continue
+        stale = stale or bad
+        cash_total += converted
+    inventory_total = Decimal("0")
+    for lot in books.lots:
+        qty = lot.open_quantity()
+        if qty == 0:
+            continue
+        mark = _latest_mark(marks, lot.asset, at)
+        if mark is None:
+            missing.add(lot.asset)
+            continue
+        value, bad = _convert(qty * mark.price, mark.quote, currency, rates, at)
+        if value is None:
+            missing.add(lot.asset)
+            continue
+        stale = stale or mark.stale or bad
+        inventory_total += value
+    if missing:
+        return NativeEquityView(currency, None, None, None, stale, tuple(sorted(missing)))
+    return NativeEquityView(currency, cash_total + inventory_total, cash_total, inventory_total, stale, ())
+
+
 def _latest_mark(marks: list[Mark], asset: str, at: str) -> Mark | None:
     chosen = [mark for mark in marks if mark.asset == asset and mark.at <= at]
     if not chosen:
