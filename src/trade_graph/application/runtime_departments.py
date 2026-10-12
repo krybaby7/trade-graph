@@ -33,6 +33,12 @@ RESEARCH_SOURCE_CITATION_RULE = (
     "Reports and digests may support evidence_refs, but cannot supply findings[].source_ref unless "
     "also present in sources. If no eligible source supports a finding, omit that finding."
 )
+RESEARCH_HISTORY_NOTE = (
+    "market.<symbol>.history.latest_close and recent_candles are completed hourly candles available at as_of; "
+    "recent_missing_close_times_utc names hours that were not available. A feature status of stale means its "
+    "value is computed through the newest available candle while a newer hour is still pending; "
+    "history.expected_candle says plainly whether the latest hour's candle was stored."
+)
 
 
 class FindingAnalysis(ContractModel):
@@ -82,7 +88,7 @@ class ResearchHandler(GatewayRole):
                 "active_strategy_templates": active_templates(templates, context["guard"]), "sources": sources,
                 "evidence_refs": list(dict.fromkeys(context["evidence_refs"] + [s["source_ref"] for s in sources])),
                 "analysis_instruction": RESEARCH_SOURCE_CITATION_RULE +
-                                        " Findings are hypotheses, never trade authority."}
+                                        " Findings are hypotheses, never trade authority. " + RESEARCH_HISTORY_NOTE}
 
     def instructions(self, task: dict) -> str:
         instructions = super().instructions(task)
