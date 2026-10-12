@@ -100,6 +100,12 @@ _OBSERVATION = (
     "bid", "ask", "last", "bid_size", "ask_size", "volume", "sequence", "gap", "stale",
 )
 _CANDLE = ("open_time_utc", "close_time_utc", "available_at_utc", "open", "high", "low", "close", "volume")
+_EXPECTED_CANDLE = (
+    "status", "expected_close_time_utc", "latest_stored_close_time_utc", "waited_seconds", "wait_deadline_utc", "note",
+)
+_REFUSAL = (
+    "decision_id", "refused_at", "action", "symbol", "quantity", "order_type", "limit_price", "code", "reason",
+)
 _STRATEGY = (
     "strategy_id", "hypothesis", "features", "entry_rule", "exit_rule", "entry", "exit", "invalidation",
     "sizing_rule", "required_capabilities", "validation_protocol",
@@ -156,6 +162,10 @@ def _retained_inputs(payload: dict, strategy_id: str | None) -> dict:
             recent = history["recent_candles"]
             historical["recent_candles"] = [_scalar_pick(row, _CANDLE) for row in recent[-50:]
                                             if isinstance(row, dict)] if isinstance(recent, list) else []
+        if "expected_candle" in history:
+            expected = history["expected_candle"]
+            historical["expected_candle"] = (_scalar_pick(expected, _EXPECTED_CANDLE)
+                                             if isinstance(expected, dict) else None)
         historical["values"] = _scalar_pick(history.get("values"), _MARKET_FEATURES)
         historical["features"] = {
             name: _scalar_pick(feature, (
@@ -182,6 +192,11 @@ def _retained_inputs(payload: dict, strategy_id: str | None) -> dict:
         _scalar_pick(item, ("intent_id", "symbol", "state")) for item in portfolio.get("open_orders", [])
         if isinstance(item, dict)
     ] if isinstance(portfolio.get("open_orders", []), list) else []
+    if "recent_order_refusals" in portfolio:
+        refusals = portfolio["recent_order_refusals"]
+        retained_portfolio["recent_order_refusals"] = [
+            _scalar_pick(item, _REFUSAL) for item in refusals[:20] if isinstance(item, dict)
+        ] if isinstance(refusals, list) else []
     templates = _mapping(payload.get("active_strategy_templates"))
     if not templates and strategy_id:
         stored = _mapping(payload.get("strategy_templates"))
