@@ -13,6 +13,12 @@ from trade_graph.domain.errors import AuthorityDenied, DuplicateRecord, Validati
 from trade_graph.domain.money import Money
 from trade_graph.kernel.authority import assert_action, mandate_within_owner
 
+# The paper default names only strategies with an installed template. Earlier
+# defaults also carried two test-fixture IDs; databases that hold them are
+# cleaned by an owner-confirmed new mandate revision, never by rewriting one.
+DEFAULT_PAPER_STRATEGY_IDS = ("slow-trend-pullback",)
+LEGACY_TEST_STRATEGY_IDS = frozenset({"slow-trend", "s"})
+
 
 def _digest(document: str) -> str:
     return hashlib.sha256(document.encode()).hexdigest()
@@ -91,6 +97,39 @@ class AuthorityRecord:
                     utc_iso(self.clock.now()),
                 ),
             )
+
+    def legacy_strategy_revision(self, portfolio_id: str) -> Mandate | None:
+        """Propose the next revision without test-fixture strategy IDs; writes nothing."""
+        current = self.active_mandate(portfolio_id)
+        kept = [item for item in current.strategy_ids if item not in LEGACY_TEST_STRATEGY_IDS]
+        if kept == current.strategy_ids:
+            return None
+        # MAX, not active + 1: an older revision can be re-activated.
+        latest = self.database.execute(
+            "SELECT MAX(revision) FROM mandates WHERE portfolio_id = ?", (portfolio_id,),
+        ).fetchone()[0]
+        revision = int(latest) + 1
+        # An empty list would switch off the named-strategy check.
+        proposed = current.model_copy(update={
+            "revision": revision,
+            "mandate_id": f"paper-{portfolio_id}-{revision}",
+            "strategy_ids": kept or list(DEFAULT_PAPER_STRATEGY_IDS),
+        })
+        # The preview refuses what install_mandate would refuse.
+        mandate_within_owner(proposed, self.active_policy())
+        if self.mandate_expired(proposed):
+            raise ValidationFailure("mandate is already expired")
+        return proposed
+
+    def drop_legacy_strategy_ids(self, portfolio_id: str, *, role: str) -> Mandate | None:
+        """Install the proposal as a new active revision; older rows only lose the active flag."""
+        if role != "owner":
+            raise AuthorityDenied("only the owner can revise the mandate strategy list")
+        with self.database.immediate():
+            revised = self.legacy_strategy_revision(portfolio_id)
+            if revised is not None:
+                self.install_mandate(revised, role="owner")
+        return revised
 
     def active_policy(self) -> OwnerPolicy:
         row = self.database.execute(
@@ -201,7 +240,7 @@ def paper_mandate(
         mandate_id=mandate_id or f"paper-{portfolio_id}-{revision}",
         portfolio_id=portfolio_id,
         revision=revision,
-        strategy_ids=strategy_ids or ["slow-trend", "slow-trend-pullback", "s"],
+        strategy_ids=strategy_ids or list(DEFAULT_PAPER_STRATEGY_IDS),
         symbols=symbols or ["BTC/USD", "ETH/USD"],
         allowed_order_types=["market", "limit"],
         max_gross_exposure_fraction=gross,

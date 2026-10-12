@@ -108,6 +108,11 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--format", default="json", choices=["json"])
     report.add_argument("--database", default="runtime/trade_graph.sqlite")
     report.add_argument("--portfolio-id")
+    cleanup = sub.add_parser("mandate-cleanup",
+                             help="owner: preview a mandate revision without test strategy IDs; --confirm installs it")
+    cleanup.add_argument("--database", default="runtime/trade_graph.sqlite")
+    cleanup.add_argument("--portfolio-id")
+    cleanup.add_argument("--confirm", action="store_true", help="install the previewed revision")
     return parser
 
 
@@ -195,6 +200,52 @@ def _latest_portfolio(db) -> str:
     if row is None:
         raise LookupError("no paper portfolio")
     return str(row["portfolio_id"])
+
+
+def _mandate_cleanup(args, parser) -> int:
+    """Owner-explicit: preview by default; only --confirm installs the next mandate revision."""
+    from trade_graph.adapters.persistence.db import Database
+    from trade_graph.application.authority import AuthorityRecord
+    from trade_graph.domain.clock import SystemClock
+
+    path = Path(args.database)
+    if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+        parser.error("database does not exist; initialize a paper account first")
+    if path.parent.stat().st_mode & 0o077:
+        parser.error("paper database requires a private directory with mode 0700")
+    database = None
+    try:
+        database = Database(path)
+        portfolio = args.portfolio_id or _latest_portfolio(database)
+        if database.execute("SELECT 1 FROM portfolios WHERE portfolio_id = ? AND mode = 'paper'",
+                            (portfolio,)).fetchone() is None:
+            raise LookupError("no such paper portfolio")
+        record = AuthorityRecord(database, SystemClock())
+        if args.confirm:
+            with database.immediate():
+                current = record.active_mandate(portfolio)
+                revised = record.drop_legacy_strategy_ids(portfolio, role="owner")
+        else:
+            current = record.active_mandate(portfolio)
+            revised = record.legacy_strategy_revision(portfolio)
+    except (ValueError, LookupError, OSError, sqlite3.DatabaseError, TradeGraphError) as exc:
+        parser.error(f"mandate cleanup refused ({type(exc).__name__}: {exc}); nothing was written")
+    finally:
+        if database is not None:
+            database.close()
+    resulting = revised or current
+    print(json.dumps({
+        "portfolio_id": portfolio,
+        "applied": bool(args.confirm and revised is not None),
+        "current_revision": current.revision,
+        "new_revision": revised.revision if revised else None,
+        "removed_strategy_ids": [item for item in current.strategy_ids if item not in resulting.strategy_ids],
+        "strategy_ids": resulting.strategy_ids,
+        "history": "decisions keep the mandate revision they were made under",
+        "paid_calls_enabled": False,
+        "live_enabled": False,
+    }))
+    return 0
 
 
 def _kraken_summary(result: dict) -> dict:
@@ -622,6 +673,8 @@ def _main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
         print(json.dumps(result, default=str))
         return 0
+    if args.command == "mandate-cleanup":
+        return _mandate_cleanup(args, parser)
     parser.error(f"unknown command {args.command}")
     return 2
 

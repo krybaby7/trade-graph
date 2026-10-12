@@ -523,6 +523,20 @@ effect. Record source revision, lockfile identity, timestamp and checksum in a
 private backup inventory. Retain referenced evidence and financial history; set an
 owner retention policy before introducing compaction.
 
+## Mandate cleanup for older paper databases
+
+Paper databases initialized before D114 hold a mandate that also names two
+test-only strategy IDs. Stop the service and take a backup first, then:
+
+```bash
+uv run trade-graph mandate-cleanup --database runtime/trade_graph.sqlite
+uv run trade-graph mandate-cleanup --database runtime/trade_graph.sqlite --confirm
+```
+
+The first command only shows the proposed new mandate revision; only `--confirm`
+installs it, and older revisions and decisions stay unchanged. The runtime never
+revises a mandate on its own.
+
 ## Offline restore drill
 
 1. Stop the service and every dashboard, CLI or maintenance process using the target.

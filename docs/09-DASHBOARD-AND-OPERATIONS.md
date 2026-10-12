@@ -85,6 +85,7 @@ trade-graph run --mode paper
 trade-graph pause --profile manage-only
 trade-graph backup --destination <private-path>
 trade-graph reconcile
+trade-graph mandate-cleanup [--confirm]
 trade-graph report --format json
 trade-graph soak --mode paper --config <private-file> --duration-seconds <seconds> --report <new-private-file>
 ```
