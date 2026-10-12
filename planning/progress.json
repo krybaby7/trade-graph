@@ -385,6 +385,90 @@
       "execution_state": "idle",
       "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
       "execution_result": "local_implementation_verified_acceptance_pending"
+    },
+    "T23": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T24": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T25": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T26": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T27": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T28": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T29": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T30": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T31": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T32": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T33": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T34": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T35": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T36": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T37": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T38": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T39": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T40": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T41": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T42": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T43": {
+      "status": "todo",
+      "evidence": []
     }
   },
   "review_checkpoint": {
