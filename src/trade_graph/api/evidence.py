@@ -258,7 +258,8 @@ def _task(row, now: str) -> dict:
         if len(parts) == 3:
             task["trigger"].update(schedule_id=parts[1], due_at=parts[2])
     output = _json(row["output_json"])
-    task["completion"] = _pick(output, ("decision_id", "intent_id", "report_id", "candidate_id", "change_id", "reason"))
+    task["completion"] = _pick(output, ("decision_id", "intent_id", "report_id", "candidate_id", "change_id", "reason",
+                                        "refusal"))
     return task
 
 

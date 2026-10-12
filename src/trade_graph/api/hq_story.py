@@ -134,7 +134,14 @@ def _decisions(p: Projection) -> list:
 
 
 def _order_consequence(p: Projection, task: dict | None, quote: str | None, asset: str) -> list | None:
-    intent_id = loads(task.get("output_json")).get("intent_id") if task else None
+    output = loads(task.get("output_json")) if task else {}
+    refusal = output.get("refusal")
+    if isinstance(refusal, dict):
+        # The software refused this order before anything was sent or held (trader.py).
+        before, after = (c.STORY if p.paper else c.LIVE_STORY)["order_refused"]
+        return c.says(before, c.reason_segment(refusal.get("reason"), live=not p.paper) or c.REASON["unknown"],
+                      after)
+    intent_id = output.get("intent_id")
     if not intent_id:
         return None
     filled = [fill for fill in p.facts["fills"] if fill.get("intent_id") == intent_id]

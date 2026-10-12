@@ -414,12 +414,22 @@ REASON: Final = {
     "prices": "prices were too old to place a practice order",
     "unresolved": "an earlier practice order was still being checked",
     "budget": "this job reached its own cost limit",
+    # Why the software refused an order the Trader chose (nothing was sent or held).
+    "minimum": "the order was smaller than the exchange's minimum",
+    "coin_share": "it would have put more than the allowed share of the money into one coin",
+    "total_share": "it would have put more than the allowed share of the money into coins",
+    "balance": "there wasn't enough free money or coins for it",
+    "valuation": "the account's value couldn't be confirmed at that moment",
+    "not_permitted": "its trading permission doesn't cover that order",
+    "checking": "the account's balances were still being double-checked",
+    "unknown_coin": "the exchange's rules for that coin aren't known",
     "error": "a technical error",
     "unknown": "a problem HQ can't describe in plain words",
 }
 _CHANGED = re.compile(r"\b(?:authority|version|pause|budget) changed after snapshot")
 _HALT = re.compile(r"\b(?:owner|system) halt prevents")
 _ERROR_CLASS = re.compile(r"[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+")
+_VALUATION = re.compile(r"\bprovisional valuation\b|\bnative \S+ valuation\b")
 
 
 def reason_plain(raw, *, live: bool = False) -> str | None:
@@ -446,12 +456,29 @@ def _reason_key(value: str) -> str:
         return "halt"
     if "attempt limit or root step limit" in value:
         return "tries"
-    if "mandate expired" in value:
+    if "mandate expired" in value or "expired mandate allows management only" in value:
         return "mandate"
-    if "stale or missing quote" in value or "market feed blocks new exposure" in value:
+    if ("stale or missing quote" in value or "market feed blocks new exposure" in value
+            or "no positive reference price" in value):
         return "prices"
     if "unresolved execution blocks new exposure" in value:
         return "unresolved"
+    if "below venue minimum" in value or "rounding would exceed authorization" in value:
+        return "minimum"
+    if "single asset exposure" in value:
+        return "coin_share"
+    if "gross exposure" in value:
+        return "total_share"
+    if "insufficient available balance" in value or value == "no equity":
+        return "balance"
+    if _VALUATION.search(value):
+        return "valuation"
+    if "outside the active mandate" in value or "outside the owner policy" in value:
+        return "not_permitted"
+    if "incomplete account reconciliation" in value:
+        return "checking"
+    if value.startswith("unknown instrument"):
+        return "unknown_coin"
     if value.startswith(("room ", "BudgetExhausted")):
         return "budget"
     if _ERROR_CLASS.fullmatch(value):
@@ -854,6 +881,7 @@ STORY: Final = {
     "decision_other": "Trader {action}.",
     "no_money_moved": "No money moved.",
     "order_state": "Practice order {state}.",
+    "order_refused": ("The software didn't place this practice order: ", ". No money moved."),
     "fill": "Practice trade completed: {side} {qty} {asset} at ",
     "fill_consequence": "Practice money now includes this trade.",
     "turn_done": "{dept} finished its turn ({cadence}).",
@@ -1194,7 +1222,8 @@ LIVE_PROBLEM_PREFIX: Final = {
     "reconciliation:": ("couldn't double-check orders and balances", "No new orders are sent until this works."),
     "dispatch:": ("couldn't send orders", "Orders wait until this works."),
 }
-LIVE_STORY: Final = {"order_state": "Order {state}."}
+LIVE_STORY: Final = {"order_state": "Order {state}.",
+                     "order_refused": ("The software didn't place this order: ", ". No money moved.")}
 LIVE_ROOM_JOB: Final = {
     "trader": "Decides whether to buy, sell or wait with the account's money.",
     "accounts": "Places orders, keeps the balances and double-checks them.",
