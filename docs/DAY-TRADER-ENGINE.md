@@ -1,7 +1,7 @@
 # Day-trader engine direction
 
 Status: owner-approved direction, 2026-10-12. This is a design record. No
-runtime behavior has changed. Decisions D114–D122 are in
+runtime behavior has changed. Decisions D114–D124 are in
 [DECISIONS.md](DECISIONS.md).
 
 ## Why the engine changes
@@ -80,6 +80,10 @@ These are engineering defaults, not caps:
 The existing subscription-allowance floor stays because it protects the
 owner's shared account. The owner may change it.
 
+Each department chooses its own next check-in time (D123). The day start
+always runs. A department that names no time is checked in at the next day
+start. HQ shows each department's chosen next time.
+
 ### Orders and protection (D117)
 
 - The Trader may leave entries resting as limit orders, which pay the maker
@@ -99,6 +103,17 @@ owner's shared account. The owner may change it.
   images.
 - Indicator values are analytical and may be floats. Prices, quantities, fees
   and balances stay Decimal.
+- No indicator formula is written in-house (owner concern, 2026-10-12). The
+  engine's own code only:
+  - supplies completed candles, never the still-forming one;
+  - reports a missing candle per indicator;
+  - provides enough warm-up history;
+  - compares results with alarm levels.
+- Tests cross-check library output against an independent second library and
+  against fixed reference values. Documented differences from TradingView
+  (seeding of smoothed averages) are acceptable.
+- Price-only protective exits (stop-loss, take-profit) use the venue's native
+  conditional orders where available, and the paper broker simulates them.
 - TradingView cannot be the engine. It has no public API for creating alerts,
   and webhooks need a paid plan, a public endpoint and limited alert slots, so
   the Trader could not set its own alarms.
@@ -156,32 +171,48 @@ never places or approves individual trades.
 Ideas that affect the strategy go to Research or Optimisation and through the
 practice range before use. The system does not rewrite itself while it runs.
 
-### Research web access (D122, pending owner)
+### Research web access (D122, D124)
 
-Recommendation: the Perplexity Search API rather than Codex web search.
+Perplexity rather than Codex web search (D122):
 
-- Software runs the search and stores each result's title, link, publication
-  date and snippet as a snapshot source *before* the model reads it. That fits
-  the existing rule that a finding may cite only sources in the persisted
+- Software stores each search result (title, link, publication date and
+  snippet) as a snapshot source before the model's finding is accepted. That
+  fits the existing rule that a finding may cite only sources in the persisted
   snapshot. The Codex adapter records only search IDs, not what was found.
 - It uses no Codex allowance, which trading and the owner's own coding
   sessions share.
-- The model reading the results has no internet access of its own.
-- It costs about $5 per 1,000 searches according to third-party pricing pages.
-  Confirm on Perplexity's own page before budgeting.
 
-This waits for the owner's decision and a research budget. Paid calls stay
-disabled until then. The key goes in private runtime configuration, never in
-chat, Git or model context. Free alternative: Codex live web search, after the
-adapter learns to capture result evidence.
+Owner decision (D124):
+
+- Research and the Leader's news rounds think with Claude Sonnet 5.5
+  (`anthropic/claude-sonnet-5-5`) through Perplexity's pay-as-you-go Agent
+  API, and search through Perplexity. The Trader stays on the Codex
+  subscription.
+- A Perplexity Pro or Max subscription cannot run software, so the API is
+  required.
+- Every search result the model sees is recorded as dated evidence. Prefer
+  software-run searches offered to the model as a registered tool (D20). Use
+  Perplexity's built-in `web_search` only if its returned results can be
+  captured equally.
+- Published prices on the Agent API models page on 2026-10-12:
+  - $2 per million input tokens
+  - $10 per million output tokens
+  - $0.0025 per `web_search` call
+  - $0.0005 per `fetch_url` call
+
+  Record them as a dated price card.
+- The owner sets a monthly research budget, which is a money limit and not an
+  activity cap. Spending uses the existing reservation and receipt
+  accounting.
+- The key goes in a private runtime file through a local command. It never
+  passes through chat, Git or model context.
 
 ## Pending owner decisions
 
-- Perplexity key and monthly research budget (D122).
+- Monthly research budget for Perplexity, and installing the key privately
+  (D124).
 - Daily loss limit, per-coin exposure and the paper fee ladder (deferred
   session).
-- Proposed: each department chooses its own next check-in time instead of a
-  fixed timer, with the daily start always running.
 
 ## Deferred: coins, fees and risk
 

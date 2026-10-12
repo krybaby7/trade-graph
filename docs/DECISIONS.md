@@ -363,7 +363,10 @@ None prevents offline development. Mark credentialed verification pending when c
 - **D118 (2026-10-12, owner question):** Indicators are computed by a proven
   open-source library (TA-Lib preferred) from Kraken 1/5/15/60-minute candles.
   The Trader picks from a menu and receives numbers, not chart images.
-  Indicator values may be floats; money stays Decimal. TradingView is not the
+  Indicator values may be floats; money stays Decimal. No indicator formula is
+  written in-house. Engine code supplies completed candles and compares results
+  with alarm levels, and tests cross-check the library against a second
+  independent one. TradingView is not the
   engine: it has no public alert-creation API, and webhooks need a paid plan
   and a public endpoint. HQ charts use TradingView Lightweight Charts
   (Apache-2.0, with an attribution link).
@@ -399,3 +402,20 @@ None prevents offline development. Mark credentialed verification pending when c
   calls stay disabled. The key belongs in private runtime configuration only.
   The free fallback is Codex live web search after the adapter captures result
   evidence; today it records only search IDs.
+
+- **D123 (2026-10-12, owner decision):** Each department chooses its own next
+  check-in time instead of a fixed timer. The day start always runs, and a
+  department that names no time is checked in at the next day start. HQ shows
+  each department's chosen next time. Together with D116, this replaces the
+  fixed role schedules as the normal mechanism.
+
+- **D124 (2026-10-12, owner decision):** Research and the Leader's news rounds
+  use Claude Sonnet 5.5 (`anthropic/claude-sonnet-5-5`) through Perplexity's
+  pay-as-you-go Agent API with Perplexity search; the Trader stays on Codex.
+  A Perplexity Pro or Max subscription cannot run software. Every search
+  result the model sees is recorded as dated evidence. Published 2026-10-12
+  prices ($2 / $10 per million input / output tokens, $0.0025 per search,
+  $0.0005 per page fetch) become a dated price card. The owner sets a monthly
+  research budget, a money limit rather than an activity cap; paid calls stay
+  disabled until it exists. The key is installed through a local private file,
+  never chat, Git or model context.
