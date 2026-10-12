@@ -206,7 +206,8 @@ def _mandate_cleanup(args, parser) -> int:
     """Owner-explicit: preview by default; only --confirm installs the next mandate revision."""
     from trade_graph.adapters.persistence.db import Database
     from trade_graph.application.authority import AuthorityRecord
-    from trade_graph.domain.clock import SystemClock
+    from trade_graph.domain.clock import SystemClock, utc_iso
+    from trade_graph.domain.errors import StaleState
 
     path = Path(args.database)
     if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
@@ -220,9 +221,15 @@ def _mandate_cleanup(args, parser) -> int:
         if database.execute("SELECT 1 FROM portfolios WHERE portfolio_id = ? AND mode = 'paper'",
                             (portfolio,)).fetchone() is None:
             raise LookupError("no such paper portfolio")
-        record = AuthorityRecord(database, SystemClock())
+        clock = SystemClock()
+        record = AuthorityRecord(database, clock)
         if args.confirm:
             with database.immediate():
+                # Work in flight cites the active revision; revise only a stopped service.
+                if database.execute(
+                        """SELECT 1 FROM process_leases WHERE lease_name IN ('paper-service', 'role-worker')
+                        AND expires_at > ?""", (utc_iso(clock.now()),)).fetchone():
+                    raise StaleState("the paper service is running; stop it before confirming")
                 current = record.active_mandate(portfolio)
                 revised = record.drop_legacy_strategy_ids(portfolio, role="owner")
         else:

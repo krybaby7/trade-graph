@@ -208,6 +208,32 @@ def test_cleanup_cli_previews_then_writes_only_on_confirm(tmp_path, capsys) -> N
     assert active_revisions() == (2, 2)
 
 
+def test_cleanup_cli_refuses_to_write_while_the_paper_service_holds_its_lease(tmp_path, capsys) -> None:
+    _, database, _, portfolio = _legacy_db(tmp_path)
+    database.execute("INSERT INTO process_leases (lease_name, owner, expires_at) VALUES (?, ?, ?)",
+                     ("paper-service", "boot-1", "2999-01-01T00:00:00.000000Z"))
+    database.close()
+    path = str(tmp_path / "paper.sqlite")
+
+    assert main(["mandate-cleanup", "--database", path]) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["new_revision"] == 2
+    with pytest.raises(SystemExit) as refused:
+        main(["mandate-cleanup", "--database", path, "--confirm"])
+    assert refused.value.code == 2
+    assert "running" in capsys.readouterr().err
+
+    reopened = Database(path)
+    try:
+        assert len(_mandate_rows(reopened, portfolio)) == 1
+        # An expired lease is a stopped service; the owner can then confirm.
+        reopened.execute("UPDATE process_leases SET expires_at = ? WHERE lease_name = 'paper-service'",
+                         ("2000-01-01T00:00:00.000000Z",))
+    finally:
+        reopened.close()
+    assert main(["mandate-cleanup", "--database", path, "--confirm"]) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["applied"] is True
+
+
 def test_owner_flatten_exits_under_non_discretionary_mandate(tmp_path) -> None:
     clock, execution, broker, portfolio = _stack(tmp_path)
     _fill_entry(clock, execution, portfolio)
