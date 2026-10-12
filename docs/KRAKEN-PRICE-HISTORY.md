@@ -59,19 +59,32 @@ does not imply the graph possessed the data then. Exchange publication time
 is unknown. Public observations and synthetic fixtures occupy distinct source
 namespaces and are never merged.
 
-Feature windows end at the latest completed UTC hour at the context's as-of
-time. A field needs its exact contiguous documented hourly slots; software
-does not lengthen a lookback to hide a gap. Per-field context reports ready,
-insufficient history, gaps or unsupported requests, including missing slots.
-Missing tail data is visibly stale. Unready values are omitted rather than
-filled with zero or an invented trend.
+All feature windows of one snapshot end at a shared anchor: the newest
+completed candle actually available at the context's as-of time, when it is
+at most two hours before the latest completed UTC hour. Otherwise the anchor
+is the latest completed UTC hour itself. A field needs its exact contiguous
+documented hourly slots ending at the anchor; software does not lengthen a
+lookback to hide a gap, compute partial windows or carry candles forward.
+Per-field context reports `ready`, `stale` (complete through the anchor and
+computed there, while newer completed hours are still pending), insufficient
+history, gaps or unsupported requests. `missing_close_times_utc` lists the
+gaps inside the field's window and then the pending hours after the anchor;
+the window start/end times show the anchored window. An internal gap
+withholds only the fields whose window covers it. The snapshot-level `stale`
+flag and `latest_close_time_utc` still compare the newest available candle
+with the latest completed hour. Unready values are omitted rather than filled
+with zero or an invented trend. This is feature version
+`hourly-price-features-v2`; retained `hourly-price-features-v1` snapshots
+ended every window at the latest completed hour, so one missing newest candle
+withheld every field.
 
 Research and Trader obtain requested fields from their pinned active strategy
-templates and mandate. Ready values, source/candle identities, availability,
-feature version and explicit missing-data metadata enter their actual retained
-worker snapshots and model requests. Research can cite the supplied derived
-feature snapshot; its finding preserves unknown publication time. Existing
-financial, fresh-quote, mandate and discretionary-trading controls still apply.
+templates and mandate. Ready and stale values, source/candle identities,
+availability, feature version and explicit missing-data metadata enter their
+actual retained worker snapshots and model requests. Research can cite the
+supplied derived feature snapshot; its finding preserves unknown publication
+time. Existing financial, fresh-quote, mandate and discretionary-trading
+controls still apply.
 
 Additive migration 0017 creates an append-only hourly-candle table without
 rewriting financial records or earlier snapshots. A changed candle creates

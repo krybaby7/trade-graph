@@ -14,9 +14,11 @@ from trade_graph.contracts.price_history import HourlyCandle
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.money import canonical_decimal
 
-FEATURE_VERSION = "hourly-price-features-v1"
+FEATURE_VERSION = "hourly-price-features-v2"
 MAX_INGEST_CANDLES = 720
 MAX_LOOKBACK_CANDLES = 50
+# Windows end at the newest available close if it is at most this far behind the expected close.
+MAX_ANCHOR_LAG_HOURS = 2
 _ARITHMETIC = Context(prec=50, rounding=ROUND_HALF_EVEN)
 
 
@@ -134,7 +136,7 @@ class HistoryStore:
         expected_close = as_of.replace(minute=0, second=0, microsecond=0)
         names = list(dict.fromkeys(requested_features))
         lookback = max((_FEATURES[name].lookback for name in names if name in _FEATURES), default=1)
-        start = expected_close - timedelta(hours=lookback - 1)
+        search_start = expected_close - timedelta(hours=lookback - 1 + MAX_ANCHOR_LAG_HOURS)
         rows = self.database.execute(
             """WITH available_revisions AS (
                 SELECT candle_id, document_json, close_time_utc,
@@ -146,12 +148,22 @@ class HistoryStore:
                   AND close_time_utc >= ? AND close_time_utc <= ? AND available_at_utc <= ?
             ) SELECT candle_id, document_json FROM available_revisions
               WHERE revision_rank=1 ORDER BY close_time_utc""",
-            (symbol, source, utc_iso(start), utc_iso(expected_close), utc_iso(as_of)),
+            (symbol, source, utc_iso(search_start), utc_iso(expected_close), utc_iso(as_of)),
         ).fetchall()
-        candles = [HourlyCandle.model_validate_json(row["document_json"]) for row in rows]
-        revision_ids = {candle.close_time_utc: row["candle_id"] for row, candle in zip(rows, candles, strict=True)}
+        found = [(row["candle_id"], HourlyCandle.model_validate_json(row["document_json"])) for row in rows]
+        newest = found[-1][1].close_time_utc if found else None
+        # A pending newest hour must not hide complete windows ending at the newest available close (D114);
+        # beyond the lag bound, windows end at the expected close and withhold values as in v1.
+        anchor = (newest if newest is not None and expected_close - newest <= timedelta(hours=MAX_ANCHOR_LAG_HOURS)
+                  else expected_close)
+        start = anchor - timedelta(hours=lookback - 1)
+        kept = [(revision_id, candle) for revision_id, candle in found if candle.close_time_utc >= start]
+        candles = [candle for _, candle in kept]
+        revision_ids = {candle.close_time_utc: revision_id for revision_id, candle in kept}
         by_close = {candle.close_time_utc: candle for candle in candles}
         earliest = min(by_close, default=None)
+        pending = [anchor + timedelta(hours=step)
+                   for step in range(1, (expected_close - anchor) // timedelta(hours=1) + 1)]
         values: dict[str, str] = {}
         features: dict[str, Any] = {}
         for name in names:
@@ -165,18 +177,19 @@ class HistoryStore:
                     "event_time_utc": None, "available_at_utc": None,
                 }
                 continue
-            expected = [expected_close - timedelta(hours=offset) for offset in reversed(range(spec.lookback))]
+            expected = [anchor - timedelta(hours=offset) for offset in reversed(range(spec.lookback))]
             selected = [by_close[at] for at in expected if at in by_close]
-            missing = [at for at in expected if at not in by_close]
-            status = "ready"
-            if missing:
-                status = ("gapped_history" if earliest is not None and any(at >= earliest for at in missing)
+            gaps = [at for at in expected if at not in by_close]
+            # "stale": the exact window is complete through the anchor while newer hours are still pending.
+            status = "stale" if pending else "ready"
+            if gaps:
+                status = ("gapped_history" if earliest is not None and any(at >= earliest for at in gaps)
                           else "insufficient_history")
-            if status == "ready":
+            if status in {"ready", "stale"}:
                 values[name] = _value(name, selected)
             features[name] = {
                 "status": status, "definition": spec.definition, "lookback_candles": spec.lookback,
-                "available_candles": len(selected), "missing_close_times_utc": [utc_iso(at) for at in missing],
+                "available_candles": len(selected), "missing_close_times_utc": [utc_iso(at) for at in gaps + pending],
                 "candle_ids": [revision_ids[candle.close_time_utc] for candle in selected],
                 "window_start_close_time_utc": utc_iso(expected[0]),
                 "window_end_close_time_utc": utc_iso(expected[-1]),

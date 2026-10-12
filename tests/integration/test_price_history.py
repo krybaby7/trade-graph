@@ -124,14 +124,16 @@ def test_insufficient_prefix_does_not_invent_history(tmp_path):
     assert result["values"] == {"hourly_return": "0.0555555555555555555555555555555555555555555555556"}
 
 
-def test_stale_tail_is_explicit_and_cannot_extend_lookback_backwards(tmp_path):
+def test_stale_tail_anchors_at_latest_available_close_without_lengthening_lookback(tmp_path):
     _, store, _ = _populate(tmp_path, skip=[50])
     result = store.snapshot("BTC/USD", AS_OF, ["sma_20"], source="synthetic")
     feature = result["features"]["sma_20"]
     assert result["stale"] and result["latest_close_time_utc"] == utc_iso(END - timedelta(hours=1))
-    assert feature["status"] == "gapped_history" and feature["available_candles"] == 19
+    assert feature["status"] == "stale" and feature["available_candles"] == 20
+    assert feature["window_start_close_time_utc"] == utc_iso(END - timedelta(hours=20))
+    assert feature["window_end_close_time_utc"] == utc_iso(END - timedelta(hours=1))
     assert feature["missing_close_times_utc"] == [utc_iso(END)]
-    assert result["values"] == {}
+    assert result["values"] == {"sma_20": "39.5"}
 
 
 def test_empty_and_unsupported_features_are_explicit_and_sources_never_mix(tmp_path):
