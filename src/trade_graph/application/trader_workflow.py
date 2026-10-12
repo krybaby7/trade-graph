@@ -152,7 +152,11 @@ class TraderHandler(GatewayRole):
                 "not proof of current venue balances. Freshness, valuation and execution eligibility remain "
                 "software-enforced. portfolio.recent_order_refusals lists your latest orders that software "
                 "refused, newest first, with the reason; a refused order created no order, reserved nothing "
-                "and moved no money. Return only the structured choice.\n"
+                "and moved no money. market.<symbol>.history.latest_close is the latest completed hourly close "
+                "available at as_of, recent_candles lists the completed hourly candles available at as_of "
+                "oldest first, and recent_missing_close_times_utc names expected hours that were not available. "
+                "A history feature status of stale means its value is computed through the newest available "
+                "candle while a newer hour is still pending. Return only the structured choice.\n"
                 "Validated Trader guidance within these fixed permissions:\n" + prompt)
 
     def invoke(self, task: dict, request: ModelRequest):

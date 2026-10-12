@@ -19,6 +19,10 @@ MAX_INGEST_CANDLES = 720
 MAX_LOOKBACK_CANDLES = 50
 # Windows end at the newest available close if it is at most this far behind the expected close.
 MAX_ANCHOR_LAG_HOURS = 2
+# Expected hourly slots, ending at the expected close, whose available candles the Trader sees directly.
+RECENT_CANDLES = 24
+_RECENT_FIELDS = frozenset({
+    "open_time_utc", "close_time_utc", "available_at_utc", "open", "high", "low", "close", "volume"})
 _ARITHMETIC = Context(prec=50, rounding=ROUND_HALF_EVEN)
 
 
@@ -136,7 +140,8 @@ class HistoryStore:
         expected_close = as_of.replace(minute=0, second=0, microsecond=0)
         names = list(dict.fromkeys(requested_features))
         lookback = max((_FEATURES[name].lookback for name in names if name in _FEATURES), default=1)
-        search_start = expected_close - timedelta(hours=lookback - 1 + MAX_ANCHOR_LAG_HOURS)
+        recent_expected = [expected_close - timedelta(hours=offset) for offset in reversed(range(RECENT_CANDLES))]
+        search_start = min(expected_close - timedelta(hours=lookback - 1 + MAX_ANCHOR_LAG_HOURS), recent_expected[0])
         rows = self.database.execute(
             """WITH available_revisions AS (
                 SELECT candle_id, document_json, close_time_utc,
@@ -157,11 +162,14 @@ class HistoryStore:
         anchor = (newest if newest is not None and expected_close - newest <= timedelta(hours=MAX_ANCHOR_LAG_HOURS)
                   else expected_close)
         start = anchor - timedelta(hours=lookback - 1)
-        kept = [(revision_id, candle) for revision_id, candle in found if candle.close_time_utc >= start]
+        # The retained manifest commits to every candle whose values appear: feature windows and recent series.
+        kept = [(revision_id, candle) for revision_id, candle in found
+                if candle.close_time_utc >= min(start, recent_expected[0])]
         candles = [candle for _, candle in kept]
         revision_ids = {candle.close_time_utc: revision_id for revision_id, candle in kept}
         by_close = {candle.close_time_utc: candle for candle in candles}
-        earliest = min(by_close, default=None)
+        earliest = min((at for at in by_close if at >= start), default=None)
+        recent = [by_close[at] for at in recent_expected if at in by_close]
         pending = [anchor + timedelta(hours=step)
                    for step in range(1, (expected_close - anchor) // timedelta(hours=1) + 1)]
         values: dict[str, str] = {}
@@ -204,6 +212,13 @@ class HistoryStore:
             "candle_ids": [revision_ids[candle.close_time_utc] for candle in candles],
             "provenance": [_provenance(candle, revision_ids[candle.close_time_utc]) for candle in candles],
             "values": values, "features": features,
+            # Completed candles available at as_of only; missing hours are listed, never filled or zeroed.
+            "latest_close": {
+                "close_time_utc": utc_iso(recent[-1].close_time_utc), "close": canonical_decimal(recent[-1].close),
+                "available_at_utc": utc_iso(recent[-1].available_at_utc),
+            } if recent else None,
+            "recent_candles": [candle.model_dump(mode="json", include=_RECENT_FIELDS) for candle in recent],
+            "recent_missing_close_times_utc": [utc_iso(at) for at in recent_expected if at not in by_close],
             "event_time_utc": utc_iso(latest) if latest else None,
             "available_at_utc": utc_iso(max(candle.available_at_utc for candle in candles)) if candles else None,
         }

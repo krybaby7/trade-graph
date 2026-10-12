@@ -99,6 +99,7 @@ _OBSERVATION = (
     "schema_version", "observation_id", "venue", "symbol", "event_time_utc", "available_at_utc", "source",
     "bid", "ask", "last", "bid_size", "ask_size", "volume", "sequence", "gap", "stale",
 )
+_CANDLE = ("open_time_utc", "close_time_utc", "available_at_utc", "open", "high", "low", "close", "volume")
 _STRATEGY = (
     "strategy_id", "hypothesis", "features", "entry_rule", "exit_rule", "entry", "exit", "invalidation",
     "sizing_rule", "required_capabilities", "validation_protocol",
@@ -144,8 +145,17 @@ def _retained_inputs(payload: dict, strategy_id: str | None) -> dict:
         historical = _scalar_pick(history, (
             "symbol", "as_of_utc", "source", "interval_minutes", "feature_version", "source_ref", "stale",
             "latest_close_time_utc", "latest_expected_close_time_utc", "event_time_utc", "available_at_utc",
-            "candle_ids",
+            "candle_ids", "recent_missing_close_times_utc",
         ))
+        # Snapshots before the recent candle series never supplied these keys; do not imply they were empty.
+        if "latest_close" in history:
+            latest_close = history["latest_close"]
+            historical["latest_close"] = (_scalar_pick(latest_close, ("close_time_utc", "close", "available_at_utc"))
+                                          if isinstance(latest_close, dict) else None)
+        if "recent_candles" in history:
+            recent = history["recent_candles"]
+            historical["recent_candles"] = [_scalar_pick(row, _CANDLE) for row in recent[-50:]
+                                            if isinstance(row, dict)] if isinstance(recent, list) else []
         historical["values"] = _scalar_pick(history.get("values"), _MARKET_FEATURES)
         historical["features"] = {
             name: _scalar_pick(feature, (

@@ -36,6 +36,7 @@ def _unsupported_history(symbol: str, as_of: datetime, requested: list[str], sou
         "feature_version": FEATURE_VERSION, "latest_close_time_utc": None,
         "latest_expected_close_time_utc": utc_iso(as_of.replace(minute=0, second=0, microsecond=0)),
         "stale": True, "candle_ids": [], "provenance": [], "values": {},
+        "latest_close": None, "recent_candles": [], "recent_missing_close_times_utc": [],
         "features": {name: {
             "status": "unsupported", "definition": "Hourly history supports BTC/USD and ETH/USD only.",
             "lookback_candles": None, "available_candles": 0, "missing_close_times_utc": [],

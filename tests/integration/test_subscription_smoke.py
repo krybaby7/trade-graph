@@ -333,7 +333,7 @@ def test_diagnostic_retains_measured_missing_public_history_coverage(smoke_flow)
 def test_diagnostic_and_normal_cycle_supply_same_completed_public_strategy_history(smoke_flow):
     from tests.integration.test_history_contexts import _candles
 
-    from trade_graph.application.price_history import HistoryStore
+    from trade_graph.application.price_history import RECENT_CANDLES, HistoryStore
     h = smoke_flow
     candles = [candle.model_copy(update={"available_at_utc": candle.close_time_utc})
                for candle in _candles(h.setup)]
@@ -343,7 +343,9 @@ def test_diagnostic_and_normal_cycle_supply_same_completed_public_strategy_histo
     histories = [request.context["market"]["BTC/USD"]["history"] for request in h.cli.requests]
     assert histories[0] == histories[1] == histories[2]
     history = histories[0]
-    assert len(history["candle_ids"]) == 20 and history["provenance"]["retained_candle_count"] == 20
+    # The 20-hour template windows plus the recent candle series supplied to the Trader.
+    supplied = max(20, RECENT_CANDLES)
+    assert len(history["candle_ids"]) == supplied and history["provenance"]["retained_candle_count"] == supplied
     assert set(history["values"]) == {"hourly_return", "four_hour_drift", "pullback_depth"}
     assert all(feature["status"] == "ready" and not feature["missing_close_times_utc"]
                for feature in history["features"].values())

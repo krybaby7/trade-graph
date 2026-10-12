@@ -81,10 +81,16 @@ withheld every field.
 Research and Trader obtain requested fields from their pinned active strategy
 templates and mandate. Ready and stale values, source/candle identities,
 availability, feature version and explicit missing-data metadata enter their
-actual retained worker snapshots and model requests. Research can cite the
-supplied derived feature snapshot; its finding preserves unknown publication
-time. Existing financial, fresh-quote, mandate and discretionary-trading
-controls still apply.
+actual retained worker snapshots and model requests. Independently of the
+requested fields, each snapshot also supplies `recent_candles`: the completed
+candles available at as-of among the 24 hourly slots ending at the latest
+completed hour, oldest first, as decimal-string open/high/low/close/volume with
+open, close and receipt times. `latest_close` is the newest of them (null, not
+zero, when none is available) and `recent_missing_close_times_utc` names the
+unavailable slots; nothing is filled. The snapshot's candle identities and
+source hash cover these values. Research can cite the supplied derived
+feature snapshot; its finding preserves unknown publication time. Existing
+financial, fresh-quote, mandate and discretionary-trading controls still apply.
 
 Additive migration 0017 creates an append-only hourly-candle table without
 rewriting financial records or earlier snapshots. A changed candle creates
