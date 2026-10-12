@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-09T13:56:21.883521Z",
-  "status_note": "Live operating dashboard continuation claimed from deployed capacity/logging source 493c25c. Isolated worktrees/tmp databases; operating paper service unchanged during development. Pending implementation/deployment evidence; broader acceptance unchanged.",
+  "updated_at": "2026-10-12T22:40:00.000000Z",
+  "status_note": "D114 fix list (T23, T24) implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Day-trader plan T25-T43 pending owner go-ahead. Broader acceptance unchanged.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -387,12 +387,27 @@
       "execution_result": "local_implementation_verified_acceptance_pending"
     },
     "T23": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "claude-opus-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "223f5e0 hourly features v2: tests/integration/test_price_history_pending_tail.py failed on 3838a2d (values {} / KeyError 'sma_20') and passes; a pending newest candle gives stale-but-present fields.",
+        "ebf1d47 latest close and 24 recent candles available at as-of: tests/integration/test_trader_latest_close.py failed on 3838a2d with KeyError 'latest_close' and passes, including the first-run :13 vs :40 timing.",
+        "d07296c/6cf81a2 schedule grid and bounded candle wait with history.expected_candle: tests/integration/test_schedule_anchoring.py, tests/property/test_schedule_occurrence.py and tests/integration/test_decision_candle_wait.py failed on 3838a2d (04:00:07 != 04:00:00; Trader ran at 01:00:05 without the candle) and pass.",
+        "0de75e7 tests/integration/test_first_run_replay.py replays the first run end to end and fails on the pre-fix source.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed."
+      ]
     },
     "T24": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "claude-opus-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "12f5be1/e1415ad native USD exposure: tests/integration/test_native_exposure_stale_reporting_fx.py failed 20 of 22 on 3838a2d with StaleState 'provisional valuation' (weekend and weekday-before-ECB) and passes; D16 regression tests unchanged and passing.",
+        "ab0c42d/8d7e9f1 refused orders: tests/integration/test_order_refusal.py failed on 3838a2d with ('FAILED', 'MANAGE_ONLY') and passes with SUCCEEDED, RUNNING, an order_refused event and portfolio.recent_order_refusals on the next turn; HQ wording in tests/integration/test_hq_order_refusal.py.",
+        "71aa92a/c1626c2/da384f3 mandate default and owner cleanup: tests/integration/test_mandate_legacy_ids.py failed on 3838a2d and passes; revision N+1 leaves revision 1 and its decisions unchanged.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed."
+      ]
     },
     "T25": {
       "status": "todo",

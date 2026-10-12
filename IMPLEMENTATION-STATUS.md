@@ -1,3 +1,37 @@
+# Day-trader build plan and D114 fix list in source, not deployed — 2026-10-13
+
+Branch `claude/day-trader-engine-20261012` (WSL worktree `day-trader-engine-20261012`), not pushed. **Nothing was deployed, started or run against the installation**; the stopped service, its containers and `/opt/trade-graph-subscription` were not touched. No paid, private-exchange or Perplexity call was made.
+
+- **Plan** (`3838a2d`): tasks T23–T43 (release R2, phases D0–D7; T30 is LATER) and [the build plan](docs/DAY-TRADER-BUILD-PLAN.md) with the owner decisions still open. `scripts/next_task.py` now lists ready R1 and R2 tasks.
+- **D114 fix list** (T23, T24; `71aa92a`..this commit; defaults in [D129](docs/DECISIONS.md)):
+  - Hourly features v2: windows anchor at the newest available completed candle (at most 2 h late), per-field `stale` status and missing hours; a pending newest candle no longer withholds every field (`223f5e0`).
+  - Trader and Research snapshots carry `latest_close`, up to 24 recent completed candles available at as-of and the missing slots (`ebf1d47`, `88a87ab`).
+  - Schedules stay on their persisted grid; a fresh Trader task in the normal subscription operation waits up to 300 s after the hour for the just-closed candle; `history.expected_candle` says plainly whether it was stored (`d07296c`, `6cf81a2`).
+  - Exposure checks compare USD with native USD equity; a carried EUR reference rate only labels EUR views; other-currency cash uses the inverse reference rate (`12f5be1`, `e1415ad`).
+  - A refused order is a recorded decision plus `order_refused` event, shown to the next Trader turn (`portfolio.recent_order_refusals`) and in HQ in plain words; the task succeeds and no system pause is set (`ab0c42d`, `8d7e9f1`, `a3594ed`, `e3e1015`, `b4fe523`).
+  - Default mandate is `["slow-trend-pullback"]`; `trade-graph mandate-cleanup` previews and `--confirm` installs a new revision for older databases (refused while the service runs); FLATTEN exits work under a named-strategy mandate (`71aa92a`, `c1626c2`, `da384f3`, `95d55b4`).
+  - `tests/integration/test_first_run_replay.py` (`0de75e7`) replays the first run end to end on the subscription path with synthetic data: a Saturday with a stale EUR rate, candle wait, latest close and stale-or-ready features, an authorized buy, a refused buy without a pause, and the refusal shown on the next turn. It fails on the pre-fix source.
+
+Evidence (WSL, synthetic data only):
+- Each fix was written test-first; every new test file failed on `3838a2d` (for example `KeyError: 'latest_close'`, `StaleState: provisional valuation`, `('FAILED', 'MANAGE_ONLY') == ('SUCCEEDED', 'RUNNING')`, next due `04:00:07` instead of `04:00:00`, `invalid choice: 'mandate-cleanup'`) and passes now. An independent reviewer re-ran each track's new tests against the pre-fix source.
+- `uv run ruff check src tests`: all checks passed. `python3 scripts/check_plan.py`: 44 tasks valid; `python3 scripts/test_planning.py`: 11 OK.
+- Combined targeted run of all tracks' related files: 894 passed, 1 failed (the pre-existing timeout assertion below).
+- Full suite `uv run pytest -p no:cacheprovider -rf`, at `6cf81a2` (35 min): 4043 passed, 18 failed, 8 skipped; at `daae41d` (34 min): **4053 passed, 19 failed, 8 skipped**. All failures already fail on the base: `e2e/test_dashboard_loop` (`KeyError: 'degraded'`), 4 `test_paper_soak` CLI tests, 6 `test_plugin_staging` 0.3-second-limit cases (flaky under load), 3 `test_progress_dashboard` and 4 `test_progress_projection` (Mission Control rejects the `updated_at` timestamp; `/progress` now redirects signed-out readers to `/login` with 303, which the stale 401 assertion misreads; it is not a privacy leak), and `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers` (timeout/max-output assertion).
+
+Before deploying (owner-approved, as before): re-pin the protected kernel manifest and reseal the image (every `.py` change alters the digest), then deploy through the financial-manifest transition with the paper account in MANAGE_ONLY. Re-collect any Kraken read-only venue observation afterwards, because `execution.py`, `ledger.py` and `books.py` are part of its source digest. Then, with the service stopped and after `trade-graph backup`, run `trade-graph mandate-cleanup` on the state database and `--confirm` only on the owner's yes.
+
+Open follow-ups (not in this slice):
+- A malformed Trader reply, research cited outside the snapshot or a stale snapshot still fails the turn and sets the system MANAGE_ONLY pause, which does not lift on its own (owner decision).
+- A Frankfurter outage still marks the feed failed, which blocks buys.
+- A refused turn still counts as a failed version-trial sample. Dispatch-time rejections are not yet in `recent_order_refusals`. HQ shows a Trader task waiting for its candle as an ordinary queued task.
+- Research carries the history twice (market and sources); widening the coin list (T31/T32) needs per-symbol budgeting.
+- `api/financial._mark_maximum_age` finds no mandate before a new revision's creation time and falls back to the policy quote age (same value today).
+- Mission Control accepts neither the `todo` status nor the full `updated_at` timestamp.
+
+Next: Phase D1 (T25–T27) after the owner's go-ahead. Owner decisions in the build plan: daily loss limit, maximum per coin, paper coin list, Perplexity budget after testing, trading-day start, test-run length.
+
+---
+
 # Trade Graph HQ final full-suite check, not deployed — 2026-10-10
 
 Branch `claude/super-dashboard-20261009` at `67a774d`. `uv run ruff check src tests` passed. Full suite (`uv run pytest -p no:cacheprovider -rf`, 36 min): 3948 passed, 23 failed, 8 skipped (Node tests skipped in WSL; Windows Node runs them). Of the 23:
