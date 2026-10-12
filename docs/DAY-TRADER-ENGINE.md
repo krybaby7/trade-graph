@@ -1,7 +1,7 @@
 # Day-trader engine direction
 
 Status: owner-approved direction, 2026-10-12. This is a design record. No
-runtime behavior has changed. Decisions D114–D125 are in
+runtime behavior has changed. Decisions D114–D127 are in
 [DECISIONS.md](DECISIONS.md).
 
 ## Why the engine changes
@@ -24,8 +24,9 @@ database and the deployed source (`3504248`) found these causes:
 
 Fees: paper charges maker 0.40% and taker 0.80% (D14), which equals Kraken's
 tier 1. A 30-day replay of the hourly pullback rule (Kraken public candles,
-2026-09-12 to 2026-10-12) lost money after fees on both BTC and ETH. Coins,
-fees and risk limits are a separate owner session (see "Deferred").
+2026-09-12 to 2026-10-12) lost money after fees on both BTC and ETH. Venue
+costs are compared in "Venues and cost profiles" below; risk limits are still
+open.
 
 ## The daily cycle
 
@@ -90,7 +91,7 @@ start. HQ shows each department's chosen next time.
   fee.
 - Every open position carries a protective exit while the Trader sleeps.
 - Software keeps enforcing the money envelope (per-coin and total exposure).
-  The daily-loss value is set in the deferred session.
+  The daily-loss value is still open (see "Pending owner decisions").
 - On a pause, resting entries are cancelled and protective exits remain.
 
 ### Indicators and charts (D118)
@@ -208,22 +209,59 @@ Owner decision (D124):
 - The test key is stored outside Git in an owner-only file (D125). It is
   never committed or logged, and the owner revokes it after testing.
 
+### Venues and cost profiles (D126)
+
+The 2026-10-12 venue session compared venues open to an EU account. Its
+inputs were an owner-run Perplexity study, corrected against official fee
+pages: Bitstamp's real standard fees are 0.30%/0.40%, not the stablecoin
+column's 0.02%/0.04%, and Nordnet does have an order API. The measure is the
+typical daily swing divided by the cost of one buy and one sell, using limit
+orders (BTC 2.7%, mid-size coins about 6%).
+
+| Profile | Round-trip cost (limit / market) | Swing ÷ cost, BTC / mid-size coins |
+|---|---|---|
+| Kraken spot, starting tier | 0.80% / 1.60% | ~3× / ~8× |
+| Kraken spot, after $10k 30-day volume | 0.44% / 0.76% | ~6× / ~14× |
+| OKX Europe spot (official notice, 2026-09-25) | 0.20% / 0.40% | ~13× / ~30× |
+| US large-cap stocks at Interactive Brokers, cash account | ~0.03–0.05% | ~50–80× |
+
+The practice range replays each strategy under these cost profiles:
+
+- Kraken spot, at the current tier and after the volume discount.
+- OKX Europe spot. Kraken prices stand in for the main coins; smaller coins
+  are confirmed with OKX's own public data because their spreads differ.
+- US stocks at Interactive Brokers, later. This needs stock history and
+  market-hours handling.
+
+A new venue connection is built only if a strategy's evidence depends on that
+venue's costs. Bitvavo (0.30%/0.50%) is the euro-native runner-up. Bitstamp,
+Coinbase and Nordnet bring no cost advantage. Crypto futures (0.04%/0.10%) are
+excluded by D127.
+
+### No riba (D127)
+
+The owner accepts anything that improves profit as long as it is not
+considered riba. Under mainstream standards (the OIC International Islamic Fiqh
+Academy resolution 63 (1/7) of 1992, and AAOIFI Shariah standards as reported
+by secondary sources), the engine excludes:
+
+- futures and perpetuals, including their periodic funding payments;
+- conventional short selling;
+- margin and any other interest-bearing borrowing;
+- lending, "earn" and interest on idle balances (these stay switched off, and
+  the engine flags any interest it receives).
+
+Spot crypto and cash-account stocks remain. The existing long-only and
+no-leverage rules stay. The owner may revise this with a scholar's opinion.
+With shorting excluded, a falling market means holding cash. The scanner's
+breadth partly compensates, because some liquid coins usually rise while the
+majors fall. Bybit's certified Islamic Account (spot-only) is the only
+dedicated option found; whether an EU account can use it is unverified.
+
 ## Pending owner decisions
 
 - A Perplexity budget, once testing shows natural costs (D125).
-- Daily loss limit, per-coin exposure and the paper fee ladder (deferred
-  session).
-
-## Deferred: coins, fees and risk
-
-The owner wants a dedicated session on coin choice, Kraken fees and ways
-around them. The 2026-10-12 inputs for that session:
-
-- Kraken spot tiers: 0.40%/0.80%, then 0.30%/0.60% from $2,500 of 30-day
-  volume, then 0.22%/0.38% from $10,000.
-- Kraken Futures tier 1: 0.02%/0.05%.
-- A one-day scan in which the 40 most-traded coins had a median 24-hour swing
-  of 7.5%, against 2.0% for BTC, with spreads near 0.07%.
+- Daily loss limit and per-coin exposure.
 
 ## Unchanged
 

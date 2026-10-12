@@ -428,3 +428,21 @@ None prevents offline development. Mark credentialed verification pending when c
   in chat. It is stored only in an owner-only private file outside Git, is
   never committed or logged, and the owner revokes it after testing. Later
   keys use the local private-file route.
+
+- **D126 (2026-10-12, owner decision):** The practice range replays each
+  strategy under these cost profiles: Kraken spot (current tier and after the
+  volume discount), OKX Europe spot (0.10% / 0.20%, official 2026-09-25
+  notice), and later US stocks at Interactive Brokers in a cash account. This
+  follows an owner-run Perplexity venue study for an EU account, corrected
+  against official pages (Bitstamp's standard fees are 0.30% / 0.40%; Nordnet
+  has an order API). A new venue adapter is built only when a strategy's
+  evidence depends on that venue's costs. Details:
+  [day-trader engine](DAY-TRADER-ENGINE.md#venues-and-cost-profiles-d126).
+
+- **D127 (2026-10-12, owner condition):** Nothing considered riba. Under
+  mainstream standards (OIC International Islamic Fiqh Academy resolution
+  63 (1/7); AAOIFI as reported), the engine excludes futures and perpetuals
+  (including their funding payments), conventional short selling, margin and
+  other interest-bearing borrowing, and lending, earn or interest on idle
+  balances. Spot crypto and cash-account stocks remain, and the long-only and
+  no-leverage rules stay. The owner may revise this with a scholar's opinion.
