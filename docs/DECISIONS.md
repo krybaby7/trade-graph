@@ -329,3 +329,73 @@ None prevents offline development. Mark credentialed verification pending when c
   anchors are unchanged; narrower than 1 200 px a third is too tight for the
   prompt fields. Opening or closing punctuation that touches a tappable time,
   term or amount stays on its line ("(tomorrow 3:00).").
+
+- **D114 (2026-10-12, first-run diagnosis):** The 2026-10-07 to 2026-10-10
+  paper run made 17 `no_action` decisions and no orders. Fix the causes
+  before new features: give the Trader the latest completed close and a short
+  candle series; emit features from the candles that are available instead of
+  all-or-nothing; run decisions after the candle they need is stored; stop
+  stale EUR reporting FX from blocking USD-native exposure; record a refused
+  order as a visible rejection, not a task failure plus `MANAGE_ONLY` pause;
+  drop the leftover `slow-trend`/`s` mandate IDs. Evidence and the full cause
+  list: [day-trader engine](DAY-TRADER-ENGINE.md).
+
+- **D115 (2026-10-12, owner direction):** The engine becomes an event-driven
+  day trader with a daily cycle: scanner shortlist, Research focus coins, a
+  Trader day plan (strategy, menu indicators, alarms, resting orders), then
+  software watches every price update and wakes the Trader on alarms, fills,
+  protective exits or Leader requests. This replaces the fixed 4-hour Trader
+  timer as the main wake mechanism and implements the intent of D09.
+
+- **D116 (2026-10-12, owner instruction):** No cap on Trader wake-ups or
+  activity. The owner tunes the graph from measured behavior, which HQ shows
+  per wake, reason and department allowance. An alarm firing once until
+  re-armed, and batching alarms that fire during a wake, are alarm semantics,
+  not caps. The existing subscription-allowance floor stays unless the owner
+  changes it.
+
+- **D117 (2026-10-12):** Resting limit entries are allowed. Every open
+  position carries a protective exit while the Trader sleeps. Software keeps
+  enforcing the exposure envelope. A pause cancels resting entries and keeps
+  protective exits. The daily-loss value is set in the deferred coins, fees
+  and risk session.
+
+- **D118 (2026-10-12, owner question):** Indicators are computed by a proven
+  open-source library (TA-Lib preferred) from Kraken 1/5/15/60-minute candles.
+  The Trader picks from a menu and receives numbers, not chart images.
+  Indicator values may be floats; money stays Decimal. TradingView is not the
+  engine: it has no public alert-creation API, and webhooks need a paid plan
+  and a public endpoint. HQ charts use TradingView Lightweight Charts
+  (Apache-2.0, with an attribution link).
+
+- **D119 (2026-10-12, owner priority):** A practice range replays proposed
+  strategies on at least three months of Kraken history (15-minute bars or
+  finer) with tiered fees and conservative limit fills. It reports trade
+  count, win rate, average win and loss, after-fee result versus cash and
+  BTC, and worst drawdown and losing streak. Tune on an earlier period and
+  confirm on an untouched later one. Data comes from Kraken's downloadable
+  OHLCVT archive, the public `Trades` endpoint for recent gaps, and the
+  engine's own collector. Delisted pairs are absent, so coin-selection results
+  are optimistic.
+
+- **D120 (2026-10-12, owner approved):** Software, not a model, ranks all
+  Kraken USD pairs hourly by volume, swing relative to cost, spread and trend,
+  and excludes thin pairs. Research gets about 10 candidates, adds news
+  context and picks the focus coins. Paper symbol scope widens through an
+  owner policy revision when implemented.
+
+- **D121 (2026-10-12, owner direction):** The Leader acts like a human
+  manager. It makes rounds of broad, shallow news reading (crypto markets and
+  AI trading agents) without rabbit holes, asks Research for deep dives, and
+  may wake the Trader with a note. It never places or approves individual
+  trades. Strategy-level ideas go through Research or Optimisation and the
+  practice range; the system does not rewrite itself while it runs.
+
+- **D122 (2026-10-12, pending owner):** Recommended Research web access is the
+  Perplexity Search API. Software stores dated results as snapshot sources
+  before the model reads them, which matches the persisted-source citation
+  rule, and it spends no Codex allowance. Third-party pricing pages put it near
+  $5 per 1,000 searches. It waits for the owner's decision and budget; paid
+  calls stay disabled. The key belongs in private runtime configuration only.
+  The free fallback is Codex live web search after the adapter captures result
+  evidence; today it records only search IDs.
