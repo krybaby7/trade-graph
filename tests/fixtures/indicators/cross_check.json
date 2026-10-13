@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "series": ["trend_pullback", "range_burst"],
+  "default_tolerance": 1e-9,
+  "tolerance_note": "A difference is |TA-Lib - other| divided by a scale: the median close for outputs in price units, 1 for points and percent outputs, and the largest absolute TA-Lib value for volume outputs. An entry listed below under a library is compared by the stated mode; every other entry must match within default_tolerance wherever both libraries have a value.",
+  "variants": {
+    "SMA": [{"timeperiod": 7}, {"timeperiod": 61}],
+    "EMA": [{"timeperiod": 5}, {"timeperiod": 50}],
+    "WMA": [{"timeperiod": 9}],
+    "DEMA": [{"timeperiod": 8}, {"timeperiod": 30}],
+    "BBANDS": [{"timeperiod": 10, "nbdevup": 1.5, "nbdevdn": 3.0}],
+    "SAR": [{"acceleration": 0.04, "maximum": 0.1}],
+    "MIDPRICE": [{"timeperiod": 5}, {"timeperiod": 33}],
+    "HIGHEST_HIGH": [{"timeperiod": 7}],
+    "LOWEST_LOW": [{"timeperiod": 7}],
+    "RSI": [{"timeperiod": 5}, {"timeperiod": 30}],
+    "MACD": [
+      {"fastperiod": 5, "slowperiod": 13, "signalperiod": 4},
+      {"fastperiod": 8, "slowperiod": 17, "signalperiod": 9}
+    ],
+    "STOCH": [
+      {"fastk_period": 9, "slowk_period": 5, "slowd_period": 2},
+      {"fastk_period": 3, "slowk_period": 1, "slowd_period": 1},
+      {"fastk_period": 14, "slowk_period": 1, "slowd_period": 3}
+    ],
+    "CCI": [{"timeperiod": 6}, {"timeperiod": 40}],
+    "MFI": [{"timeperiod": 5}, {"timeperiod": 30}],
+    "WILLR": [{"timeperiod": 7}],
+    "ROC": [{"timeperiod": 3}],
+    "MOM": [{"timeperiod": 3}],
+    "ADX": [{"timeperiod": 7}, {"timeperiod": 30}],
+    "PLUS_DI": [{"timeperiod": 7}],
+    "MINUS_DI": [{"timeperiod": 7}],
+    "AROON": [{"timeperiod": 7}, {"timeperiod": 40}],
+    "ATR": [{"timeperiod": 5}, {"timeperiod": 30}],
+    "NATR": [{"timeperiod": 5}],
+    "OBV": [],
+    "STDDEV": [{"timeperiod": 9}, {"timeperiod": 40}]
+  },
+  "libraries": {
+    "pandas_ta_classic": {
+      "version_checked": "0.8.32",
+      "role": "Second library of record. It has its own pandas implementation of every menu entry (called with talib=False) and agrees with TA-Lib to rounding error on all but two entries. Its code deliberately follows TA-Lib's conventions in many places, so agreement shows correct inputs, parameters and outputs rather than an independent opinion on conventions; talipp supplies that.",
+      "entries": {
+        "CCI": {
+          "mode": "match",
+          "tolerance": 1e-8,
+          "reason": "Rounding error only. CCI is unbounded and often in the hundreds, and it divides by a mean deviation, so the absolute rounding error is larger than for other point-valued entries (observed worst 5e-11)."
+        },
+        "MACD": {
+          "mode": "converges",
+          "parameter": "slowperiod",
+          "settled_periods": 3,
+          "settled_tolerance": 1e-6,
+          "early_bound": 2e-3,
+          "reason": "pandas-ta-classic runs the fast average as an ordinary EMA from the first candle. TA-Lib starts the fast average late, at the first candle where the slow average exists, from the mean of the fast-length candles ending there (reproduced in test_talib_macd_fast_average_is_seeded_where_the_slow_average_starts using only TA-Lib's own EMA). The lines differ at the start and converge as the earlier seed fades.",
+          "tradingview": "TradingView's ta.macd subtracts two ordinary EMAs, like pandas-ta-classic (per the Pine Script reference; not re-checked in this task)."
+        },
+        "SAR": {
+          "mode": "state_dependent",
+          "min_agreement": 0.90,
+          "max_disagreement_run": 40,
+          "max_relative_difference": 0.03,
+          "min_same_side": 0.97,
+          "reason": "Parabolic SAR remembers its trend, extreme point and acceleration, so one early difference can persist until the next reversal. pandas-ta-classic makes its first step after the start with zero acceleration, where TA-Lib uses the initial acceleration (bars 2-10 of trend_pullback). TA-Lib also reverses when a low exactly touches the SAR, while pandas-ta-classic needs the low to go below it: in range_burst the low equals the SAR at bar 407, TA-Lib reverses there and pandas-ta-classic two bars later, and the two paths differ until bar 420.",
+          "tradingview": "TradingView's ta.sar has its own start rules (not checked); treat the first candles of any history, and the candles right after a reversal, as library-specific."
+        }
+      }
+    },
+    "talipp": {
+      "version_checked": "2.7.0",
+      "role": "Convention probe. A pure-Python library with no dependencies and no TA-Lib code or reference to it. It has no Money Flow Index and no momentum, so those two entries are compared against pandas-ta-classic only. Its seeding conventions differ from TA-Lib's in the Wilder-smoothed indicators, which makes it the evidence for the documented differences.",
+      "entries": {
+        "CCI": {
+          "mode": "match",
+          "tolerance": 1e-8,
+          "reason": "Rounding error only. CCI is unbounded and often in the hundreds, and it divides by a mean deviation, so the absolute rounding error is larger than for other point-valued entries (observed worst 7e-10)."
+        },
+        "MFI": {"mode": "not_covered", "reason": "talipp has no Money Flow Index."},
+        "MOM": {"mode": "not_covered", "reason": "talipp has rate of change but no price-difference momentum."},
+        "STOCH": {
+          "mode": "match",
+          "applies_when": {"slowk_period": 1},
+          "reason": "talipp's Stoch returns the raw %K and a simple average of it as %D. That equals TA-Lib's slow stochastic only when the slow-K smoothing is 1, so it is compared only for those settings."
+        },
+        "MACD": {
+          "mode": "converges",
+          "parameter": "slowperiod",
+          "settled_periods": 3,
+          "settled_tolerance": 1e-6,
+          "early_bound": 2e-3,
+          "reason": "Same cause as for pandas-ta-classic: talipp runs the fast average as an ordinary EMA from the first candle, TA-Lib seeds it where the slow average begins.",
+          "tradingview": "TradingView's ta.macd subtracts two ordinary EMAs, like talipp (per the Pine Script reference; not re-checked in this task)."
+        },
+        "SAR": {
+          "mode": "state_dependent",
+          "min_agreement": 0.88,
+          "max_disagreement_run": 60,
+          "max_relative_difference": 0.05,
+          "min_same_side": 0.95,
+          "reason": "talipp needs four candles before its first SAR and starts from a different initial trend and extreme point than TA-Lib. The paths realign at a later reversal (bar 38 of trend_pullback, bar 420 of range_burst).",
+          "tradingview": "TradingView's ta.sar has its own start rules (not checked); treat the first candles of any history, and the candles right after a reversal, as library-specific."
+        },
+        "ADX": {
+          "mode": "converges",
+          "parameter": "timeperiod",
+          "settled_periods": 24,
+          "settled_tolerance": 1e-6,
+          "early_bound": 8.0,
+          "reason": "talipp divides its smoothed directional movement by an ATR that counts the first candle's high minus low as a true range and seeds with plain averages of the first N values. TA-Lib seeds the smoothed sums with the first N-1 values and applies the first smoothing step at candle N (found by fitting hand-derived values; TA-Lib documents no formula). Wilder smoothing forgets its seed by a factor (N-1)/N per candle, and ADX smooths twice, so the gap takes about 16 periods to fall below one millionth (measured).",
+          "tradingview": "TradingView's ta.dmi uses ta.rma, which starts from a simple average of the first N values, and its first true range is high minus low (per the Pine Script reference; not re-checked in this task), so it behaves like talipp here."
+        },
+        "PLUS_DI": {
+          "mode": "converges",
+          "parameter": "timeperiod",
+          "settled_periods": 20,
+          "settled_tolerance": 1e-6,
+          "early_bound": 4.0,
+          "reason": "Same seeding difference as ADX; the directional indicators are one smoothing deep, so they settle slightly sooner.",
+          "tradingview": "As for ADX."
+        },
+        "MINUS_DI": {
+          "mode": "converges",
+          "parameter": "timeperiod",
+          "settled_periods": 20,
+          "settled_tolerance": 1e-6,
+          "early_bound": 4.0,
+          "reason": "Same seeding difference as ADX; the directional indicators are one smoothing deep, so they settle slightly sooner.",
+          "tradingview": "As for ADX."
+        },
+        "ATR": {
+          "mode": "converges",
+          "parameter": "timeperiod",
+          "settled_periods": 8,
+          "settled_tolerance": 1e-6,
+          "early_bound": 1e-3,
+          "reason": "talipp counts the first candle's high minus low as a true range and averages candles 0 to N-1 for its first value. TA-Lib's true range needs a previous close, so it starts at the second candle and averages candles 1 to N. After the seed both smooth by Wilder's rule, so the gap shrinks by (N-1)/N per candle.",
+          "tradingview": "TradingView's ta.atr smooths ta.tr with ta.rma, and ta.tr is high minus low on the first candle (per the Pine Script reference; not re-checked in this task), so it behaves like talipp here."
+        },
+        "NATR": {
+          "mode": "converges",
+          "parameter": "timeperiod",
+          "settled_periods": 14,
+          "settled_tolerance": 1e-6,
+          "early_bound": 0.1,
+          "reason": "Normalised ATR is the ATR above divided by the close, so it carries the same seed difference. It is measured in percent, where one millionth is a tighter bar than for price-unit outputs, so it needs more periods.",
+          "tradingview": "As for ATR."
+        }
+      }
+    }
+  }
+}

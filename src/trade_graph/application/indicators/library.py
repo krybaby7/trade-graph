@@ -24,7 +24,7 @@ from numpy.typing import NDArray
 from talib import abstract
 
 from trade_graph.contracts.candles import Candle
-from trade_graph.contracts.indicators import Number, get_indicator
+from trade_graph.contracts.indicators import get_indicator
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 
 # The candle store reads at most this many slots at once; one computation never needs more.
@@ -128,6 +128,5 @@ def _require_library_defaults() -> None:
 
 
 __all__ = [
-    "MAX_ROWS", "IndicatorComputationError", "Number", "columns_from_candles", "compute_raw", "library_versions",
-    "lookback",
+    "MAX_ROWS", "IndicatorComputationError", "columns_from_candles", "compute_raw", "library_versions", "lookback",
 ]

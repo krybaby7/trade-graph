@@ -21,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field
 from trade_graph.domain.errors import ValidationFailure
 
 MAX_PERIOD = 500
+# How much of a recursive indicator's starting-point effect Settling guidance may leave, relative to the output scale.
+SETTLE_TOLERANCE = 1e-5
 CandleField = Literal["open", "high", "low", "close", "volume"]
 ParameterKind = Literal["int", "float"]
 IndicatorGroup = Literal["moving_average", "trend", "momentum", "volatility", "volume", "price_range"]
@@ -133,7 +135,8 @@ class Settling(_Frozen):
     """Engineering guidance for recursively seeded indicators, measured by tests (not a guarantee).
 
     Supplying ``periods`` times the value of ``parameter`` candles of history beyond the library lookback
-    keeps the remaining effect of the starting point below the tolerance named in docs/INDICATOR-MENU.md.
+    keeps the remaining effect of the starting point below ``SETTLE_TOLERANCE`` of the output scale (the median
+    price for price outputs, 1 for points and percent), as measured by tests/unit/test_indicator_settling.py.
     """
 
     parameter: str
@@ -272,7 +275,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          warmup=_window("Needs one smoothing length of candles before the first value."), recursive_seed=True,
          seed_note="It starts from the plain average of the first N closes and then blends each new close into the "
                    "previous value, so where the history starts slightly changes every later value.",
-         settle=dict(parameter="timeperiod", periods=7)),
+         settle=dict(parameter="timeperiod", periods=4)),
     dict(name="WMA", talib_function="WMA", group="moving_average", title="Weighted moving average",
          description="An average of closing prices where the newest candle counts most and the weights fall in a "
                      "straight line to the oldest.",
@@ -285,7 +288,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          warmup=_window("Needs about two smoothing lengths of candles before the first value."), recursive_seed=True,
          seed_note="It is built from two exponential averages that both start from plain averages, so where the "
                    "history starts slightly changes every later value.",
-         settle=dict(parameter="timeperiod", periods=8)),
+         settle=dict(parameter="timeperiod", periods=4)),
     dict(name="BBANDS", talib_function="BBANDS", group="volatility", title="Bollinger Bands",
          description="A moving average with an upper and a lower band a set number of standard deviations away, "
                      "showing how stretched price is.",
@@ -332,7 +335,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          warmup=_window("Needs one period of candles plus one before the first value."), recursive_seed=True,
          seed_note="Gains and losses are smoothed with Wilder's method starting from a plain average of the first "
                    "N changes, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=15)),
+         settle=dict(parameter="timeperiod", periods=20)),
     dict(name="MACD", talib_function="MACD", group="momentum", title="MACD",
          description="The gap between a fast and a slow exponential average, with a signal line and a histogram "
                      "that show momentum building or fading.",
@@ -350,7 +353,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          recursive_seed=True,
          seed_note="Fast, slow and signal averages all start from plain averages, so where the history starts "
                    "slightly changes later values.",
-         settle=dict(parameter="slowperiod", periods=9)),
+         settle=dict(parameter="slowperiod", periods=4)),
     dict(name="STOCH", talib_function="STOCH", group="momentum", title="Slow Stochastic",
          description="Shows where the close sits inside the recent high-low range on a 0 to 100 scale, smoothed "
                      "into a K line and a D line.",
@@ -400,9 +403,9 @@ _MENU: tuple[dict[str, Any], ...] = (
          outputs=(_points("value", "Trend strength from 0 to 100.", 0.0, 100.0),),
          warmup=_window("Needs about two smoothing lengths of candles before the first value."),
          recursive_seed=True,
-         seed_note="Directional movement is smoothed twice with Wilder's method, starting from sums of the first N "
+         seed_note="Directional movement is smoothed twice with Wilder's method, each time started from the first few "
                    "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=30)),
+         settle=dict(parameter="timeperiod", periods=24)),
     dict(name="PLUS_DI", talib_function="PLUS_DI", group="trend", title="Plus directional indicator",
          description="A 0 to 100 measure of upward pressure; compare it with the minus directional indicator to "
                      "see which side is winning.",
@@ -410,18 +413,18 @@ _MENU: tuple[dict[str, Any], ...] = (
          parameters=(_period(14, meaning="Smoothing length for the directional movement."),),
          outputs=(_points("value", "Upward pressure from 0 to 100.", 0.0, 100.0),),
          warmup=_window("Needs one smoothing length of candles before the first value."), recursive_seed=True,
-         seed_note="Directional movement is smoothed with Wilder's method starting from a sum of the first N "
-                   "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=15)),
+         seed_note="Directional movement is smoothed with Wilder's method started from the first few values, "
+                   "so where the history starts slightly changes later values.",
+         settle=dict(parameter="timeperiod", periods=20)),
     dict(name="MINUS_DI", talib_function="MINUS_DI", group="trend", title="Minus directional indicator",
          description="A 0 to 100 measure of downward pressure; compare it with the plus directional indicator.",
          inputs=("high", "low", "close"),
          parameters=(_period(14, meaning="Smoothing length for the directional movement."),),
          outputs=(_points("value", "Downward pressure from 0 to 100.", 0.0, 100.0),),
          warmup=_window("Needs one smoothing length of candles before the first value."), recursive_seed=True,
-         seed_note="Directional movement is smoothed with Wilder's method starting from a sum of the first N "
-                   "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=15)),
+         seed_note="Directional movement is smoothed with Wilder's method started from the first few values, "
+                   "so where the history starts slightly changes later values.",
+         settle=dict(parameter="timeperiod", periods=20)),
     dict(name="AROON", talib_function="AROON", group="trend", title="Aroon",
          description="How recently the highest high and the lowest low happened within the last N candles, on a "
                      "0 to 100 scale for each.",
@@ -440,7 +443,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          recursive_seed=True,
          seed_note="The true range is smoothed with Wilder's method starting from a plain average of the first N "
                    "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=15)),
+         settle=dict(parameter="timeperiod", periods=8)),
     dict(name="NATR", talib_function="NATR", group="volatility", title="Normalised ATR",
          description="The average true range as a percent of the close, so volatility can be compared between "
                      "coins with different prices.",
@@ -452,7 +455,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          recursive_seed=True,
          seed_note="The true range is smoothed with Wilder's method starting from a plain average of the first N "
                    "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=15)),
+         settle=dict(parameter="timeperiod", periods=14)),
     dict(name="OBV", talib_function="OBV", group="volume", title="On-Balance Volume",
          description="A running total that adds a candle's volume when the close rises and subtracts it when the "
                      "close falls.",
