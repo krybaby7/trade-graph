@@ -558,6 +558,75 @@ def test_resumed_runs_equal_one_uninterrupted_run_when_ids_are_missing(tmp_path,
     assert rounds >= 3 * streams  # and they were cut into several runs each
 
 
+def stored_cursor(store: CandleStore, next_open, *, range_start=T0, pair_code: str = "XBTUSD", **extra) -> None:
+    """A finished trades_backfill run whose report holds one cursor, as an earlier version or a bad edit might."""
+    run_id = store.begin_run(kind="trades_backfill", source=TRADES_SOURCE, evidence_label="synthetic_fixture",
+                             started_at=NOW, parameters={})
+    interval = {"range_start_unix": range_start, "next_open_unix": next_open, "open_candle_has_id_gap": False, **extra}
+    store.finish_run(run_id, finished_at=NOW, status="partial", report={
+        "pairs": {"BTC/USD": {"pair_code": pair_code, "intervals": {"15": interval}}}})
+
+
+@pytest.mark.parametrize(("next_open", "range_start"), [
+    (T0 + 901, T0),           # not on the 15 minute grid: the aggregator would refuse it, so it must never get there
+    (T0 + 1.5, T0),           # not a whole number
+    ("900", T0),              # the wrong type
+    (True, T0),               # a bool is not a Unix time
+    (T0, T0),                 # nothing was decided beyond the start of the range
+    (T0 - 900, T0),           # before the range
+    (T0 + 900, T0 + 900),     # the run began later than the range we want now
+    (T0 + 900, None),         # no recorded start
+])
+def test_a_stored_cursor_that_cannot_be_trusted_is_ignored_and_the_run_starts_at_the_range_start(
+        store, next_open, range_start) -> None:
+    two_slot_store(store)
+    stored_cursor(store, next_open, range_start=range_start)
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) is None
+    rig = Rig(store, two_slot_trades())
+    result = rig.drive()
+    assert result.status == "ok" and result.report["pairs"]["BTC/USD"]["intervals"]["15"]["resumed_from_unix"] is None
+    assert rig.script.calls[0].endswith(f"since={T0 - 1}&count=1000")
+
+
+@pytest.mark.parametrize("order", [(T0 + 900, T0 + 1800), (T0 + 1800, T0 + 900), (T0 + 900, T0 + 1800, T0 + 900)])
+def test_with_several_stored_runs_the_newest_cursor_is_used(store, order) -> None:
+    two_slot_store(store)
+    for next_open in order:
+        stored_cursor(store, next_open)
+    assert read_resume_points(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == T0 + 1800
+    rig = Rig(store, [trade(1, "1805", "103.00", "1")])
+    result = rig.drive()  # the cursor is the range end, so the interval is complete and no request is needed
+    assert rig.script.calls == [] and result.report["pairs"]["BTC/USD"]["intervals"]["15"]["status"] == "complete"
+
+
+def test_one_valid_cursor_among_unusable_ones_is_still_found(store) -> None:
+    two_slot_store(store)
+    stored_cursor(store, T0 + 901)
+    stored_cursor(store, T0 + 900)
+    stored_cursor(store, T0 + 1800, pair_code="XXBTZUSD")  # another venue code: not ours
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, False)
+
+
+def isolated(call_numbers: set[int], answer):
+    return lambda call, url: answer if call in call_numbers else None
+
+
+def test_isolated_rate_limit_answers_on_different_pages_never_add_up_to_a_stop(store) -> None:
+    """Each answer is waited out and the page asked again; the count of waits starts over after every good page."""
+    trades = long_gap(store, hours=2)
+    limited = isolated({2, 5, 8, 11}, '{"error":["EAPI:Rate limit exceeded"],"result":{}}')
+    result = Rig(store, trades, hook=limited).drive(page_size=10)
+    assert result.status == "ok" and result.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+    assert result.report["requests"]["rate_limited_responses"] == 4
+
+
+def test_isolated_transport_failures_on_different_pages_never_add_up_to_a_stop(store) -> None:
+    trades = long_gap(store, hours=2)
+    result = Rig(store, trades, hook=isolated({2, 5, 8, 11}, TimeoutError("read timed out"))).drive(page_size=10)
+    assert result.status == "ok" and result.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+    assert result.report["requests"]["transport_errors"] == 4
+
+
 def test_a_finished_range_costs_no_requests_on_the_next_run(store) -> None:
     trades = long_gap(store, hours=2)
     Rig(store, trades).drive()
