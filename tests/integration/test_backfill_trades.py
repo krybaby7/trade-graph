@@ -213,6 +213,15 @@ def test_overlapping_archive_and_collector_leave_no_gap_and_no_requests(store) -
     assert document["status"] == "already_covered" and "overlap" in document["reason"]
 
 
+def test_an_archive_that_ends_exactly_where_the_collector_starts_leaves_no_gap_and_no_requests(store) -> None:
+    seed(store, archive_last_close=T0, collector_first_open=T0)  # the last archive candle closes at the first open
+    rig = Rig(store, two_slot_trades())
+    result = rig.drive()
+    document = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["status"] == "already_covered" and "touch" in document["reason"]
+    assert rig.script.calls == [] and result.status == "ok"
+
+
 def test_a_chosen_start_and_end_are_aligned_inward_and_reported(store) -> None:
     seed(store, archive_last_close=None, collector_first_open=None)
     result = Rig(store, two_slot_trades()).drive(start=from_unix(T0 - 100), end=from_unix(T0 + 1801))
@@ -918,6 +927,28 @@ def test_a_full_page_of_only_repeats_stalls_instead_of_looping(store) -> None:
     assert pair["stop_reason"] == "cursor_stalled" and len(rig.script.calls) == 2
     assert pair["intervals"]["15"]["status"] == "partial"
     assert result.status == "failed"  # a failure stop and no slot decided in this run
+
+
+def test_a_timestamp_group_wider_than_a_page_keeps_its_early_members_for_the_comparison(store) -> None:
+    """Page 1 ends inside nine trades that share one instant. Page 2 starts at the group's first trade again and is
+    full of group members, so a third answer is the first to repeat the early ones: they must still be on record."""
+    two_slot_store(store)
+    group = [trade(number, "100.2500000", "100.00", "1") for number in range(4, 13)]
+    trades = [trade(1, "10", "99.00", "1"), trade(2, "20", "99.00", "1"), trade(3, "30", "99.00", "1"), *group,
+              trade(13, "200", "101.00", "1")]
+    cursor = int(Decimal(at("100.25")) * 10**9)
+
+    def hook(call: int, url: str) -> str | None:
+        if call != 3:
+            return None
+        rows = [wire_row(4, "100.50", "1", at("100.25")), *(member.row() for member in group[1:8])]
+        return wire_page(rows, last=cursor)  # the first trade of the group, now with another price
+
+    rig = Rig(store, trades, hook=hook)
+    result = rig.drive(page_size=8)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert len(rig.script.calls) == 3 and pair["stop_reason"] == "boundary_mismatch"
+    assert pair["trades_used"] == 11 and pair["duplicate_trades"] == 5  # only page 2 was applied: it repeated 4 to 8
 
 
 def test_time_going_backwards_between_pages_is_refused(store) -> None:

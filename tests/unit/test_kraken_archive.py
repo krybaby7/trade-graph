@@ -225,6 +225,40 @@ def test_a_member_with_no_newline_is_refused_before_it_is_buffered() -> None:
     assert sum(consumed) <= CHUNK_BYTES  # stopped after the first chunk, not after the whole member
 
 
+def _declaring(text: str, declared: int, limits: ArchiveLimits) -> tuple[MemberReader, list[str]]:
+    """A member whose listed size is ``declared`` whatever it really holds; the list records every open."""
+    data, opened = text.encode("ascii"), []
+
+    class _Source:
+        def __init__(self) -> None:
+            self.limits = limits
+
+        def open(self, member):
+            opened.append(member.name)
+            return io.BytesIO(data)
+
+    member = ArchiveMember(name="XBTUSD_15.csv", size=declared, compressed_size=len(data), pair_code="XBTUSD",
+                           interval_minutes=15)
+    return MemberReader(_Source(), member, ReadBudget(limits)), opened
+
+
+def test_a_member_that_lists_a_small_size_but_streams_a_large_one_is_stopped_while_streaming() -> None:
+    reader, opened = _declaring(csv_text(synthetic_rows(FIRST_OPEN, 50, 15)), 10, ArchiveLimits(max_member_bytes=1000))
+    with pytest.raises(ArchiveRejected) as refused:
+        list(reader)
+    assert refused.value.reason == "member_size_limit" and "inflates" in str(refused.value)
+    assert opened == ["XBTUSD_15.csv"] and reader.rows_read == 0
+
+
+def test_a_member_that_lists_a_size_over_the_limit_is_refused_without_being_opened() -> None:
+    small = csv_text(synthetic_rows(FIRST_OPEN, 3, 15))
+    reader, opened = _declaring(small, 10_000, ArchiveLimits(max_member_bytes=1000))
+    with pytest.raises(ArchiveRejected) as refused:
+        list(reader)
+    assert refused.value.reason == "member_size_limit" and "declares" in str(refused.value)
+    assert opened == [] and reader.rows_read == 0
+
+
 def test_the_row_limit_refuses_the_file() -> None:
     reader = _reader(csv_text(synthetic_rows(FIRST_OPEN, 10, 15)), limits=ArchiveLimits(max_rows=9))
     with pytest.raises(ArchiveRejected) as refused:
@@ -480,6 +514,15 @@ def test_a_directory_fingerprint_follows_its_content(tmp_path: Path) -> None:
     assert fingerprint_archive(folder).sha256 == first.sha256
     (folder / "XBTUSD_15.csv").write_text(csv_text(synthetic_rows(FIRST_OPEN, 4, 15)))
     assert fingerprint_archive(folder).sha256 != first.sha256
+
+
+def test_a_directory_fingerprint_changes_when_a_member_is_only_renamed(tmp_path: Path) -> None:
+    """Same bytes under another pair name are another archive: the importer would store them as another series."""
+    folder = write_directory(tmp_path / "csv", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 3, 15))})
+    first = fingerprint_archive(folder)
+    (folder / "XBTUSD_15.csv").rename(folder / "ETHUSD_15.csv")
+    renamed = fingerprint_archive(folder)
+    assert renamed.size_bytes == first.size_bytes and renamed.sha256 != first.sha256
 
 
 # --- properties -----------------------------------------------------------------------------------------------------

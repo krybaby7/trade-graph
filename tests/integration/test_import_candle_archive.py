@@ -540,6 +540,21 @@ def test_rows_appended_to_a_member_during_the_import_are_not_stored(store, tmp_p
     assert sum(s.candle_count for s in held) == 6
 
 
+def test_a_file_touched_after_its_last_save_is_still_reported_as_changed(store, tmp_path, monkeypatch) -> None:
+    """Every row was read twice and saved by then, so only the final look at the file's identity can notice."""
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(5)})
+
+    def touch() -> None:
+        status = path.stat()
+        os.utime(path, ns=(status.st_atime_ns, status.st_mtime_ns + 5_000_000_000))
+
+    sizes = _rewritten_after_the_first_save(store, monkeypatch, touch)
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
+    assert refused.value.reason == "changed_during_import" and sizes == [5]
+    assert store.runs()[0].status == "failed" and "already stored" in str(refused.value)
+
+
 def test_a_rewrite_that_leaves_every_row_alone_is_not_an_error(store, tmp_path, monkeypatch) -> None:
     import trade_graph.application.import_candle_archive as importer
     monkeypatch.setattr(importer, "BATCH_CANDLES", 2)

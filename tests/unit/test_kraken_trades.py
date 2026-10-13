@@ -211,6 +211,16 @@ def test_malformed_rows_are_refused(row) -> None:
     assert _refusal(raw).reason in {"row_invalid", "too_many_rows"}
 
 
+def test_a_trade_time_may_carry_nine_fraction_digits_but_not_ten() -> None:
+    nine = wire_row(5, "10.0", "1.0", "1791897312.123456789")
+    ten = wire_row(5, "10.0", "1.0", "1791897312.1234567891")
+    page = parse_trades_page(wire_page([nine], last=1791897312123456789), pair_code="XBTUSD", since=None, count=10,
+                             received_at=NOW)
+    assert page.trades[0].time == Decimal("1791897312.123456789")
+    error = _refusal(wire_page([ten], last=1791897312123456789))
+    assert error.reason == "row_invalid" and "nine fraction digits" in str(error)
+
+
 def test_rows_must_rise_in_id_and_not_fall_in_time() -> None:
     same_id = [wire_row(5, "10.0", "1.0", "1791897312.1"), wire_row(5, "10.0", "1.0", "1791897312.2")]
     backwards_id = [wire_row(6, "10.0", "1.0", "1791897312.1"), wire_row(5, "10.0", "1.0", "1791897312.2")]
