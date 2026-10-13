@@ -20,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field
 
 from trade_graph.domain.errors import ValidationFailure
 
+# Names the menu as a whole; engine results also carry a digest of the entry used (engine.spec_version).
+MENU_VERSION = "indicator-menu-v1"
 MAX_PERIOD = 500
 # How much of a recursive indicator's starting-point effect Settling guidance may leave, relative to the output scale.
 SETTLE_TOLERANCE = 1e-5
@@ -229,6 +231,10 @@ class IndicatorSpec(_Frozen):
                 relation = "below" if rule.strict else "at or below"
                 raise ValidationFailure(f"{self.name}: {rule.smaller} must be {relation} {rule.larger}")
         return resolved
+
+    @property
+    def output_names(self) -> tuple[str, ...]:
+        return tuple(output.name for output in self.outputs)
 
     @property
     def requires(self) -> tuple[CandleField, ...]:
