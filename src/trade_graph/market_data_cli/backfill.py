@@ -135,6 +135,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
             recorded = [run_ for run_ in store.runs() if run_.kind == "trades_backfill" and run_.report]
             document = {} if not recorded else {"run_id": recorded[-1].run_id, **recorded[-1].report}
             return _emit(document or {"status": "interrupted"}, 130)
+        for symbol, pair in result.report["pairs"].items():
+            if pair["stop_reason"] == "max_requests" and pair["message"]:  # the budget could not finish one candle
+                print(f"{COMMAND}: {symbol}: {pair['message']}", file=sys.stderr)
         return _emit({"run_id": result.run_id, **result.report}, 1 if result.status == "failed" else 0)
     finally:
         database.close()

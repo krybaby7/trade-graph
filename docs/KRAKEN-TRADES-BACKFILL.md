@@ -108,7 +108,7 @@ Each pair ends with exactly one `stop_reason`:
 | `stop_reason` | Meaning |
 |---|---|
 | `end_reached` | A trade at or after every interval's range end was seen: the range is complete. |
-| `max_requests` | The request budget was spent. A pair that never got a request is `not_started`. |
+| `max_requests` | The request budget was spent. A pair that never got a request is `not_started`. If the run decided no slot at all (the budget was smaller than the requests one whole candle needs, because a run restarts at the open candle), the pair's `message` says so and the command repeats it on the error stream: raise `--max-requests`. `--smoke` (3 requests) is for a first look at one pair and may end this way on a busy pair. |
 | `stream_exhausted` | Kraken had no further trades yet, before the range end (the final partial candle is not built). |
 | `rate_limited` | Kraken still answered `EAPI:Rate limit exceeded` or `EService: Throttled` after two waits. |
 | `rate_limit_wait_too_long` | The required wait exceeded 120 seconds. The whole run stops instead of sleeping on: pairs not yet started are reported `not_started` with this reason and get no request, so a long pause asked for by Kraken is not probed once per remaining pair. |

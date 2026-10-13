@@ -292,11 +292,18 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
         state.stop("end_reached")
         return
     since: int | None = state.resume_since
+    began = dict(state.committed)
     retries = transport_retries = 0
     while True:
         if budget.spent:
             state.not_started = state.requests == 0
-            state.stop("max_requests")
+            if state.requests and state.committed == began:
+                # The next run restarts at the same open candle, so it would spend the same budget the same way.
+                state.stop("max_requests", f"the budget of {budget.maximum} requests ended before one whole candle "
+                           "had been received, so this run decided no slot and the next one would repeat it; raise "
+                           "--max-requests (a busy pair needs many requests for one hour candle)")
+            else:
+                state.stop("max_requests")
             return
         limiter.acquire()
         budget.used += 1

@@ -352,6 +352,32 @@ def test_max_requests_bounds_the_run_and_the_unreached_part_is_reported(store) -
     assert result.report["not_reached"][0]["unreached_slots"] == document["unreached_slots"]
 
 
+def test_a_budget_smaller_than_one_candle_says_so_instead_of_silently_repeating(store) -> None:
+    seed(store, interval=60, collector_first_open=T0 + 6 * 3600)
+    trades = steady_trades(1000, T0 - 600, 6 * 60 + 30, every_seconds=60)  # sixty trades make one hour candle
+    for _ in range(2):  # the same request budget makes the same non-progress every time
+        rig = Rig(store, trades)
+        result = rig.drive(intervals=(60,), max_requests=3, page_size=10)
+        pair = result.report["pairs"]["BTC/USD"]
+        assert pair["stop_reason"] == "max_requests" and len(rig.script.calls) == 3
+        assert pair["intervals"]["60"]["next_open_unix"] == T0 and pair["intervals"]["60"]["decided_this_run"] == 0
+        assert "before one whole candle" in pair["message"] and "--max-requests" in pair["message"]
+        assert result.status == "partial"
+    bigger = Rig(store, trades).drive(intervals=(60,), max_requests=3, page_size=40)
+    assert bigger.report["pairs"]["BTC/USD"]["intervals"]["60"]["decided_this_run"] > 0
+    assert bigger.report["pairs"]["BTC/USD"]["message"] is None
+
+
+def test_a_budget_that_decided_something_or_started_nothing_has_no_such_message(store) -> None:
+    seed(store, collector_first_open=T0 + 3600)
+    seed(store, symbol="ETH/USD", pair="ETHUSD", collector_first_open=T0 + 3600)
+    trades = steady_trades(1000, T0 - 600, 2 * 60 + 30, every_seconds=60)
+    result = Rig(store, trades).drive(symbols=("BTC/USD", "ETH/USD"), max_requests=1, page_size=40)
+    pairs = result.report["pairs"]
+    assert pairs["BTC/USD"]["intervals"]["15"]["decided_this_run"] > 0 and pairs["BTC/USD"]["message"] is None
+    assert pairs["ETH/USD"]["status"] == "not_started" and pairs["ETH/USD"]["message"] is None
+
+
 def test_the_next_run_resumes_from_the_cursor_in_the_last_run_report(store) -> None:
     trades = long_gap(store)
     expected = naive_candles(trades, 15, T0, T0 + 6 * 3600)

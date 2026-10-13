@@ -187,6 +187,20 @@ def test_a_store_with_no_gap_to_fill_exits_one_and_says_why(tmp_path, capsys, mo
     assert "--end" in report["pairs"]["BTC/USD"]["intervals"]["15"]["reason"]
 
 
+def test_a_smoke_budget_smaller_than_one_candle_warns_on_the_error_stream(tmp_path, capsys, monkeypatch,
+                                                                         clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    dense = [SyntheticTrade(1000 + i, "100.00", "1", f"{Decimal(T0) + 10 + Decimal(i) / 5:.7f}") for i in range(3500)]
+    exchange(monkeypatch, clock, dense)  # 1000 trades per page, 0.2 s apart: three pages cover 600 s of a 900 s candle
+    code = cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--smoke", "--market-database", str(path)])
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert code == 0 and report["pairs"]["BTC/USD"]["stop_reason"] == "max_requests"
+    assert report["pairs"]["BTC/USD"]["intervals"]["15"]["decided_this_run"] == 0
+    assert "BTC/USD" in captured.err and "before one whole candle" in captured.err and "--max-requests" in captured.err
+
+
 def test_a_run_in_which_every_request_failed_exits_one_so_a_scheduler_can_tell(tmp_path, capsys, monkeypatch,
                                                                               clock) -> None:
     path = database_path(tmp_path)
