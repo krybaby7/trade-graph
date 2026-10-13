@@ -169,6 +169,26 @@ def test_vwap_rounds_half_even_on_a_grid_finer_than_every_price() -> None:
     assert done[0].low <= done[0].vwap <= done[0].high
 
 
+def test_an_exact_vwap_tie_goes_to_the_even_neighbour_not_always_up() -> None:
+    """8193/8192 = 1.0001220703125 and 8195/8192 = 1.0003662109375 are exact ties at twelve decimals."""
+    even_below = feed_all(TradeAggregator({15: T0}, far_end()), [
+        trade("1", "1.00", "8191"), trade("2", "2.00", "1"), trade("901", "5", "1")])
+    assert even_below[0].vwap == Decimal("1.000122070312")  # ...312|5: the digit 2 is even, half-up would give 313
+    odd_below = feed_all(TradeAggregator({15: T0}, far_end()), [
+        trade("1", "1.00", "8189"), trade("2", "2.00", "3"), trade("901", "5", "1")])
+    assert odd_below[0].vwap == Decimal("1.000366210938")  # ...937|5: the digit 7 is odd, so up; half-down gives 937
+
+
+def test_a_later_trade_with_finer_prices_widens_the_vwap_grid_so_it_stays_inside_the_range() -> None:
+    """The first price has two places; a later one has thirteen. On a twelve place grid vwap would exceed the high."""
+    done = feed_all(TradeAggregator({15: T0}, far_end()), [
+        trade("1", "1.00", "0.00000001"), trade("2", "1.0000000000006", "100000000"), trade("901", "5", "1")])
+    bucket = done[0]
+    assert bucket.low == Decimal("1.00") and bucket.high == Decimal("1.0000000000006")
+    assert bucket.low <= bucket.vwap <= bucket.high
+    assert bucket.vwap == Decimal("1.0000000000006")  # six parts in 1e29 below the high, on a seventeen place grid
+
+
 def test_sub_second_times_are_floored_not_rounded() -> None:
     aggregator = TradeAggregator({15: T0}, far_end())
     done = feed_all(aggregator, [trade("899.9999999", "10", "1"), trade("900.0000001", "11", "1"),
