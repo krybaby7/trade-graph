@@ -107,7 +107,7 @@ class FakeKraken:
 
     def __init__(self, clock: FrozenClock, pairs: Iterable[ListedPair], *, delay_seconds: float = 1,
                  quiet_every: dict[str, int] | None = None, listed_at: dict[str, int] | None = None,
-                 no_data: Iterable[str] = ()) -> None:
+                 no_data: Iterable[str] = (), ignore_since: bool = False) -> None:
         self.clock = clock
         self.delay_seconds = delay_seconds
         self.keys = {pair.source_pair: (pair.base + pair.quote if pair.source_pair == "XBTUSD" else pair.source_pair)
@@ -115,6 +115,7 @@ class FakeKraken:
         self.quiet_every = quiet_every or {}
         self.listed_at = listed_at or {}
         self.no_data = set(no_data)
+        self.ignore_since = ignore_since
         self.script: dict[tuple[str, int], list] = {}
         self.revised: dict[tuple[str, int, int], list] = {}
         self.calls: list[str] = []
@@ -161,10 +162,22 @@ class FakeKraken:
             return wire(self.keys[source_pair], [[0, "0.00000", "0.00000", "0.00000", "0.00000", "0.00000",
                                                    "0.00000000", 0]], last=0)
         first = forming - WINDOW * step
-        if since is not None:
+        if since is not None and not self.ignore_since:
             first = max(first, since - since % step)
         if source_pair in self.listed_at:
             first = max(first, self.listed_at[source_pair] - self.listed_at[source_pair] % step)
         opens = list(range(first, forming + 1, step)) or [forming]  # the forming row is always present
         return wire(self.keys[source_pair], [self._row(source_pair, interval, value) for value in opens],
                     last=forming - step)
+
+
+class AdvancingSleeper:
+    """A sleeper for the limiter that moves the scripted clock and remembers each request."""
+
+    def __init__(self, clock: FrozenClock) -> None:
+        self.clock = clock
+        self.requests: list[float] = []
+
+    def __call__(self, seconds: float) -> None:
+        self.requests.append(seconds)
+        self.clock.advance(seconds)

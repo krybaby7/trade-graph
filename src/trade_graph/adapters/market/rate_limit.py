@@ -92,6 +92,13 @@ class KrakenRestLimiter:
         self._waited += waited
         raise ValidationFailure("the clock did not advance while the rate limiter waited")
 
+    def pause(self, seconds: float) -> None:
+        """Sleep through the injected sleeper, for example until a server-reported throttle ends."""
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not 0 <= seconds < math.inf:
+            raise ValidationFailure("a pause must be a finite number of seconds, zero or more")
+        self._sleep(float(seconds))
+        self._waited += Fraction(seconds).limit_denominator(1_000_000)
+
     def snapshot(self) -> dict:
         return {
             "calls": self.calls,

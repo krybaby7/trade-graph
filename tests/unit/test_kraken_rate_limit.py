@@ -151,6 +151,19 @@ def test_a_naive_clock_is_refused() -> None:
         limiter.acquire()
 
 
+def test_a_requested_pause_goes_through_the_injected_sleeper_and_counts_as_waiting() -> None:
+    limiter, clock, sleeper = _limiter()
+    for _ in range(ASSUMED_CEILING):
+        limiter.acquire()
+    limiter.pause(6.0)
+    assert sleeper.requests == [6.0] and clock.now() == NOW + timedelta(seconds=6)
+    assert limiter.counter() == pytest.approx(ASSUMED_CEILING - 1.8)
+    assert limiter.snapshot()["waited_seconds"] == pytest.approx(6.0)
+    for bad in (-1.0, float("nan"), float("inf"), True, "3"):
+        with pytest.raises(ValidationFailure):
+            limiter.pause(bad)  # type: ignore[arg-type]
+
+
 def test_the_snapshot_reports_calls_and_time_waited() -> None:
     limiter, _clock, _sleeper = _limiter()
     for _ in range(ASSUMED_CEILING + 2):
