@@ -1,3 +1,14 @@
+# Owner follow-ups to the D114 fix list, not deployed — 2026-10-13
+
+Branch `claude/day-trader-engine-20261012`, not pushed; nothing deployed or started. Owner decisions recorded as [D130](docs/DECISIONS.md):
+- **Unusable Trader answers fail only their turn** (`548d9c3`). The cases are a schema or check failure, research cited outside the snapshot, an unknown strategy, a cut-off, declined or temporary model answer, and a state change during the turn. The task is FAILED with `failure_scope: turn` and a `trader_turn_set_aside` event, without a system pause. Lost credentials, unknown outcomes, quota, budget, exhausted attempts and software exceptions still pause. HQ words these turns plainly. Tests: `tests/integration/test_trader_turn_failure_scope.py` (failed on the prior commit with `KeyError: 'failure_scope'`; the lost-credentials case pauses before and after), `tests/unit/test_hq_turn_failure_copy.py`, and the updated `test_order_refusal.py::test_malformed_trader_reply_fails_only_that_turn`.
+- **A euro reference-rate outage no longer blocks buys** (`3b7f062`). The paper and live feeds keep their quotes, retry after 5 minutes and record `reference_fx_health` start and end events. Tests: `tests/integration/test_reference_fx_outage.py` (the old code raised `OSError` out of the poll, which marked the feed failed); `test_feed_diagnostics` now covers only the metadata and ticker stages.
+- **Provisional money-risk settings** (`5943d5c`, docs only): 3% daily loss, 20% per coin, 80% total, a rule-based coin list, and a Perplexity budget at about 1.5 times the observed cost after testing. They are applied when T32 is built and revisited in a bankroll session.
+
+Checks: `uv run ruff check src tests` passed. Related runs gave 584 passed with 1 known failure, then 196, then 358 passed. Full suite at `3b7f062` (36 min): **4070 passed, 20 failed, 8 skipped**. That is the known set listed below plus `test_engineer_isolation::test_checker_wall_and_output_limits_are_enforced`, a timing case that passed alone twice and also fails under load on the base.
+
+---
+
 # Day-trader build plan and D114 fix list in source, not deployed — 2026-10-13
 
 Branch `claude/day-trader-engine-20261012` (WSL worktree `day-trader-engine-20261012`), not pushed. **Nothing was deployed, started or run against the installation**; the stopped service, its containers and `/opt/trade-graph-subscription` were not touched. No paid, private-exchange or Perplexity call was made.
@@ -21,8 +32,8 @@ Evidence (WSL, synthetic data only):
 Before deploying (owner-approved, as before): re-pin the protected kernel manifest and reseal the image (every `.py` change alters the digest), then deploy through the financial-manifest transition with the paper account in MANAGE_ONLY. Re-collect any Kraken read-only venue observation afterwards, because `execution.py`, `ledger.py` and `books.py` are part of its source digest. Then, with the service stopped and after `trade-graph backup`, run `trade-graph mandate-cleanup` on the state database and `--confirm` only on the owner's yes.
 
 Open follow-ups (not in this slice):
-- A malformed Trader reply, research cited outside the snapshot or a stale snapshot still fails the turn and sets the system MANAGE_ONLY pause, which does not lift on its own (owner decision).
-- A Frankfurter outage still marks the feed failed, which blocks buys.
+- ~~A malformed Trader reply, research cited outside the snapshot or a stale snapshot still fails the turn and sets the system MANAGE_ONLY pause~~ (resolved by D130, see above).
+- ~~A Frankfurter outage still marks the feed failed, which blocks buys~~ (resolved by D130, see above).
 - A refused turn still counts as a failed version-trial sample. Dispatch-time rejections are not yet in `recent_order_refusals`. HQ shows a Trader task waiting for its candle as an ordinary queued task.
 - Research carries the history twice (market and sources); widening the coin list (T31/T32) needs per-symbol budgeting.
 - `api/financial._mark_maximum_age` finds no mandate before a new revision's creation time and falls back to the policy quote age (same value today).

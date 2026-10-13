@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-12T22:40:00.000000Z",
-  "status_note": "D114 fix list (T23, T24) implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Day-trader plan T25-T43 pending owner go-ahead. Broader acceptance unchanged.",
+  "updated_at": "2026-10-13T10:40:00.000000Z",
+  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) waits for the owner.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -406,7 +406,10 @@
         "12f5be1/e1415ad native USD exposure: tests/integration/test_native_exposure_stale_reporting_fx.py failed 20 of 22 on 3838a2d with StaleState 'provisional valuation' (weekend and weekday-before-ECB) and passes; D16 regression tests unchanged and passing.",
         "ab0c42d/8d7e9f1 refused orders: tests/integration/test_order_refusal.py failed on 3838a2d with ('FAILED', 'MANAGE_ONLY') and passes with SUCCEEDED, RUNNING, an order_refused event and portfolio.recent_order_refusals on the next turn; HQ wording in tests/integration/test_hq_order_refusal.py.",
         "71aa92a/c1626c2/da384f3 mandate default and owner cleanup: tests/integration/test_mandate_legacy_ids.py failed on 3838a2d and passes; revision N+1 leaves revision 1 and its decisions unchanged.",
-        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed."
+        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed.",
+        "548d9c3 (D130) unusable Trader answers fail only their turn: tests/integration/test_trader_turn_failure_scope.py failed on 9e6952c with KeyError 'failure_scope' and passes; lost credentials still pause.",
+        "3b7f062 (D130) a euro reference-rate outage keeps quotes and buys: tests/integration/test_reference_fx_outage.py (old code raised OSError out of the poll) passes for the paper and live feeds.",
+        "Full suite at 3b7f062: 4070 passed, 20 failed, 8 skipped; all failures pre-existing or timing flakes (test_engineer_isolation checker wall passed alone twice). Not deployed."
       ]
     },
     "T25": {
