@@ -294,7 +294,11 @@ evidence and permission to trade real money are three separate gates.
 These are settings for the virtual USD10,000 account. They are not advice
 about real money. A real allocation is a separate decision.
 
-### 1. Daily loss limit (still open, D117)
+On 2026-10-13 you accepted the recommendations for decisions 1–4 as
+provisional settings (D130). A later bankroll-management session will revisit
+them before T32 makes them binding.
+
+### 1. Daily loss limit (provisional: 3%, D130)
 
 **Question.** How much may the paper account lose in one day before new
 buying stops?
@@ -316,7 +320,7 @@ the next day start. Protective exits stay.
 **Needed before** T34 is switched on in the paper installation, and before
 the test run (T43).
 
-### 2. Maximum amount per coin (still open)
+### 2. Maximum amount per coin (provisional: 20%, D130)
 
 **Question.** How much of the account may sit in one coin?
 
@@ -331,7 +335,7 @@ the test run (T43).
 
 **Needed before** T34 is switched on, and before T43.
 
-### 3. Which coins the paper account may trade (D120)
+### 3. Which coins the paper account may trade (provisional: the rule, D120, D130)
 
 **Question.** The paper account may only trade BTC and ETH today. The
 scanner needs a wider list, set through an owner policy revision.
@@ -346,14 +350,14 @@ scanner needs a wider list, set through an owner policy revision.
 
 **Recommendation.** The rule, for paper. It matches D120 and needs no upkeep.
 
-**Also decide.** Should stablecoins and tokens that pay a yield (for example
+**Still open.** Should stablecoins and tokens that pay a yield (for example
 staking or lending tokens) be excluded? **Recommendation:** exclude both.
 Stablecoins barely move, so there is nothing to day-trade. A yield may count
 as riba (D127) under mainstream views, until a scholar advises otherwise.
 
 **Needed before** T32 is finished.
 
-### 4. Perplexity budget after testing (D125)
+### 4. Perplexity budget after testing (provisional: about 1.5× observed, D125, D130)
 
 **Question.** Testing runs with no spending limit, so we can see natural
 costs. What limit comes after?
@@ -371,7 +375,7 @@ Trader, protection and records continue.
 monthly limit of about 1.5 times what you saw. A money limit is not an
 activity cap, so it fits D116.
 
-**Also decide.** Would you like an alert, not a stop, during testing? For
+**Still open.** Would you like an alert, not a stop, during testing? For
 example at $20.
 
 **Needed after** two weeks of testing.

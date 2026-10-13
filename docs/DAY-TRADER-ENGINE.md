@@ -263,8 +263,10 @@ dedicated option found; whether an EU account can use it is unverified.
 
 ## Pending owner decisions
 
-- A Perplexity budget, once testing shows natural costs (D125).
-- Daily loss limit and per-coin exposure.
+- A Perplexity budget, once testing shows natural costs (D125). Provisional
+  plan: about 1.5 times the observed monthly cost (D130).
+- Daily loss limit and per-coin exposure. Provisional: 3% per day, 20% per
+  coin, 80% in total (D130), to be revisited in a bankroll-management session.
 
 ## Unchanged
 

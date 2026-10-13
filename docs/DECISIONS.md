@@ -488,3 +488,26 @@ None prevents offline development. Mark credentialed verification pending when c
     revisions and decisions stay untouched). Synthetic FLATTEN exits use
     strategy id `pause-flatten`, and the D18 named-strategy check applies to
     entries only, so owner FLATTEN works under a non-discretionary mandate.
+
+- **D130 (2026-10-13, owner decisions; amends D129):**
+  - A Trader answer that arrived but cannot be used fails only that turn, with
+    `failure_scope: turn` and a `trader_turn_set_aside` event, and no system
+    pause. This covers a reply that fails its schema or checks, cites research
+    it was not given, names an unknown strategy, or comes back cut off,
+    declined or with a temporary model error, and a state change during the
+    turn. Lost AI credentials, an unknown outcome (WAITING_EXTERNAL), quota and
+    budget stops, exhausted attempts and software exceptions still set the
+    system MANAGE_ONLY pause, as genuine unavailability.
+  - A euro reference-rate (Frankfurter) outage no longer fails the public
+    poll. The paper and live feeds keep their quotes, retry the rate after 5
+    minutes and record `reference_fx_health` when the outage starts and ends.
+    Only EUR reporting labels are affected; buys are not blocked.
+  - Provisional money-risk settings, to be revisited in a later bankroll
+    management session and applied when T32 is built: daily loss limit 3% of
+    the day's starting value (then no new buying and resting entries cancelled
+    until the next day start, protective exits kept); at most 20% of the
+    account per coin and 80% in total; the paper coin list is a rule (Kraken
+    USD spot pairs passing the scanner's liquidity and exclusion checks) rather
+    than a fixed list; the Perplexity budget is set after about two weeks of
+    testing, at roughly 1.5 times the observed monthly cost. These are paper
+    settings, not a real-money allocation.
