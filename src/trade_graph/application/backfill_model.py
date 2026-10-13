@@ -15,8 +15,8 @@ ARCHIVE_SOURCE = "kraken_ohlcvt_archive"
 COLLECTOR_SOURCE = "kraken_public_ohlc"
 STOP_REASONS = (
     "end_reached", "max_requests", "stream_exhausted", "rate_limited", "rate_limit_wait_too_long", "transport_error",
-    "page_refused", "cursor_stalled", "cursor_regressed", "boundary_mismatch", "time_regressed", "store_refused",
-    "interrupted", "unexpected_error", "no_target", "already_covered",
+    "page_refused", "invalid_request", "cursor_stalled", "cursor_regressed", "boundary_mismatch", "time_regressed",
+    "store_refused", "interrupted", "unexpected_error", "no_target", "already_covered",
 )
 FAILURE_REASONS = frozenset(STOP_REASONS) - {"end_reached", "max_requests", "stream_exhausted", "no_target",
                                             "already_covered"}

@@ -43,7 +43,8 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 
 1. **Target range.** For each pair and interval: from the end of the archive series (last archive candle's close) to
    the start of the collector series (its first candle's open), both read from the store's series summaries. `--start`
-   and `--end` replace either bound and are aligned inward to the interval. A bound that is neither in the store nor
+   and `--end` replace either bound and are aligned inward to the interval; both must lie from 2010-01-01 up to
+   2100-01-01 (a usage error otherwise, before any run is recorded). A bound that is neither in the store nor
    given is reported (`no_target`, with the sentence saying which), never guessed. If the archive ends after the
    collector starts there is no gap (`already_covered`; use `reconcile-candles`).
 2. **One stream, every interval.** Trades are fetched oldest first, 1000 per request, `since` = the range start
@@ -114,6 +115,7 @@ Each pair ends with exactly one `stop_reason`:
 | `rate_limit_wait_too_long` | The required wait exceeded 120 seconds. The whole run stops instead of sleeping on: pairs not yet started are reported `not_started` with this reason and get no request, so a long pause asked for by Kraken is not probed once per remaining pair. |
 | `transport_error` | The HTTP request failed three times (two back-off retries). |
 | `page_refused` | The page failed validation; `refusal_reason` names why (for example `invalid_json`, `pair_mismatch`, `kraken_error`, `row_invalid`). |
+| `invalid_request` | The request could not be built (a bug or an out-of-range input that got past the checks), so nothing was sent. It is not waited out or retried, and it is not counted as a transport error; the attempt counts toward the request budget. |
 | `cursor_stalled` | A full page contained only trades already consumed. |
 | `cursor_regressed` | The returned cursor went backwards. |
 | `boundary_mismatch` | A repeated trade differed from the one consumed earlier. |

@@ -152,6 +152,7 @@ def test_smoke_refuses_several_pairs_and_a_larger_budget(tmp_path, monkeypatch, 
     ["--pairs", "BTC/USD", "--max-requests", "0"], ["--pairs", "BTC/USD", "--max-requests", "100001"],
     ["--pairs", "BTC/USD", "--max-requests", "many"], ["--pairs", "BTC/USD", "--start", "2026-10-13T12:00:00"],
     ["--pairs", "BTC/USD", "--end", "yesterday"], [],
+    ["--pairs", "BTC/USD", "--start", "1969-12-31T23:00:00Z"], ["--pairs", "BTC/USD", "--end", "2100-01-01T00:00:00Z"],
     ["--pairs", "BTC/USD", "--smoke", "--max-requests", "0"], ["--pairs", "BTC/USD", "--smoke", "--max-requests", "-5"],
 ])
 def test_bad_arguments_are_usage_errors_and_touch_nothing(tmp_path, arguments) -> None:

@@ -24,6 +24,8 @@ from typing import Any, Protocol
 
 from trade_graph.adapters.market.kraken_trades import (
     MAX_TRADES_PER_PAGE,
+    MAX_UNIX_TIME,
+    MIN_UNIX_TIME,
     PublicTrade,
     TradesPage,
     TradesPageRefused,
@@ -97,9 +99,12 @@ class BackfillScope:
                 if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
                     raise ValidationFailure(f"{name} must be a timezone-aware time")
                 try:
-                    to_unix(value)
+                    seconds = to_unix(value)
                 except ValueError as error:
                     raise ValidationFailure(f"{name} must be a whole second") from error
+                if not MIN_UNIX_TIME <= seconds < MAX_UNIX_TIME:
+                    raise ValidationFailure(f"{name} must fall from 2010-01-01 up to 2100-01-01 (Kraken has no trades "
+                                            "outside that window)")
         object.__setattr__(self, "symbols", symbols)
         object.__setattr__(self, "intervals", intervals)
 
@@ -329,6 +334,9 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
             continue
         except TradesPageRefused as error:
             state.stop("page_refused", str(error), error.reason)
+            return
+        except ValidationFailure as error:  # raised before anything was sent: waiting or asking again cannot help
+            state.stop("invalid_request", str(error)[:200])
             return
         except Exception as error:  # a transport failure: keep the class name, drop any details
             budget.transport_errors += 1

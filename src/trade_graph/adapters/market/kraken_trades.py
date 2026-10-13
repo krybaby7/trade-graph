@@ -28,6 +28,7 @@ MAX_ERROR_CHARS = 120
 # seven-decimal `time` rounds away. One second of slack catches a cursor that stopped meaning "time of the last trade".
 CURSOR_TOLERANCE_NS = 1_000_000_000
 MAX_CURSOR = 2**63 - 1
+MIN_UNIX_TIME = 1_262_304_000  # 2010-01-01, before Kraken's first trade; the archive reader uses the same window
 MAX_UNIX_TIME = 4_102_444_800  # 2100-01-01; a nanosecond cursor is far above this, seconds are below it
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _PAIR_CODE = re.compile(r"[A-Z0-9]{2,24}")

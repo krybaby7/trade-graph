@@ -1027,12 +1027,43 @@ def test_a_second_pass_over_the_same_data_adds_no_revisions(store) -> None:
     {"symbols": ()}, {"symbols": ("BTC/EUR",)}, {"symbols": ("btc/usd",)}, {"symbols": ("USDT/USD",)},
     {"symbols": ("USDC/USD",)}, {"symbols": ("BTC/USD", "BTC/USD")}, {"intervals": ()}, {"intervals": (7,)},
     {"intervals": (15, 15)}, {"intervals": (240,)},
+    {"start": datetime(1969, 12, 31, 23, tzinfo=UTC)}, {"start": datetime(2009, 12, 31, 23, 59, 59, tzinfo=UTC)},
+    {"end": datetime(1970, 1, 1, 2, tzinfo=UTC)}, {"end": datetime(2100, 1, 1, tzinfo=UTC)},
 ])
 def test_a_bad_scope_is_refused_before_any_run_exists(store, kwargs) -> None:
     arguments = {"symbols": ("BTC/USD",), "intervals": (15,), **kwargs}
     with pytest.raises(ValidationFailure):
         BackfillScope(**arguments)
     assert store.runs() == []
+
+
+def test_the_range_may_start_on_the_first_second_of_2010_and_end_just_before_2100() -> None:
+    scope = BackfillScope(symbols=("BTC/USD",), start=datetime(2010, 1, 1, tzinfo=UTC),
+                          end=datetime(2099, 12, 31, 23, 59, 59, tzinfo=UTC))
+    assert scope.start is not None and scope.end is not None
+
+
+class _RefusingClient:
+    """A client whose request cannot even be built: Kraken is never asked, so the failure is local."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch(self, pair_code: str, *, since: int | None, count: int = 1000):
+        self.calls += 1
+        raise ValidationFailure("since must be a non-negative integer")
+
+
+def test_a_request_that_cannot_be_built_stops_the_pair_without_waiting_or_retrying(store) -> None:
+    two_slot_store(store)
+    clock = FrozenClock(NOW)
+    sleeper, client = FakeSleeper(clock), _RefusingClient()
+    result = backfill_trades(store, clock, client, RequestLimiter(clock, sleeper), BackfillScope(symbols=("BTC/USD",)),
+                             max_requests=10, evidence_label="synthetic_fixture")
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "invalid_request" and "non-negative" in pair["message"]
+    assert client.calls == 1 and sleeper.waits == [] and result.report["requests"]["transport_errors"] == 0
+    assert result.status == "failed" and pair["status"] == "failed"
 
 
 @pytest.mark.parametrize("kwargs", [
