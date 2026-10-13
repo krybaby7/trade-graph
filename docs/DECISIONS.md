@@ -518,3 +518,23 @@ None prevents offline development. Mark credentialed verification pending when c
   D127. During Perplexity testing, HQ shows a spending alert once the testing
   total passes USD20 (T40); it is information, not a stop, so D125's
   unlimited testing mode is unchanged.
+
+- **D132 (2026-10-13, implementation default for T25; not an owner decision):**
+  Candle history for many pairs and four intervals lives in its own private
+  SQLite file (`runtime/market_data.sqlite`, Git-ignored, mode 600) with its
+  own small migration list, not in the financial database. A full quarter of
+  one-minute candles is about 130,000 rows per pair, and the measured cost is
+  about 118 bytes per candle revision (100,000 rows: 11.8 MB, 32,000 rows per
+  second). All pairs at one-minute detail would be tens of millions of rows,
+  which would swell every financial backup and recovery, and a long bulk
+  write would compete with trading writes. The file is rebuildable public
+  data, so it is not part of the financial recovery unit. Rules (details in
+  [CANDLE-STORE.md](CANDLE-STORE.md)): rows are append-only revisions keyed by
+  series, open time and revision; availability is the receipt time and is
+  never backdated; each source (collector, archive, Trades-built, synthetic)
+  is its own series and sources are compared by reports, never merged in
+  storage; a missing slot stays missing; `hourly_candles`, hourly feature
+  snapshots and every financial table are unchanged. Reads have two explicit
+  modes: `point_in_time` (receipt time at or before as-of) and `replay` (event
+  time only, labelled `event_time_only`). CLI commands are added as modules in
+  `trade_graph/market_data_cli/` so parallel work does not edit one list.

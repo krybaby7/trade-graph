@@ -113,6 +113,9 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--database", default="runtime/trade_graph.sqlite")
     cleanup.add_argument("--portfolio-id")
     cleanup.add_argument("--confirm", action="store_true", help="install the previewed revision")
+    from trade_graph.market_data_cli import register_all
+
+    register_all(sub)
     return parser
 
 
@@ -684,6 +687,11 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "mandate-cleanup":
         return _mandate_cleanup(args, parser)
+    from trade_graph.market_data_cli import dispatch
+
+    handled = dispatch(args, parser)
+    if handled is not None:
+        return handled
     parser.error(f"unknown command {args.command}")
     return 2
 
