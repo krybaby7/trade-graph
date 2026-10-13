@@ -337,6 +337,77 @@ def test_a_candle_whose_close_is_after_the_receipt_is_withheld_not_backdated(sto
     assert document["candles"]["withheld_receipt_before_close"] == 1 and result.status == "partial"
 
 
+def test_a_candle_held_back_by_a_slow_clock_stays_undecided_and_the_next_run_builds_it(store) -> None:
+    two_slot_store(store)
+    slow = datetime.fromtimestamp(T0 + 1200, UTC)  # the clock says 12:20, before the 12:30 close of the second candle
+    first = Rig(store, two_slot_trades(), now=slow).drive()
+    pair = first.report["pairs"]["BTC/USD"]
+    document = pair["intervals"]["15"]
+    assert sorted(stored(store, last=T0 + 1800)) == [T0] and first.status == "partial"
+    assert document["candles"]["withheld_receipt_before_close"] == 1
+    assert (document["next_open_unix"], document["unreached_slots"], document["status"]) == (T0 + 900, 1, "partial")
+    assert document["open_candle_has_id_gap"] is False and document["decided_slots"] == 1
+    assert pair["stop_reason"] == "end_reached" and "clock" in pair["message"] and "1 candle" in pair["message"]
+    assert first.report["not_reached"][0]["from_utc"] == "2026-10-13T12:15:00.000000Z"
+
+    again = Rig(store, two_slot_trades(), now=slow).drive()  # still the wrong clock: held again, nothing is lost
+    assert again.report["pairs"]["BTC/USD"]["intervals"]["15"]["next_open_unix"] == T0 + 900
+    assert sorted(stored(store, last=T0 + 1800)) == [T0]
+
+    rig = Rig(store, two_slot_trades())  # the right clock
+    right = rig.drive()
+    fixed = right.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert right.status == "ok" and fixed["resumed_from_unix"] == T0 + 900 and fixed["status"] == "complete"
+    assert rig.script.calls[0].endswith(f"since={T0 + 899}&count=1000")
+    candles = stored(store, last=T0 + 1800)
+    assert sorted(candles) == [T0, T0 + 900] and candles[T0 + 900].available_at_utc >= candles[T0 + 900].close_time_utc
+
+
+def test_the_cursor_on_a_held_back_candle_is_clean_even_when_a_later_candle_is_known_to_lack_trades(
+        store, other_store) -> None:
+    trades = [trade(1, "10", "100.00", "1"), trade(2, "20", "101.00", "1"), trade(3, "30", "102.00", "1"),
+              trade(4, "905", "103.00", "1"), trade(6, "1000", "104.00", "1"),  # id 5 is missing: the 12:15 candle
+              trade(7, "1805", "105.00", "1"), trade(8, "2705", "106.00", "1")]
+    window = {"start": from_unix(T0), "end": from_unix(T0 + 2700)}
+    slow = datetime.fromtimestamp(T0 + 600, UTC)
+    first = Rig(store, trades, now=slow).drive(max_requests=1, page_size=5, **window)
+    document = first.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["candles"]["withheld_receipt_before_close"] == 1 and document["next_open_unix"] == T0
+    assert document["open_candle_has_id_gap"] is False  # the held candle itself had no known gap before it
+    Rig(store, trades).drive(**window)
+    Rig(other_store, trades).drive(**window)
+    assert content(store, last=T0 + 2700) == content(other_store, last=T0 + 2700)
+    assert sorted(content(other_store, last=T0 + 2700)) == [T0, T0 + 1800]
+
+
+def test_a_budget_that_ended_on_a_held_back_candle_does_not_blame_the_budget(store) -> None:
+    two_slot_store(store)
+    slow = datetime.fromtimestamp(T0 + 600, UTC)  # the first candle closes at 12:15, after the 12:10 the clock reads
+    result = Rig(store, two_slot_trades(), now=slow).drive(max_requests=1, page_size=5)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "max_requests" and pair["message"] is None  # a whole candle was received
+    assert pair["intervals"]["15"]["candles"]["withheld_receipt_before_close"] == 1
+    assert pair["intervals"]["15"]["next_open_unix"] == T0
+
+
+@pytest.mark.parametrize("clock_seconds", [1500, 2400, 3000])
+def test_candles_held_back_by_a_clock_that_was_wrong_end_up_as_if_it_had_been_right(store, other_store,
+                                                                                  clock_seconds) -> None:
+    for each in (store, other_store):
+        seed(each, interval=15, collector_first_open=T0 + 3600)
+        seed(each, interval=60, collector_first_open=T0 + 3600)
+    trades = steady_trades(1000, T0 - 600, 2 * 60 + 30, every_seconds=60)
+    Rig(other_store, trades).drive(intervals=(15, 60), page_size=40)
+    slow = datetime.fromtimestamp(T0 + clock_seconds, UTC)
+    held = Rig(store, trades, now=slow).drive(intervals=(15, 60), page_size=40)
+    assert held.report["totals"]["candles_withheld_receipt_before_close"] > 0
+    assert Rig(store, trades).drive(intervals=(15, 60), page_size=40).status == "ok"
+    for interval in (15, 60):
+        assert content(store, interval=interval, last=T0 + 3600) == content(other_store, interval=interval,
+                                                                           last=T0 + 3600)
+        assert content(store, interval=interval, last=T0 + 3600)
+
+
 # --- budget, cursor and resume -------------------------------------------------------------------------------------
 
 

@@ -274,6 +274,7 @@ def _candles(state: PairState, buckets: list[CompletedBucket], page: TradesPage)
             outcome.withheld_gap += 1
         elif page.received_at < close:
             outcome.withheld_receipt += 1  # never backdate availability to make a candle look earlier
+            state.holds.setdefault(bucket.interval, bucket.open_unix)  # and a later run builds it: it is not decided
         else:
             built.setdefault(bucket.interval, []).append(Candle(
                 symbol=state.symbol, source_pair=state.pair_code, interval_minutes=bucket.interval,
@@ -293,6 +294,25 @@ def _save(store: CandleStore, run_id: int, state: PairState, built: dict[int, li
         outcome.revised += saved.revised
 
 
+def _commit(state: PairState) -> None:
+    """Move the cursor to the oldest undecided slot: a candle the clock held back stays undecided, even though the
+    candles after it were stored, so the next run re-reads from it. Its own flag is clean, or it would be withheld."""
+    aggregator = state.aggregator
+    assert aggregator is not None
+    for interval in state.committed:
+        held = state.holds.get(interval)
+        state.committed[interval] = aggregator.next_open(interval) if held is None else held
+        state.open_tainted[interval] = held is None and aggregator.open_tainted(interval)
+
+
+def _held_message(state: PairState) -> str | None:
+    held = sum(outcome.withheld_receipt for outcome in state.outcomes.values())
+    if not held:
+        return None
+    return (f"the range was read to its end, but {held} candle(s) were held back because this computer's clock read "
+            "earlier than their close; they stay undecided and the next run rebuilds them, so check the clock first")
+
+
 def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: RequestLimiter, budget: Budget,
               state: PairState, page_size: int) -> None:
     aggregator = state.aggregator
@@ -306,7 +326,7 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
     while True:
         if budget.spent:
             state.not_started = state.requests == 0
-            if state.requests and state.committed == began:
+            if state.requests and state.committed == began and not state.holds:
                 # The next run restarts at the same open candle, so it would spend the same budget the same way.
                 state.stop("max_requests", f"the budget of {budget.maximum} requests ended before one whole candle "
                            "had been received, so this run decided no slot and the next one would repeat it; raise "
@@ -365,10 +385,9 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
         except ValidationFailure as error:
             state.stop("store_refused", str(error)[:200])
             return
-        state.committed = {interval: aggregator.next_open(interval) for interval in state.committed}
-        state.open_tainted = {interval: aggregator.open_tainted(interval) for interval in state.committed}
+        _commit(state)
         if aggregator.finished:
-            state.stop("end_reached")
+            state.stop("end_reached", _held_message(state))
             return
         if not page.full:
             state.stop("stream_exhausted", "Kraken had no more trades to give yet, before the end of the range")

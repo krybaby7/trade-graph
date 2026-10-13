@@ -82,6 +82,7 @@ class PairState:
     aggregator: TradeAggregator | None = None
     committed: dict[int, int] = field(default_factory=dict)
     open_tainted: dict[int, bool] = field(default_factory=dict)  # moves together with ``committed``
+    holds: dict[int, int] = field(default_factory=dict)  # interval -> open time of the oldest candle held by the clock
     outcomes: dict[int, IntervalOutcome] = field(default_factory=dict)
     stop_reason: str = "end_reached"
     message: str | None = None

@@ -61,7 +61,10 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 5. **Receipt time.** `available_at` is the injected clock read after the network call of the page whose trades
    completed the candle. Archive and backfilled candles are available at fetch time, not at their historical close.
    If a page arrives with a receipt earlier than a candle's close (a slow clock) that candle is withheld and counted
-   (`withheld_receipt_before_close`), never backdated.
+   (`withheld_receipt_before_close`), never backdated. Unlike a candle withheld for an id gap, it is **not decided**:
+   the cursor stays on the oldest such candle, the stop `message` says how many were held back, and the next run
+   (with a correct clock) rebuilds it. Candles after it that were already stored come back as duplicates, so a clock
+   fault never leaves a permanent hole, and `--from-start` is not needed to recover from it.
 6. **The boundary trade.** Because `since` is inclusive, the page after a full page begins with the trades that share
    the previous page's final timestamp. A trade is consumed once, by id: a row whose id is at or below the highest
    consumed id is a repeat. A repeat must equal the row already consumed (the whole row); the
@@ -86,8 +89,9 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 Every run is recorded with `kind = "trades_backfill"`, `source = "kraken_public_trades"` and an evidence label
 (`live_public`, or `live_public_smoke` under `--smoke`; tests use `recorded_public_fixture` or
 `synthetic_fixture`). Its report holds, for each pair and interval, `range_start_unix`, `range_end_unix` and
-`next_open_unix`: **every slot before `next_open_unix` was decided** (stored, empty, or withheld). It is the open
-time of the oldest candle that was still forming when the run stopped.
+`next_open_unix`: **every slot before `next_open_unix` was decided** (stored, empty, or withheld for an id gap). It
+is the open time of the oldest candle that was still forming when the run stopped, or of the oldest candle held back
+by a slow clock (`unreached_slots` then counts from there, although later candles may already be stored).
 
 The next run reads it with `store.runs()`: `read_resume_points(store, symbol, pair_code, interval, range_start=...)`
 returns the highest `next_open_unix` among finished runs that covered the same venue pair code and began at or
@@ -112,7 +116,7 @@ Each pair ends with exactly one `stop_reason`:
 
 | `stop_reason` | Meaning |
 |---|---|
-| `end_reached` | A trade at or after every interval's range end was seen: the range is complete. |
+| `end_reached` | A trade at or after every interval's range end was seen: the range was read to its end. It is complete unless a slow clock held candles back; then the `message` says how many and the interval stays `partial` until the next run builds them. |
 | `max_requests` | The request budget was spent. A pair that never got a request is `not_started`. If the run decided no slot at all (the budget was smaller than the requests one whole candle needs, because a run restarts at the open candle), the pair's `message` says so and the command repeats it on the error stream: raise `--max-requests`. `--smoke` (3 requests) is for a first look at one pair and may end this way on a busy pair. |
 | `stream_exhausted` | Kraken had no further trades yet, before the range end (the final partial candle is not built). |
 | `rate_limited` | Kraken still answered `EAPI:Rate limit exceeded` or `EService: Throttled` after two waits. |
