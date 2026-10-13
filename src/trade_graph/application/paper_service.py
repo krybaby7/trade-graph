@@ -151,6 +151,7 @@ class PaperService:
         self._feed_first_failed_at = None
         self._feed_last_diagnostic_at = None
         self._feed_last_failure = None
+        self._reference_fx_error = None
 
     def _blocks_increase(self, symbol: str) -> bool:
         gate = getattr(self.public_feed, "blocks_increase", None)
@@ -591,6 +592,20 @@ class PaperService:
             self._feed_first_failed_at = None
             self._feed_last_failure = None
 
+    def _record_reference_fx_health(self) -> None:
+        """A reference-rate outage labels EUR reporting only; record when it starts and ends."""
+        error_type = getattr(self.public_feed, "reference_fx_error", None)
+        error_type = error_type if isinstance(error_type, str) else None
+        if error_type == self._reference_fx_error:
+            return
+        self._reference_fx_error = error_type
+        payload = {"run_id": self.service_run_id, "status": "degraded" if error_type else "recovered",
+                   "error_type": error_type, "observed_at_utc": utc_iso(self.clock.now()),
+                   "feed_blocks_increase": False, "affects": "EUR reporting labels only"}
+        with self.database.immediate():
+            for pid in self.portfolio_ids:
+                self.execution.ledger._activity(pid, "reference_fx_health", payload)
+
     async def _consume_feed(self, task: asyncio.Task, *, maintenance_errors: list[Exception]) -> tuple[int, str | None]:
         try:
             emitted = await self._wait_for_work(task, maintenance_errors=maintenance_errors)
@@ -610,6 +625,7 @@ class PaperService:
             raise
         self._feed_failed = False
         await self._offload(self._record_feed_health, None, "poll")
+        await self._offload(self._record_reference_fx_health)
         return observations, None
 
     async def _prepare_role_inputs(self) -> tuple[int, tuple[str, ...]]:

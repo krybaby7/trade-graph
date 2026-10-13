@@ -10,6 +10,8 @@ from trade_graph.adapters.market.public import FrankfurterClient, HttpxTextTrans
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.money import canonical_decimal
 
+FX_RETRY_SECONDS = 300  # retry an unavailable reference rate sooner than the hourly refresh
+
 
 class PublicPaperFeed:
     """No exchange keys, private endpoints or orders; fills remain paper assumptions.
@@ -32,6 +34,7 @@ class PublicPaperFeed:
         self.next_poll = None
         self.next_metadata = None
         self.next_fx = None
+        self.reference_fx_error: str | None = None
         self.diagnostic_context = {"stage": "poll", "symbol": None}
 
     def poll(self) -> list:
@@ -66,11 +69,22 @@ class PublicPaperFeed:
             observations.append(paper)
         if self.next_fx is None or now >= self.next_fx:
             self.diagnostic_context = {"stage": "reference_fx", "symbol": None}
-            self._reference_fx()
-            self.next_fx = now + timedelta(hours=1)
+            self._refresh_reference_fx(now)
         self.next_poll = self.clock.now() + timedelta(seconds=self.interval_seconds)
         self.diagnostic_context = {"stage": "poll", "symbol": None}
         return observations
+
+    def _refresh_reference_fx(self, now: datetime) -> None:
+        try:
+            self._reference_fx()
+        except Exception as exc:
+            # The EUR reference rate only labels reporting; its outage must not discard
+            # quotes or block USD buys (owner, 2026-10-13). Retry sooner than hourly.
+            self.reference_fx_error = type(exc).__name__
+            self.next_fx = now + timedelta(seconds=FX_RETRY_SECONDS)
+        else:
+            self.reference_fx_error = None
+            self.next_fx = now + timedelta(hours=1)
 
     def _reference_fx(self) -> None:
         rate = self.fx.reference_rate("USD", "EUR")

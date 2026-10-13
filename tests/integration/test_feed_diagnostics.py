@@ -44,7 +44,7 @@ def test_recurring_feed_failures_and_recovery_retain_bounded_safe_evidence(tmp_p
     assert "PRIVATE" not in json.dumps(diagnostics) and "private.invalid" not in json.dumps(diagnostics)
 
 
-@pytest.mark.parametrize("stage", ["metadata", "ticker", "reference_fx"])
+@pytest.mark.parametrize("stage", ["metadata", "ticker"])
 def test_public_feed_identifies_failure_boundary_without_retaining_response_or_url(tmp_path, stage):
     clock, _ledger, execution, _broker, portfolio = _stack(tmp_path)
     class Transport:

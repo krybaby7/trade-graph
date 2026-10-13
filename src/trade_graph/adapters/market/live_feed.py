@@ -46,7 +46,6 @@ class PublicLiveFeed(PublicPaperFeed):
                                                         currency, source=quote.source)
             observations.append(quote)
         if self.next_fx is None or now >= self.next_fx:
-            self._reference_fx()
-            self.next_fx = now + timedelta(hours=1)
+            self._refresh_reference_fx(now)
         self.next_poll = self.clock.now() + timedelta(seconds=self.interval_seconds)
         return observations
