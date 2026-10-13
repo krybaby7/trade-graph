@@ -511,3 +511,10 @@ None prevents offline development. Mark credentialed verification pending when c
     than a fixed list; the Perplexity budget is set after about two weeks of
     testing, at roughly 1.5 times the observed monthly cost. These are paper
     settings, not a real-money allocation.
+
+- **D131 (2026-10-13, owner decisions):** The scanner and the paper coin list
+  exclude stablecoins and yield-paying tokens such as staking or lending
+  tokens (T31): stablecoins barely move, and a yield may count as riba under
+  D127. During Perplexity testing, HQ shows a spending alert once the testing
+  total passes USD20 (T40); it is information, not a stop, so D125's
+  unlimited testing mode is unchanged.

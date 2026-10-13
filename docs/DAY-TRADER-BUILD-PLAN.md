@@ -350,8 +350,8 @@ scanner needs a wider list, set through an owner policy revision.
 
 **Recommendation.** The rule, for paper. It matches D120 and needs no upkeep.
 
-**Still open.** Should stablecoins and tokens that pay a yield (for example
-staking or lending tokens) be excluded? **Recommendation:** exclude both.
+**Decided (D131).** Stablecoins and tokens that pay a yield (for example
+staking or lending tokens) are excluded. The reasons were:
 Stablecoins barely move, so there is nothing to day-trade. A yield may count
 as riba (D127) under mainstream views, until a scholar advises otherwise.
 
@@ -375,8 +375,8 @@ Trader, protection and records continue.
 monthly limit of about 1.5 times what you saw. A money limit is not an
 activity cap, so it fits D116.
 
-**Still open.** Would you like an alert, not a stop, during testing? For
-example at $20.
+**Decided (D131).** During testing, HQ shows a spending alert once the
+testing total passes $20. It is an alert, not a stop (T40).
 
 **Needed after** two weeks of testing.
 
