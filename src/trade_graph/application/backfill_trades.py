@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from trade_graph.adapters.market.kraken_archive import is_fiat_symbol
 from trade_graph.adapters.market.kraken_trades import (
     MAX_TRADES_PER_PAGE,
     MAX_UNIX_TIME,
@@ -89,6 +90,8 @@ class BackfillScope:
             pair_code_for_symbol(symbol)  # refuses anything that is not like BTC/USD
             if symbol.split("/")[0] in EXCLUDED_BASES:
                 raise ValidationFailure(f"{symbol} is a stablecoin pair; stablecoins are excluded (D131)")
+            if is_fiat_symbol(symbol):
+                raise ValidationFailure(f"{symbol} is a currency pair, not a coin; only coin pairs are backfilled")
         intervals = tuple(sorted(self.intervals))
         if (not intervals or len(set(intervals)) != len(intervals)
                 or any(type(i) is not int or i not in BACKFILL_INTERVALS for i in intervals)):

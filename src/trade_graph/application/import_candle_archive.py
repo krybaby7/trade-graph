@@ -37,6 +37,7 @@ from trade_graph.adapters.market.kraken_archive import (
     ReadBudget,
     archive_signature,
     fingerprint_archive,
+    is_fiat_symbol,
     open_archive,
     symbol_for_pair_code,
 )
@@ -113,6 +114,8 @@ def normalise_pair_names(names: Iterable[str]) -> frozenset[str]:
         symbol = symbol_for_pair_code(str(name).strip().upper().replace("/", ""))
         if symbol is None:
             raise ValidationFailure(f"not a USD-quoted pair name: {str(name)[:40]!r}")
+        if is_fiat_symbol(symbol):
+            raise ValidationFailure(f"{symbol} is a currency pair, not a coin; currency pairs are never stored")
         symbols.add(symbol)
     return frozenset(symbols)
 
@@ -178,7 +181,8 @@ class _Selection:
     interval_not_selected: Counter[int] = field(default_factory=Counter)
     unrecognised: list[str] = field(default_factory=list)
     manifest_present: bool = False
-    archive_intervals: dict[str, set[int]] = field(default_factory=dict)  # every USD pair found, any interval
+    fiat_files: int = 0
+    archive_intervals: dict[str, set[int]] = field(default_factory=dict)  # every USD coin pair found, any interval
 
 
 def _select(members: Iterable[ArchiveMember], scope: ImportScope) -> _Selection:
@@ -193,6 +197,9 @@ def _select(members: Iterable[ArchiveMember], scope: ImportScope) -> _Selection:
         symbol = symbol_for_pair_code(member.pair_code)
         if symbol is None:
             chosen.non_usd_files += 1
+            continue
+        if is_fiat_symbol(symbol):
+            chosen.fiat_files += 1
             continue
         chosen.archive_intervals.setdefault(symbol, set()).add(member.interval_minutes)
         if scope.pairs is not None and symbol not in scope.pairs:
@@ -209,6 +216,7 @@ def _selection_document(chosen: _Selection) -> dict[str, Any]:
     listed = sorted(chosen.unrecognised)
     return {
         "non_usd_files": chosen.non_usd_files,
+        "fiat_files": chosen.fiat_files,
         "pair_not_requested_files": chosen.pair_not_requested_files,
         "interval_not_selected_files": {str(key): chosen.interval_not_selected[key]
                                         for key in sorted(chosen.interval_not_selected)},

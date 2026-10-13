@@ -217,7 +217,8 @@ def test_a_symlinked_candle_file_is_a_usage_error_without_a_permission_hint(tmp_
 
 
 @pytest.mark.parametrize("arguments", [
-    ["--intervals", "7"], ["--intervals", "abc"], ["--intervals", ""], ["--pairs", "BTC/EUR"], ["--quarter", "Q3"],
+    ["--intervals", "7"], ["--intervals", "abc"], ["--intervals", ""], ["--pairs", "BTC/EUR"], ["--pairs", "EUR/USD"],
+    ["--quarter", "Q3"],
     ["--max-uncompressed-gb", "0"], ["--max-uncompressed-gb", "-1"], ["--max-uncompressed-gb", "lots"],
     ["--max-uncompressed-gb", "100000"], ["--expected-pairs", "ETHXBT"],
     ["--max-uncompressed-gb", "NaN"], ["--max-uncompressed-gb", "-NaN"], ["--max-uncompressed-gb", "sNaN"],

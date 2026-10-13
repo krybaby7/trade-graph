@@ -25,6 +25,7 @@ from trade_graph.adapters.market.kraken_archive import (
     MemberReader,
     ReadBudget,
     fingerprint_archive,
+    is_fiat_symbol,
     open_archive,
     parse_member_name,
     parse_row,
@@ -49,6 +50,17 @@ def test_usd_pair_codes_map_to_symbols(code: str, symbol: str) -> None:
 @pytest.mark.parametrize("code", ["ADAEUR", "XBTUSDT", "ETHXBT", "XBTEUR", "xbtusd", "", "USD", "XBTUSD ", "XBT/USD"])
 def test_other_codes_are_not_usd_pairs(code: str) -> None:
     assert symbol_for_pair_code(code) is None
+
+
+@pytest.mark.parametrize("code", ["EURUSD", "GBPUSD", "AUDUSD", "CADUSD", "CHFUSD", "JPYUSD", "AEDUSD", "NZDUSD"])
+def test_currency_pairs_map_to_symbols_but_are_marked_as_not_coins(code: str) -> None:
+    symbol = symbol_for_pair_code(code)
+    assert symbol == f"{code[:3]}/USD" and is_fiat_symbol(symbol)
+
+
+@pytest.mark.parametrize("symbol", ["BTC/USD", "DOGE/USD", "ETH/USD", "USDT/USD", "USDC/USD", "EURT/USD", "SEUR/USD"])
+def test_coins_and_stablecoins_are_not_marked_as_currencies(symbol: str) -> None:
+    assert not is_fiat_symbol(symbol)  # stablecoins are a scanner decision (D131), not a currency filter here
 
 
 def test_member_names_split_into_pair_and_interval() -> None:

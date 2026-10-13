@@ -1025,7 +1025,8 @@ def test_a_second_pass_over_the_same_data_adds_no_revisions(store) -> None:
 
 @pytest.mark.parametrize("kwargs", [
     {"symbols": ()}, {"symbols": ("BTC/EUR",)}, {"symbols": ("btc/usd",)}, {"symbols": ("USDT/USD",)},
-    {"symbols": ("USDC/USD",)}, {"symbols": ("BTC/USD", "BTC/USD")}, {"intervals": ()}, {"intervals": (7,)},
+    {"symbols": ("USDC/USD",)}, {"symbols": ("EUR/USD",)}, {"symbols": ("GBP/USD", "BTC/USD")},
+    {"symbols": ("BTC/USD", "BTC/USD")}, {"intervals": ()}, {"intervals": (7,)},
     {"intervals": (15, 15)}, {"intervals": (240,)},
     {"start": datetime(1969, 12, 31, 23, tzinfo=UTC)}, {"start": datetime(2009, 12, 31, 23, 59, 59, tzinfo=UTC)},
     {"end": datetime(1970, 1, 1, 2, tzinfo=UTC)}, {"end": datetime(2100, 1, 1, tzinfo=UTC)},

@@ -86,7 +86,11 @@ report lists these assumptions every time. Treat them as open until a real file 
    `2026-q3`) or from `--quarter`; a name like `Kraken_OHLCVT_Full.zip` is a complete archive with no quarter.
 2. **Select.** Only USD-quoted pairs at the chosen intervals (default 15 and 60 minutes; 1 and 5 are opt-in
    because they are very large; the other intervals are skipped and counted). Other quote currencies, files
-   not requested through `--pairs`, and unrecognised members are counted. Stablecoin pairs such as `USDT/USD` are
+   not requested through `--pairs`, and unrecognised members are counted. Currency pairs such as `EURUSD`, `GBPUSD`
+   or `AUDUSD` (the base is a national currency: AED, AUD, CAD, CHF, EUR, GBP, JPY, NZD, USD) end in `USD` but are
+   not coins: they are skipped at every interval, counted as `skipped.fiat_files`, left out of `usd_pairs_found`
+   and never stored, and naming one in `--pairs` is a usage error. (Whether the real archive holds any is
+   unconfirmed; the file has not been opened.) Stablecoin pairs such as `USDT/USD` are
    imported if present; the exclusion in D131 belongs to the scanner (T31) using the collector's catalog marks.
    Pass `--pairs` to keep any pair out of storage.
 3. **Scan (pass one).** Every in-scope row is parsed and checked; nothing is written. The file is refused whole if
@@ -110,7 +114,8 @@ report lists these assumptions every time. Treat them as open until a real file 
 
 `symbol_for_pair_code` is the one place pair names are read: `XBTUSD` becomes `BTC/USD`, `XDGUSD` becomes `DOGE/USD`,
 legacy `XXBTZUSD` becomes `BTC/USD`, everything else ending in `USD` keeps its base (`1INCHUSD` becomes
-`1INCH/USD`). The venue pair code is kept as `source_pair` (a stored series can never change it). The collector
+`1INCH/USD`; `EURUSD` becomes `EUR/USD`, which the selection step then skips as a currency pair). The venue pair
+code is kept as `source_pair` (a stored series can never change it). The collector
 stream reads names from Kraken's AssetPairs catalog; this function is isolated so it can be replaced by a catalog
 lookup. Two files mapping to one series (for example `XBTUSD_15.csv` and `XXBTZUSD_15.csv`) refuse the file
 (`ambiguous_pair_codes`).
@@ -186,8 +191,8 @@ modules and everything they import, fail if the importer touches `socket`, `http
 `trade-graph import-kraken-archive` prints one JSON document. Top level: `run_id`, `status`, `archive` (name, size,
 SHA-256, format, kind, quarter, members, USD pairs found), `scope`, `imported_at_utc`, `totals`
 (rows read, accepted, rejected, dropped, inserted, duplicates, revisions, rows outside the quarter), `rejected_by_reason`,
-`rejected_share`, `skipped` (counts of non-USD files, files not requested, intervals not selected, unrecognised member
-names), `same_file_seen_in_runs`, `expected_pairs`, `assumptions`, `survivorship_notice` and `series`.
+`rejected_share`, `skipped` (counts of non-USD files, currency-pair files, files not requested, intervals not selected,
+unrecognised member names), `same_file_seen_in_runs`, `expected_pairs`, `assumptions`, `survivorship_notice` and `series`.
 
 Each entry in `series` (one per pair and interval) has rows read, accepted, rejected with reasons, dropped, `inserted`,
 `duplicates`, `revisions`, first and last open time, and `coverage`: the candle store's own coverage over the imported

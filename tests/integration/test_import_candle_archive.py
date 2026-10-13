@@ -30,6 +30,7 @@ from trade_graph.application.import_candle_archive import (
     UNCONFIRMED_ASSUMPTIONS,
     ImportScope,
     import_archive,
+    normalise_pair_names,
 )
 from trade_graph.contracts.candles import from_unix
 from trade_graph.domain.clock import FrozenClock
@@ -98,6 +99,23 @@ def test_the_default_scope_takes_usd_pairs_at_15_and_60_minutes_and_counts_every
     assert skipped["unrecognised_members"] == ["README.txt", "odd.csv"] and skipped["unrecognised_member_count"] == 2
     assert result.report["archive"]["manifest_present"] is True
     assert result.report["totals"]["inserted"] == 20
+
+
+def test_currency_pairs_in_the_archive_are_skipped_counted_and_never_stored_as_coins(store, tmp_path) -> None:
+    members = {"XBTUSD_15.csv": _rows(4), "EURUSD_15.csv": _rows(4, seed=2), "GBPUSD_15.csv": _rows(4, seed=3),
+               "AUDUSD_60.csv": _rows(4, 60), "AUDUSD_1.csv": _rows(30, 1), "USDTUSD_15.csv": _rows(4, seed=4)}
+    result = _import(store, _zip(tmp_path, members), expected_pairs=["BTC/USD", "ETH/USD"])
+    assert {s.symbol for s in store.series()} == {"BTC/USD", "USDT/USD"}  # stablecoins stay a scanner decision (D131)
+    assert result.report["skipped"]["fiat_files"] == 4  # three at the chosen intervals and one more at 1 minute
+    assert result.report["archive"]["usd_pairs_found"] == 2
+    assert result.report["skipped"]["interval_not_selected_files"] == {}
+    assert result.report["expected_pairs"]["missing"] == ["ETH/USD"]
+
+
+@pytest.mark.parametrize("name", ["EUR/USD", "GBPUSD", "AUD/USD"])
+def test_a_currency_pair_cannot_be_named_as_a_coin(name) -> None:
+    with pytest.raises(ValidationFailure, match="currency"):
+        normalise_pair_names([name])
 
 
 def test_opt_in_intervals_and_a_pair_filter(store, tmp_path) -> None:

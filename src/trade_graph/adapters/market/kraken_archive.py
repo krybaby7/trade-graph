@@ -40,6 +40,9 @@ _INTEGER = re.compile(r"-?[0-9]{1,18}")
 # At most 21 digits and a two-digit exponent keep the fixed-point width under the Candle contract's 128.
 _DECIMAL = re.compile(r"-?[0-9]{1,20}(?:\.[0-9]{1,20})?(?:[eE][+-]?[0-9]{1,2})?")
 _PAIR_ALIASES = {"XBT": "BTC", "XDG": "DOGE"}
+# National currencies that Kraken also quotes against the dollar (EURUSD, GBPUSD, ...). They are not coins, so they are
+# never stored as one. Stablecoins are deliberately not listed: excluding them (D131) is the scanner's decision.
+FIAT_BASES = frozenset({"AED", "AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"})
 _LEGACY_USD = re.compile(r"X([A-Z]{3})ZUSD")
 _BASE = re.compile(r"[A-Z0-9]{1,16}")
 _ALLOWED_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
@@ -142,6 +145,11 @@ def symbol_for_pair_code(code: str) -> str | None:
         return None
     base = _PAIR_ALIASES.get(base, base)
     return f"{base}/USD" if _BASE.fullmatch(base) else None
+
+
+def is_fiat_symbol(symbol: str) -> bool:
+    """Whether the base of a symbol such as 'EUR/USD' is a national currency rather than a coin."""
+    return symbol.split("/")[0] in FIAT_BASES
 
 
 # --- rows ----------------------------------------------------------------------------------------------------------

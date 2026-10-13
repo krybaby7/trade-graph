@@ -148,7 +148,8 @@ def test_smoke_refuses_several_pairs_and_a_larger_budget(tmp_path, monkeypatch, 
 
 
 @pytest.mark.parametrize("arguments", [
-    ["--pairs", "BTC/EUR"], ["--pairs", "USDT/USD"], ["--pairs", ""], ["--pairs", "BTC/USD", "--intervals", "7"],
+    ["--pairs", "BTC/EUR"], ["--pairs", "USDT/USD"], ["--pairs", "EUR/USD"], ["--pairs", "EURUSD,BTC/USD"],
+    ["--pairs", ""], ["--pairs", "BTC/USD", "--intervals", "7"],
     ["--pairs", "BTC/USD", "--intervals", "240"], ["--pairs", "BTC/USD", "--intervals", "15,15"],
     ["--pairs", "BTC/USD", "--max-requests", "0"], ["--pairs", "BTC/USD", "--max-requests", "100001"],
     ["--pairs", "BTC/USD", "--max-requests", "many"], ["--pairs", "BTC/USD", "--start", "2026-10-13T12:00:00"],

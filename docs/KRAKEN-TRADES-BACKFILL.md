@@ -229,7 +229,7 @@ stopped for a failure reason (the table above: everything except `end_reached`, 
 Real progress keeps `partial` even if a later request failed, so a scheduler can tell a dead network from a slow day.
 `reconcile-candles` refuses a missing file instead of creating
 it. Pair names may be written `BTC/USD` or `XBTUSD`; stablecoin pairs such as `USDT/USD` are refused as a typing
-guard only. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.
+guard only, and currency pairs such as `EUR/USD` are refused because they are not coins. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.
 
 ## Evidence and what is not proven
 
