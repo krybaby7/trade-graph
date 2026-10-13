@@ -28,6 +28,7 @@ from trade_graph.application.backfill_trades import (
     read_resume_points,
 )
 from trade_graph.application.candle_store import CandleStore
+from trade_graph.application.reconcile_candles import precedence_window, reconcile_candles
 from trade_graph.contracts.candles import Candle, from_unix
 from trade_graph.domain.clock import FrozenClock
 from trade_graph.domain.errors import ValidationFailure
@@ -683,3 +684,104 @@ def test_bad_budgets_page_sizes_and_labels_are_refused(store, kwargs) -> None:
 def test_naive_start_and_end_must_be_aware(store) -> None:
     with pytest.raises(ValidationFailure):
         BackfillScope(symbols=("BTC/USD",), start=datetime(2026, 10, 13, 12, 0))
+
+
+# --- backfill, then reconcile the three sources over the same hours ------------------------------------------------
+
+
+def test_backfilled_candles_reconcile_against_an_archive_and_a_collector_over_the_same_hours(store) -> None:
+    """The full T26 chain on synthetic data: build candles from trades, then compare them with the other sources."""
+    trades = steady_trades(1000, T0 - 600, 2 * 60 + 30, every_seconds=60)
+    expected = naive_candles(trades, 15, T0, T0 + 7200)
+    assert len(expected) == 8
+
+    def build(source: str, slot: int, values: tuple, *, volume_bump: str = "0") -> Candle:
+        open_, high, low, close, volume, count, vwap = values
+        return Candle(
+            symbol="BTC/USD", source_pair="XBTUSD", interval_minutes=15, open_time_utc=from_unix(slot),
+            close_time_utc=from_unix(slot + 900), available_at_utc=NOW, open=open_, high=high, low=low, close=close,
+            vwap=None if source == ARCHIVE else vwap, volume=volume + Decimal(volume_bump), trade_count=count,
+            source=source)
+
+    for source, kind, label in ((ARCHIVE, "archive_import", "local_archive_file"),
+                                (COLLECTOR, "public_collect", "synthetic_fixture")):
+        run = store.begin_run(kind=kind, source=source, evidence_label=label, started_at=NOW, parameters={})
+        store.save([build(source, slot, values, volume_bump="1" if source == COLLECTOR and slot == T0 + 3 * 900
+                          else "0") for slot, values in sorted(expected.items())], run_id=run)
+    result = Rig(store, trades).drive(start=from_unix(T0), end=from_unix(T0 + 7200))
+    assert result.status == "ok"
+
+    sources = (COLLECTOR, ARCHIVE, TRADES_SOURCE)
+    report = reconcile_candles(store, "BTC/USD", 15, sources=sources, end_close_time=from_unix(T0 + 7200), count=8,
+                               mode="replay").to_document()
+    assert report["counts"]["identical"] == 7 and report["counts"]["differing"] == 1
+    assert report["pairwise"][f"{ARCHIVE}|{TRADES_SOURCE}"]["identical"] == 8
+    assert report["pairwise"][f"{COLLECTOR}|{ARCHIVE}"]["fields"]["volume"]["max_absolute"] == "1"
+    assert report["worst_slots"][0]["open_time_utc"] == "2026-10-13T12:45:00.000000Z"
+    # the archive has no vwap, so the vwap the collector and the Trades-built candle share is the only one compared
+    assert report["pairwise"][f"{COLLECTOR}|{TRADES_SOURCE}"]["fields"]["vwap"]["differing"] == 0
+
+    window = precedence_window(store, "BTC/USD", 15, end_close_time=from_unix(T0 + 7200), count=8, mode="replay")
+    assert [slot.source for slot in window.slots] == [COLLECTOR] * 8
+    flagged = [slot for slot in window.slots if slot.disagreeing_sources]
+    assert len(flagged) == 1 and flagged[0].disagreement_fields == {ARCHIVE: ("volume",), TRADES_SOURCE: ("volume",)}
+
+
+# --- less common stops ---------------------------------------------------------------------------------------------
+
+
+def test_a_repeat_outside_the_boundary_group_is_counted_and_skipped_not_fatal(store) -> None:
+    two_slot_store(store)
+
+    def hook(call: int, url: str) -> str | None:
+        if call == 2:  # Kraken repeats trade 4 as well as the boundary trade 5: unexpected, but harmless
+            rows = [wire_row(4, "99.00", "3", at("899.9999999")), wire_row(5, "98.00", "1", at("900")),
+                    wire_row(6, "101.00", "3", at("1200")), wire_row(7, "105.00", "1", at("1800"))]
+            return wire_page(rows, last=int(Decimal(at("1800")) * 10**9))
+        return None
+
+    result = Rig(store, two_slot_trades(), hook=hook).drive(page_size=5)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["unexpected_overlap"] == 1 and pair["duplicate_trades"] == 2 and pair["stop_reason"] == "end_reached"
+    assert sorted(stored(store, last=T0 + 1800)) == [T0, T0 + 900]
+
+
+def test_a_cursor_that_goes_backwards_stops_the_pair(store) -> None:
+    two_slot_store(store)
+
+    def hook(call: int, url: str) -> str | None:
+        if call == 2:  # a new trade at the same instant, but a cursor slightly earlier than the one before
+            return wire_page([wire_row(6, "98.00", "1", at("900"))], last=int(Decimal(at("900")) * 10**9) - 500)
+        return None
+
+    result = Rig(store, two_slot_trades(), hook=hook).drive(page_size=5)
+    assert result.report["pairs"]["BTC/USD"]["stop_reason"] == "cursor_regressed"
+
+
+def test_a_store_refusal_stops_the_pair_and_is_reported(store) -> None:
+    two_slot_store(store)
+    run = store.begin_run(kind="trades_backfill", source=TRADES_SOURCE, evidence_label="synthetic_fixture",
+                          started_at=NOW, parameters={})
+    other = Candle(symbol="BTC/USD", source_pair="XXBTZUSD", interval_minutes=15, open_time_utc=from_unix(T0 - 900),
+                   close_time_utc=from_unix(T0), available_at_utc=NOW, open=Decimal(1), high=Decimal(2),
+                   low=Decimal(1), close=Decimal(2), vwap=None, volume=Decimal(1), trade_count=1, source=TRADES_SOURCE)
+    store.save([other], run_id=run)  # the stored series already uses another venue pair code
+    result = Rig(store, two_slot_trades()).drive()
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "store_refused" and "pair code" in pair["message"] and result.status == "partial"
+    assert pair["intervals"]["15"]["next_open_unix"] == T0
+
+
+def test_an_unexpected_error_is_recorded_as_a_failed_run_and_raised(store, monkeypatch) -> None:
+    two_slot_store(store)
+
+    def broken(self, candles, *, run_id):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(CandleStore, "save", broken)
+    with pytest.raises(RuntimeError):
+        Rig(store, two_slot_trades()).drive()
+    run = [r for r in store.runs() if r.kind == "trades_backfill"][0]
+    assert run.status == "failed" and run.report["reason"] == "unexpected_error"
+    assert run.report["pairs"]["BTC/USD"]["stop_reason"] == "unexpected_error"
+    assert "RuntimeError" in run.report["pairs"]["BTC/USD"]["message"]

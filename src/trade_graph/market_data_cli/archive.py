@@ -11,9 +11,7 @@ import argparse
 import contextlib
 import json
 import re
-import sqlite3
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 from trade_graph.adapters.market.kraken_archive import GIB, ArchiveLimits, ArchiveRejected
 from trade_graph.application.candle_store import CandleStore
@@ -27,10 +25,9 @@ from trade_graph.application.import_candle_archive import (
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.market_data_cli._common import add_market_database_option, open_store
+from trade_graph.market_data_cli._guard import refuse_financial_database
 
 COMMAND = "import-kraken-archive"
-FINANCIAL_DATABASE_NAME = "trade_graph.sqlite"
-MARKET_DATA_MARKER_TABLE = "market_data_migrations"
 MAX_UNCOMPRESSED_GB = Decimal(1024)
 DEFAULT_MAX_MEMBER_BYTES = ArchiveLimits().max_member_bytes
 _URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
@@ -49,26 +46,6 @@ def register(sub: argparse._SubParsersAction) -> None:
     parser.add_argument("--quarter", help="the quarter the file covers, such as 2026Q3 (default: read from the name)")
     parser.add_argument("--max-uncompressed-gb", default="16",
                         help="refuse to read more than this many GB of CSV text from the archive")
-
-
-def _refuse_financial_database(path: str, parser: argparse.ArgumentParser) -> None:
-    target = Path(path)
-    if target.name == FINANCIAL_DATABASE_NAME:
-        parser.error(f"refusing {path}: that is the financial database; candles use their own file "
-                     "(default runtime/market_data.sqlite)")
-    if not target.is_file() or target.stat().st_size == 0:
-        return
-    try:
-        connection = sqlite3.connect(f"{target.resolve().as_uri()}?mode=ro", uri=True)
-        try:
-            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        finally:
-            connection.close()
-    except sqlite3.DatabaseError:
-        parser.error(f"refusing {path}: it is not a SQLite candle-history file")
-    if MARKET_DATA_MARKER_TABLE not in tables:
-        parser.error(f"refusing {path}: it is a database that is not a candle-history file (for example the "
-                     "financial database); give a separate --market-database path")
 
 
 def _scope(args: argparse.Namespace, parser: argparse.ArgumentParser) -> ImportScope:
@@ -122,7 +99,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
         expected = None if args.expected_pairs is None else normalise_pair_names(args.expected_pairs.split(","))
     except ValidationFailure as error:
         parser.error(f"--quarter/--expected-pairs: {error}")
-    _refuse_financial_database(args.market_database, parser)
+    refuse_financial_database(args.market_database, parser)
     clock = SystemClock()
     database, store = open_store(args.market_database)
     try:
