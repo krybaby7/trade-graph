@@ -413,15 +413,21 @@
       ]
     },
     "T25": {
-      "status": "todo",
+      "status": "in_progress",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
       "evidence": []
     },
     "T26": {
-      "status": "todo",
+      "status": "in_progress",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
       "evidence": []
     },
     "T27": {
-      "status": "todo",
+      "status": "in_progress",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
       "evidence": []
     },
     "T28": {
