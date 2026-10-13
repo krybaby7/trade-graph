@@ -123,7 +123,8 @@ float. `vwap` is not in the archive and is stored empty. Rows are never filled, 
 
 ### Why a whole file is refused
 
-These are the stable `reason` codes in a failed report. Each leaves the run recorded as `failed`.
+These are the stable `reason` codes in a failed report. Each leaves the run recorded as `failed`, except `not_a_file`
+and `multipart_archive`, which are refused before a run exists and report `run_id` null.
 
 | Reason | Cause |
 |---|---|

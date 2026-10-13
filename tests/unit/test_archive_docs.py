@@ -8,6 +8,7 @@ from pathlib import Path
 
 from trade_graph.adapters.market.kraken_archive import GIB, REJECTION_REASONS, ArchiveLimits
 from trade_graph.application.import_candle_archive import (
+    BATCH_CANDLES,
     MAX_GAPS_LISTED,
     SURVIVORSHIP_NOTICE,
     UNCONFIRMED_ASSUMPTIONS,
@@ -35,6 +36,16 @@ def test_every_refusal_reason_in_the_code_is_documented() -> None:
     assert len(reasons) >= 18
     missing = sorted(reason for reason in reasons if f"`{reason}`" not in DOC)
     assert not missing, f"undocumented refusal reasons: {missing}"
+
+
+def test_the_two_refusals_that_happen_before_a_run_exists_are_named_as_such() -> None:
+    flat = _flat(DOC)
+    assert ("Each leaves the run recorded as `failed`, except `not_a_file` and `multipart_archive`, which are "
+            "refused before a run exists and report `run_id` null") in flat
+
+
+def test_the_batch_size_and_the_row_checksum_are_stated() -> None:
+    assert f"batches of {BATCH_CANDLES:,}" in _flat(DOC) and "SHA-256 of every row read so far" in _flat(DOC)
 
 
 def test_every_row_rejection_reason_is_documented() -> None:

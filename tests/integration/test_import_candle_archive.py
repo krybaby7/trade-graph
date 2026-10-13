@@ -308,6 +308,16 @@ def test_a_missing_file_raises_without_recording_a_run(store, tmp_path) -> None:
     with pytest.raises(ArchiveRejected) as refused:
         _import(store, tmp_path / "absent.zip")
     assert refused.value.reason == "not_a_file" and store.runs() == []
+    assert refused.value.run_id is None and refused.value.report is None
+
+
+def test_a_multipart_piece_is_refused_before_any_run_exists(store, tmp_path) -> None:
+    piece = tmp_path / "Kraken_OHLCVT_Full.zip.part00"
+    piece.write_bytes(b"PK\x03\x04 not a whole archive")
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, piece)
+    assert refused.value.reason == "multipart_archive" and store.runs() == []
+    assert refused.value.run_id is None and refused.value.report is None
 
 
 # --- idempotence and changed archives -----------------------------------------------------------------------------
