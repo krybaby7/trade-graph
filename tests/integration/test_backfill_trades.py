@@ -497,6 +497,34 @@ def test_a_throttle_far_in_the_future_stops_the_run_without_sleeping_for_it(stor
     assert max(rig.sleeper.waits, default=Decimal(0)) < 100
 
 
+def test_a_long_throttle_ends_the_whole_run_instead_of_probing_every_other_pair(store) -> None:
+    for symbol, code in (("BTC/USD", "XBTUSD"), ("ETH/USD", "ETHUSD"), ("SOL/USD", "SOLUSD")):
+        seed(store, symbol=symbol, pair=code, collector_first_open=T0 + 3600)
+    far = unix(NOW) + 3600
+    rig = Rig(store, long_gap(store, hours=1),
+              hook=lambda call, url: f'{{"error":["EService: Throttled: {far}"],"result":{{}}}}')
+    result = rig.drive(symbols=("BTC/USD", "ETH/USD", "SOL/USD"), page_size=25)
+    assert len(rig.script.calls) == 1 and result.report["requests"]["made"] == 1
+    pairs = result.report["pairs"]
+    assert pairs["BTC/USD"]["stop_reason"] == "rate_limit_wait_too_long" and pairs["BTC/USD"]["status"] == "failed"
+    for symbol in ("ETH/USD", "SOL/USD"):  # Kraken asked for an hour; no further request is sent for anything
+        assert pairs[symbol]["status"] == "not_started" and pairs[symbol]["requests"] == 0
+        assert pairs[symbol]["stop_reason"] == "rate_limit_wait_too_long" and "not started" in pairs[symbol]["message"]
+    assert {entry["symbol"] for entry in result.report["not_reached"]} == {"BTC/USD", "ETH/USD", "SOL/USD"}
+    assert result.status == "failed" and max(rig.sleeper.waits, default=Decimal(0)) < 100
+
+
+def test_a_long_throttle_does_not_cancel_a_pair_that_needs_no_requests(store) -> None:
+    seed(store, symbol="BTC/USD", pair="XBTUSD", collector_first_open=T0 + 3600)
+    seed(store, symbol="ETH/USD", pair="ETHUSD", archive_last_close=T0 + 7200, collector_first_open=T0 + 3600)
+    far = unix(NOW) + 3600
+    rig = Rig(store, long_gap(store, hours=1),
+              hook=lambda call, url: f'{{"error":["EService: Throttled: {far}"],"result":{{}}}}')
+    result = rig.drive(symbols=("BTC/USD", "ETH/USD"), page_size=25)
+    assert result.report["pairs"]["ETH/USD"]["stop_reason"] == "already_covered"
+    assert result.report["pairs"]["ETH/USD"]["status"] == "complete"
+
+
 def test_a_transient_transport_failure_is_retried_after_a_back_off(store) -> None:
     trades = long_gap(store, hours=2)
     rig = Rig(store, trades, hook=lambda call, url: TimeoutError("read timed out") if call == 3 else None)

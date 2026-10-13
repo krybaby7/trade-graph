@@ -103,7 +103,7 @@ Each pair ends with exactly one `stop_reason`:
 | `max_requests` | The request budget was spent. A pair that never got a request is `not_started`. |
 | `stream_exhausted` | Kraken had no further trades yet, before the range end (the final partial candle is not built). |
 | `rate_limited` | Kraken still answered `EAPI:Rate limit exceeded` or `EService: Throttled` after two waits. |
-| `rate_limit_wait_too_long` | The required wait exceeded 120 seconds; the run stops instead of sleeping on. |
+| `rate_limit_wait_too_long` | The required wait exceeded 120 seconds. The whole run stops instead of sleeping on: pairs not yet started are reported `not_started` with this reason and get no request, so a long pause asked for by Kraken is not probed once per remaining pair. |
 | `transport_error` | The HTTP request failed three times (two back-off retries). |
 | `page_refused` | The page failed validation; `refusal_reason` names why (for example `invalid_json`, `pair_mismatch`, `kraken_error`, `row_invalid`). |
 | `cursor_stalled` | A full page contained only trades already consumed. |

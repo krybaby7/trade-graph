@@ -394,8 +394,15 @@ def backfill_trades(store: CandleStore, clock: Clock, client: TradesClient, limi
         "evidence_label": evidence_label, "started_at_utc": utc_iso(started_at), "scope": scope.document(),
         "pairs": pairs, "notes": list(NOTES),
     }
+    paused = False  # Kraken asked for a pause longer than this run waits: no other pair gets a request either
     try:
         for state in states:
+            if paused and state.aggregator is not None and not state.aggregator.finished:
+                state.not_started = True
+                state.stop("rate_limit_wait_too_long", "not started: an earlier pair stopped because Kraken asked "
+                           "for a longer pause than this run waits")
+                pairs[state.symbol] = report_documents.pair_document(store, state)
+                continue
             try:
                 if state.aggregator is not None:
                     _run_pair(store, run_id, client, limiter, budget, state, page_size)
@@ -406,6 +413,7 @@ def backfill_trades(store: CandleStore, clock: Clock, client: TradesClient, limi
                 raise
             finally:
                 pairs[state.symbol] = report_documents.pair_document(store, state)
+            paused = paused or state.stop_reason == "rate_limit_wait_too_long"
     except BaseException as error:
         reason = "interrupted" if isinstance(error, (KeyboardInterrupt, SystemExit)) else "unexpected_error"
         for state in states:
