@@ -12,7 +12,8 @@ Design (docs/KRAKEN-TRADES-BACKFILL.md has the reasoning and the measured number
   have changed as incomplete and they are withheld, not stored.
 * A run is bounded by ``max_requests``. Its report records, per pair and interval, ``next_open_unix``: every slot
   before it was decided (stored, empty or withheld). The next run reads that cursor from ``store.runs()`` and
-  re-fetches from the oldest open bucket, so no bucket state has to be persisted.
+  re-fetches from the oldest open bucket, so no bucket state has to be persisted except one flag per interval:
+  ``open_candle_has_id_gap``, because the trade before the open bucket is not fetched again.
 """
 
 from __future__ import annotations

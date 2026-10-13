@@ -65,8 +65,7 @@ def _termination_recorded() -> Iterator[None]:
     try:
         yield
     finally:
-        if previous is not None:
-            signal.signal(signal.SIGTERM, previous)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)  # None: set outside Python
 
 
 def make_transport() -> TextTransport:
