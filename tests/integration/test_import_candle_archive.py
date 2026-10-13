@@ -358,6 +358,44 @@ def test_a_changed_archive_creates_revisions_only_for_the_changed_rows(store, tm
     assert seen_now.slots[2].stored.candle.close == Decimal("100.5")
 
 
+def _quarter_hour_rows(count: int) -> list[str]:
+    return [csv_line(FIRST_OPEN + i * 900, "100", "102", "98", "101", "5", 3) for i in range(count)]
+
+
+def test_a_corrected_file_that_drops_a_row_does_not_look_clean(store, tmp_path) -> None:
+    """The store is append-only, so the dropped row's candle stays; the report must say that it is not in the file."""
+    rows = _quarter_hour_rows(20)
+    first = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))
+    assert first.status == "ok" and first.report["series"][0]["stored_slots_not_in_file"] == 0
+    again = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}, "a.zip"), at=LATER)
+    assert again.status == "ok" and again.report["totals"]["stored_slots_not_in_file"] == 0
+    corrected = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[:5] + rows[6:])}, "b.zip"),
+                        at=LATER + timedelta(days=1))
+    series = corrected.report["series"][0]
+    assert corrected.status == "partial" and (series["accepted"], series["duplicates"]) == (19, 19)
+    assert series["stored_slots_not_in_file"] == 1 and corrected.report["totals"]["stored_slots_not_in_file"] == 1
+    assert series["coverage"]["present_slots"] == 20 and series["coverage"]["missing_slots"] == 0
+    assert store.runs()[-1].status == "partial" and store.runs()[-1].report["status"] == "partial"
+
+
+def test_files_that_only_touch_or_overlap_the_stored_range_are_not_flagged(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(20)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[:10])}))
+    after = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[10:])}, "b.zip"), at=LATER)
+    overlapping = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:15])}, "c.zip"), at=LATER)
+    assert after.status == "ok" and overlapping.status == "ok"
+    assert after.report["totals"]["stored_slots_not_in_file"] == overlapping.report["totals"][
+        "stored_slots_not_in_file"] == 0
+
+
+def test_a_file_missing_several_stored_slots_counts_them_all(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(20)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[:10])}))
+    gappy = rows[:4] + rows[8:20]  # 4 to 7 are stored from the first file but absent from this one
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(gappy)}, "b.zip"), at=LATER)
+    assert result.report["series"][0]["stored_slots_not_in_file"] == 4 and result.status == "partial"
+
+
 def test_a_changed_row_imported_with_an_earlier_clock_fails_loudly_and_records_the_failure(store, tmp_path) -> None:
     rows = [csv_line(FIRST_OPEN + i * 900, "100", "102", "98", "101", "5", 3) for i in range(3)]
     _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))

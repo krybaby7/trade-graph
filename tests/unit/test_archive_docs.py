@@ -44,6 +44,11 @@ def test_the_two_refusals_that_happen_before_a_run_exists_are_named_as_such() ->
             "refused before a run exists and report `run_id` null") in flat
 
 
+def test_a_row_that_a_corrected_file_no_longer_has_is_documented_as_not_retracted() -> None:
+    flat = _flat(DOC)
+    assert "is not retracted" in flat and flat.count("stored_slots_not_in_file") >= 2
+
+
 def test_the_batch_size_and_the_row_checksum_are_stated() -> None:
     assert f"batches of {BATCH_CANDLES:,}" in _flat(DOC) and "SHA-256 of every row read so far" in _flat(DOC)
 

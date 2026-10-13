@@ -182,7 +182,8 @@ largest, in time order) with `missing_ranges_total` giving the real count. A mis
 the report cannot tell a quiet interval from a row absent from the file and does not guess.
 
 `status`: `ok` when every in-scope row was stored or was an identical duplicate; `partial` when some rows were rejected
-or dropped; `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
+or dropped, or when the store already holds archive candles inside a file's first-to-last span that the file does not
+contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
 reason and the recorded run), 2 for a usage error.
 
 ### Repeat and changed imports
@@ -191,6 +192,14 @@ Importing the same file again inserts nothing: every row is a duplicate, the ori
 new run lists the earlier run in `same_file_seen_in_runs`. A different file (for example a corrected quarter)
 saves a new revision only for rows whose content changed, stamped with the new import time; earlier revisions stay
 readable, and `point_in_time` reads at an earlier time still see the earlier revision.
+
+**A row a corrected file no longer has is not retracted.** The store is append-only, so importing a corrected quarter
+that drops a row inserts nothing for it and leaves the old candle in place. The report's `coverage` is the store's, not
+the file's, so it still shows that slot present. To keep that from passing as clean, each series reports
+`stored_slots_not_in_file`: the number of archive candles already stored between the file's first and last candle that
+the file does not contain, and a non-zero value makes the run `partial`. The report does not list which slots; compare
+the two sources with `reconcile-candles` or read the stored series. Resolving it (a new store file, or accepting the old
+candle) is a deliberate step, not something the importer decides.
 
 ### Missing pairs and survivorship
 

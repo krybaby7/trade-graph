@@ -276,6 +276,7 @@ class _SeriesWrite:
     inserted: int = 0
     duplicates: int = 0
     revisions: int = 0
+    kept: int = 0
     first_open: int | None = None
     last_open: int | None = None
 
@@ -318,6 +319,7 @@ def _write(store: CandleStore, run_id: int, archive, picks: list[_Pick], scans: 
                     vwap=None, volume=row.volume, trade_count=row.trades, source=ARCHIVE_SOURCE))
                 outcome.first_open = row.open_unix if outcome.first_open is None else outcome.first_open
                 outcome.last_open = row.open_unix
+                outcome.kept += 1
             if ends_batch:
                 _require_same_batch(pick, scan, rows)
                 _flush(store, run_id, batch, outcome)
@@ -415,6 +417,8 @@ def _series_documents(store: CandleStore, picks: list[_Pick], scans: dict[tuple[
     documents = []
     for pick in picks:
         scan, outcome = scans[pick.key], written[pick.key]
+        coverage = None if outcome.first_open is None else _coverage(
+            store, pick.symbol, pick.interval, outcome.first_open, outcome.last_open or outcome.first_open)
         documents.append({
             "symbol": pick.symbol, "source_pair": pick.member.pair_code, "interval_minutes": pick.interval,
             "member": pick.member.name, "rows_read": scan.rows_read, "accepted": scan.accepted,
@@ -422,14 +426,16 @@ def _series_documents(store: CandleStore, picks: list[_Pick], scans: dict[tuple[
             "dropped_unfinished": outcome.dropped, "inserted": outcome.inserted, "duplicates": outcome.duplicates,
             "revisions": outcome.revisions, "rows_outside_quarter": scan.outside_quarter,
             "first_open_utc": _iso(outcome.first_open), "last_open_utc": _iso(outcome.last_open),
-            "coverage": None if outcome.first_open is None else _coverage(
-                store, pick.symbol, pick.interval, outcome.first_open, outcome.last_open or outcome.first_open),
+            # Candles that an earlier import stored inside this file's span and this file does not contain. The
+            # store is append-only, so a corrected file that dropped a row cannot take its candle back.
+            "stored_slots_not_in_file": 0 if coverage is None else coverage["present_slots"] - outcome.kept,
+            "coverage": coverage,
         })
     return documents
 
 
 def _totals(scans: dict[tuple[str, int], _SeriesScan], written: dict[tuple[str, int], _SeriesWrite] | None,
-            ) -> dict[str, Any]:
+            stored_not_in_file: int = 0) -> dict[str, Any]:
     outcomes = list(written.values()) if written is not None else []
     return {
         "series": len(scans), "pairs": len({symbol for symbol, _ in scans}),
@@ -441,6 +447,7 @@ def _totals(scans: dict[tuple[str, int], _SeriesScan], written: dict[tuple[str, 
         "inserted": sum(outcome.inserted for outcome in outcomes),
         "duplicates": sum(outcome.duplicates for outcome in outcomes),
         "revisions": sum(outcome.revisions for outcome in outcomes),
+        "stored_slots_not_in_file": stored_not_in_file,
     }
 
 
@@ -541,7 +548,8 @@ def _run(store: CandleStore, clock: Clock, path: Path, fingerprint: ArchiveFinge
         _require_unchanged(path, fingerprint)
         written = _write(store, run_id, archive, chosen.picks, scans, imported_at)
     _require_unchanged(path, fingerprint)
-    report["totals"] = _totals(scans, written)
     report["series"] = _series_documents(store, chosen.picks, scans, written)
-    flagged = report["totals"]["rejected"] or report["totals"]["dropped_unfinished"]
+    report["totals"] = _totals(scans, written, sum(item["stored_slots_not_in_file"] for item in report["series"]))
+    totals = report["totals"]
+    flagged = totals["rejected"] or totals["dropped_unfinished"] or totals["stored_slots_not_in_file"]
     return "partial" if flagged else "ok"
