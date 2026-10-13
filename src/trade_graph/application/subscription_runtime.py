@@ -15,7 +15,7 @@ from trade_graph.adapters.persistence.db import atomic
 from trade_graph.application.authority import AuthorityRecord
 from trade_graph.application.change_authority import authorized_change
 from trade_graph.application.engineering_workflow import EngineerHandler
-from trade_graph.application.leadership import GatewayRole, LeaderHandler
+from trade_graph.application.leadership import TURN_ONLY_MODEL_FAILURES, GatewayRole, LeaderHandler, turn_scope
 from trade_graph.application.runtime_departments import LearningHandler, OptimisationHandler, ResearchHandler
 from trade_graph.application.runtime_models import MODEL_ROLES
 from trade_graph.application.trader_workflow import TraderHandler
@@ -193,14 +193,17 @@ class SubscriptionDepartmentMixin:
             if result.failure == "timeout_uncertain":
                 return self._record(task, {"_status": "WAITING_EXTERNAL",
                                            "reason": "Subscription outcome requires reconciliation; no replay"})
+        turn_only = not result.ok and result.failure in TURN_ONLY_MODEL_FAILURES
         try:
             if not result.ok:
                 raise ValidationFailure(f"subscription {result.failure}: {result.message}")
+            turn_only = True
             return self.apply(task, self.reply_type.model_validate(result.payload))
         except (TradeGraphError, ValidationError) as exc:
             with self.database.immediate():
                 self.scheduler.leased_row(task["_lease"])
-                return self._record(task, {"_status": "FAILED", "reason": str(exc)[:500]})
+                return self._record(task, {"_status": "FAILED", "reason": str(exc)[:500],
+                                           **turn_scope("FAILED", turn_only)})
 
     def __call__(self, task):
         # Explicitly bypass API-specific Trader recovery/result handling.

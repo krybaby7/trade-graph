@@ -148,7 +148,7 @@ def test_contract_errors_still_raise_and_record_no_refusal(tmp_path):
     assert _count(database, "SELECT COUNT(*) FROM activity_events WHERE kind = 'order_refused'") == 0
 
 
-def test_malformed_trader_reply_still_fails_and_pauses(tmp_path, monkeypatch):
+def test_malformed_trader_reply_fails_only_that_turn(tmp_path, monkeypatch):
     flow, runtime, _binding, service, cli, _ = subscription_service(tmp_path, monkeypatch)
     _fund(flow)
     cli.outputs["trader"] = {"action": "hold"}
@@ -159,10 +159,10 @@ def test_malformed_trader_reply_still_fails_and_pauses(tmp_path, monkeypatch):
         await service.stop()
 
     asyncio.run(scenario())
+    # A malformed answer is a failed turn, not a refusal and not a system pause (owner, 2026-10-13).
     assert flow.row(task_id)["status"] == "FAILED"
-    pause = runtime.execution.pause(flow.pid)
-    assert pause["profile"] == "MANAGE_ONLY" and pause["originator"] == "system"
-    assert pause["reason"] == "role unavailable; manage positions"
+    assert json.loads(flow.row(task_id)["output_json"])["failure_scope"] == "turn"
+    assert runtime.execution.profile(flow.pid) == "RUNNING"
     assert _count(flow.db, "SELECT COUNT(*) FROM activity_events WHERE kind = 'order_refused'") == 0
 
 

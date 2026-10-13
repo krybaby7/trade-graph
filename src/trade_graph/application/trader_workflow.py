@@ -10,7 +10,7 @@ from pydantic import Field, ValidationError
 
 from trade_graph.adapters.persistence.db import atomic
 from trade_graph.application.candle_readiness import wait_record
-from trade_graph.application.leadership import GatewayRole
+from trade_graph.application.leadership import TURN_ONLY_MODEL_FAILURES, GatewayRole, turn_scope
 from trade_graph.application.market_context import active_templates, market_context
 from trade_graph.application.model_invocations import InvocationJournal
 from trade_graph.application.research import ResearchStore
@@ -205,14 +205,17 @@ class TraderHandler(GatewayRole):
         return self._apply_result(task, result)
 
     def _apply_result(self, task: dict, result: ModelResult) -> dict:
+        turn_only = not result.ok and result.failure in TURN_ONLY_MODEL_FAILURES
         try:
             if not result.ok:
                 raise ValidationFailure(f"model {result.failure}: {result.message}")
+            turn_only = True
             return self.apply(task, TraderReply.model_validate(result.payload))
         except (TradeGraphError, ValidationError) as exc:
             with self.database.immediate():
                 self.scheduler.leased_row(task["_lease"])
-                return self._record(task, {"_status": "FAILED", "reason": str(exc)[:500]})
+                return self._record(task, {"_status": "FAILED", "reason": str(exc)[:500],
+                                           **turn_scope("FAILED", turn_only)})
 
     @atomic
     def apply(self, task: dict, reply: TraderReply) -> dict:

@@ -424,6 +424,8 @@ REASON: Final = {
     "checking": "the account's balances were still being double-checked",
     "unknown_coin": "the exchange's rules for that coin aren't known",
     "paused": "a pause was on that doesn't allow this order",
+    # The Trader's answer arrived but could not be used; only that turn failed.
+    "answer_checks": "its answer didn't pass the checks",
     "error": "a technical error",
     "unknown": "a problem HQ can't describe in plain words",
 }
@@ -433,6 +435,9 @@ _ERROR_CLASS = re.compile(r"[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+")
 _VALUATION = re.compile(r"\bprovisional valuation\b|\bnative \S+ valuation\b|\bFX for native exposure\b"
                         r"|\bno price for exposure valuation\b")
 _PAUSE_REFUSAL = re.compile(r"\bpause \S+ blocks (?:new exposure|reduction)\b")
+_ANSWER_CHECKS = re.compile(r"\bvalidation errors? for \w+Reply\b|^strategy template is unknown|^trader payload "
+                            r"|^trader action is not executable|^evidence ids must be strings"
+                            r"|^order (?:quantity|symbol) ")
 
 
 def reason_plain(raw, *, live: bool = False) -> str | None:
@@ -443,7 +448,7 @@ def reason_plain(raw, *, live: bool = False) -> str | None:
     if raw is None or raw == "":
         return None
     value = str(raw)
-    model = re.match(r"model (\w+):", value)
+    model = re.match(r"(?:model|subscription) (\w+):", value)
     if model and model.group(1) in MODEL_FAILURE:
         return MODEL_FAILURE[model.group(1)]
     key = _reason_key(value)
@@ -451,8 +456,12 @@ def reason_plain(raw, *, live: bool = False) -> str | None:
 
 
 def _reason_key(value: str) -> str:
-    if "cites evidence outside" in value:
+    if "cites evidence outside" in value or "cites research outside" in value:
         return "outside_evidence"
+    if _ANSWER_CHECKS.search(value):
+        return "answer_checks"
+    if "does not allow a discretionary experiment" in value:
+        return "not_permitted"
     if _CHANGED.search(value):
         return "changed"
     if _HALT.search(value):

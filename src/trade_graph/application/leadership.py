@@ -21,6 +21,15 @@ from trade_graph.contracts.models import ChangeTask, LeaderDecision, ModelReques
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, BudgetExhausted, StaleState, TradeGraphError, ValidationFailure
 
+# An answer that arrived but cannot be used fails only its own turn (owner, 2026-10-13).
+# Credentials, unknown outcomes, quota and budget stops remain role unavailability.
+TURN_ONLY_MODEL_FAILURES = frozenset({"validation", "truncation", "refusal", "temporary"})
+
+
+def turn_scope(status: str, turn_only: bool) -> dict:
+    """Mark a failed turn that must not pause the system; other outcomes keep their meaning."""
+    return {"failure_scope": "turn"} if status == "FAILED" and turn_only else {}
+
 
 class GatewayRole:
     reply_type = DepartmentReply
@@ -178,6 +187,7 @@ class GatewayRole:
         )
 
     def __call__(self, task: dict) -> dict:
+        turn_only = False
         try:
             with self.database.immediate():
                 self._eligible(task)
@@ -212,7 +222,10 @@ class GatewayRole:
             if not result.ok:
                 if result.message.startswith("room "):
                     raise BudgetExhausted(result.message)
+                turn_only = result.failure in TURN_ONLY_MODEL_FAILURES
                 raise ValidationFailure(f"model {result.failure}: {result.message}")
+            # The model answered: a reply that cannot be validated or applied is set aside.
+            turn_only = True
             reply = self.reply_type.model_validate(result.payload)
             return self.apply(task, reply)
         except (TradeGraphError, ValidationError) as exc:
@@ -220,7 +233,8 @@ class GatewayRole:
             with self.database.immediate():
                 self.scheduler.leased_row(task["_lease"])
                 status = "BLOCKED_BUDGET" if isinstance(exc, BudgetExhausted) else "FAILED"
-                return self._record(task, {"_status": status, "error": type(exc).__name__, "reason": str(exc)[:2000]})
+                return self._record(task, {"_status": status, "error": type(exc).__name__, "reason": str(exc)[:2000],
+                                           **turn_scope(status, turn_only)})
 
     def _evidence(self, task: dict, refs: list[str]) -> None:
         if not set(refs).issubset(task["snapshot"]["evidence_refs"]):

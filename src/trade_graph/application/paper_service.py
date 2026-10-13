@@ -491,9 +491,15 @@ class PaperService:
             if availability_stop:
                 self.execution.ledger._activity(row["portfolio_id"], "subscription_ai_paused", {
                     "task_id": lease.task_id, "role": row["role"], "financial_management_continues": True})
+            # An answer that arrived but could not be used fails only this turn (owner, 2026-10-13).
+            turn_only = (result["status"] == "FAILED"
+                         and json.loads(result["output_json"] or "{}").get("failure_scope") == "turn")
+            if turn_only and row["role"] == "trader":
+                self.execution.ledger._activity(row["portfolio_id"], "trader_turn_set_aside", {
+                    "task_id": lease.task_id, "system_pause": False})
             if result["status"] == "BLOCKED_BUDGET" or (
                 row["role"] == "trader" and result["status"] in {"FAILED", "WAITING_EXTERNAL", "DEAD_LETTER"}
-                and not availability_stop
+                and not availability_stop and not turn_only
             ):
                 pause = self.execution.pause(row["portfolio_id"])
                 if not pause or pause["profile"] == "RUNNING":
