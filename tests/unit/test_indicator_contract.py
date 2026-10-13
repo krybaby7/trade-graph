@@ -25,7 +25,7 @@ from trade_graph.domain.errors import ValidationFailure
 _CONTRACT = Path(__file__).resolve().parents[2] / "src" / "trade_graph" / "contracts" / "indicators.py"
 _REQUIRED = {
     "SMA", "EMA", "WMA", "DEMA", "BBANDS", "SAR", "MIDPRICE", "HIGHEST_HIGH", "LOWEST_LOW", "RSI", "MACD",
-    "STOCH", "CCI", "MFI", "WILLR", "ROC", "MOM", "ADX", "PLUS_DI", "MINUS_DI", "AROON", "ATR", "NATR", "OBV",
+    "STOCH", "CCI", "MFI", "WILLR", "ROC", "ROCP", "MOM", "ADX", "PLUS_DI", "MINUS_DI", "AROON", "ATR", "NATR", "OBV",
     "STDDEV",
 }
 
@@ -85,7 +85,7 @@ def test_recursive_entries_are_the_smoothed_and_cumulative_ones() -> None:
     recursive = {spec.name for spec in INDICATOR_MENU if spec.recursive_seed}
     assert {"EMA", "DEMA", "RSI", "MACD", "ATR", "NATR", "ADX", "PLUS_DI", "MINUS_DI", "SAR", "OBV"} <= recursive
     assert not recursive & {"SMA", "WMA", "BBANDS", "MIDPRICE", "HIGHEST_HIGH", "LOWEST_LOW", "STOCH", "CCI", "MFI",
-                            "WILLR", "ROC", "MOM", "AROON", "STDDEV"}
+                            "WILLR", "ROC", "ROCP", "MOM", "AROON", "STDDEV"}
 
 
 def test_inputs_use_candle_field_names_in_library_order() -> None:

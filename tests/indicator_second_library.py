@@ -79,6 +79,9 @@ def pandas_ta_outputs(name: str, params: Mapping[str, Any], columns: Columns) ->
             return {"value": pta.willr(high, low, close, length=p["timeperiod"], talib=False).to_numpy(np.float64)}
         if name == "ROC":
             return {"value": pta.roc(close, length=p["timeperiod"], talib=False).to_numpy(dtype=np.float64)}
+        if name == "ROCP":
+            # scalar=1 asks pandas-ta-classic for the fraction instead of the percentage
+            return {"value": pta.roc(close, length=p["timeperiod"], scalar=1, talib=False).to_numpy(np.float64)}
         if name == "MOM":
             return {"value": pta.mom(close, length=p["timeperiod"], talib=False).to_numpy(dtype=np.float64)}
         if name in ("ADX", "PLUS_DI", "MINUS_DI"):
@@ -121,6 +124,9 @@ def talipp_outputs(name: str, params: Mapping[str, Any], columns: Columns) -> Ou
     if name in ("SMA", "EMA", "WMA", "DEMA", "RSI", "ROC"):
         function = {"SMA": ti.SMA, "EMA": ti.EMA, "WMA": ti.WMA, "DEMA": ti.DEMA, "RSI": ti.RSI, "ROC": ti.ROC}[name]
         return {"value": _nan_list(list(function(n, input_values=close).output_values))}
+    if name == "ROCP":
+        # talipp reports percent only; the fraction is that percentage divided by 100 (a unit change)
+        return {"value": _nan_list(list(ti.ROC(n, input_values=close).output_values)) / 100.0}
     if name == "STDDEV":
         return {"value": _nan_list(list(ti.StdDev(n, input_values=close).output_values))}
     if name == "BBANDS":

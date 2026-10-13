@@ -27,6 +27,7 @@
     "MFI": [{"timeperiod": 5}, {"timeperiod": 30}],
     "WILLR": [{"timeperiod": 7}],
     "ROC": [{"timeperiod": 3}],
+    "ROCP": [{"timeperiod": 1}, {"timeperiod": 4}],
     "MOM": [{"timeperiod": 3}],
     "ADX": [{"timeperiod": 7}, {"timeperiod": 30}],
     "PLUS_DI": [{"timeperiod": 7}],

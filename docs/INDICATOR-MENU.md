@@ -58,6 +58,7 @@ appears exactly there, at the smallest, default and largest settings of every en
 | **MFI** (TA-Lib `MFI`) | volume | high, low, close, volume | `timeperiod` 14 (2 to 500) | `value` | 14 candles | no |
 | **WILLR** (TA-Lib `WILLR`) | momentum | high, low, close | `timeperiod` 14 (2 to 500) | `value` | 13 candles | no |
 | **ROC** (TA-Lib `ROC`) | momentum | close | `timeperiod` 10 (1 to 500) | `value` | 10 candles | no |
+| **ROCP** (TA-Lib `ROCP`) | momentum | close | `timeperiod` 10 (1 to 500) | `value` | 10 candles | no |
 | **MOM** (TA-Lib `MOM`) | momentum | close | `timeperiod` 10 (1 to 500) | `value` | 10 candles | no |
 | **ADX** (TA-Lib `ADX`) | trend | high, low, close | `timeperiod` 14 (2 to 500) | `value` | 27 candles | yes |
 | **PLUS_DI** (TA-Lib `PLUS_DI`) | trend | high, low, close | `timeperiod` 14 (2 to 500) | `value` | 14 candles | yes |

@@ -817,6 +817,84 @@
    }
   },
   {
+   "id": "rocp-2",
+   "entry": "ROCP",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "2/11",
+     "-1/12",
+     "1/13",
+     "4/11",
+     "-1/14",
+     "-1/5",
+     "2/13"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close, (close - close N bars earlier) / close N bars earlier (TA-Lib function list, ROCP); the same quantity as ROC divided by 100.",
+    "derivation": "Index 2: 13/11-1=2/11; index 3: 11/12-1=-1/12; index 4: 14/13-1=1/13; index 5: 15/11-1=4/11; index 6: 13/14-1=-1/14; index 7: 12/15-1=-1/5; index 8: 15/13-1=2/13. These are the roc-2 values divided by 100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rocp-1",
+   "entry": "ROCP",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 1
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     "1/11",
+     "1/12",
+     "-2/13",
+     "3/11",
+     "1/14",
+     "-2/15",
+     "-1/13",
+     "1/4"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close, (close - close N bars earlier) / close N bars earlier (TA-Lib function list, ROCP). One bar is the hourly return used by the hourly price features.",
+    "derivation": "Index 1: 12/11-1=1/11; index 2: 13/12-1=1/12; index 3: 11/13-1=-2/13; index 4: 14/11-1=3/11; index 5: 15/14-1=1/14; index 6: 13/15-1=-2/15; index 7: 12/13-1=-1/13; index 8: 15/12-1=1/4.",
+    "convention": null
+   }
+  },
+  {
    "id": "mom-2",
    "entry": "MOM",
    "basis": "hand_derived",
@@ -2138,6 +2216,39 @@
    "source": {
     "definition": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/rate-of-change-roc",
     "derivation": "The close never changes: 0 percent.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-rocp",
+   "entry": "ROCP",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close (TA-Lib function list, ROCP).",
+    "derivation": "The close never changes: a fractional change of 0.",
     "convention": null
    }
   },

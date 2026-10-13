@@ -26,7 +26,7 @@ SETTLE_TOLERANCE = 1e-5
 CandleField = Literal["open", "high", "low", "close", "volume"]
 ParameterKind = Literal["int", "float"]
 IndicatorGroup = Literal["moving_average", "trend", "momentum", "volatility", "volume", "price_range"]
-OutputUnit = Literal["price", "percent", "points", "volume"]
+OutputUnit = Literal["price", "percent", "fraction", "points", "volume"]
 Number = StrictInt | StrictFloat
 _NAME = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _MENU_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,23}$")
@@ -389,6 +389,13 @@ _MENU: tuple[dict[str, Any], ...] = (
          description="The percentage change of the close compared with N candles ago.",
          inputs=("close",), parameters=(_period(10, minimum=1, meaning=_BACK),),
          outputs=(IndicatorOutput(name="value", unit="percent", meaning="Percent change; 1.5 means up 1.5 percent."),),
+         warmup=_window("Needs N candles before the first value."), recursive_seed=False),
+    dict(name="ROCP", talib_function="ROCP", group="momentum", title="Rate of change (fraction)",
+         description="The change of the close compared with N candles ago as a fraction of that earlier close, so "
+                     "0.015 means up 1.5 percent.",
+         inputs=("close",), parameters=(_period(10, minimum=1, meaning=_BACK),),
+         outputs=(IndicatorOutput(name="value", unit="fraction",
+                                  meaning="Fractional change; 0.015 means up 1.5 percent."),),
          warmup=_window("Needs N candles before the first value."), recursive_seed=False),
     dict(name="MOM", talib_function="MOM", group="momentum", title="Momentum",
          description="The price change of the close compared with N candles ago, in price units.",
