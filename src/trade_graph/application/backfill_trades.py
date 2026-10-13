@@ -50,7 +50,7 @@ from trade_graph.contracts.candles import Candle, RunRecord, from_unix, to_unix
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
-BACKFILL_VERSION = "trades-backfill-v1"
+BACKFILL_VERSION = "trades-backfill-v2"  # v2: an id gap before the open candle survives a resume
 BACKFILL_INTERVALS = (1, 5, 15, 60)
 BACKFILL_EVIDENCE_LABELS = ("live_public", "live_public_smoke", "recorded_public_fixture", "synthetic_fixture")
 MAX_REQUESTS_LIMIT = 100_000
@@ -150,17 +150,27 @@ def _plan_target(summaries: dict, scope: BackfillScope, symbol: str, interval: i
     return Target(symbol, interval, start, end, start_source, end_source, "ready", None)
 
 
-def read_resume_points(store: CandleStore, symbol: str, pair_code: str, interval: int, *,
-                       range_start: int, runs: list[RunRecord] | None = None) -> int | None:
+@dataclass(frozen=True, slots=True)
+class ResumePoint:
+    """Where a resumed run starts: ``next_open`` is the oldest undecided slot, and ``open_candle_has_id_gap`` says
+    the candle opening there already had a known gap in its trade ids, which the re-fetch cannot see again."""
+
+    next_open: int
+    open_candle_has_id_gap: bool
+
+
+def read_resume_point(store: CandleStore, symbol: str, pair_code: str, interval: int, *,
+                      range_start: int, runs: list[RunRecord] | None = None) -> ResumePoint | None:
     """The newest stored cursor for this pair and interval that can still be trusted, or ``None``.
 
     Read from the reports of finished ``trades_backfill`` runs (``pairs.<symbol>.intervals.<n>.next_open_unix``). A
     cursor counts only when its run covered the same venue pair code and began at or before ``range_start``, because
     only then were all slots from ``range_start`` up to the cursor decided. A run that never finished has no report
-    and gives no cursor. ``runs`` may carry an already loaded ``store.runs()`` listing.
+    and gives no cursor. ``runs`` may carry an already loaded ``store.runs()`` listing. The gap flag is true when any
+    run that ended on the newest cursor reported it, or did not report it at all (unknown counts as a gap).
     """
     step = interval * 60
-    best: int | None = None
+    found: list[tuple[int, bool]] = []
     for run in store.runs() if runs is None else runs:
         if run.kind != "trades_backfill" or not isinstance(run.report, dict):
             continue
@@ -172,8 +182,18 @@ def read_resume_points(store: CandleStore, symbol: str, pair_code: str, interval
         if (type(run_start) is not int or type(next_open) is not int or next_open % step
                 or run_start > range_start or next_open <= range_start):
             continue
-        best = next_open if best is None else max(best, next_open)
-    return best
+        found.append((next_open, entry.get("open_candle_has_id_gap") is not False))
+    if not found:
+        return None
+    newest = max(next_open for next_open, _ in found)
+    return ResumePoint(newest, any(flag for next_open, flag in found if next_open == newest))
+
+
+def read_resume_points(store: CandleStore, symbol: str, pair_code: str, interval: int, *,
+                       range_start: int, runs: list[RunRecord] | None = None) -> int | None:
+    """Only the cursor of ``read_resume_point``."""
+    point = read_resume_point(store, symbol, pair_code, interval, range_start=range_start, runs=runs)
+    return None if point is None else point.next_open
 
 
 # --- one pair ------------------------------------------------------------------------------------------------------
@@ -327,6 +347,7 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
             state.stop("store_refused", str(error)[:200])
             return
         state.committed = {interval: aggregator.next_open(interval) for interval in state.committed}
+        state.open_tainted = {interval: aggregator.open_tainted(interval) for interval in state.committed}
         if aggregator.finished:
             state.stop("end_reached")
             return
@@ -359,14 +380,19 @@ def _prepare_pair(store: CandleStore, scope: BackfillScope, summaries: dict, sym
         state.stop("no_target" if all(t.state == "no_target" for t in targets.values()) else "already_covered")
         return state
     floors: dict[int, int] = {}
+    carried: set[int] = set()
     for interval, target in ready.items():
         assert target.start is not None and target.end is not None
-        cursor = None if past_runs is None else read_resume_points(
+        point = None if past_runs is None else read_resume_point(
             store, symbol, pair_code, interval, range_start=target.start, runs=past_runs)
-        state.cursors[interval] = cursor
-        floors[interval] = target.start if cursor is None else min(cursor, target.end)
-    state.aggregator = TradeAggregator(floors, {interval: ready[interval].end for interval in ready})
+        state.cursors[interval] = None if point is None else point.next_open
+        floors[interval] = target.start if point is None else min(point.next_open, target.end)
+        if point is not None and point.open_candle_has_id_gap and floors[interval] < target.end:
+            carried.add(interval)
+    state.aggregator = TradeAggregator(floors, {interval: ready[interval].end for interval in ready},
+                                       tainted_open=carried)
     state.committed = {interval: floors[interval] for interval in ready}
+    state.open_tainted = {interval: interval in carried for interval in ready}
     open_floors = [floors[i] for i in ready if floors[i] < ready[i].end]
     state.resume_since = min(open_floors) - 1 if open_floors else None
     return state
@@ -450,5 +476,5 @@ def _finish(store: CandleStore, clock: Clock, run_id: int, report: dict[str, Any
 __all__ = [
     "BACKFILL_EVIDENCE_LABELS", "BACKFILL_INTERVALS", "BACKFILL_VERSION", "MAX_PAGE_RETRIES", "MAX_RANGES_LISTED",
     "MAX_REQUESTS_LIMIT", "MAX_TRANSPORT_RETRIES", "NOTES", "STOP_REASONS", "TRADES_SOURCE", "BackfillResult",
-    "BackfillScope", "TradesClient", "backfill_trades", "read_resume_points",
+    "BackfillScope", "ResumePoint", "TradesClient", "backfill_trades", "read_resume_point", "read_resume_points",
 ]

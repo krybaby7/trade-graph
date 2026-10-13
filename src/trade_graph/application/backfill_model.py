@@ -81,6 +81,7 @@ class PairState:
     cursors: dict[int, int | None]
     aggregator: TradeAggregator | None = None
     committed: dict[int, int] = field(default_factory=dict)
+    open_tainted: dict[int, bool] = field(default_factory=dict)  # moves together with ``committed``
     outcomes: dict[int, IntervalOutcome] = field(default_factory=dict)
     stop_reason: str = "end_reached"
     message: str | None = None

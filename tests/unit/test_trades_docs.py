@@ -107,5 +107,12 @@ def test_the_assumptions_the_report_prints_are_the_ones_the_document_states() ->
         assert phrase in FLAT, phrase
 
 
+def test_the_id_gap_flag_and_the_first_trade_limit_are_documented() -> None:
+    for phrase in ("open_candle_has_id_gap", "unknown withholds", "The trade before the first one a run receives is "
+                   "unknown", "decided_this_run", "any flagged one counts"):
+        assert phrase in FLAT, phrase
+    assert any(note.startswith("sequence_ids:") and "first trade a run receives" in note for note in NOTES)
+
+
 def test_the_integration_note_about_the_second_limiter_is_present() -> None:
     assert "For the integration owner" in DOC and "rate_limit.py" in DOC

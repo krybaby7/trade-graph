@@ -72,7 +72,11 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
    candles that the missing trades could belong to (the open candle of each interval and the one the new trade opens)
    are marked incomplete and **withheld, not stored**; the report lists the gaps (`id_gaps`, examples) and counts the
    withheld candles. This is a safety rule for an unconfirmed property; if real data has frequent id gaps the counts
-   will show it immediately.
+   will show it immediately. **Limit:** a gap is seen only between two trades the run received. The trade before the
+   first one a run receives is unknown, so an id missing just before it cannot be seen. For a fresh run that is the
+   first trade at or after the range start, and the first candle of the range is the only one it could affect. A
+   resumed run carries the gap flag of its cursor candle forward (next section), so resuming never hides a gap that
+   an earlier run saw.
 8. **Bounded.** `--max-requests` (default 100, at most 100,000; `--smoke` 3) counts every HTTP attempt including
    retries. When it is spent the run stops, records its cursor, and reports exactly what it did not reach.
 
@@ -88,8 +92,12 @@ The next run reads it with `store.runs()`: `read_resume_points(store, symbol, pa
 returns the highest `next_open_unix` among finished runs that covered the same venue pair code and began at or
 before the current range start (an earlier start cannot trust a later run's cursor). The stream restarts at the
 oldest `next_open_unix` among the intervals minus one second and each interval ignores trades before its own cursor,
-so no partly built candle is ever stored and no bucket state has to be persisted. The cost is re-fetching at most
-one candle of the largest requested interval. `--from-start` ignores stored cursors. A run that never finished (for
+so no partly built candle is ever stored. The cost is re-fetching at most one candle of the largest requested
+interval. The one thing the re-fetch cannot rebuild is a gap in trade ids just before the candle it starts at (the
+trade before it is not fetched again), so each interval's entry also records `open_candle_has_id_gap`: whether the
+candle still forming at the stop was already known to lack trades. The next run starts that candle tainted, so it is
+withheld exactly as an uninterrupted run would have withheld it. A cursor written without this flag counts as flagged
+(unknown withholds), and when several runs ended on the same cursor any flagged one counts. `--from-start` ignores stored cursors. A run that never finished (for
 example a power cut) has no report and gives no cursor; the next run then starts from the range start and the store
 turns repeated candles into no-ops. Ctrl-C does finish and record the run.
 

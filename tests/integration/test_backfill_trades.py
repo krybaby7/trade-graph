@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import random
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
 
@@ -24,7 +26,9 @@ from trade_graph.application.backfill_trades import (
     STOP_REASONS,
     TRADES_SOURCE,
     BackfillScope,
+    ResumePoint,
     backfill_trades,
+    read_resume_point,
     read_resume_points,
 )
 from trade_graph.application.candle_store import CandleStore
@@ -34,6 +38,7 @@ from trade_graph.domain.clock import FrozenClock
 from trade_graph.domain.errors import ValidationFailure
 
 NOW = datetime(2026, 10, 13, 20, 0, tzinfo=UTC)
+LATE = datetime(2026, 10, 14, 12, 0, tzinfo=UTC)  # after every candle of the longer synthetic ranges has closed
 T0 = 1_791_892_800  # 2026-10-13T12:00:00Z: the archive ends here
 COLLECTOR_START = T0 + 7200  # the collector's first 15 minute candle opens at 14:00
 ARCHIVE = "kraken_ohlcvt_archive"
@@ -57,13 +62,14 @@ def store(tmp_path):
 
 
 def seed(store: CandleStore, *, symbol: str = "BTC/USD", pair: str = "XBTUSD", interval: int = 15,
-         archive_last_close: int | None = T0, collector_first_open: int | None = COLLECTOR_START) -> None:
+         archive_last_close: int | None = T0, collector_first_open: int | None = COLLECTOR_START,
+         available: datetime = NOW) -> None:
     step = interval * 60
 
     def candle(open_unix: int, source: str) -> Candle:
         return Candle(
             symbol=symbol, source_pair=pair, interval_minutes=interval, open_time_utc=from_unix(open_unix),
-            close_time_utc=from_unix(open_unix + step), available_at_utc=NOW, open=Decimal("100"),
+            close_time_utc=from_unix(open_unix + step), available_at_utc=available, open=Decimal("100"),
             high=Decimal("101"), low=Decimal("99"), close=Decimal("100.5"), vwap=None, volume=Decimal("5"),
             trade_count=3, source=source)
 
@@ -380,6 +386,150 @@ def test_resuming_matches_a_single_uninterrupted_run_candle_for_candle(store, tm
     whole = {slot: candle.content_hash for slot, candle in stored(other, last=T0 + 6 * 3600).items()}
     other_db.close()
     assert split == whole and len(whole) == 24
+
+
+# --- an id gap must survive a resume -------------------------------------------------------------------------------
+
+
+def gap_before_the_trade_that_opens_the_second_candle() -> list[SyntheticTrade]:
+    """Ids 4 and 5 are missing between 12:00:30 and 12:15:05, so both neighbouring candles may lack trades."""
+    return [trade(1, "10", "100.00", "1"), trade(2, "20", "101.00", "1"), trade(3, "30", "102.00", "1"),
+            trade(6, "905", "103.00", "1"), trade(7, "1000", "104.00", "1"), trade(8, "1100", "105.00", "1"),
+            trade(9, "1805", "106.00", "1")]
+
+
+def content(store: CandleStore, *, interval: int = 15, last: int = T0 + 1800) -> dict[int, str]:
+    return {slot: candle.content_hash for slot, candle in stored(store, interval, last=last).items()}
+
+
+@pytest.fixture
+def other_store(tmp_path):
+    database = MarketDataDatabase(tmp_path / "other" / "market_data.sqlite")
+    yield CandleStore(database)
+    database.close()
+
+
+def test_a_resume_keeps_the_id_gap_that_sits_just_before_the_open_candle(store, other_store) -> None:
+    two_slot_store(store)
+    two_slot_store(other_store)
+    trades = gap_before_the_trade_that_opens_the_second_candle()
+    whole = Rig(other_store, trades).drive()
+    assert whole.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 2
+    assert content(other_store) == {}
+    # one page of four trades per run: round one meets the gap, so the first candle is withheld and the second,
+    # still open, is tainted; round two re-fetches from the second candle and no longer sees the trade before it
+    first = Rig(store, trades).drive(max_requests=1, page_size=4)
+    document = first.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert (document["next_open_unix"], document["open_candle_has_id_gap"]) == (T0 + 900, True)
+    second = Rig(store, trades).drive(max_requests=1, page_size=4)
+    assert second.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+    resumed = second.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert resumed["candles"]["withheld_trade_id_gap"] == 1 and resumed["open_candle_has_id_gap"] is False
+    assert content(store) == content(other_store) == {}
+
+
+def test_the_open_candle_flag_is_read_back_with_the_cursor(store) -> None:
+    two_slot_store(store)
+    trades = gap_before_the_trade_that_opens_the_second_candle()
+    Rig(store, trades).drive(max_requests=1, page_size=4)
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, True)
+    assert read_resume_points(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == T0 + 900
+
+
+def test_the_flag_is_kept_by_a_run_that_receives_nothing(store) -> None:
+    two_slot_store(store)
+    trades = gap_before_the_trade_that_opens_the_second_candle()
+    Rig(store, trades).drive(max_requests=1, page_size=4)
+    down = Rig(store, trades, hook=lambda call, url: ConnectionError("network is down")).drive(page_size=4)
+    document = down.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert down.status == "failed" and document["decided_this_run"] == 0
+    assert (document["next_open_unix"], document["open_candle_has_id_gap"]) == (T0 + 900, True)
+    last = Rig(store, trades).drive(page_size=4)
+    assert last.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached" and content(store) == {}
+
+
+def test_a_cursor_without_the_flag_is_unknown_and_withholds_the_open_candle(store) -> None:
+    two_slot_store(store)
+    run_id = store.begin_run(kind="trades_backfill", source=TRADES_SOURCE, evidence_label="synthetic_fixture",
+                             started_at=NOW, parameters={})
+    interval = {"range_start_unix": T0, "next_open_unix": T0 + 900}  # written by a version that did not record it
+    store.finish_run(run_id, finished_at=NOW, status="partial", report={
+        "pairs": {"BTC/USD": {"pair_code": "XBTUSD", "intervals": {"15": interval}}}})
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, True)
+    clean = [trade(1, "10", "100.00", "1"), trade(2, "905", "103.00", "1"), trade(3, "1000", "104.00", "1"),
+             trade(4, "1805", "106.00", "1")]
+    result = Rig(store, clean).drive()
+    assert result.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 1
+    assert content(store) == {}
+
+
+def test_of_several_runs_ending_on_the_same_cursor_any_flagged_one_counts(store) -> None:
+    two_slot_store(store)
+    for flag in (False, True, False):
+        run_id = store.begin_run(kind="trades_backfill", source=TRADES_SOURCE, evidence_label="synthetic_fixture",
+                                 started_at=NOW, parameters={})
+        interval = {"range_start_unix": T0, "next_open_unix": T0 + 900, "open_candle_has_id_gap": flag}
+        store.finish_run(run_id, finished_at=NOW, status="partial", report={
+            "pairs": {"BTC/USD": {"pair_code": "XBTUSD", "intervals": {"15": interval}}}})
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, True)
+
+
+def random_stream(seed: int, hours: int) -> list[SyntheticTrade]:
+    """Trades about every 90 s with quiet stretches, shared timestamps and 6% of ids skipped (1 to 3 at a time)."""
+    rng = random.Random(seed)
+    micros, next_id, trades = -300_000_000, 1000, []
+    while micros < (hours * 3600 + 900) * 1_000_000:
+        micros += 0 if rng.random() < 0.1 else rng.randint(1, 180) * 1_000_000 + rng.randint(0, 999_999)
+        if rng.random() < 0.06:
+            next_id += rng.randint(1, 3)
+        cents = 10_000 + rng.randint(-500, 500)
+        trades.append(trade(next_id, format(Decimal(micros) / 1_000_000, "f"), f"{cents // 100}.{cents % 100:02d}",
+                            f"{rng.randint(1, 900)}.{rng.randint(0, 99):02d}"))
+        next_id += 1
+    return trades
+
+
+@contextlib.contextmanager
+def seeded_store(path, hours: int, intervals: tuple[int, ...]):
+    database = MarketDataDatabase(path)
+    candle_store = CandleStore(database)
+    for interval in intervals:
+        seed(candle_store, interval=interval, collector_first_open=T0 + hours * 3600, available=LATE)
+    try:
+        yield candle_store
+    finally:
+        database.close()
+
+
+# (intervals, hours, trades per page, requests per run): a run must reach past one whole open candle to progress
+@pytest.mark.parametrize(("intervals", "hours", "page_size", "max_requests"), [
+    ((15,), 6, 8, 5), ((15,), 6, 12, 4), ((15, 60), 12, 25, 6), ((15, 60), 12, 30, 5)])
+def test_resumed_runs_equal_one_uninterrupted_run_when_ids_are_missing(tmp_path, intervals, hours, page_size,
+                                                                       max_requests) -> None:
+    """Many streams with skipped ids: however a range is cut into runs, the stored candles are the same."""
+    withheld = kept = rounds = 0
+    last, streams = T0 + hours * 3600, 8
+    for number in range(streams):
+        trades = random_stream(number, hours)
+        with (seeded_store(tmp_path / f"{number}-whole" / "m.sqlite", hours, intervals) as whole,
+              seeded_store(tmp_path / f"{number}-split" / "m.sqlite", hours, intervals) as split):
+            one = Rig(whole, trades, now=LATE).drive(intervals=intervals, max_requests=100, page_size=1000)
+            assert one.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+            withheld += one.report["totals"]["candles_withheld_trade_id_gap"]
+            for _ in range(300):
+                rounds += 1
+                result = Rig(split, trades, now=LATE).drive(intervals=intervals, max_requests=max_requests,
+                                                            page_size=page_size)
+                if result.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached":
+                    break
+            else:
+                raise AssertionError(f"stream {number} did not finish")
+            for interval in intervals:
+                assert content(split, interval=interval, last=last) == content(whole, interval=interval, last=last), (
+                    f"stream {number}, {interval} minutes")
+                kept += len(content(whole, interval=interval, last=last))
+    assert withheld > 0 and kept > 0  # the streams really contain gaps, and candles still get through
+    assert rounds >= 3 * streams  # and they were cut into several runs each
 
 
 def test_a_finished_range_costs_no_requests_on_the_next_run(store) -> None:

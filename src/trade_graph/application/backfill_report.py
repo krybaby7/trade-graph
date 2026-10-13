@@ -23,7 +23,8 @@ NOTES = (
     "since_inclusive: a request whose since is the previous page's last cursor returned that page's final trade "
     "again as its first row, so since is treated as inclusive and repeated trades are removed by trade id.",
     "sequence_ids: trade ids were consecutive within every recorded page and are assumed consecutive per pair; a "
-    "skipped id withholds the candles it could have changed instead of storing a possibly wrong candle.",
+    "skipped id withholds the candles it could have changed instead of storing a possibly wrong candle. A gap just "
+    "before the first trade a run receives cannot be seen, except that a resumed run carries its cursor candle's flag.",
     "slot_rule: a trade exactly on a candle's close belongs to the next candle, assumed to match Kraken's OHLC "
     "rule; reconcile-candles shows any difference against the collector and the archive.",
     "trade_count: a candle counts rows of the Trades list; Kraken's own OHLC count may be defined differently.",
@@ -68,6 +69,7 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
         "range_source": {"start": target.start_source, "end": target.end_source},
         "target_slots": target.slots, "resumed_from_unix": cursor,
         "next_open_unix": next_open, "next_open_utc": iso(next_open),
+        "open_candle_has_id_gap": bool(unreached and state.open_tainted.get(target.interval, False)),
         "decided_slots": (next_open - target.start) // target.step,
         "decided_this_run": (next_open - began) // target.step, "unreached_slots": unreached,
         "unreached_from_utc": iso(next_open) if unreached else None,

@@ -132,6 +132,36 @@ def test_a_gap_inside_one_candle_taints_just_that_candle() -> None:
     assert not feed_all(aggregator, [trade("1900", "13", "1")])[0].tainted
 
 
+def test_a_carried_taint_marks_only_the_first_candle_opened_for_that_interval() -> None:
+    """A resumed run re-fetches the open candle without the trade before it, so a gap found earlier is carried in."""
+    aggregator = TradeAggregator({15: T0, 60: T0}, {15: T0 + 86_400, 60: T0 + 86_400}, tainted_open=[15])
+    assert aggregator.open_tainted(15) and not aggregator.open_tainted(60)
+    done = feed_all(aggregator, [trade("10", "10", "1"), trade("1000", "11", "1"), trade("1900", "12", "1")])
+    assert [(c.interval, c.open_unix, c.tainted) for c in done] == [(15, T0, True), (15, T0 + 900, False)]
+    assert not aggregator.open_tainted(15)
+
+
+def test_the_open_taint_follows_the_open_candle() -> None:
+    aggregator = TradeAggregator({15: T0}, far_end())
+    assert not aggregator.open_tainted(15)
+    aggregator.feed(trade("10", "10", "1"), gap_before=False)
+    assert not aggregator.open_tainted(15)
+    aggregator.feed(trade("20", "11", "1"), gap_before=True)
+    assert aggregator.open_tainted(15)
+    aggregator.feed(trade("1000", "12", "1"), gap_before=False)  # the tainted candle is complete, a clean one opens
+    assert not aggregator.open_tainted(15)
+
+
+def test_a_carried_taint_stays_pending_until_a_trade_in_range_opens_the_candle() -> None:
+    aggregator = TradeAggregator({15: T0 + 900}, far_end(), tainted_open=[15])
+    aggregator.feed(trade("10", "10", "1"), gap_before=False)  # before the floor: the pending taint is untouched
+    assert aggregator.open_tainted(15)
+    aggregator.feed(trade("1000", "11", "1"), gap_before=False)
+    assert aggregator.open_tainted(15)
+    done = feed_all(aggregator, [trade("1900", "12", "1")])
+    assert [(c.open_unix, c.tainted) for c in done] == [(T0 + 900, True)]
+
+
 def test_vwap_rounds_half_even_on_a_grid_finer_than_every_price() -> None:
     aggregator = TradeAggregator({15: T0}, far_end())
     done = feed_all(aggregator, [trade("1", "1.00", "1"), trade("2", "2.00", "2"), trade("901", "5", "1")])
@@ -169,6 +199,8 @@ def test_bad_inputs_are_refused() -> None:
         TradeAggregator({15: T0}, {60: T0 + 3600})
     with pytest.raises(ValidationFailure):
         TradeAggregator({}, {})
+    with pytest.raises(ValidationFailure):
+        TradeAggregator({15: T0}, {15: T0 + 900}, tainted_open=[60])  # an interval the aggregator does not build
 
 
 prices = st.integers(min_value=1, max_value=10**9).map(lambda cents: Decimal(cents).scaleb(-4))

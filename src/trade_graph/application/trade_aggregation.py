@@ -12,7 +12,7 @@ value cannot leave the bucket's low/high range.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, Context, Decimal
 
@@ -75,9 +75,9 @@ def _places(price: Decimal) -> int:
 
 
 class _Interval:
-    __slots__ = ("interval", "step", "floor", "end", "decided_until", "bucket", "finished")
+    __slots__ = ("interval", "step", "floor", "end", "decided_until", "bucket", "finished", "pending_taint")
 
-    def __init__(self, interval: int, floor: int, end: int) -> None:
+    def __init__(self, interval: int, floor: int, end: int, pending_taint: bool) -> None:
         self.interval = interval
         self.step = interval * 60
         self.floor = floor
@@ -85,18 +85,23 @@ class _Interval:
         self.decided_until = floor
         self.bucket: _Bucket | None = None
         self.finished = floor >= end
+        self.pending_taint = pending_taint  # the candle that opens first is already known to lack trades
 
 
 class TradeAggregator:
     """Feed trades in time order. ``floors``/``ends`` map interval -> unix seconds on that interval's grid.
 
     Slots before a floor were decided earlier and are ignored; the first trade at or after an end completes every
-    open bucket below it and finishes that interval.
+    open bucket below it and finishes that interval. ``tainted_open`` names the intervals whose first candle is
+    already known to be missing trades, because a resumed run cannot see the trade before the candle it re-fetches.
     """
 
-    def __init__(self, floors: Mapping[int, int], ends: Mapping[int, int]) -> None:
+    def __init__(self, floors: Mapping[int, int], ends: Mapping[int, int], *,
+                 tainted_open: Collection[int] = ()) -> None:
         if not floors or set(floors) != set(ends):
             raise ValidationFailure("floors and ends must name the same, non-empty set of intervals")
+        if not set(tainted_open) <= set(floors):
+            raise ValidationFailure("tainted_open names an interval that is not built")
         self._states: list[_Interval] = []
         for interval in sorted(floors):
             if interval not in CANDLE_INTERVALS:
@@ -106,7 +111,7 @@ class TradeAggregator:
                 raise ValidationFailure("floors and ends must be whole Unix seconds")
             if floors[interval] % step or ends[interval] % step:
                 raise ValidationFailure("floors and ends must sit on the interval grid")
-            self._states.append(_Interval(interval, floors[interval], ends[interval]))
+            self._states.append(_Interval(interval, floors[interval], ends[interval], interval in tainted_open))
         self.ignored_before_range = 0
         self.ignored_after_end = 0
 
@@ -120,6 +125,11 @@ class TradeAggregator:
         if state.bucket is not None:
             return state.bucket.open_unix
         return state.decided_until
+
+    def open_tainted(self, interval: int) -> bool:
+        """Whether the candle now open (or the next one to open) is known to be missing trades."""
+        state = self._state(interval)
+        return state.pending_taint if state.bucket is None else state.bucket.tainted
 
     def _state(self, interval: int) -> _Interval:
         for state in self._states:
@@ -155,7 +165,8 @@ class TradeAggregator:
             if slot < max(state.decided_until, state.bucket.open_unix if state.bucket else 0):
                 raise ValidationFailure("trade times ran backwards")
             if state.bucket is None:
-                state.bucket = _Bucket(slot, trade, tainted=gap_before)
+                state.bucket = _Bucket(slot, trade, tainted=gap_before or state.pending_taint)
+                state.pending_taint = False
             else:
                 state.bucket.add(trade)
         if not in_range:
