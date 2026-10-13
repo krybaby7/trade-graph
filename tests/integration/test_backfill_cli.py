@@ -187,6 +187,19 @@ def test_a_store_with_no_gap_to_fill_exits_one_and_says_why(tmp_path, capsys, mo
     assert "--end" in report["pairs"]["BTC/USD"]["intervals"]["15"]["reason"]
 
 
+def test_a_run_in_which_every_request_failed_exits_one_so_a_scheduler_can_tell(tmp_path, capsys, monkeypatch,
+                                                                              clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    script = exchange(monkeypatch, clock, trades(), hook=lambda call, url: ConnectionError("network is down"))
+    code, report = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path))
+    assert code == 1 and report["status"] == "failed" and len(script.calls) == 3
+    assert report["pairs"]["BTC/USD"]["stop_reason"] == "transport_error"
+    database = MarketDataDatabase(path)
+    assert CandleStore(database).runs()[-1].status == "failed"
+    database.close()
+
+
 def test_a_chosen_start_and_end_make_a_fresh_store_usable(tmp_path, capsys, monkeypatch, clock) -> None:
     path = database_path(tmp_path)
     script = exchange(monkeypatch, clock, trades())

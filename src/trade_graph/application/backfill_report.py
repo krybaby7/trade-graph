@@ -60,6 +60,7 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
     next_open = state.committed.get(target.interval, target.start)
     cursor = state.cursors.get(target.interval)
     unreached = max(0, (target.end - next_open) // target.step)
+    began = target.start if cursor is None else min(cursor, target.end)
     return {
         "status": "complete" if unreached == 0 else "partial",
         "range_start_unix": target.start, "range_end_unix": target.end,
@@ -67,7 +68,8 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
         "range_source": {"start": target.start_source, "end": target.end_source},
         "target_slots": target.slots, "resumed_from_unix": cursor,
         "next_open_unix": next_open, "next_open_utc": iso(next_open),
-        "decided_slots": (next_open - target.start) // target.step, "unreached_slots": unreached,
+        "decided_slots": (next_open - target.start) // target.step,
+        "decided_this_run": (next_open - began) // target.step, "unreached_slots": unreached,
         "unreached_from_utc": iso(next_open) if unreached else None,
         "unreached_to_utc": iso(target.end) if unreached else None,
         "candles": {"built": outcome.built, "saved_inserted": outcome.inserted, "duplicates": outcome.duplicates,
@@ -143,8 +145,12 @@ def not_reached(pairs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def run_status(pairs: dict[str, dict[str, Any]], run_totals: dict[str, Any]) -> str:
-    """``failed`` when nothing could be planned, ``ok`` when every range is complete and nothing was withheld."""
+    """``failed`` when nothing could be planned or a pair broke down and no range moved forward in this run, ``ok``
+    when every range is complete and nothing was withheld, otherwise ``partial``."""
     if all(pair["status"] == "no_target" for pair in pairs.values()):
+        return "failed"
+    moved = any(document.get("decided_this_run") for pair in pairs.values() for document in pair["intervals"].values())
+    if not moved and any(pair["stop_reason"] in FAILURE_REASONS for pair in pairs.values()):
         return "failed"
     clean = all(pair["status"] == "complete" for pair in pairs.values())
     withheld = run_totals["candles_withheld_trade_id_gap"] or run_totals["candles_withheld_receipt_before_close"]

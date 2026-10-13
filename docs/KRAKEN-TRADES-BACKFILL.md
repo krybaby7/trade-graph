@@ -211,7 +211,11 @@ uv run --frozen trade-graph reconcile-candles --pair BTC/USD --interval 15 --cou
 Both take `--market-database` (default `runtime/market_data.sqlite`), refuse the financial database
 (`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report.
 `backfill-kraken-trades` exits 0 when the run was recorded (status `ok` or `partial`), 1 when nothing could be done
-(`failed`), 2 for a usage error and 130 after Ctrl-C. `reconcile-candles` refuses a missing file instead of creating
+(`failed`), 2 for a usage error and 130 after Ctrl-C. A run is `failed` when no range could be planned, or when a pair
+stopped for a failure reason (the table above: everything except `end_reached`, `max_requests`, `stream_exhausted`,
+`no_target` and `already_covered`) and no slot was decided in this run (`decided_this_run` is 0 in every interval).
+Real progress keeps `partial` even if a later request failed, so a scheduler can tell a dead network from a slow day.
+`reconcile-candles` refuses a missing file instead of creating
 it. Pair names may be written `BTC/USD` or `XBTUSD`; stablecoin pairs such as `USDT/USD` are refused as a typing
 guard only. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.
 

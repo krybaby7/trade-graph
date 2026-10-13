@@ -516,6 +516,42 @@ def test_a_persistent_transport_failure_stops_the_pair_and_keeps_what_was_saved(
     assert pair["intervals"]["15"]["next_open_unix"] > T0
 
 
+@pytest.mark.parametrize(("hook", "reason"), [
+    (lambda call, url: ConnectionError("network is down"), "transport_error"),
+    (lambda call, url: "<html>Bad gateway</html>", "page_refused"),
+    (lambda call, url: '{"error":["EGeneral:Internal error"],"result":{}}', "page_refused"),
+    (lambda call, url: '{"error":["EAPI:Rate limit exceeded"],"result":{}}', "rate_limited"),
+])
+def test_a_run_in_which_every_request_failed_is_failed_not_partial(store, hook, reason) -> None:
+    trades = long_gap(store, hours=2)
+    result = Rig(store, trades, hook=hook).drive(page_size=25)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == reason and pair["status"] == "failed"
+    assert pair["intervals"]["15"]["decided_this_run"] == 0
+    assert result.status == "failed"
+    assert [run.status for run in store.runs() if run.kind == "trades_backfill"] == ["failed"]
+
+
+def test_a_failure_after_progress_is_partial_and_progress_is_counted_per_run(store) -> None:
+    trades = long_gap(store, hours=2)
+    rig = Rig(store, trades, hook=lambda call, url: ConnectionError("down") if call >= 3 else None)
+    result = rig.drive(page_size=25)
+    first = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert result.status == "partial" and first["decided_this_run"] == first["decided_slots"] > 0
+    # the next run resumes at the cursor and fails at once: its own progress is zero, so it is failed, not partial
+    again = Rig(store, trades, hook=lambda call, url: ConnectionError("down")).drive(page_size=25)
+    second = again.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert second["decided_slots"] == first["decided_slots"] and second["decided_this_run"] == 0
+    assert again.status == "failed"
+
+
+def test_a_run_that_only_met_the_end_of_the_stream_is_partial_not_failed(store) -> None:
+    two_slot_store(store)
+    result = Rig(store, []).drive()  # Kraken has no trades yet: not a failure, just nothing to build
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "stream_exhausted" and result.status == "partial"
+
+
 def test_an_unusable_page_stops_the_pair_with_the_refusal_reason(store) -> None:
     trades = long_gap(store, hours=2)
     rig = Rig(store, trades, hook=lambda call, url: "not json" if call == 2 else None)
@@ -583,7 +619,8 @@ def test_a_full_page_of_only_repeats_stalls_instead_of_looping(store) -> None:
     result = rig.drive(page_size=4)
     pair = result.report["pairs"]["BTC/USD"]
     assert pair["stop_reason"] == "cursor_stalled" and len(rig.script.calls) == 2
-    assert pair["intervals"]["15"]["status"] == "partial" and result.status == "partial"
+    assert pair["intervals"]["15"]["status"] == "partial"
+    assert result.status == "failed"  # a failure stop and no slot decided in this run
 
 
 def test_time_going_backwards_between_pages_is_refused(store) -> None:
@@ -768,7 +805,7 @@ def test_a_store_refusal_stops_the_pair_and_is_reported(store) -> None:
     store.save([other], run_id=run)  # the stored series already uses another venue pair code
     result = Rig(store, two_slot_trades()).drive()
     pair = result.report["pairs"]["BTC/USD"]
-    assert pair["stop_reason"] == "store_refused" and "pair code" in pair["message"] and result.status == "partial"
+    assert pair["stop_reason"] == "store_refused" and "pair code" in pair["message"] and result.status == "failed"
     assert pair["intervals"]["15"]["next_open_unix"] == T0
 
 
