@@ -182,6 +182,8 @@ def test_an_existing_candle_file_is_accepted_again(tmp_path, capsys, archive) ->
     ["--intervals", "7"], ["--intervals", "abc"], ["--intervals", ""], ["--pairs", "BTC/EUR"], ["--quarter", "Q3"],
     ["--max-uncompressed-gb", "0"], ["--max-uncompressed-gb", "-1"], ["--max-uncompressed-gb", "lots"],
     ["--max-uncompressed-gb", "100000"], ["--expected-pairs", "ETHXBT"],
+    ["--max-uncompressed-gb", "NaN"], ["--max-uncompressed-gb", "-NaN"], ["--max-uncompressed-gb", "sNaN"],
+    ["--max-uncompressed-gb", "Infinity"], ["--max-uncompressed-gb", "-Infinity"],
 ])
 def test_bad_options_are_usage_errors_and_nothing_is_created(tmp_path, archive, arguments) -> None:
     with pytest.raises(SystemExit) as stopped:

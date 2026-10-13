@@ -99,9 +99,10 @@ def _scope(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Backfil
 
 def _budget(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.smoke:
-        if args.max_requests is not None and args.max_requests > SMOKE_MAX_REQUESTS:
-            parser.error(f"--smoke allows at most {SMOKE_MAX_REQUESTS} requests")
-        return SMOKE_MAX_REQUESTS if args.max_requests is None else args.max_requests
+        budget = SMOKE_MAX_REQUESTS if args.max_requests is None else args.max_requests
+        if not 1 <= budget <= SMOKE_MAX_REQUESTS:
+            parser.error(f"--smoke allows from 1 to {SMOKE_MAX_REQUESTS} requests")
+        return budget
     budget = DEFAULT_MAX_REQUESTS if args.max_requests is None else args.max_requests
     if not 1 <= budget <= MAX_REQUESTS_LIMIT:
         parser.error(f"--max-requests must be from 1 to {MAX_REQUESTS_LIMIT}")

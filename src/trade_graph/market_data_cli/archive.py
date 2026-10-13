@@ -62,7 +62,7 @@ def _limits(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Archiv
         gigabytes = Decimal(args.max_uncompressed_gb)
     except InvalidOperation:
         parser.error("--max-uncompressed-gb must be a number")
-    if not Decimal(0) < gigabytes <= MAX_UNCOMPRESSED_GB:
+    if not gigabytes.is_finite() or not Decimal(0) < gigabytes <= MAX_UNCOMPRESSED_GB:  # NaN cannot be ordered
         parser.error(f"--max-uncompressed-gb must be above 0 and at most {MAX_UNCOMPRESSED_GB}")
     total = max(1, int(gigabytes * GIB))
     return ArchiveLimits(max_total_bytes=total, max_member_bytes=min(DEFAULT_MAX_MEMBER_BYTES, total))
