@@ -108,6 +108,21 @@ def test_differences_name_the_fields_the_decimal_differences_and_the_relative_si
     assert count["differing"] == 1 and count["max_absolute"] == "1" and count["max_relative"] == "0.25"
 
 
+def test_differences_far_below_any_sensible_tolerance_are_still_reported_with_their_exact_size(store) -> None:
+    """Crypto volumes go down to 1e-8 and cheap coins trade near 1e-5, so no tolerance may hide a difference."""
+    cheap = dict(open="0.000052", high="0.000060", low="0.000050", close="0.000055", vwap=None)
+    put(store, ARCHIVE, [make(ARCHIVE, 0, volume="5.00000000", **cheap)])
+    put(store, TRADES, [make(TRADES, 0, volume="5.00000001", **{**cheap, "low": "0.000051"})])
+    result = report(store, sources=(ARCHIVE, TRADES), end_close_time=end_of(1), count=1)
+    assert list(result.slot_statuses) == ["differing"]
+    fields = result.to_document()["pairwise"][f"{ARCHIVE}|{TRADES}"]["fields"]
+    assert {name for name, stats in fields.items() if stats["differing"]} == {"low", "volume"}
+    assert fields["volume"]["max_absolute"] == "0.00000001" and fields["low"]["max_absolute"] == "0.000001"
+    assert fields["volume"]["max_relative"] == "0.000000002"  # 1e-8 / 5.00000001, rounded to 12 decimals
+    (slot,) = result.to_document()["worst_slots"]
+    assert [d["field"] for d in slot["differences"]] == ["low", "volume"]  # largest relative size first
+
+
 def test_a_missing_vwap_is_not_comparable_and_is_not_a_difference(store) -> None:
     constructed(store)
     pairwise = report(store).to_document()["pairwise"]

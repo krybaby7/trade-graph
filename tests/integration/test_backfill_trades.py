@@ -695,6 +695,30 @@ def rate_limit_once(call: int, url: str) -> str | None:
     return '{"error":["EAPI:Rate limit exceeded"],"result":{}}' if call == 2 else None
 
 
+def test_every_request_waits_its_turn_at_the_limiter(store) -> None:
+    """The scripted exchange answers at once (delay 0), so only the limiter can put time between two requests."""
+    rig = Rig(store, long_gap(store, hours=2), delay=0)
+    result = rig.drive(page_size=25)
+    calls = len(rig.script.calls)
+    assert result.status == "ok" and calls >= 5
+    assert rig.sleeper.waits == [Decimal("1.000")] * (calls - 1)  # the first request goes at once, then one second each
+    assert result.report["requests"]["waited_seconds"] == str(Decimal("1.000") * (calls - 1))
+
+
+def test_a_long_run_keeps_kraken_s_counter_under_the_ceiling_by_slowing_down(store) -> None:
+    times: list[datetime] = []
+    rig = Rig(store, long_gap(store, hours=2), delay=0, hook=lambda call, url: times.append(rig.clock.now()))
+    result = rig.drive(page_size=2, max_requests=400)  # about 150 requests, far more than one a second allows
+    assert result.status == "ok" and len(times) > 100
+    counter, previous, peak = Decimal(0), times[0], Decimal(0)
+    for moment in times:  # replay the requests against a model of Kraken's counter (decay 0.33 a second, cost 1)
+        elapsed = Decimal(str((moment - previous).total_seconds()))
+        counter = max(Decimal(0), counter - elapsed * Decimal("0.33")) + 1
+        previous, peak = moment, max(peak, counter)
+    assert peak <= 13  # the limiter keeps two points of headroom below Kraken's maximum of 15
+    assert max(rig.sleeper.waits) > Decimal(3) and min(rig.sleeper.waits) == Decimal("1.000")  # sped up, then eased off
+
+
 def test_a_rate_limit_answer_is_waited_out_and_the_same_page_is_asked_again(store) -> None:
     trades = long_gap(store, hours=2)
     rig = Rig(store, trades, hook=rate_limit_once)
