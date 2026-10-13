@@ -17,6 +17,7 @@ from trade_graph.application.reconcile_candles import (
     reconcile_candles,
 )
 from trade_graph.contracts.candles import Candle, from_unix
+from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
 T0 = 1_791_892_800  # 2026-10-13T12:00:00Z
@@ -137,6 +138,32 @@ def test_the_worst_slots_are_ranked_by_relative_size_then_time(store) -> None:
     assert (top["absolute"], top["relative"]) == ("1", "0.25")
     assert worst[0]["sources_present"] == [COLLECTOR, TRADES]
     assert len(worst) == 2 and len(report(store, worst=10).to_document()["worst_slots"]) == 3
+
+
+@pytest.mark.parametrize("worst", [1, 3, 7])
+@pytest.mark.parametrize("chunk_slots", [20_000, 25])
+def test_the_bounded_worst_list_matches_a_full_ranking_when_many_slots_differ(store, worst, chunk_slots) -> None:
+    """Far more than four times ``worst`` slots differ, so the list is pruned many times along the way."""
+    slots = 72  # eighteen hours, all closed before the receipt time of the fixtures
+    step = {slot: (slot * 37) % 23 for slot in range(slots)}  # 0 means identical; many ties, the largest recurs
+    put(store, ARCHIVE, [make(ARCHIVE, slot, volume="100") for slot in range(slots)])
+    put(store, TRADES, [make(TRADES, slot, volume=str(100 + step[slot])) for slot in range(slots)])
+    differing = [slot for slot in range(slots) if step[slot]]
+    assert len(differing) > 2 * 4 * 7
+
+    def relative(slot: int) -> Decimal:
+        return (Decimal(step[slot]) / Decimal(100 + step[slot])).quantize(Decimal("1e-12"))
+
+    expected = sorted(differing, key=lambda slot: (-relative(slot), slot))[:worst]
+    result = reconcile_candles(store, "BTC/USD", 15, sources=(ARCHIVE, TRADES), end_close_time=end_of(slots),
+                               count=slots, mode="replay", worst=worst, chunk_slots=chunk_slots)
+    document = result.to_document()
+    assert document["counts"]["differing"] == len(differing)  # pruning never changes the counts
+    assert [entry["open_time_utc"] for entry in document["worst_slots"]] == [
+        utc_iso(from_unix(T0 + slot * 900)) for slot in expected]
+    assert [entry["relative_size"] for entry in document["worst_slots"]] == [
+        str(relative(slot).normalize()) for slot in expected]
+    assert len({relative(slot) for slot in expected}) < len(expected) or worst == 1  # ties were really in play
 
 
 def test_equal_relative_sizes_are_listed_earliest_first(store) -> None:
