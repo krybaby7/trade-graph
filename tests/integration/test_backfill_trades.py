@@ -463,6 +463,54 @@ def test_a_resume_keeps_the_id_gap_that_sits_just_before_the_open_candle(store, 
     assert content(store) == content(other_store) == {}
 
 
+def gap_right_before_the_trade_that_crosses_the_first_range_end() -> list[SyntheticTrade]:
+    """Ids 6 to 9 are missing between 12:00:50 and 12:15:05, so the candle that opens at 12:15 may lack trades."""
+    return [trade(1, "10", "100.00", "1"), trade(2, "20", "101.00", "1"), trade(3, "30", "102.00", "1"),
+            trade(4, "40", "103.00", "1"), trade(5, "50", "104.00", "1"),
+            trade(10, "905", "105.00", "1"), trade(11, "1000", "106.00", "1"),
+            trade(12, "1805", "107.00", "1"), trade(13, "1900", "108.00", "1"), trade(14, "2705", "109.00", "1")]
+
+
+def test_extending_a_finished_range_keeps_the_gap_that_sat_before_its_end(store, other_store) -> None:
+    """The trade that proved the first range complete was preceded by a gap, and the next run cannot see that."""
+    first_end, last_end = from_unix(T0 + 900), from_unix(T0 + 2700)
+    trades = gap_right_before_the_trade_that_crosses_the_first_range_end()
+    whole = Rig(other_store, trades).drive(start=from_unix(T0), end=last_end)
+    assert whole.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 2
+    assert sorted(content(other_store, last=T0 + 2700)) == [T0 + 1800]  # slots 0 and 900 may lack trades 6 to 9
+
+    one = Rig(store, trades).drive(start=from_unix(T0), end=first_end)
+    document = one.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["status"] == "complete" and document["next_open_unix"] == T0 + 900
+    assert document["open_candle_has_id_gap"] is True  # the candle that opens at the range end is already suspect
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, True)
+
+    two = Rig(store, trades).drive(start=from_unix(T0), end=last_end)
+    resumed = two.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert resumed["resumed_from_unix"] == T0 + 900 and resumed["candles"]["withheld_trade_id_gap"] == 1
+    assert content(store, last=T0 + 2700) == content(other_store, last=T0 + 2700)
+    assert sorted(content(store, last=T0 + 2700)) == [T0 + 1800]
+
+
+def test_a_clean_range_end_does_not_taint_the_slot_that_opens_there(store) -> None:
+    two_slot_store(store)
+    one = Rig(store, two_slot_trades()).drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    assert one.report["pairs"]["BTC/USD"]["intervals"]["15"]["open_candle_has_id_gap"] is False
+    Rig(store, two_slot_trades()).drive(start=from_unix(T0), end=from_unix(T0 + 1800))
+    assert sorted(content(store)) == [T0, T0 + 900]
+
+
+def test_repeating_a_finished_range_keeps_reporting_the_gap_at_its_end(store) -> None:
+    trades = gap_right_before_the_trade_that_crosses_the_first_range_end()
+    Rig(store, trades).drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    rig = Rig(store, trades)
+    again = rig.drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    assert rig.script.calls == []
+    assert again.report["pairs"]["BTC/USD"]["intervals"]["15"]["open_candle_has_id_gap"] is True
+    extended = Rig(store, trades).drive(start=from_unix(T0), end=from_unix(T0 + 2700))
+    assert extended.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 1
+
+
 def test_the_open_candle_flag_is_read_back_with_the_cursor(store) -> None:
     two_slot_store(store)
     trades = gap_before_the_trade_that_opens_the_second_candle()
@@ -565,6 +613,29 @@ def test_resumed_runs_equal_one_uninterrupted_run_when_ids_are_missing(tmp_path,
                 kept += len(content(whole, interval=interval, last=last))
     assert withheld > 0 and kept > 0  # the streams really contain gaps, and candles still get through
     assert rounds >= 3 * streams  # and they were cut into several runs each
+
+
+@pytest.mark.parametrize(("intervals", "cuts"), [((15,), (3, 6)), ((15, 60), (4, 7))])
+def test_extending_a_finished_range_equals_one_run_over_the_whole_range_when_ids_are_missing(
+        tmp_path, intervals, cuts) -> None:
+    """The range ends are moved out in steps, each run finishing its range: the stored candles must not differ."""
+    hours, streams, flagged = 10, 30, 0
+    end = from_unix(T0 + hours * 3600)
+    for number in range(streams):
+        trades = random_stream(number, hours)
+        with (seeded_store(tmp_path / f"{number}-whole" / "m.sqlite", hours, intervals) as whole,
+              seeded_store(tmp_path / f"{number}-split" / "m.sqlite", hours, intervals) as split):
+            Rig(whole, trades, now=LATE).drive(intervals=intervals, start=from_unix(T0), end=end)
+            for cut in (*cuts, hours):
+                result = Rig(split, trades, now=LATE).drive(intervals=intervals, start=from_unix(T0),
+                                                            end=from_unix(T0 + cut * 3600))
+                assert result.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+                flagged += sum(document["open_candle_has_id_gap"] is True
+                               for document in result.report["pairs"]["BTC/USD"]["intervals"].values())
+            for interval in intervals:
+                assert content(split, interval=interval, last=T0 + hours * 3600) == content(
+                    whole, interval=interval, last=T0 + hours * 3600), f"stream {number}, {interval} minutes"
+    assert flagged > 0  # some range end really was preceded by a gap
 
 
 def stored_cursor(store: CandleStore, next_open, *, range_start=T0, pair_code: str = "XBTUSD", **extra) -> None:

@@ -97,7 +97,11 @@ so no partly built candle is ever stored. The cost is re-fetching at most one ca
 interval. The one thing the re-fetch cannot rebuild is a gap in trade ids just before the candle it starts at (the
 trade before it is not fetched again), so each interval's entry also records `open_candle_has_id_gap`: whether the
 candle still forming at the stop was already known to lack trades. The next run starts that candle tainted, so it is
-withheld exactly as an uninterrupted run would have withheld it. A cursor written without this flag counts as flagged
+withheld exactly as an uninterrupted run would have withheld it. The same holds when a range was completed and is
+later extended (a new `--end`): if trades were missing just before the trade that proved the range complete, the
+flag of that finished interval is true, because the missing trades may belong to the slot that opens at the old
+end, and the extending run starts that slot tainted. So extending a range stores the same candles as one run over
+the whole range. A cursor written without this flag counts as flagged
 (unknown withholds), and when several runs ended on the same cursor any flagged one counts. `--from-start` ignores stored cursors. A run that never finished (for
 example a power cut) has no report and gives no cursor; the next run then starts from the range start and the store
 turns repeated candles into no-ops. Ctrl-C and a termination request (SIGTERM) do finish and record the run.

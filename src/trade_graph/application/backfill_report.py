@@ -69,7 +69,7 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
         "range_source": {"start": target.start_source, "end": target.end_source},
         "target_slots": target.slots, "resumed_from_unix": cursor,
         "next_open_unix": next_open, "next_open_utc": iso(next_open),
-        "open_candle_has_id_gap": bool(unreached and state.open_tainted.get(target.interval, False)),
+        "open_candle_has_id_gap": bool(state.open_tainted.get(target.interval, False)),
         "decided_slots": (next_open - target.start) // target.step,
         "decided_this_run": (next_open - began) // target.step, "unreached_slots": unreached,
         "unreached_from_utc": iso(next_open) if unreached else None,

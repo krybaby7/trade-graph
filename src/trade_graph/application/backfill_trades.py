@@ -54,7 +54,7 @@ from trade_graph.contracts.candles import Candle, RunRecord, from_unix, to_unix
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
-BACKFILL_VERSION = "trades-backfill-v2"  # v2: an id gap before the open candle survives a resume
+BACKFILL_VERSION = "trades-backfill-v3"  # v3: an id gap before the slot at a finished range's end survives an extension
 BACKFILL_INTERVALS = (1, 5, 15, 60)
 BACKFILL_EVIDENCE_LABELS = ("live_public", "live_public_smoke", "recorded_public_fixture", "synthetic_fixture")
 MAX_REQUESTS_LIMIT = 100_000
@@ -406,8 +406,8 @@ def _prepare_pair(store: CandleStore, scope: BackfillScope, summaries: dict, sym
             store, symbol, pair_code, interval, range_start=target.start, runs=past_runs)
         state.cursors[interval] = None if point is None else point.next_open
         floors[interval] = target.start if point is None else min(point.next_open, target.end)
-        if point is not None and point.open_candle_has_id_gap and floors[interval] < target.end:
-            carried.add(interval)
+        if point is not None and point.open_candle_has_id_gap:
+            carried.add(interval)  # also at a finished range's end: the report keeps the flag for a later extension
     state.aggregator = TradeAggregator(floors, {interval: ready[interval].end for interval in ready},
                                        tainted_open=carried)
     state.committed = {interval: floors[interval] for interval in ready}
