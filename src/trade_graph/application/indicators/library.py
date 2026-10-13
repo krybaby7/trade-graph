@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Context, Decimal
 
 import numpy as np
 import talib
@@ -31,6 +31,12 @@ from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 MAX_ROWS = 100_000
 _PRICE_FIELDS = frozenset({"open", "high", "low", "close"})
 _CANDLE_FIELDS = ("open", "high", "low", "close", "volume")
+# Indicator numbers that must be stored or hashed as exact decimal text are rounded to this many significant
+# digits. A float64 carries about 15.95, and the library's running sums add rounding noise in the last one or two
+# of those, so twelve keeps the text identical across platforms and compilers while keeping every price an
+# exchange quotes (at most 7 digits for the hourly pairs) exactly.
+SNAPSHOT_DIGITS = 12
+_SNAPSHOT_CONTEXT = Context(prec=SNAPSHOT_DIGITS, rounding=ROUND_HALF_EVEN)
 # Process-wide TA-Lib settings that would silently change recursive indicators if anything set them.
 _UNSTABLE_PERIODS = ("ADX", "ATR", "DX", "EMA", "MINUS_DI", "MINUS_DM", "NATR", "PLUS_DI", "PLUS_DM", "RSI")
 
@@ -97,6 +103,15 @@ def compute_raw(spec_name: str, params: Mapping[str, object],
     return {output.name: np.asarray(values, dtype=np.float64) for output, values in zip(spec.outputs, series)}
 
 
+def rounded_decimal(value: float) -> Decimal:
+    """A library float as an exact decimal for snapshots: its exact binary value rounded half-even to
+    ``SNAPSHOT_DIGITS`` significant digits with a context of its own, so the ambient Decimal context cannot change it.
+    """
+    if type(value) is not float or not math.isfinite(value):
+        raise ValidationFailure("an indicator value must be a finite float")
+    return _SNAPSHOT_CONTEXT.plus(Decimal(value))
+
+
 def _float_column(field: str, values: Sequence[Decimal]) -> NDArray[np.float64]:
     if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
         raise ValidationFailure(f"{field} must be a sequence of Decimal values")
@@ -128,5 +143,6 @@ def _require_library_defaults() -> None:
 
 
 __all__ = [
-    "MAX_ROWS", "IndicatorComputationError", "columns_from_candles", "compute_raw", "library_versions", "lookback",
+    "MAX_ROWS", "SNAPSHOT_DIGITS", "IndicatorComputationError", "columns_from_candles", "compute_raw",
+    "library_versions", "lookback", "rounded_decimal",
 ]

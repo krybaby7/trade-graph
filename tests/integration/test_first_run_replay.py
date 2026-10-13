@@ -48,7 +48,7 @@ ASSET_PAIRS = json.dumps({"error": [], "result": {
     "XETHZUSD": {"altname": "ETHUSD", "wsname": "ETH/USD", "base": "XETH", "quote": "ZUSD", "pair_decimals": 2,
                  "lot_decimals": 8, "ordermin": "0.002", "costmin": "0.5"}}})
 SINGLE_ASSET = "single asset exposure"
-FEATURES = ("sma_20", "sma_50", "pullback_from_high")  # the installed slow-trend-pullback template
+FEATURES = ("sma_20", "sma_50", "highest_high_20")  # the installed slow-trend-pullback template
 
 
 def _utc(clock_time: str) -> str:
@@ -292,7 +292,8 @@ def test_first_paper_run_replays_without_its_failures(tmp_path, monkeypatch):
         # (2) Ready features from their own windows: the slow-trend-pullback shape is visible to the Trader.
         values = first["history"]["values"]
         assert (values["sma_20"], values["sma_50"]) == ("63695", "62348")
-        assert first["features"]["sma_20"] == values["sma_20"] and Decimal(values["pullback_from_high"]) > 0
+        assert first["features"]["sma_20"] == values["sma_20"]
+        assert Decimal(values["highest_high_20"]) > Decimal(first["history"]["latest_close"]["close"])  # a pullback
         assert Decimal(values["sma_50"]) < Decimal(first["history"]["latest_close"]["close"]) < Decimal(
             values["sma_20"])
 

@@ -18,7 +18,7 @@ from trade_graph.domain.clock import utc_iso
 
 END = datetime(2026, 10, 5, 12, tzinfo=UTC)
 AS_OF = END + timedelta(minutes=30)
-FEATURES = ["sma_20", "sma_50", "pullback_from_high", "range_high", "range_low", "midpoint"]
+FEATURES = ["sma_20", "sma_50", "highest_high_20", "range_high", "range_low", "midpoint"]
 
 
 def _contract():
@@ -72,10 +72,10 @@ def test_installed_template_features_use_exact_decimal_hourly_windows(tmp_path):
         context.rounding = "ROUND_DOWN"
         result = store.snapshot("BTC/USD", AS_OF, FEATURES, source="synthetic")
     assert result["values"] == {
-        "sma_20": "40.5", "sma_50": "25.5",
-        "pullback_from_high": "0.01960784313725490196078431372549019607843137254902",
+        "sma_20": "40.5", "sma_50": "25.5", "highest_high_20": "51",
         "range_high": "51", "range_low": "26.5", "midpoint": "38.75",
     }
+    assert result["feature_version"] == "hourly-price-features-v3"
     assert all(feature["status"] == "ready" for feature in result["features"].values())
     assert result["features"]["sma_50"]["lookback_candles"] == 50
     assert result["features"]["range_high"]["lookback_candles"] == 24
@@ -90,19 +90,32 @@ def test_installed_template_features_use_exact_decimal_hourly_windows(tmp_path):
     json.dumps(result, allow_nan=False)
 
 
-def test_starter_fallback_features_have_documented_exact_definitions(tmp_path):
+def test_return_features_come_from_the_library_and_are_rounded_to_twelve_significant_digits(tmp_path):
     _, store, _ = _populate(tmp_path)
-    requested = ["hourly_return", "four_hour_drift", "pullback_depth", "midpoint_distance"]
+    requested = ["hourly_return", "four_hour_drift", "highest_high_20"]
     result = store.snapshot("BTC/USD", AS_OF, requested, source="synthetic")
+    # ROCP over 1 and over 4 hours of closes 46, 49 and 50 (1/49 and 4/46), rounded half-even to 12 digits.
     assert result["values"] == {
-        "hourly_return": "0.0204081632653061224489795918367346938775510204082",
-        "four_hour_drift": "0.0869565217391304347826086956521739130434782608696",
-        "pullback_depth": "0.01960784313725490196078431372549019607843137254902",
-        "midpoint_distance": "0.29032258064516129032258064516129032258064516129032",
+        "hourly_return": "0.0204081632653", "four_hour_drift": "0.0869565217391", "highest_high_20": "51",
     }
     assert result["features"]["hourly_return"]["lookback_candles"] == 2
     assert result["features"]["four_hour_drift"]["lookback_candles"] == 5
-    assert result["features"]["midpoint_distance"]["definition"]
+    assert result["features"]["highest_high_20"]["lookback_candles"] == 20
+    for name in requested:
+        assert "TA-Lib" in result["features"][name]["definition"]
+
+
+def test_retired_pullback_and_distance_fields_are_unsupported_and_point_to_their_ingredients(tmp_path):
+    _, store, _ = _populate(tmp_path)
+    retired = ["pullback_from_high", "pullback_depth", "midpoint_distance"]
+    result = store.snapshot("BTC/USD", AS_OF, [*retired, "midpoint"], source="synthetic")
+    assert result["values"] == {"midpoint": "38.75"}
+    for name in retired:
+        feature = result["features"][name]
+        assert feature["status"] == "unsupported" and feature["lookback_candles"] is None
+        assert "hourly-price-features-v3" in feature["definition"] and "latest_close" in feature["definition"]
+    assert "highest_high_20" in result["features"]["pullback_from_high"]["definition"]
+    assert "midpoint" in result["features"]["midpoint_distance"]["definition"]
 
 
 def test_short_prefix_is_insufficient_and_internal_missing_hour_is_a_gap(tmp_path):
@@ -121,7 +134,7 @@ def test_insufficient_prefix_does_not_invent_history(tmp_path):
     assert result["features"]["sma_20"]["status"] == "insufficient_history"
     assert result["features"]["sma_50"]["available_candles"] == 19
     assert len(result["features"]["sma_50"]["missing_close_times_utc"]) == 31
-    assert result["values"] == {"hourly_return": "0.0555555555555555555555555555555555555555555555556"}
+    assert result["values"] == {"hourly_return": "0.0555555555556"}
 
 
 def test_stale_tail_anchors_at_latest_available_close_without_lengthening_lookback(tmp_path):
@@ -159,7 +172,7 @@ def test_future_candles_later_availability_and_revisions_cannot_change_retained_
     assert json.dumps(store.snapshot("BTC/USD", AS_OF, FEATURES, source="synthetic"), sort_keys=True) == retained
     assert len(database.execute("SELECT * FROM hourly_candles").fetchall()) == 53
     current = store.snapshot("BTC/USD", AS_OF + timedelta(hours=1), ["hourly_return"], source="synthetic")
-    assert current["values"]["hourly_return"] == "0.0204081632653061224489795918367346938775510204082"
+    assert current["values"]["hourly_return"] == "0.0204081632653"
     assert before["available_at_utc"] == utc_iso(candles[-1].available_at_utc)
 
 

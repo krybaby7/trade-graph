@@ -103,7 +103,10 @@ def validate(files: dict[str, str]) -> list[str]:
             else:
                 keys = {"strategy_id", "status", "features", "entry", "exit", "sizing_envelope", "invalidation",
                         "execution", "costs", "validation"}
-                features = {"range_high", "range_low", "midpoint", "sma_20", "sma_50", "pullback_from_high"}
+                # pullback_from_high was retired in hourly-price-features-v3 (the snapshot answers it as
+                # unsupported); bundles retained from earlier installations still name it and must stay storable.
+                features = {"range_high", "range_low", "midpoint", "sma_20", "sma_50", "highest_high_20",
+                            "pullback_from_high"}
                 if (set(doc) != keys or doc["strategy_id"] != STRATEGIES[PurePosixPath(path).stem]
                         or doc["status"] != "unproven" or not isinstance(doc["features"], list)
                         or not doc["features"] or len(doc["features"]) > 6
