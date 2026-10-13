@@ -1,8 +1,8 @@
 # Kraken candle collection (T25, slice B)
 
 Status: built and tested in source on 2026-10-13. Not deployed. Paper only, public data only, no key, no
-paid service. Nothing here has been run against the live exchange by the tests; the only live requests
-were 17 plain `curl` recordings (see "What Kraken returns").
+paid service. No test touches the live exchange. The only live requests were 17 plain `curl` recordings (see
+"What Kraken returns") and one `--smoke` run of the command (see "Evidence").
 Code: `adapters/market/rate_limit.py`, `adapters/market/kraken_candles.py`,
 `application/candle_collection_plan.py`, `application/candle_collection_run.py`,
 `application/collect_candles.py` (`collect_candles`), `market_data_cli/collect.py`.
@@ -115,7 +115,7 @@ counter for the whole address, shared with every other public request from it. T
 | Drain | 0.30 per second | about 10% slower than Kraken's 0.33, so the mirror runs ahead of the real counter |
 | Result | a burst of 10, then one call per 3.33 seconds | |
 
-Full-scope timing (591 eligible USD pairs seen in the 2026-10-13 catalog, not re-counted since): 1,775
+Full-scope timing (591 eligible USD pairs in the live catalog of 2026-10-13, confirmed by the smoke run): 1,775
 requests, about 98 minutes at the limiter rate; one interval for all pairs, 591 requests, about 32 minutes.
 
 What happens on an error (no retry loops anywhere):
@@ -261,8 +261,15 @@ never deletes.
 - Default tests make no network calls (a guard fails any socket use).
 - `recorded_public_fixture`: the 17 recorded responses (trimmed), run through the whole collector.
 - `synthetic_fixture`: table-built responses from a scripted exchange that behaves like the recordings.
-- `live_public_smoke`: `--smoke` against the real exchange. **Not run by this work.** `live_public` is a normal
-  real run, also not run. A recording is evidence of the format on 2026-10-13, not of a collector run.
+- `live_public_smoke`: `--smoke` against the real exchange, run once by the implementing agent on 2026-10-13 at
+  15:54 UTC into a throwaway candle file that was not kept. Result: exit 0, status `ok`, 3 requests (pair list 1,
+  candles 2), no waiting in the limiter. The pair list had 677 USD pairs, 591 eligible, 0 rejected and 608 base
+  coins not individually reviewed. BTC/USD and ETH/USD at 15 minutes each returned 721 rows, 720 candles stored,
+  no quiet candles, one unbroken run of 720 slots (2026-10-06 03:45 to 2026-10-13 15:45), and `candle-coverage`
+  read them back with no missing slot. An incremental second live run was not made (it would exceed the
+  recording budget of 20 requests).
+- `live_public`: a normal real run has not been made. A recording is evidence of the format on 2026-10-13, not of
+  a full collector run.
 
 ## Known limits
 
