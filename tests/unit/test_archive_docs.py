@@ -80,6 +80,13 @@ def test_the_research_facts_and_the_owner_download_section_are_present() -> None
         assert expected in DOC, expected
 
 
+def test_the_conflicting_official_api_guide_and_the_private_folder_step_are_documented() -> None:
+    flat = _flat(DOC)
+    assert "https://docs.kraken.com/exchange/guides/general/historical-data" in flat
+    assert "does not provide a bulk historical data dump" in flat
+    assert "chmod 700 runtime" in flat and "must be private" in flat
+
+
 def test_the_stated_assumptions_are_the_ones_the_report_prints() -> None:
     flat = _flat(DOC)
     for key in ("Unix seconds", "candle open", "completed candle", "folders", "ascending"):

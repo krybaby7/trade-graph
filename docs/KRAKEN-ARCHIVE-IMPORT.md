@@ -29,7 +29,7 @@ data](https://support.kraken.com/hc/en-us/articles/360047124832-Downloadable-his
 Read on 2026-10-13 through a web-fetch tool that summarises the page, twice (once per address), with identical
 results; it was not opened in a browser and nothing was downloaded. The page showed "last updated October 12,
 2026"; a search-engine snippet of an older copy said April 26, 2026, so re-read the page before relying on the file
-list below.
+list below. A further fetch later the same day returned the same file list, host, columns, header and gap facts.
 
 | Fact | What the page says |
 |---|---|
@@ -64,6 +64,20 @@ report lists these assumptions every time. Treat them as open until a real file 
 - Row order (assumed ascending), the presence of a 30-minute set, whether a quarterly file holds only that
   quarter's rows (the report counts rows outside the stated quarter, `rows_outside_quarter`), and whether delisted
   pairs appear at all (assumed absent, per D119).
+
+### Two other pages read, and one disagreement
+
+- Kraken's API guide, [Historical data](https://docs.kraken.com/exchange/guides/general/historical-data) (read again
+  2026-10-13 for this document), says Kraken "does not provide a bulk historical data dump" and points to the public
+  REST endpoints. It gives no file names, sizes, column order, header or timestamp unit for any download. That
+  contradicts the support article, which lists the downloadable files above. The support article is newer in content
+  (it names the 2026 quarterly files and links the files itself), so this document follows it, but the disagreement
+  is a reason to confirm that a link works before relying on it, and to treat every layout fact above as unconfirmed
+  until a real file has been opened.
+- The Concretum guide (third party, unofficial) also says delisted, dead and short-lived assets are missing, which
+  matches the survivorship sentence, and says some of the downloadable files are larger than 7 GB without saying
+  which (probably an older full archive). Its sample row begins `1381095240`, a 2013 Unix-seconds value on the
+  one-minute grid.
 
 ## What the importer does
 
@@ -184,7 +198,8 @@ the report cannot tell a quiet interval from a row absent from the file and does
 `status`: `ok` when every in-scope row was stored or was an identical duplicate; `partial` when some rows were rejected
 or dropped, or when the store already holds archive candles inside a file's first-to-last span that the file does not
 contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
-reason and the recorded run), 2 for a usage error.
+reason and the recorded run), 2 for a usage error (a bad option, a web address instead of a file, the financial
+database, or a candle folder or file that is not private).
 
 ### Repeat and changed imports
 
@@ -230,7 +245,16 @@ only with the owner's explicit yes (a download of this size is a file transfer o
    ```
 
 4. **Keep it private and out of Git**, for example in `runtime/archives/` (ignored by Git).
-5. **Import** (a first look with one pair is wise):
+5. **Make the candle folder private once.** The candle-history file lives in `runtime/` by default, and the store
+   refuses a folder or file that other users can open. If `runtime/` already exists with open permissions, the
+   command stops with a usage error that says the folder must be private and prints the fix; it changes nothing
+   itself. Run it yourself and import again:
+
+   ```bash
+   chmod 700 runtime
+   ```
+
+6. **Import** (a first look with one pair is wise):
 
    ```bash
    uv run --frozen trade-graph import-kraken-archive --archive runtime/archives/Kraken_OHLCVT_2026Q3.zip --pairs BTC/USD
@@ -238,7 +262,7 @@ only with the owner's explicit yes (a download of this size is a file transfer o
    ```
 
    Add `--intervals 1,5,15,60` for finer history (large). Re-running is safe.
-6. **Send back the first report** (or the refusal). A refusal in the first minutes usually means one of the
+7. **Send back the first report** (or the refusal). A refusal in the first minutes usually means one of the
    unconfirmed layout assumptions above was wrong, and the report says which member and why.
 
 The first import of a real file is the first real evidence for this stream and should be recorded as such. Everything

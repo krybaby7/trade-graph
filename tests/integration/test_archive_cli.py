@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import socket
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -176,6 +177,43 @@ def test_an_existing_candle_file_is_accepted_again(tmp_path, capsys, archive) ->
     code, second = _run(capsys, "--archive", str(archive), "--market-database", str(database))
     assert code == 0 and second["totals"]["inserted"] == 0 and second["totals"]["duplicates"] == 24
     assert second["same_file_seen_in_runs"] == [1]
+
+
+def test_a_candle_folder_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys, archive) -> None:
+    """The default runtime/ folder often exists with open permissions; the owner must not meet a traceback."""
+    folder = tmp_path / "open folder"
+    folder.mkdir()
+    folder.chmod(0o755)
+    database = folder / "market_data.sqlite"
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(folder))}" in message
+    assert not database.exists() and folder.stat().st_mode & 0o777 == 0o755
+
+
+def test_a_candle_file_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys, archive) -> None:
+    database = _database(tmp_path)
+    MarketDataDatabase(database).close()
+    database.chmod(0o644)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 600 {shlex.quote(str(database))}" in message
+    assert database.stat().st_mode & 0o777 == 0o644  # the command only explains; it never changes permissions
+
+
+def test_a_symlinked_candle_file_is_a_usage_error_without_a_permission_hint(tmp_path, capsys, archive) -> None:
+    real = _database(tmp_path)
+    MarketDataDatabase(real).close()
+    link = real.parent / "linked.sqlite"
+    link.symlink_to(real)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(link)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2 and "symlinks" in message and "chmod" not in message
 
 
 @pytest.mark.parametrize("arguments", [
