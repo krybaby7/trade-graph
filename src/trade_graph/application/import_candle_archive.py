@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import hashlib
 import re
 from collections import Counter
 from collections.abc import Iterable
@@ -31,6 +32,7 @@ from trade_graph.adapters.market.kraken_archive import (
     ArchiveLimits,
     ArchiveMember,
     ArchiveRejected,
+    ArchiveRow,
     MemberReader,
     ReadBudget,
     archive_signature,
@@ -229,6 +231,34 @@ def _expected_document(expected: frozenset[str] | None, chosen: _Selection, scop
 # --- the two passes ------------------------------------------------------------------------------------------------
 
 
+class _RowDigest:
+    """An order-sensitive SHA-256 over the accepted rows of one member, kept again at the end of every batch.
+
+    Pass one records it; pass two compares before each save, so a batch is stored only when every row read so far
+    is identical to what pass one saw. Counts alone cannot show a rewrite that keeps the same number of rows.
+    """
+
+    __slots__ = ("_hash", "rows", "checkpoints")
+
+    def __init__(self) -> None:
+        self._hash = hashlib.sha256()
+        self.rows = 0
+        self.checkpoints: list[bytes] = []
+
+    def add(self, row: ArchiveRow) -> bool:
+        """Take the next accepted row; true when it ends a batch."""
+        self._hash.update(f"{row.open_unix},{row.open},{row.high},{row.low},{row.close},{row.volume},{row.trades}\n"
+                          .encode("ascii"))
+        self.rows += 1
+        if self.rows % BATCH_CANDLES:
+            return False
+        self.checkpoints.append(self._hash.digest())
+        return True
+
+    def digest(self) -> bytes:
+        return self._hash.digest()
+
+
 @dataclass
 class _SeriesScan:
     rows_read: int = 0
@@ -237,6 +267,7 @@ class _SeriesScan:
     first_open: int | None = None
     last_open: int | None = None
     outside_quarter: int = 0
+    rows: _RowDigest = field(default_factory=_RowDigest)
 
 
 @dataclass
@@ -254,12 +285,13 @@ def _scan(archive, picks: list[_Pick], bounds: tuple[int, int] | None) -> dict[t
     scans: dict[tuple[str, int], _SeriesScan] = {}
     for pick in picks:
         reader = MemberReader(archive, pick.member, budget)
-        outside = 0
+        outside, rows = 0, _RowDigest()
         for row in reader:
+            rows.add(row)
             if bounds is not None and not bounds[0] <= row.open_unix < bounds[1]:
                 outside += 1
         scans[pick.key] = _SeriesScan(reader.rows_read, reader.accepted, reader.rejected, reader.first_open,
-                                      reader.last_open, outside)
+                                      reader.last_open, outside, rows)
     return scans
 
 
@@ -272,27 +304,41 @@ def _write(store: CandleStore, run_id: int, archive, picks: list[_Pick], scans: 
         outcome = written[pick.key] = _SeriesWrite()
         step = pick.interval * 60
         reader = MemberReader(archive, pick.member, budget)
+        scan, rows = scans[pick.key], _RowDigest()
         batch: list[Candle] = []
         for row in reader:
+            ends_batch = rows.add(row)
             if row.open_unix + step > cutoff:
                 outcome.dropped += 1
-                continue
-            batch.append(Candle(
-                symbol=pick.symbol, source_pair=pick.member.pair_code, interval_minutes=pick.interval,
-                open_time_utc=from_unix(row.open_unix), close_time_utc=from_unix(row.open_unix + step),
-                available_at_utc=imported_at, open=row.open, high=row.high, low=row.low, close=row.close,
-                vwap=None, volume=row.volume, trade_count=row.trades, source=ARCHIVE_SOURCE))
-            outcome.first_open = row.open_unix if outcome.first_open is None else outcome.first_open
-            outcome.last_open = row.open_unix
-            if len(batch) >= BATCH_CANDLES:
+            else:
+                batch.append(Candle(
+                    symbol=pick.symbol, source_pair=pick.member.pair_code, interval_minutes=pick.interval,
+                    open_time_utc=from_unix(row.open_unix), close_time_utc=from_unix(row.open_unix + step),
+                    available_at_utc=imported_at, open=row.open, high=row.high, low=row.low, close=row.close,
+                    vwap=None, volume=row.volume, trade_count=row.trades, source=ARCHIVE_SOURCE))
+                outcome.first_open = row.open_unix if outcome.first_open is None else outcome.first_open
+                outcome.last_open = row.open_unix
+            if ends_batch:
+                _require_same_batch(pick, scan, rows)
                 _flush(store, run_id, batch, outcome)
-        scan = scans[pick.key]
-        if (reader.rows_read, reader.accepted, dict(reader.rejected)) != (
-                scan.rows_read, scan.accepted, dict(scan.rejected)):
-            raise ArchiveRejected("changed_during_import", f"{pick.member.name} read differently the second time; "
-                                  "the file changed while it was being imported")
+        if ((reader.rows_read, reader.accepted, dict(reader.rejected)) != (
+                scan.rows_read, scan.accepted, dict(scan.rejected))
+                or (rows.rows, rows.digest()) != (scan.rows.rows, scan.rows.digest())):
+            raise _changed(pick)
         _flush(store, run_id, batch, outcome)
     return written
+
+
+def _changed(pick: _Pick) -> ArchiveRejected:
+    return ArchiveRejected("changed_during_import", f"{pick.member.name} read differently the second time; "
+                           "the file changed while it was being imported")
+
+
+def _require_same_batch(pick: _Pick, scan: _SeriesScan, rows: _RowDigest) -> None:
+    """Before a batch is saved: every accepted row read so far must match pass one, in content and order."""
+    index = rows.rows // BATCH_CANDLES
+    if index > len(scan.rows.checkpoints) or rows.digest() != scan.rows.checkpoints[index - 1]:
+        raise _changed(pick)
 
 
 def _flush(store: CandleStore, run_id: int, batch: list[Candle], outcome: _SeriesWrite) -> None:

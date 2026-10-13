@@ -82,9 +82,13 @@ report lists these assumptions every time. Treat them as open until a real file 
    process obtained the data then, not at the historical close (CANDLE-STORE rule 2). Rows whose close is after
    it are dropped and counted (`dropped_unfinished`). `point_in_time` reads before the import time see nothing;
    `replay` reads (practice range) see the data and are labelled `event_time_only`.
-5. **Write (pass two).** Rows are saved in batches. If the file changed between the passes the import stops
-   (`changed_during_import`): the size and modification time are compared, and each file's counts must repeat
-   exactly. Anything already saved came from rows that read the same in both passes.
+5. **Write (pass two).** Rows are saved in batches of 10,000. Pass one keeps a SHA-256 of each file's accepted rows,
+   in order, as it stood at the end of every batch. Before a batch is saved, the SHA-256 of every row read so far
+   must equal pass one's for that point; if not, the import stops (`changed_during_import`) and that batch is not
+   saved. The size and modification time are compared before and after the write pass, and each file's counts must
+   repeat exactly. So anything already saved came from rows that read the same in both passes, even when a rewrite
+   keeps the number of rows, but a failed `changed_during_import` run can leave earlier batches in the store (it is
+   append-only); the run is recorded as failed and the report says so.
 6. **Report.** One run (kind `archive_import`, evidence label `local_archive_file`; tests use `synthetic_fixture`)
    holds the parameters (file name, size, SHA-256, quarter, scope, limits) and the full report.
 

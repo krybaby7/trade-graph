@@ -400,6 +400,85 @@ def test_same_size_content_changed_with_the_timestamp_restored_is_still_caught(s
     assert refused.value.reason == "changed_during_import" and store.series() == []
 
 
+def _rewritten_after_the_first_save(store, monkeypatch, tamper) -> list[int]:
+    """Runs ``tamper`` right after the store's first save, that is, between the two passes' reads of later members."""
+    real_save, sizes = store.save, []
+
+    def save(candles, *, run_id):
+        sizes.append(len(candles))
+        saved = real_save(candles, run_id=run_id)
+        if len(sizes) == 1:
+            tamper()
+        return saved
+
+    monkeypatch.setattr(store, "save", save)
+    return sizes
+
+
+def _two_member_directory(tmp_path, closes: str = "100") -> Path:
+    rows = [csv_line(FIRST_OPEN + i * 900, "100", "102", "98", closes, "5", 3) for i in range(6)]
+    return write_directory(tmp_path / "csv", {"ADAUSD_15.csv": _rows(6, seed=2), "XBTUSD_15.csv": csv_text(rows)})
+
+
+def test_a_same_size_rewrite_between_two_batches_never_reaches_the_store(store, tmp_path, monkeypatch) -> None:
+    """Counts stay equal and the signature is only compared before and after the write pass; the rows are not."""
+    import trade_graph.application.import_candle_archive as importer
+    monkeypatch.setattr(importer, "BATCH_CANDLES", 2)
+    folder = _two_member_directory(tmp_path)
+    target = folder / "XBTUSD_15.csv"
+    sizes = _rewritten_after_the_first_save(
+        store, monkeypatch, lambda: target.write_text(target.read_text().replace(",100,5,", ",101,5,")))
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, folder)
+    assert refused.value.reason == "changed_during_import" and sizes[0] == 2
+    assert {s.symbol for s in store.series()} == {"ADA/USD"}  # BTC/USD would hold six candles closing at 101
+    assert store.runs()[0].status == "failed"
+
+
+def test_a_same_size_rewrite_of_a_member_smaller_than_one_batch_is_caught_before_its_only_save(
+        store, tmp_path, monkeypatch) -> None:
+    folder = _two_member_directory(tmp_path)
+    target = folder / "XBTUSD_15.csv"
+    _rewritten_after_the_first_save(
+        store, monkeypatch, lambda: target.write_text(target.read_text().replace(",100,5,", ",101,5,")))
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, folder)
+    assert refused.value.reason == "changed_during_import"
+    assert {s.symbol for s in store.series()} == {"ADA/USD"}
+
+
+def test_rows_appended_to_a_member_during_the_import_are_not_stored(store, tmp_path, monkeypatch) -> None:
+    import trade_graph.application.import_candle_archive as importer
+    monkeypatch.setattr(importer, "BATCH_CANDLES", 2)
+    folder = _two_member_directory(tmp_path)
+    target = folder / "XBTUSD_15.csv"
+    extra = [csv_line(FIRST_OPEN + i * 900, "100", "102", "98", "100", "5", 3) for i in range(6, 11)]
+    _rewritten_after_the_first_save(
+        store, monkeypatch, lambda: target.write_text(target.read_text() + csv_text(extra)))
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, folder)
+    assert refused.value.reason == "changed_during_import"
+    held = [s for s in store.series() if s.symbol == "BTC/USD"]
+    # the first six rows read the same in both passes and may be stored; the appended ones must not be
+    assert sum(s.candle_count for s in held) == 6
+
+
+def test_a_rewrite_that_leaves_every_row_alone_is_not_an_error(store, tmp_path, monkeypatch) -> None:
+    import trade_graph.application.import_candle_archive as importer
+    monkeypatch.setattr(importer, "BATCH_CANDLES", 2)
+    folder = _two_member_directory(tmp_path)
+    target = folder / "XBTUSD_15.csv"
+    status = target.stat()
+
+    def rewrite_identically() -> None:
+        target.write_bytes(target.read_bytes())
+        os.utime(target, ns=(status.st_atime_ns, status.st_mtime_ns))
+
+    _rewritten_after_the_first_save(store, monkeypatch, rewrite_identically)
+    result = _import(store, folder)
+    assert result.status == "ok" and result.report["totals"]["inserted"] == 12
+
+
 # --- coverage, missing pairs and the survivorship statement -------------------------------------------------------
 
 
