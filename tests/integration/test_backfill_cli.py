@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import signal
 import socket
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -247,6 +248,33 @@ def test_ctrl_c_still_records_the_run_and_exits_130(tmp_path, capsys, monkeypatc
     database = MarketDataDatabase(path)
     assert CandleStore(database).runs()[-1].report["reason"] == "interrupted"
     database.close()
+
+
+def test_a_termination_request_is_recorded_like_ctrl_c_and_exits_143(tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    before = signal.getsignal(signal.SIGTERM)
+    seen = []
+
+    def hook(call: int, url: str) -> None:
+        if call == 3:  # the operating system delivers SIGTERM to the handler the command installed
+            handler = signal.getsignal(signal.SIGTERM)
+            seen.append(handler)
+            if callable(handler):
+                handler(signal.SIGTERM, None)
+
+    exchange(monkeypatch, clock, steady_trades(1000, T0 - 600, 5000, every_seconds=1), hook=hook)  # five pages
+    code, report = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path),
+                       "--max-requests", "50")
+    assert len(seen) == 1 and callable(seen[0]), "the command installs a SIGTERM handler for the length of the run"
+    assert code == 143 and report["status"] == "failed" and report["reason"] == "interrupted"
+    assert signal.getsignal(signal.SIGTERM) is before  # and puts the old one back
+    database = MarketDataDatabase(path)
+    recorded = CandleStore(database).runs()[-1]
+    database.close()
+    assert recorded.kind == "trades_backfill" and recorded.report["reason"] == "interrupted"
+    assert recorded.report["pairs"]["BTC/USD"]["stop_reason"] == "interrupted"
+    assert recorded.report["pairs"]["BTC/USD"]["intervals"]["15"]["next_open_unix"] > T0  # the cursor was saved
 
 
 def test_the_only_module_that_builds_a_real_http_transport_is_the_backfill_command() -> None:

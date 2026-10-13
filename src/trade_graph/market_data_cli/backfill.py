@@ -4,15 +4,18 @@ Public, unauthenticated GET requests only, at most ``--max-requests`` of them pe
 Kraken's request counter. It writes only the separate candle-history file and prints one JSON report. The report
 carries the resume cursor, so running the same command again continues where the last run stopped. Exit code 0 means
 the run was recorded (status ok or partial), 1 means nothing could be done (status failed, the report says why),
-2 is a usage error and 130 is Ctrl-C (the run is still recorded).
+2 is a usage error, 130 is Ctrl-C and 143 is a termination request (SIGTERM); both still record the run and its cursor.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import signal
 import sys
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -35,11 +38,35 @@ COMMAND = "backfill-kraken-trades"
 DEFAULT_MAX_REQUESTS = 100
 SMOKE_MAX_REQUESTS = 3
 HTTP_TIMEOUT_SECONDS = 10
+TERMINATED_EXIT_CODE = 143  # 128 + SIGTERM, the shell convention
 
 
 class _Sleeper:
     def sleep(self, seconds: Decimal) -> None:
         time.sleep(float(seconds))
+
+
+class _Terminated(SystemExit):
+    """A termination request (SIGTERM), turned into an exit so the run is still recorded like Ctrl-C."""
+
+
+def _on_terminate(signum: int, frame: object) -> None:
+    raise _Terminated(TERMINATED_EXIT_CODE)
+
+
+@contextlib.contextmanager
+def _termination_recorded() -> Iterator[None]:
+    """During the run a termination request unwinds like Ctrl-C does; afterwards the old handler returns."""
+    try:
+        previous = signal.signal(signal.SIGTERM, _on_terminate)
+    except ValueError:  # only the main thread may install handlers
+        yield
+        return
+    try:
+        yield
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
 
 
 def make_transport() -> TextTransport:
@@ -129,12 +156,14 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
         limiter = RequestLimiter(clock, make_sleeper(), LimiterSettings())
         client = KrakenTrades(make_transport(), clock)
         try:
-            result = backfill_trades(store, clock, client, limiter, scope, max_requests=budget,
-                                     evidence_label=label, ignore_cursor=args.from_start)
-        except KeyboardInterrupt:
+            with _termination_recorded():
+                result = backfill_trades(store, clock, client, limiter, scope, max_requests=budget,
+                                         evidence_label=label, ignore_cursor=args.from_start)
+        except (KeyboardInterrupt, _Terminated) as stop:
             recorded = [run_ for run_ in store.runs() if run_.kind == "trades_backfill" and run_.report]
             document = {} if not recorded else {"run_id": recorded[-1].run_id, **recorded[-1].report}
-            return _emit(document or {"status": "interrupted"}, 130)
+            return _emit(document or {"status": "interrupted"},
+                         TERMINATED_EXIT_CODE if isinstance(stop, _Terminated) else 130)
         for symbol, pair in result.report["pairs"].items():
             if pair["stop_reason"] == "max_requests" and pair["message"]:  # the budget could not finish one candle
                 print(f"{COMMAND}: {symbol}: {pair['message']}", file=sys.stderr)

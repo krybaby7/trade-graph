@@ -99,7 +99,7 @@ candle still forming at the stop was already known to lack trades. The next run 
 withheld exactly as an uninterrupted run would have withheld it. A cursor written without this flag counts as flagged
 (unknown withholds), and when several runs ended on the same cursor any flagged one counts. `--from-start` ignores stored cursors. A run that never finished (for
 example a power cut) has no report and gives no cursor; the next run then starts from the range start and the store
-turns repeated candles into no-ops. Ctrl-C does finish and record the run.
+turns repeated candles into no-ops. Ctrl-C and a termination request (SIGTERM) do finish and record the run.
 
 ### Why a run stops
 
@@ -119,7 +119,7 @@ Each pair ends with exactly one `stop_reason`:
 | `boundary_mismatch` | A repeated trade differed from the one consumed earlier. |
 | `time_regressed` | A new trade id carried an earlier time than a consumed trade. |
 | `store_refused` | The candle store refused a write (for example a different venue pair code for an existing series). |
-| `interrupted` | Ctrl-C or a termination request; the run is still recorded. |
+| `interrupted` | Ctrl-C (exit 130) or a termination request, SIGTERM (exit 143); the run and its cursor are still recorded. A hard kill (SIGKILL, power cut) cannot be recorded. |
 | `unexpected_error` | A bug; the run is recorded as failed and the error is re-raised. |
 | `no_target` | No usable range (a bound is missing). |
 | `already_covered` | The archive and collector overlap or touch. |
@@ -219,7 +219,7 @@ uv run --frozen trade-graph reconcile-candles --pair BTC/USD --interval 15 --cou
 Both take `--market-database` (default `runtime/market_data.sqlite`), refuse the financial database
 (`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report.
 `backfill-kraken-trades` exits 0 when the run was recorded (status `ok` or `partial`), 1 when nothing could be done
-(`failed`), 2 for a usage error and 130 after Ctrl-C. A run is `failed` when no range could be planned, or when a pair
+(`failed`), 2 for a usage error, 130 after Ctrl-C and 143 after SIGTERM. A run is `failed` when no range could be planned, or when a pair
 stopped for a failure reason (the table above: everything except `end_reached`, `max_requests`, `stream_exhausted`,
 `no_target` and `already_covered`) and no slot was decided in this run (`decided_this_run` is 0 in every interval).
 Real progress keeps `partial` even if a later request failed, so a scheduler can tell a dead network from a slow day.
@@ -238,6 +238,6 @@ guard only. The authority on stablecoin and yield-token exclusion (D131) is the 
   calls share the rate counter; pair names other than `XBTUSD` and `BATUSD` (a symbol is turned into a Kraken code
   by the archive's rule: `BTC` is `XBT`, `DOGE` is `XDG`, otherwise the base followed by `USD`); and the behaviour of
   `since` for very old dates beyond Kraken's retention.
-* A hard kill (not Ctrl-C) loses that run's cursor, so at most one run's requests are repeated.
+* A hard kill (not Ctrl-C or SIGTERM) loses that run's cursor, so at most one run's requests are repeated.
 * Trailing quiet slots of the archive are fetched again (the archive's last candle is its last slot with trades).
 * Delisted pairs have no history here, so tests of coin selection on this data stay optimistic.
