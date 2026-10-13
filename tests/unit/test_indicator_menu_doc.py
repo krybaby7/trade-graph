@@ -48,4 +48,23 @@ def test_document_states_the_locked_versions_and_the_findings() -> None:
 
 
 def test_document_has_no_stray_markers() -> None:
-    assert _DOC.count("<!-- BEGIN") == _DOC.count("<!-- END") == 3
+    assert _DOC.count("<!-- BEGIN") == _DOC.count("<!-- END") == 5
+
+
+def test_document_describes_the_engine_and_the_hourly_features_with_the_numbers_the_code_uses() -> None:
+    from trade_graph.application.indicators import engine
+    from trade_graph.application.indicators.library import SNAPSHOT_DIGITS
+    from trade_graph.application.price_history import FEATURE_VERSION, FEATURE_VERSION_V2
+
+    text = " ".join(_DOC.split())  # the document wraps lines
+    for heading in ("## The engine", "### Rules", "### History read at the default settings",
+                    "## Hourly price features v3", "## How the Trader is meant to use the menu"):
+        assert heading in _DOC
+    assert f"{engine.MAX_HISTORY_CANDLES:,}" in text and "13,499" in text
+    assert f"from 1 to {engine.MAX_OUTPUT_POINTS}" in text
+    assert f"fixed {engine.START_DEPENDENT_HISTORY} candles" in text
+    assert f"{SNAPSHOT_DIGITS} significant digits" in text and f"rounding at {SNAPSHOT_DIGITS}" in text
+    assert FEATURE_VERSION in text and FEATURE_VERSION_V2 in text
+    assert f"first {engine.DOCUMENT_MISSING_LIMIT}" in text
+    for relation in engine.RELATIONS:
+        assert f"`{relation}`" in text

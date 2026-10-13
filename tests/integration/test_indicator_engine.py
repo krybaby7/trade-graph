@@ -208,6 +208,22 @@ def test_the_look_behind_is_one_more_window_read_and_only_when_the_answer_needs_
     database.close()
 
 
+@pytest.mark.parametrize("name", [spec.name for spec in INDICATOR_MENU])
+def test_every_menu_entry_reports_a_hole_inside_its_own_span_and_only_there(tmp_path, name) -> None:
+    plan = plan_history(name, {}, 2)
+    hole = 300
+    database = MarketDataDatabase(tmp_path / name / "market_data.sqlite")
+    holed = CandleStore(database)
+    candles = _fill(holed, count=800, skip=(hole,))
+    blocked = _read(holed, candles, hole + plan.span // 2, name, {}, count=2)  # the span contains the hole
+    assert blocked.status == "gapped" and blocked.values == {} and blocked.close_times_utc == ()
+    assert blocked.missing_close_times_utc == (_end(candles, hole),)
+    assert blocked.required_candles == plan.span and blocked.available_candles == plan.span - 1
+    clear = _read(holed, candles, hole + plan.span, name, {}, count=2)  # the span starts one slot after the hole
+    assert clear.status == "ready" and set(clear.values) == {o.name for o in get_indicator(name).outputs}
+    database.close()
+
+
 def test_a_gap_in_the_middle_withholds_the_values_and_names_the_slot(store) -> None:
     candles = _fill(store, count=120, skip=(90,))
     result = _read(store, candles, 99, "SMA", {"timeperiod": 20})

@@ -1,17 +1,21 @@
-# Indicator menu (T27, slice A)
+# Indicator menu (T27)
 
 Status: implemented and tested on 2026-10-13, branch `claude/d1-indicators-20261013`. Decision D118 is the
 rule behind it: indicators come from a proven library, no indicator formula is written in this repository,
-and the Trader receives numbers, not chart images. This slice delivers the locked dependency, the menu
-contract, a thin library wrapper and the cross-check tests. The engine code that selects completed candles
-from the candle store, supplies warm-up history, reports missing candles per indicator and compares values
-with alarm levels, and the retirement of the hourly D89 fields, is slice B and is not described here.
+and the Trader receives numbers, not chart images. Slice A delivered the locked dependency, the menu
+contract, a thin library wrapper and the cross-check tests. Slice B adds the engine that selects completed
+candles from the candle store, supplies warm-up history, reports missing candles per indicator and compares
+values with alarm levels, and re-expresses the hourly D89 fields through the library
+(`hourly-price-features-v3`). Both are described below.
 
-In plain words: the Trader can pick from 25 standard indicators (averages, RSI, MACD, Bollinger Bands, ATR,
+In plain words: the Trader can pick from 26 standard indicators (averages, RSI, MACD, Bollinger Bands, ATR,
 and so on) and choose their settings inside fixed limits. TA-Lib, a well-known open-source library, does
 every calculation. The tests check each indicator against a second, separately written library and against
 small examples worked out by hand. Where two libraries differ at the start of the history, the difference
-is written down below instead of being hidden.
+is written down below instead of being hidden. Around the library, the engine hands it only completed
+candles that were already received at the moment in question, refuses to give a number when any candle it
+needs is missing (and says which), and tells the Trader plainly whether a value is ready, still warming up
+or blocked by a hole in the data.
 
 Code and data:
 
@@ -19,10 +23,13 @@ Code and data:
 |---|---|
 | Menu contract (names, settings, bounds, outputs, warm-up rule) | `src/trade_graph/contracts/indicators.py` |
 | Wrapper around TA-Lib | `src/trade_graph/application/indicators/library.py` |
-| Tests | `tests/unit/test_indicator_contract.py`, `test_indicator_library.py`, `test_indicator_cross_check.py`, `test_indicator_settling.py`, `test_indicator_reference_values.py`, `test_indicator_menu_doc.py`, `tests/property/test_indicator_types.py` |
+| Engine (reads the candle store, sizes the history, labels the answer, compares with alarm levels) | `src/trade_graph/application/indicators/engine.py` |
+| Hourly price features v3 | `src/trade_graph/application/price_history.py` |
+| Tests | `tests/unit/test_indicator_contract.py`, `test_indicator_library.py`, `test_indicator_cross_check.py`, `test_indicator_settling.py`, `test_indicator_reference_values.py`, `test_indicator_menu_doc.py`, `test_indicator_alarm_compare.py`, `tests/property/test_indicator_types.py`, `test_indicator_engine_properties.py`, `tests/integration/test_indicator_engine.py`, `test_hourly_features_v3.py` |
 | Fixed series and second-library adapters | `tests/indicator_series.py`, `tests/indicator_second_library.py` |
 | Tolerances and documented differences (the table the tests read) | `tests/fixtures/indicators/cross_check.json` |
 | Hand-derived reference values with their derivations | `tests/fixtures/indicators/reference_values.json` |
+| Stored `hourly-price-features-v2` snapshots (produced by the v2 code) for the reader tests | `tests/fixtures/hourly/snapshots_v2.json` |
 | Regenerates the tables in this document | `scripts/render_indicator_menu.py --update` |
 
 ## The menu
@@ -73,6 +80,10 @@ appears exactly there, at the smallest, default and largest settings of every en
 No entry reads the open price (it is allowed as a column but nothing uses it). Volume is read by MFI and OBV
 only.
 
+ROC and ROCP are the same quantity in two units: ROC is a percentage (1.5 means up 1.5 percent) and ROCP is a
+fraction (0.015). ROCP is on the menu because the hourly return fields are fractions and nothing may be
+converted by arithmetic on library output; the cross-check compares it with the other libraries as a fraction.
+
 Not on the menu, on purpose: TA-Lib's candlestick pattern functions (out of scope by instruction), and
 anything TA-Lib does not provide. VWAP in particular is not in TA-Lib; computing it here would be an in-house
 formula, which D118 forbids. If the owner wants it, the options are a second library for that one entry or a
@@ -96,10 +107,12 @@ lookback("MACD", {})                                    # 33, asked from TA-Lib
   cannot hold are refused. At most 100,000 rows per call (the candle store's own window limit).
 - Outputs are `float64` arrays, one per menu output, with one value per candle. Positions before the
   library's lookback are NaN, meaning "no value yet". A history shorter than the lookback gives all NaN, not
-  an error. Slice B turns NaN into an explicit "unknown" for the Trader.
-- A missing candle is not handled here. Slice B must pass only a complete run of consecutive completed
+  an error. The engine below never hands such a NaN on: it reports `warming_up` instead.
+- A missing candle is not handled here. The engine passes only a complete run of consecutive completed
   candles (the candle store's `window` marks missing slots); the wrapper never invents, carries forward or
   zero-fills anything.
+- `rounded_decimal(value)` is the one place a library float becomes exact decimal text for stored snapshots
+  (rule under "Hourly price features v3" below).
 - TA-Lib has process-wide settings (a compatibility mode and per-function "unstable periods") that change
   recursive indicators if anything sets them. The wrapper refuses to compute, with `IndicatorComputationError`,
   if any of them is not at its default.
@@ -245,7 +258,7 @@ earlier or later. This matters for alarms and for comparing a live value with a 
 First, for the same end candle, supply the same history length every time (or at least beyond the guidance
 below), so two readings of the same indicator agree.
 
-Second, the contract carries measured guidance. `Settling` says how many periods of the main setting to add
+Second, the contract carries measured guidance, and the engine adds exactly that much history (see "The engine"). `Settling` says how many periods of the main setting to add
 beyond the library lookback so that the remaining effect of the starting point is below `SETTLE_TOLERANCE`
 (1e-5 of the output scale). `tests/unit/test_indicator_settling.py` measures it by running TA-Lib on a full
 history and on histories that start 1, 13 and 61 candles later, for the default and two other settings of
@@ -293,6 +306,236 @@ Williams, Chande, Granville, Mulloy and Bollinger for the rest, plus the TA-Lib 
 simple ones), then confirmed against TA-Lib. The derivations were first computed in exact rational
 arithmetic in a throwaway script that is not committed; a reader can repeat them by hand from the text.
 Adding the published ChartSchool examples would need the spreadsheets supplied or a download approved.
+
+## The engine
+
+In plain words: the engine is the part that stands between the stored candles and the Trader. Ask it for "RSI
+14 on BTC/USD, 15-minute candles, as of now" and it gets exactly the candles that indicator needs, checks that
+every one of them is complete and was already received, runs the library, and hands back the numbers with a
+label saying how much to trust them. If a single candle it needs is missing, it hands back no number at all
+and lists the missing times. It never fills a hole, never uses a shorter or longer window to get round one,
+and never lets an indicator that is not ready trigger an alarm.
+
+```python
+from decimal import Decimal
+from trade_graph.application.indicators.engine import compare_to_level, compute_indicator
+
+result = compute_indicator(store, "RSI", {"timeperiod": 14}, symbol="BTC/USD", interval_minutes=15,
+                           source="kraken_public_ohlc", end_close_time=close, as_of=now, count=3)
+result.status               # "ready", "warming_up" or "gapped"
+result.values["value"]      # (61.2, 58.9, 55.0): floats, oldest first, empty unless ready
+result.close_times_utc      # the close time each value belongs to
+compare_to_level(result, Decimal("30"), "crosses_below")   # a yes or no, with the numbers behind it
+```
+
+Code: `application/indicators/engine.py`. Tests: `tests/integration/test_indicator_engine.py` (synthetic
+stores: ready, warming up, gap in the middle, gap in the warm-up zone, gap in the seeding history, gap at the
+newest slot, replay mode, a candle received after `as_of`, a revision received after `as_of`, all four candle
+sizes, bounds), `tests/unit/test_indicator_alarm_compare.py` and `tests/property/test_indicator_engine_properties.py`
+(random menu entries, settings and holes; exact comparison).
+
+### Rules
+
+1. **Candles are read only through `CandleStore.window`.** `point_in_time` is the default: a candle is
+   visible only if it was received at or before `as_of`. `replay` (research, practice range) uses close times
+   only; the result is labelled `mode: replay` and `availability_basis: event_time_only` and is never evidence
+   that the data had arrived (`as_of` may be left out in replay mode and then equals the end close time;
+   point-in-time reads require it). A test reads the engine's source and fails if it imports TA-Lib, NumPy, pandas or
+   sqlite, or touches the store's database or any read other than `window`.
+2. **Only completed candles, checked.** The store already promises this; the engine asserts it for every candle
+   it receives and raises `CandleSelectionError` if a candle belongs to another slot, was received before it
+   closed, closes after `as_of`, or (in point-in-time mode) was received after `as_of`. The still-forming candle
+   is never stored (store contract), so it cannot reach the engine.
+3. **How much history is read** is the sum of three numbers, none of them computed here:
+   - the library's own lookback for the chosen settings (`lookback()`, asked from TA-Lib);
+   - the *seeding history* of a start-sensitive indicator: the menu's measured `Settling` guidance (for
+     example 20 x `timeperiod` for RSI), added so that the effect of where the history began stays below
+     1e-5 of the output scale (see "Start-sensitive indicators" below);
+   - the number of output points asked for.
+
+   Parabolic SAR and On-Balance Volume never forget their start and have no measured guidance. They get a
+   fixed 200 candles of seeding history (`START_DEPENDENT_HISTORY`) and the result says
+   `start_dependent: true`. Their levels are not comparable between readings with a different `count`; ask
+   for the same `count` every time, and treat OBV as changes only.
+
+   The table after the rules lists the history read at the default settings.
+
+   Bounds: `count` is a whole number from 1 to 500 (`MAX_OUTPUT_POINTS`), and one request may read at most
+   20,000 candles (`MAX_HISTORY_CANDLES`; the store's own limit is 100,000). The largest valid menu request
+   (ADX with period 500 and 500 points: 999 + 12,000 + 500) needs 13,499, so no valid request is refused by the
+   bound; a test checks every entry at its maximum settings. For the same end candle, windowed indicators give
+   the same value however many points are asked for; settling indicators agree within the 1e-5 tolerance
+   (tested for RSI, 1 point against 60).
+4. **Missing candles are reported per indicator, and any hole withholds the values.** The engine reads exactly
+   the span in rule 3. If any slot of it has no candle:
+
+   | Status | When | Values |
+   |---|---|---|
+   | `ready` | every slot of the span has a candle | `count` points per output, oldest first, each with its close time |
+   | `warming_up` | only the oldest slots are missing, and no candle is visible in the stretch of the same length just before the span: the history has not begun | none |
+   | `gapped` | any other missing slot: in the middle, in the warm-up or seeding zone, at the newest slot (a collector that stopped), or at the oldest slots when candles exist before them | none |
+
+   `missing_close_times_utc` lists every missing slot (a document shows the first 100 and the full count).
+   Nothing is carried forward or zero-filled, no partial answer is given (a hole that only touches the oldest
+   point's window still withholds all points), and the span is never lengthened or shortened to get around a
+   hole: the answer for a span is the answer for that span. Whether a missing slot means "no trades in that
+   interval" or "not collected" is unknowable from the store (contract rule 5), so the report says "no
+   candle" and does not guess. The only extra read is the look-behind that tells `warming_up` from `gapped`;
+   it is one more `window` call of the same length, made only when the oldest slots are the only ones missing.
+   A hole elsewhere in the older candles does not affect a span that does not contain it.
+5. **A result carries its provenance:** indicator, resolved settings, symbol, interval, source, `mode` and
+   `as_of`, the status, the number of candles required and available, the lookback and seeding sizes, the
+   close time of every value, and for every candle read its revision, collection run and content hash, plus
+   one SHA-256 over exactly those (`input_sha256`) so a receipt can show two readings used identical inputs.
+   It also carries `spec_version` (the menu version plus a short digest of the entry, so any edit to an
+   entry changes it) and the versions of TA-Lib, its C library and NumPy. `to_document()` gives plain JSON
+   with ISO times and numbers and never NaN.
+6. **Comparing with an alarm level** (`compare_to_level(result, level, relation, output=None)`):
+
+   | Relation | True when |
+   |---|---|
+   | `above` | newest value > level |
+   | `below` | newest value < level |
+   | `crosses_above` | previous value <= level < newest value |
+   | `crosses_below` | previous value >= level > newest value |
+
+   The level must be a finite `Decimal` (a float, int or string level is refused). The float indicator value
+   is converted to Decimal as its shortest decimal string that converts back to the same float (`repr`), and
+   the two Decimals are compared exactly: no tolerance, no rounding. This way a level of at most 15 significant
+   digits equals the float nearest to it (the value 0.1 is not "above" the level 0.1), where the binary
+   expansion of the float would say it is above by a hair; and 0.1 + 0.2 really is above 0.3, because the
+   float is 0.30000000000000004. Property tests check that exactly one of above, below and equal holds, that
+   the comparison is monotonic in the value, and that a crossing is the two points compared with the same rule.
+   A path that touches the level and then leaves it fires `crosses_*` once; a path that only touches it does
+   not. A crossing needs `count` of at least 2. **An indicator that is not ready never satisfies any
+   relation**, and neither does one with fewer points than the relation needs; the answer then has
+   `evaluated: false` and a reason. A multi-output entry (MACD, BBANDS, STOCH, AROON) needs the output named.
+   The answer is a `LevelComparison`: `satisfied` (a plain `bool`), the relation, the level, the value and
+   (for crossings) the previous value, the close time the value belongs to, and the reason; its truth value
+   follows `satisfied`, so `if compare_to_level(...)` cannot fire on an unready indicator.
+7. **Failures are loud.** A request outside the menu raises `ValidationFailure` before the store is read. If
+   TA-Lib returns no finite value where its own lookback says there must be one, the engine raises
+   `IndicatorComputationError` instead of inventing one.
+
+### History read at the default settings
+
+For one value (`count` 1); each extra point adds one candle.
+
+<!-- BEGIN history-table -->
+| Name | Warm-up (asked from TA-Lib) | Seeding history | Candles read for one value |
+|---|---|---|---|
+| **SMA** | 19 | none | 20 |
+| **EMA** | 19 | 4 x `timeperiod` = 80 | 100 |
+| **WMA** | 19 | none | 20 |
+| **DEMA** | 38 | 4 x `timeperiod` = 80 | 119 |
+| **BBANDS** | 19 | none | 20 |
+| **SAR** | 1 | 200 (fixed: it never forgets its start) | 202 |
+| **MIDPRICE** | 13 | none | 14 |
+| **HIGHEST_HIGH** | 19 | none | 20 |
+| **LOWEST_LOW** | 19 | none | 20 |
+| **RSI** | 14 | 20 x `timeperiod` = 280 | 295 |
+| **MACD** | 33 | 4 x `slowperiod` = 104 | 138 |
+| **STOCH** | 17 | none | 18 |
+| **CCI** | 13 | none | 14 |
+| **MFI** | 14 | none | 15 |
+| **WILLR** | 13 | none | 14 |
+| **ROC** | 10 | none | 11 |
+| **ROCP** | 10 | none | 11 |
+| **MOM** | 10 | none | 11 |
+| **ADX** | 27 | 24 x `timeperiod` = 336 | 364 |
+| **PLUS_DI** | 14 | 20 x `timeperiod` = 280 | 295 |
+| **MINUS_DI** | 14 | 20 x `timeperiod` = 280 | 295 |
+| **AROON** | 14 | none | 15 |
+| **ATR** | 14 | 8 x `timeperiod` = 112 | 127 |
+| **NATR** | 14 | 14 x `timeperiod` = 196 | 211 |
+| **OBV** | 0 | 200 (fixed: it never forgets its start) | 201 |
+| **STDDEV** | 19 | none | 20 |
+<!-- END history-table -->
+
+## Hourly price features v3
+
+The hourly features the Trader already receives (decision D89, window rules from D114) were hand-written
+Decimal arithmetic: an in-house formula for every one of them. D118 forbids that, so
+`hourly-price-features-v3` computes them with the library. The windows, the shared anchor, the per-field
+statuses (`ready`, `stale`, `gapped_history`, `insufficient_history`, `unsupported`), the per-field missing
+hours, `latest_close`, `recent_candles` and the snapshot hash rule are unchanged. The hourly features still read
+the `hourly_candles` table; they are not wired to the new candle store (that is a later step).
+
+<!-- BEGIN hourly-table -->
+| Field | hourly-price-features-v2 (hand-written) | hourly-price-features-v3 | Why |
+|---|---|---|---|
+| `sma_20` | Mean of the last 20 closes, summed and divided in Decimal | TA-Lib `SMA` (timeperiod 20) over 20 completed hourly candles | Same window and meaning; computed by the library. |
+| `sma_50` | Mean of the last 50 closes, summed and divided in Decimal | TA-Lib `SMA` (timeperiod 50) over 50 completed hourly candles | Same window and meaning; computed by the library. |
+| `highest_high_20` | (new in v3) | TA-Lib `MAX` (timeperiod 20) over 20 completed hourly candles | The 20-hour high that the pullback ratio was built on. With `latest_close` it gives the same information without a hand-written ratio. |
+| `range_high` | Maximum high of the last 24 candles, scanned in Python | TA-Lib `MAX` (timeperiod 24) over 24 completed hourly candles | Same window and meaning; computed by the library. |
+| `range_low` | Minimum low of the last 24 candles, scanned in Python | TA-Lib `MIN` (timeperiod 24) over 24 completed hourly candles | Same window and meaning; computed by the library. |
+| `midpoint` | (range_high + range_low) / 2 in Decimal | TA-Lib `MIDPRICE` (timeperiod 24) over 24 completed hourly candles | Same window and meaning; computed by the library. |
+| `hourly_return` | Latest close / previous close - 1 in Decimal | TA-Lib `ROCP` (timeperiod 1) over 2 completed hourly candles | Same meaning; ROCP is the fractional change, so no percent conversion is needed. |
+| `four_hour_drift` | Latest close / close four hours earlier - 1 in Decimal | TA-Lib `ROCP` (timeperiod 4) over 5 completed hourly candles | Same meaning; ROCP over 4 hours. |
+| `pullback_from_high` | (20-hour maximum high - latest close) / maximum high in Decimal | **retired**: read highest_high_20 with latest_close | No library function gives this ratio, and a hand-written one is an in-house formula (D118). Its ingredients are supplied instead. |
+| `pullback_depth` | Alias of pullback_from_high | **retired**: read highest_high_20 with latest_close | Same as pullback_from_high, of which it was an alias. |
+| `midpoint_distance` | (latest close - midpoint) / midpoint in Decimal | **retired**: read midpoint with latest_close | No library function gives this ratio (D118). Its ingredients are supplied instead. |
+<!-- END hourly-table -->
+
+**What happened to the three ratios.** `pullback_from_high`, `pullback_depth` and `midpoint_distance` are
+each one division of two library numbers. No library function returns them, and writing the division here
+would be an in-house formula, so the options were to keep a hand-written ratio (against D118), to ask for a
+second library (none offers it on the menu), or to retire the ratios and supply their ingredients. The third
+was chosen: `highest_high_20` (TA-Lib `MAX` over the last 20 completed highs) is new, `midpoint` and
+`latest_close` were already supplied, and the Trader (or an alarm level it sets) reads the gap between them.
+A request for a retired name is answered with status `unsupported` and a definition that names its
+replacement; it does not widen the lookback and does not change any other field. If the owner wants the
+ratios back as numbers, that is a decision to allow a labelled in-house division or to find a library that
+provides it.
+
+**Exact text, one rule.** The library returns floats; the snapshot keeps exact decimal text so hashing stays
+stable. The rule is `rounded_decimal`: take the float's exact binary value, round it half-even to 12
+significant digits using a Decimal context of its own (the ambient context cannot change it), and write it
+in plain notation without trailing zeros (`-0` becomes `0`). Why 12: a float64 carries about 15.95 digits and
+the library's running sums add rounding noise in the last one or two, so rounding at 12 makes the text identical
+across platforms and compilers, while every price the hourly pairs quote (at most 7 digits) passes through
+unchanged (`range_high`, `range_low`, `highest_high_20` and `midpoint` are exactly the candle prices). The cost
+is a relative rounding error of at most 5e-12 on the derived values (averages and returns). The v2
+arithmetic is kept as an oracle in the tests only: for 36 seeded random series (BTC-like, ETH-like and a
+5-decimal coin) every v3 value agrees with the v2 exact value within 6e-12 relative, and the four exact ones
+agree exactly. A value rounded across a 12-digit boundary by a one-bit platform difference would change the
+text (probability roughly 1 in 10,000 per value); a changed text changes that snapshot's hash, never a
+stored one.
+
+**Retained snapshots.** `hourly-price-features-v2` snapshots and contexts that are already stored are never
+recomputed and stay as they were. `FEATURE_VERSION_V2` remains in `price_history.py`. The evidence reader keeps
+every v2 name in its allow-list and the artifact grammar still accepts a template that names
+`pullback_from_high`. `tests/fixtures/hourly/snapshots_v2.json` holds three snapshots produced by the v2 code
+(complete history, pending newest hour, gapped and short history); `test_hourly_features_v3.py` checks that each
+still hashes to its stored `source_ref`, passes unchanged through the context compaction, the department context
+filter and the evidence reader with every name, value, status and definition intact, and that a v3 snapshot
+of the same candles has the same provenance and the same exact values where nothing changed.
+
+**Deployment note.** `price_history.py` now imports TA-Lib and NumPy (through the wrapper), which the
+runtime did not need before. A deployed image has to be built with those wheels; this branch changes no image and
+touches no running service.
+
+## How the Trader is meant to use the menu
+
+The Trader never sees a chart and never calculates an indicator. In its day plan it names entries from the
+menu and their settings (for example "RSI 14 on 15-minute candles", "EMA 20 and EMA 50 on 5-minute candles",
+"Bollinger Bands 20, 2 deviations") and sets alarm levels on their numbers ("RSI crosses below 30"). Software
+does the rest:
+
+1. For each chosen indicator the engine returns the numbers (a few recent points, so a direction can be read),
+   the close time of each, and the status. The Trader reads them as plain numbers next to `latest_close` and the
+   recent candles it already receives. Where the status is `warming_up` or `gapped` it gets no value and the
+   missing times, and says nothing about what the value might have been.
+2. Between wakes, software evaluates each alarm when a new candle closes with `compare_to_level`. The alarm
+   fires once, and only from a ready indicator. A hole in the data produces a data-problem note, never a trade
+   signal.
+3. A start-sensitive indicator is read at the same `count` each time, so successive readings agree; SAR and OBV
+   are read as changes and reversals, not as levels.
+4. Everything the Trader acted on is attributable afterwards: the document carries the candle revisions, the run
+   ids, the `as_of`, the mode and the versions.
+
+Wiring the engine into the Trader context, the alarm watcher and the day plan is later work; this slice
+delivers the engine and its tests only.
 
 ## Changing the menu
 

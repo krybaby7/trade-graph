@@ -14,8 +14,10 @@ import json
 import re
 from pathlib import Path
 
+from trade_graph.application.indicators.engine import plan_history
 from trade_graph.application.indicators.library import lookback
-from trade_graph.contracts.indicators import INDICATOR_MENU, SETTLE_TOLERANCE, IndicatorSpec
+from trade_graph.application.price_history import _FEATURES, _RETIRED, FEATURE_VERSION, FEATURE_VERSION_V2
+from trade_graph.contracts.indicators import INDICATOR_MENU, SETTLE_TOLERANCE, IndicatorSpec, get_indicator
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "docs" / "INDICATOR-MENU.md"
@@ -71,6 +73,63 @@ def render_settling_table() -> str:
     return "\n".join(rows)
 
 
+def render_history_table() -> str:
+    rows = ["| Name | Warm-up (asked from TA-Lib) | Seeding history | Candles read for one value |",
+            "|---|---|---|---|"]
+    for spec in INDICATOR_MENU:
+        plan = plan_history(spec.name, {}, 1)
+        if spec.settle is not None:
+            seeding = f"{spec.settle.periods} x `{spec.settle.parameter}` = {plan.seeding}"
+        elif spec.recursive_seed:
+            seeding = f"{plan.seeding} (fixed: it never forgets its start)"
+        else:
+            seeding = "none"
+        rows.append(f"| **{spec.name}** | {plan.lookback} | {seeding} | {plan.span} |")
+    return "\n".join(rows)
+
+
+# What v2 computed by hand (words only, for the comparison table) and why each field changed.
+_V2_WORDS = {
+    "sma_20": "Mean of the last 20 closes, summed and divided in Decimal",
+    "sma_50": "Mean of the last 50 closes, summed and divided in Decimal",
+    "range_high": "Maximum high of the last 24 candles, scanned in Python",
+    "range_low": "Minimum low of the last 24 candles, scanned in Python",
+    "midpoint": "(range_high + range_low) / 2 in Decimal",
+    "hourly_return": "Latest close / previous close - 1 in Decimal",
+    "four_hour_drift": "Latest close / close four hours earlier - 1 in Decimal",
+    "highest_high_20": "(new in v3)",
+    "pullback_from_high": "(20-hour maximum high - latest close) / maximum high in Decimal",
+    "pullback_depth": "Alias of pullback_from_high",
+    "midpoint_distance": "(latest close - midpoint) / midpoint in Decimal",
+}
+_SAME = "Same window and meaning; computed by the library."
+_V3_WHY = {
+    "sma_20": _SAME, "sma_50": _SAME, "range_high": _SAME, "range_low": _SAME, "midpoint": _SAME,
+    "hourly_return": "Same meaning; ROCP is the fractional change, so no percent conversion is needed.",
+    "four_hour_drift": "Same meaning; ROCP over 4 hours.",
+    "highest_high_20": "The 20-hour high that the pullback ratio was built on. With `latest_close` it gives the "
+                       "same information without a hand-written ratio.",
+    "pullback_from_high": "No library function gives this ratio, and a hand-written one is an in-house formula (D118). "
+                          "Its ingredients are supplied instead.",
+    "pullback_depth": "Same as pullback_from_high, of which it was an alias.",
+    "midpoint_distance": "No library function gives this ratio (D118). Its ingredients are supplied instead.",
+}
+
+
+def render_hourly_table() -> str:
+    rows = [f"| Field | {FEATURE_VERSION_V2} (hand-written) | {FEATURE_VERSION} | Why |", "|---|---|---|---|"]
+    for name in [*_FEATURES, *_RETIRED]:
+        if name in _FEATURES:
+            feature = _FEATURES[name]
+            parameters = ", ".join(f"{key} {value}" for key, value in feature.parameters.items())
+            new = (f"TA-Lib `{get_indicator(feature.indicator).talib_function}` ({parameters}) over "
+                   f"{feature.lookback} completed hourly candles")
+        else:
+            new = f"**retired**: read {_RETIRED[name]}"
+        rows.append(f"| `{name}` | {_V2_WORDS[name]} | {_cell(new)} | {_V3_WHY[name]} |")
+    return "\n".join(rows)
+
+
 def _result(rule: dict) -> str:
     mode = rule["mode"]
     if mode == "not_covered":
@@ -104,6 +163,8 @@ def render_blocks() -> dict[str, str]:
         "menu-table": render_menu_table(),
         "settling-table": render_settling_table(),
         "differences-table": render_differences_table(),
+        "history-table": render_history_table(),
+        "hourly-table": render_hourly_table(),
     }
 
 
