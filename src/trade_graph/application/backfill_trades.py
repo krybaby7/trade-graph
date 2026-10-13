@@ -54,7 +54,9 @@ from trade_graph.contracts.candles import Candle, RunRecord, from_unix, to_unix
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
-BACKFILL_VERSION = "trades-backfill-v3"  # v3: an id gap before the slot at a finished range's end survives an extension
+# v3: an id gap before the slot at a finished range's end survives an extension, and a candle that a slow clock held
+# back stays undecided
+BACKFILL_VERSION = "trades-backfill-v3"
 BACKFILL_INTERVALS = (1, 5, 15, 60)
 BACKFILL_EVIDENCE_LABELS = ("live_public", "live_public_smoke", "recorded_public_fixture", "synthetic_fixture")
 MAX_REQUESTS_LIMIT = 100_000

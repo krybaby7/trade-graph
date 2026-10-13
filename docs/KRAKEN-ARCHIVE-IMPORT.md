@@ -191,7 +191,7 @@ modules and everything they import, fail if the importer touches `socket`, `http
 `trade-graph import-kraken-archive` prints one JSON document. Top level: `run_id`, `status`, `archive` (name, size,
 SHA-256, format, kind, quarter, members, USD pairs found), `scope`, `imported_at_utc`, `totals`
 (rows read, accepted, rejected, dropped, inserted, duplicates, revisions, rows outside the quarter), `rejected_by_reason`,
-`rejected_share`, `skipped` (counts of non-USD files, currency-pair files, files not requested, intervals not selected,
+`rejected_share`, `retraction_check`, `skipped` (counts of non-USD files, currency-pair files, files not requested, intervals not selected,
 unrecognised member names), `same_file_seen_in_runs`, `expected_pairs`, `assumptions`, `survivorship_notice` and `series`.
 
 Each entry in `series` (one per pair and interval) has rows read, accepted, rejected with reasons, dropped, `inserted`,
@@ -201,8 +201,8 @@ largest, in time order) with `missing_ranges_total` giving the real count. A mis
 the report cannot tell a quiet interval from a row absent from the file and does not guess.
 
 `status`: `ok` when every in-scope row was stored or was an identical duplicate; `partial` when some rows were rejected
-or dropped, or when the store already holds archive candles inside a file's first-to-last span that the file does not
-contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
+or dropped, or when the store already holds archive candles inside a file's first-to-last span, or elsewhere in its
+known quarter, that the file does not contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
 reason and the recorded run), 2 for a usage error (a bad option, a web address instead of a file, the financial
 database, or a candle folder or file that is not private).
 
@@ -216,10 +216,18 @@ readable, and `point_in_time` reads at an earlier time still see the earlier rev
 **A row a corrected file no longer has is not retracted.** The store is append-only, so importing a corrected quarter
 that drops a row inserts nothing for it and leaves the old candle in place. The report's `coverage` is the store's, not
 the file's, so it still shows that slot present. To keep that from passing as clean, each series reports
-`stored_slots_not_in_file`: the number of archive candles already stored between the file's first and last candle that
-the file does not contain, and a non-zero value makes the run `partial`. The report does not list which slots; compare
+`stored_slots_not_in_file`: the number of archive candles already stored that the file does not contain, between the
+file's first and last candle and, when the file's quarter is known, anywhere else in that quarter (so rows trimmed from
+either end are counted too). A non-zero value makes the run `partial`. The report does not list which slots; compare
 the two sources with `reconcile-candles` or read the stored series. Resolving it (a new store file, or accepting the old
 candle) is a deliberate step, not something the importer decides.
+
+The report says which check ran in `retraction_check`: `quarter` (the quarter came from the file name or `--quarter`)
+or `file_span`. **Limit:** without a known quarter, as for the complete archive or a file whose name lacks one, there
+is nothing that says where the file should have begun or ended, so rows trimmed from its two ends cannot be seen; name
+a corrected quarterly file so that its name carries the quarter (a rename such as `b.zip` loses it) or pass `--quarter`.
+The check cannot simply cover the whole stored series, because a Q3 file imported after a Q2 file would then be flagged
+for the Q2 candles. Candles of the file that were dropped as unfinished are in the file and are not counted as missing.
 
 ### Missing pairs and survivorship
 

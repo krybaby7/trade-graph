@@ -420,13 +420,34 @@ def _iso(seconds: int | None) -> str | None:
     return None if seconds is None else utc_iso(from_unix(seconds))
 
 
+def _stored_beyond_the_file(store: CandleStore, pick: _Pick, scan: _SeriesScan,
+                            bounds: tuple[int, int] | None) -> int:
+    """Archive candles stored in this quarter before the file's first row or after its last: the file lacks them.
+
+    Without a known quarter nothing marks where the file should have begun or ended, so nothing can be counted.
+    """
+    if bounds is None:
+        return 0
+    step = pick.interval * 60
+    low, high = -(-bounds[0] // step) * step, bounds[1] // step * step
+    if scan.first_open is None or scan.last_open is None:
+        windows = [(low, high)]
+    else:
+        windows = [(low, scan.first_open), (scan.last_open + step, high)]
+    return sum(store.coverage(pick.symbol, pick.interval, ARCHIVE_SOURCE, start_open=from_unix(first),
+                              end_open=from_unix(stop), mode="replay").present
+               for first, stop in windows if first < stop)
+
+
 def _series_documents(store: CandleStore, picks: list[_Pick], scans: dict[tuple[str, int], _SeriesScan],
-                      written: dict[tuple[str, int], _SeriesWrite]) -> list[dict[str, Any]]:
+                      written: dict[tuple[str, int], _SeriesWrite], bounds: tuple[int, int] | None,
+                      ) -> list[dict[str, Any]]:
     documents = []
     for pick in picks:
         scan, outcome = scans[pick.key], written[pick.key]
         coverage = None if outcome.first_open is None else _coverage(
             store, pick.symbol, pick.interval, outcome.first_open, outcome.last_open or outcome.first_open)
+        inside = 0 if coverage is None else coverage["present_slots"] - outcome.kept
         documents.append({
             "symbol": pick.symbol, "source_pair": pick.member.pair_code, "interval_minutes": pick.interval,
             "member": pick.member.name, "rows_read": scan.rows_read, "accepted": scan.accepted,
@@ -434,9 +455,10 @@ def _series_documents(store: CandleStore, picks: list[_Pick], scans: dict[tuple[
             "dropped_unfinished": outcome.dropped, "inserted": outcome.inserted, "duplicates": outcome.duplicates,
             "revisions": outcome.revisions, "rows_outside_quarter": scan.outside_quarter,
             "first_open_utc": _iso(outcome.first_open), "last_open_utc": _iso(outcome.last_open),
-            # Candles that an earlier import stored inside this file's span and this file does not contain. The
-            # store is append-only, so a corrected file that dropped a row cannot take its candle back.
-            "stored_slots_not_in_file": 0 if coverage is None else coverage["present_slots"] - outcome.kept,
+            # Candles that an earlier import stored inside this file's span, or elsewhere in its quarter, and this
+            # file does not contain. The store is append-only, so a corrected file that dropped a row cannot take
+            # its candle back.
+            "stored_slots_not_in_file": inside + _stored_beyond_the_file(store, pick, scan, bounds),
             "coverage": coverage,
         })
     return documents
@@ -522,6 +544,8 @@ def _finish(store: CandleStore, clock: Clock, run_id: int, status: str, report: 
 def _run(store: CandleStore, clock: Clock, path: Path, fingerprint: ArchiveFingerprint, scope: ImportScope,
          limits: ArchiveLimits, expected: frozenset[str] | None, quarter: str | None, run_id: int,
          report: dict[str, Any]) -> str:
+    bounds = _quarter_bounds(quarter)
+    report["retraction_check"] = "file_span" if bounds is None else "quarter"
     with open_archive(path, limits) as archive:
         chosen = _select(archive.members, scope)
         report["archive"]["members_total"] = len(archive.members)
@@ -539,7 +563,7 @@ def _run(store: CandleStore, clock: Clock, path: Path, fingerprint: ArchiveFinge
         if sum(pick.member.size for pick in chosen.picks) > limits.max_total_bytes:
             raise ArchiveRejected("total_size_limit", "the in-scope files declare more uncompressed data than the "
                                   "limit allows (raise --max-uncompressed-gb if intended)")
-        scans = _scan(archive, chosen.picks, _quarter_bounds(quarter))
+        scans = _scan(archive, chosen.picks, bounds)
         totals = _totals(scans, None)
         report["totals"] = totals
         report["rejected_by_reason"] = dict(sorted(sum((scan.rejected for scan in scans.values()), Counter()).items()))
@@ -556,7 +580,7 @@ def _run(store: CandleStore, clock: Clock, path: Path, fingerprint: ArchiveFinge
         _require_unchanged(path, fingerprint)
         written = _write(store, run_id, archive, chosen.picks, scans, imported_at)
     _require_unchanged(path, fingerprint)
-    report["series"] = _series_documents(store, chosen.picks, scans, written)
+    report["series"] = _series_documents(store, chosen.picks, scans, written, bounds)
     report["totals"] = _totals(scans, written, sum(item["stored_slots_not_in_file"] for item in report["series"]))
     totals = report["totals"]
     flagged = totals["rejected"] or totals["dropped_unfinished"] or totals["stored_slots_not_in_file"]

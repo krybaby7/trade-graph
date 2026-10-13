@@ -425,6 +425,59 @@ def test_a_corrected_file_that_drops_a_row_does_not_look_clean(store, tmp_path) 
     assert store.runs()[-1].status == "partial" and store.runs()[-1].report["status"] == "partial"
 
 
+CORRECTED = "Kraken_OHLCVT_2026Q3_corrected.zip"  # a new name that still tells the quarter
+
+
+def test_a_corrected_file_that_drops_rows_at_its_edges_does_not_look_clean(store, tmp_path) -> None:
+    """Rows missing before its first and after its last candle lie in the quarter, so the quarter is what counts."""
+    rows = _quarter_hour_rows(200)  # the first 50 hours of the 2026Q3 quarter
+    first = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))
+    assert first.status == "ok" and first.report["retraction_check"] == "quarter"
+    corrected = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, CORRECTED), at=LATER)
+    series = corrected.report["series"][0]
+    assert corrected.status == "partial" and series["stored_slots_not_in_file"] == 10  # five at each end
+    assert corrected.report["totals"]["stored_slots_not_in_file"] == 10
+    assert series["coverage"]["present_slots"] == 190 and series["accepted"] == series["duplicates"] == 190
+
+
+def test_rows_dropped_from_the_middle_and_both_ends_are_all_counted(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(200)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))
+    corrected = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[3:100] + rows[104:197])}, CORRECTED),
+                        at=LATER)
+    assert corrected.report["series"][0]["stored_slots_not_in_file"] == 3 + 4 + 3
+
+
+def test_the_next_quarters_file_is_not_flagged_for_the_earlier_quarters_candles(store, tmp_path) -> None:
+    second_quarter = FIRST_OPEN - 91 * DAY  # 2026-04-01
+    older = [csv_line(second_quarter + i * 900, "100", "102", "98", "101", "5", 3) for i in range(100)]
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(older)}, "Kraken_OHLCVT_2026Q2.zip"))
+    newer = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(_quarter_hour_rows(100))}), at=LATER)
+    assert newer.status == "ok" and newer.report["totals"]["stored_slots_not_in_file"] == 0
+    assert newer.report["retraction_check"] == "quarter"
+
+
+def test_without_a_known_quarter_only_the_files_own_span_is_checked_and_the_report_says_so(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(200)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}, "Kraken_OHLCVT_Full.zip"))
+    trimmed = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, "Kraken_OHLCVT_Full_b.zip"),
+                      at=LATER)
+    assert trimmed.report["archive"]["quarter"] is None and trimmed.report["retraction_check"] == "file_span"
+    assert trimmed.report["totals"]["stored_slots_not_in_file"] == 0  # the limit: edge trims cannot be seen
+    named = _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, "c.zip")
+    given = _import(store, named, at=LATER, quarter="2026Q3")  # the caller supplies the quarter the name lacks
+    assert given.report["retraction_check"] == "quarter" and given.report["totals"]["stored_slots_not_in_file"] == 10
+
+
+def test_rows_dropped_as_unfinished_are_in_the_file_and_not_counted_as_missing_from_it(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": csv_text(_quarter_hour_rows(20))})
+    _import(store, path)
+    early = _import(store, path, at=datetime.fromtimestamp(FIRST_OPEN - 3600, UTC))  # nothing has closed yet
+    series = early.report["series"][0]
+    assert series["dropped_unfinished"] == 20 and series["inserted"] == 0
+    assert series["stored_slots_not_in_file"] == 0
+
+
 def test_files_that_only_touch_or_overlap_the_stored_range_are_not_flagged(store, tmp_path) -> None:
     rows = _quarter_hour_rows(20)
     _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[:10])}))
