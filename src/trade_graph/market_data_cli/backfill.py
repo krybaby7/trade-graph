@@ -31,8 +31,8 @@ from trade_graph.application.backfill_trades import (
 from trade_graph.application.import_candle_archive import normalise_pair_names
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
-from trade_graph.market_data_cli._common import add_market_database_option, open_store
-from trade_graph.market_data_cli._guard import refuse_financial_database
+from trade_graph.market_data_cli._common import add_market_database_option
+from trade_graph.market_data_cli._guard import open_store_or_exit, refuse_financial_database
 
 COMMAND = "backfill-kraken-trades"
 DEFAULT_MAX_REQUESTS = 100
@@ -147,10 +147,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
     refuse_financial_database(args.market_database, parser)
     label = "live_public_smoke" if args.smoke else "live_public"
     seconds = int(Decimal(budget) / LimiterSettings().decay_per_second)
+    clock = SystemClock()
+    database, store = open_store_or_exit(args.market_database, parser)
     print(f"{COMMAND}: up to {budget} public requests, about {seconds // 60} minutes at Kraken's request rate; "
           "Ctrl-C stops safely and the next run resumes.", file=sys.stderr)
-    clock = SystemClock()
-    database, store = open_store(args.market_database)
     try:
         limiter = RequestLimiter(clock, make_sleeper(), LimiterSettings())
         client = KrakenTrades(make_transport(), clock)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import signal
 import socket
 from datetime import UTC, datetime
@@ -178,6 +179,39 @@ def test_the_financial_database_is_refused(tmp_path, monkeypatch, clock) -> None
     with pytest.raises(SystemExit) as stopped:
         cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(other)])
     assert stopped.value.code == 2
+
+
+def test_a_candle_folder_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys) -> None:
+    """The default runtime/ folder often has open permissions; the owner must not meet a traceback."""
+    folder = tmp_path / "open folder"
+    folder.mkdir()
+    folder.chmod(0o755)
+    database = folder / "market_data.sqlite"
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(folder))}" in message
+    assert not database.exists() and folder.stat().st_mode & 0o777 == 0o755
+
+
+def test_a_candle_file_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys) -> None:
+    database = database_path(tmp_path)
+    MarketDataDatabase(database).close()
+    database.chmod(0o644)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 600 {shlex.quote(str(database))}" in message
+    assert database.stat().st_mode & 0o777 == 0o644  # the command only explains; it never changes permissions
+
+
+def test_a_folder_given_as_the_candle_file_is_a_usage_error_without_a_permission_hint(tmp_path, capsys) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(tmp_path)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2 and "regular file" in message and "chmod" not in message
 
 
 def test_a_store_with_no_gap_to_fill_exits_one_and_says_why(tmp_path, capsys, monkeypatch, clock) -> None:
@@ -362,6 +396,18 @@ def test_reconcile_bad_arguments_are_usage_errors(tmp_path, arguments) -> None:
     with pytest.raises(SystemExit) as stopped:
         cli.main(["reconcile-candles", "--market-database", str(path), *arguments])
     assert stopped.value.code == 2
+
+
+def test_reconcile_on_a_candle_folder_that_is_not_private_names_the_fix_and_changes_nothing(tmp_path, capsys) -> None:
+    path = database_path(tmp_path)
+    seed_overlap(path)
+    path.parent.chmod(0o755)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["reconcile-candles", "--pair", "BTC/USD", "--market-database", str(path)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(path.parent))}" in message
+    assert path.parent.stat().st_mode & 0o777 == 0o755
 
 
 def test_reconcile_with_no_candles_at_all_says_so(tmp_path) -> None:

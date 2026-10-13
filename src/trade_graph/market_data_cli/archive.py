@@ -11,9 +11,7 @@ import argparse
 import contextlib
 import json
 import re
-import shlex
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 from trade_graph.adapters.market.kraken_archive import GIB, ArchiveLimits, ArchiveRejected
 from trade_graph.application.candle_store import CandleStore
@@ -26,8 +24,8 @@ from trade_graph.application.import_candle_archive import (
 )
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
-from trade_graph.market_data_cli._common import add_market_database_option, open_store
-from trade_graph.market_data_cli._guard import refuse_financial_database
+from trade_graph.market_data_cli._common import add_market_database_option
+from trade_graph.market_data_cli._guard import open_store_or_exit, refuse_financial_database
 
 COMMAND = "import-kraken-archive"
 MAX_UNCOMPRESSED_GB = Decimal(1024)
@@ -84,16 +82,6 @@ def _catalog_pairs(store: CandleStore, clock: SystemClock) -> frozenset[str] | N
     return frozenset(symbols) or None
 
 
-def _unusable_database(path: str, error: ValidationFailure) -> str:
-    """The store refuses open permissions, and the default runtime/ folder often has them: say how to fix it."""
-    message = f"cannot use the candle-history file {path}: {error}"
-    if "must be private" not in str(error):
-        return message
-    folder = shlex.quote(str(Path(path).parent))
-    return (f"{message}. Candle history is kept private; nothing was changed. Fix it with: chmod 700 {folder}"
-            f" and, if the file already exists, chmod 600 {shlex.quote(path)}")
-
-
 def _emit(document: dict, code: int) -> int:
     print(json.dumps(document, sort_keys=True))
     return code
@@ -113,10 +101,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
         parser.error(f"--quarter/--expected-pairs: {error}")
     refuse_financial_database(args.market_database, parser)
     clock = SystemClock()
-    try:
-        database, store = open_store(args.market_database)
-    except ValidationFailure as error:
-        parser.error(_unusable_database(args.market_database, error))
+    database, store = open_store_or_exit(args.market_database, parser)
     try:
         if expected is None:
             expected = _catalog_pairs(store, clock)

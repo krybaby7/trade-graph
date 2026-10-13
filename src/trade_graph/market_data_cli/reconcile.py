@@ -22,8 +22,8 @@ from trade_graph.application.reconcile_candles import (
 from trade_graph.contracts.candles import CANDLE_INTERVALS
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
-from trade_graph.market_data_cli._common import add_market_database_option, open_store
-from trade_graph.market_data_cli._guard import require_existing_market_database
+from trade_graph.market_data_cli._common import add_market_database_option
+from trade_graph.market_data_cli._guard import open_store_or_exit, require_existing_market_database
 
 COMMAND = "reconcile-candles"
 
@@ -79,7 +79,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
         parser.error(f"--count must be 1 to {MAX_RECONCILE_SLOTS} and --worst 1 to {MAX_WORST}")
     end, as_of = _moment(args.end, "--end", parser), _moment(args.as_of, "--as-of", parser)
     require_existing_market_database(args.market_database, parser)
-    database, store = open_store(args.market_database)
+    database, store = open_store_or_exit(args.market_database, parser)
     try:
         if end is None:
             end = _newest_close(store, symbol, args.interval, sources)

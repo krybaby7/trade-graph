@@ -219,7 +219,9 @@ uv run --frozen trade-graph reconcile-candles --pair BTC/USD --interval 15 --cou
 ```
 
 Both take `--market-database` (default `runtime/market_data.sqlite`), refuse the financial database
-(`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report.
+(`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report. The store
+also refuses a folder or file that other users can open (the default `runtime/` often is): that is a usage error
+(exit 2) which names the `chmod 700` / `chmod 600` fix and changes nothing, before any request is made.
 `backfill-kraken-trades` exits 0 when the run was recorded (status `ok` or `partial`), 1 when nothing could be done
 (`failed`), 2 for a usage error, 130 after Ctrl-C and 143 after SIGTERM. A run is `failed` when no range could be planned, or when a pair
 stopped for a failure reason (the table above: everything except `end_reached`, `max_requests`, `stream_exhausted`,
