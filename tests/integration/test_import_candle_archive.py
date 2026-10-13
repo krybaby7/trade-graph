@@ -169,6 +169,35 @@ def test_rows_outside_the_stated_quarter_are_counted_not_hidden(store, tmp_path)
     assert result.report["series"][0]["rows_outside_quarter"] == 4
 
 
+Q3_END = FIRST_OPEN + 92 * DAY  # 2026-10-01T00:00:00Z, where the third quarter ends and the fourth begins
+Q4_END = Q3_END + 92 * DAY  # 2027-01-01T00:00:00Z
+
+
+@pytest.mark.parametrize(("file_name", "start", "end"), [
+    ("Kraken_OHLCVT_2026Q3.zip", FIRST_OPEN, Q3_END), ("Kraken_OHLCVT_2026Q4.zip", Q3_END, Q4_END)])
+def test_the_quarter_starts_at_its_first_slot_and_ends_before_the_next_quarters_first_slot(
+        store, tmp_path, file_name, start, end) -> None:
+    """Fourth-quarter files end in the next year; a row exactly at the end already belongs to the next quarter."""
+    opens = [start - 900, start, end - 900, end, end + 900]
+    lines = [csv_line(opened, "100", "102", "98", "101", "5", 3) for opened in opens]
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(lines)}, file_name),
+                     at=datetime(2027, 2, 1, tzinfo=UTC))
+    assert result.report["series"][0]["rows_outside_quarter"] == 3  # one before the start, two at or after the end
+    assert result.report["totals"]["rows_outside_quarter"] == 3 and result.report["totals"]["accepted"] == 5
+
+
+def test_a_different_file_does_not_list_the_runs_of_other_files(store, tmp_path) -> None:
+    one = _zip(tmp_path, {"XBTUSD_15.csv": _rows(4)}, "one.zip")
+    other = _zip(tmp_path, {"XBTUSD_15.csv": _rows(5)}, "other.zip")
+    first = _import(store, one)
+    second = _import(store, other, at=LATER)
+    assert first.report["same_file_seen_in_runs"] == [] and second.report["same_file_seen_in_runs"] == []
+    third = _import(store, one, at=LATER + timedelta(days=1))
+    fourth = _import(store, other, at=LATER + timedelta(days=2))
+    assert third.report["same_file_seen_in_runs"] == [first.run_id]
+    assert fourth.report["same_file_seen_in_runs"] == [second.run_id]
+
+
 def test_a_directory_of_csv_files_imports_like_a_zip(store, tmp_path) -> None:
     folder = write_directory(tmp_path / "csv_dir", {"XBTUSD_15.csv": _rows(6), "MANIFEST.json": "{}"})
     result = _import(store, folder)

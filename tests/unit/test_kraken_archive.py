@@ -17,6 +17,7 @@ from hypothesis import strategies as st
 from tests.archive_support import FIRST_OPEN, csv_line, csv_text, synthetic_rows, write_directory, write_zip
 
 from trade_graph.adapters.market.kraken_archive import (
+    CHUNK_BYTES,
     REJECTION_REASONS,
     ArchiveLimits,
     ArchiveMember,
@@ -199,6 +200,31 @@ def test_an_overlong_line_refuses_the_file() -> None:
     assert refused.value.reason == "line_too_long"
 
 
+def test_a_member_with_no_newline_is_refused_before_it_is_buffered() -> None:
+    """A hostile member without line breaks must not be collected in memory up to the per-member limit."""
+    consumed: list[int] = []
+
+    class _Counting(io.BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            chunk = super().read(size)
+            consumed.append(len(chunk))
+            return chunk
+
+    class _Source:
+        limits = ArchiveLimits()
+
+        def open(self, member):
+            return _Counting(b"1" * (4 * CHUNK_BYTES))
+
+    member = ArchiveMember(name="XBTUSD_15.csv", size=4 * CHUNK_BYTES, compressed_size=4 * CHUNK_BYTES,
+                           pair_code="XBTUSD", interval_minutes=15)
+    reader = MemberReader(_Source(), member, ReadBudget(_Source.limits))
+    with pytest.raises(ArchiveRejected) as refused:
+        list(reader)
+    assert refused.value.reason == "line_too_long"
+    assert sum(consumed) <= CHUNK_BYTES  # stopped after the first chunk, not after the whole member
+
+
 def test_the_row_limit_refuses_the_file() -> None:
     reader = _reader(csv_text(synthetic_rows(FIRST_OPEN, 10, 15)), limits=ArchiveLimits(max_rows=9))
     with pytest.raises(ArchiveRejected) as refused:
@@ -288,6 +314,15 @@ def test_too_many_members_are_refused(tmp_path: Path) -> None:
     with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
         pass
     assert refused.value.reason == "member_limit"
+
+
+def test_too_many_files_in_a_directory_are_refused_and_exactly_the_limit_is_accepted(tmp_path: Path) -> None:
+    path = write_directory(tmp_path / "many", {f"A{i}USD_15.csv": "" for i in range(6)})
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
+        pass
+    assert refused.value.reason == "member_limit"
+    with open_archive(path, ArchiveLimits(max_members=6)) as archive:
+        assert len(archive.members) == 6
 
 
 def test_a_member_declared_larger_than_the_limit_is_refused_before_reading(tmp_path: Path) -> None:
