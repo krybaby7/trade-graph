@@ -12,9 +12,12 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from tests.archive_support import FIRST_OPEN, csv_line, csv_text, synthetic_rows, write_directory, write_zip
 
 from trade_graph.adapters.market.kraken_archive import (
+    REJECTION_REASONS,
     ArchiveLimits,
     ArchiveMember,
     ArchiveRejected,
@@ -442,3 +445,36 @@ def test_a_directory_fingerprint_follows_its_content(tmp_path: Path) -> None:
     assert fingerprint_archive(folder).sha256 == first.sha256
     (folder / "XBTUSD_15.csv").write_text(csv_text(synthetic_rows(FIRST_OPEN, 4, 15)))
     assert fingerprint_archive(folder).sha256 != first.sha256
+
+
+# --- properties -----------------------------------------------------------------------------------------------------
+
+
+@settings(max_examples=300, deadline=None)
+@given(data=st.binary(max_size=90))
+def test_arbitrary_bytes_never_raise_they_are_accepted_or_named(data: bytes) -> None:
+    row = parse_row(data, 900)
+    assert not isinstance(row, str) or row in REJECTION_REASONS
+
+
+_MANTISSA = st.integers(min_value=1, max_value=10**20 - 1)
+_EXPONENT = st.integers(min_value=-60, max_value=60)
+
+
+@settings(max_examples=300, deadline=None)
+@given(values=st.lists(st.tuples(_MANTISSA, _EXPONENT), min_size=4, max_size=4), volume=st.tuples(_MANTISSA, _EXPONENT),
+       trades=st.integers(min_value=0, max_value=10**12), slot=st.integers(min_value=0, max_value=10**6),
+       flip=st.booleans())
+def test_every_row_the_reader_accepts_builds_a_candle_exactly(values, volume, trades, slot, flip) -> None:
+    ordered = sorted(values, key=lambda pair: Decimal(pair[0]).scaleb(pair[1]))
+    low, middle_a, middle_b, high = ordered
+    open_, close = (middle_b, middle_a) if flip else (middle_a, middle_b)
+    text = lambda pair: f"{pair[0]}e{pair[1]}"  # noqa: E731
+    fields = [str(FIRST_OPEN + slot * 900), text(open_), text(high), text(low), text(close), text(volume), str(trades)]
+    row = parse_row(",".join(fields).encode(), 900)
+    assert not isinstance(row, str), row
+    assert row.open == Decimal(fields[1]) and row.volume == Decimal(fields[5]) and row.trades == trades
+    Candle(symbol="BTC/USD", source_pair="XBTUSD", interval_minutes=15, open_time_utc=from_unix(row.open_unix),
+           close_time_utc=from_unix(row.open_unix + 900), available_at_utc=datetime(2100, 1, 1, tzinfo=UTC),
+           open=row.open, high=row.high, low=row.low, close=row.close, volume=row.volume, trade_count=row.trades,
+           source="kraken_ohlcvt_archive")
