@@ -43,7 +43,11 @@ _PAIR_ALIASES = {"XBT": "BTC", "XDG": "DOGE"}
 # National currencies that Kraken also quotes against the dollar (EURUSD, GBPUSD, ...). They are not coins, so they are
 # never stored as one. Stablecoins are deliberately not listed: excluding them (D131) is the scanner's decision.
 FIAT_BASES = frozenset({"AED", "AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"})
+# Kraken's older REST ids: X before a crypto asset (XXBTZUSD), Z before a currency (ZEURZUSD), and Tether's one odd id.
+# Only these exact shapes are unwrapped, because a coin such as XTZ also ends its pair code in 'ZUSD'.
 _LEGACY_USD = re.compile(r"X([A-Z]{3})ZUSD")
+_LEGACY_CURRENCY_USD = re.compile(r"Z([A-Z]{3})ZUSD")
+_LEGACY_TETHER = "USDTZUSD"
 _BASE = re.compile(r"[A-Z0-9]{1,16}")
 _ALLOWED_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 
@@ -137,8 +141,15 @@ def symbol_for_pair_code(code: str) -> str | None:
     Kraken's AssetPairs catalog; this function can later be replaced by a catalog lookup without other changes.
     """
     legacy = _LEGACY_USD.fullmatch(code)
+    currency = _LEGACY_CURRENCY_USD.fullmatch(code)
     if legacy is not None:
         base = legacy.group(1)
+    elif currency is not None:
+        base = currency.group(1)
+        if base not in FIAT_BASES:  # a Z-wrapped id is only ever a currency; anything else is not understood
+            return None
+    elif code == _LEGACY_TETHER:
+        base = "USDT"
     elif code.endswith("USD") and len(code) > 3:
         base = code[:-3]
     else:

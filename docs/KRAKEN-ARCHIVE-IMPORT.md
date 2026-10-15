@@ -114,7 +114,10 @@ report lists these assumptions every time. Treat them as open until a real file 
 
 `symbol_for_pair_code` is the one place pair names are read: `XBTUSD` becomes `BTC/USD`, `XDGUSD` becomes `DOGE/USD`,
 legacy `XXBTZUSD` becomes `BTC/USD`, everything else ending in `USD` keeps its base (`1INCHUSD` becomes
-`1INCH/USD`; `EURUSD` becomes `EUR/USD`, which the selection step then skips as a currency pair). The venue pair
+`1INCH/USD`; `EURUSD` becomes `EUR/USD`, which the selection step then skips as a currency pair). Kraken's older
+REST ids are read the same way: `ZEURZUSD` is the currency pair `EUR/USD` (skipped, counted under `fiat_files`), `USDTZUSD`
+is `USDT/USD`, and any other Z-wrapped id is not understood and is counted as a non-USD file. `EURTUSD` is a coin
+(Tether's euro token), not a currency. The venue pair
 code is kept as `source_pair` (a stored series can never change it). The collector
 stream reads names from Kraken's AssetPairs catalog; this function is isolated so it can be replaced by a catalog
 lookup. Two files mapping to one series (for example `XBTUSD_15.csv` and `XXBTZUSD_15.csv`) refuse the file

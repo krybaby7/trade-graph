@@ -113,7 +113,17 @@ def test_currency_pairs_in_the_archive_are_skipped_counted_and_never_stored_as_c
     assert result.report["expected_pairs"]["missing"] == ["ETH/USD"]
 
 
-@pytest.mark.parametrize("name", ["EUR/USD", "GBPUSD", "AUD/USD"])
+def test_legacy_ids_of_currency_pairs_are_skipped_and_a_legacy_stablecoin_id_keeps_its_name(store, tmp_path) -> None:
+    """An archive that uses Kraken's older REST ids must not store ZEURZ/USD or USDTZ/USD as if they were coins."""
+    members = {"XXBTZUSD_15.csv": _rows(4), "ZEURZUSD_15.csv": _rows(4, seed=2), "ZGBPZUSD_15.csv": _rows(4, seed=3),
+               "USDTZUSD_15.csv": _rows(4, seed=4), "ZXXXZUSD_15.csv": _rows(4, seed=5)}
+    result = _import(store, _zip(tmp_path, members))
+    assert {s.symbol for s in store.series()} == {"BTC/USD", "USDT/USD"}
+    assert result.report["skipped"]["fiat_files"] == 2 and result.report["skipped"]["non_usd_files"] == 1
+    assert result.report["archive"]["usd_pairs_found"] == 2
+
+
+@pytest.mark.parametrize("name", ["EUR/USD", "GBPUSD", "AUD/USD", "ZEURZUSD"])
 def test_a_currency_pair_cannot_be_named_as_a_coin(name) -> None:
     with pytest.raises(ValidationFailure, match="currency"):
         normalise_pair_names([name])

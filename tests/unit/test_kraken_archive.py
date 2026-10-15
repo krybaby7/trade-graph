@@ -51,12 +51,16 @@ GOOD = f"{FIRST_OPEN},100.10,101,99.5,100.75,12.50000000,7"
 @pytest.mark.parametrize(("code", "symbol"), [
     ("XBTUSD", "BTC/USD"), ("XDGUSD", "DOGE/USD"), ("ETHUSD", "ETH/USD"), ("1INCHUSD", "1INCH/USD"),
     ("SUSD", "S/USD"), ("XXBTZUSD", "BTC/USD"), ("XETHZUSD", "ETH/USD"), ("USDTUSD", "USDT/USD"),
+    ("USDTZUSD", "USDT/USD"), ("XTZUSD", "XTZ/USD"), ("XXDGZUSD", "DOGE/USD"), ("EURTUSD", "EURT/USD"),
 ])
 def test_usd_pair_codes_map_to_symbols(code: str, symbol: str) -> None:
     assert symbol_for_pair_code(code) == symbol
 
 
-@pytest.mark.parametrize("code", ["ADAEUR", "XBTUSDT", "ETHXBT", "XBTEUR", "xbtusd", "", "USD", "XBTUSD ", "XBT/USD"])
+@pytest.mark.parametrize("code", [
+    "ADAEUR", "XBTUSDT", "ETHXBT", "XBTEUR", "xbtusd", "", "USD", "XBTUSD ", "XBT/USD",
+    "ZXXXZUSD", "ZEURZCAD", "ZUSDZCAD", "ZEURZ", "ZEURZUSDT",
+])
 def test_other_codes_are_not_usd_pairs(code: str) -> None:
     assert symbol_for_pair_code(code) is None
 
@@ -65,6 +69,13 @@ def test_other_codes_are_not_usd_pairs(code: str) -> None:
 def test_currency_pairs_map_to_symbols_but_are_marked_as_not_coins(code: str) -> None:
     symbol = symbol_for_pair_code(code)
     assert symbol == f"{code[:3]}/USD" and is_fiat_symbol(symbol)
+
+
+@pytest.mark.parametrize("code", ["ZEURZUSD", "ZGBPZUSD", "ZAUDZUSD", "ZCADZUSD", "ZCHFZUSD", "ZJPYZUSD", "ZNZDZUSD"])
+def test_legacy_currency_pair_ids_are_also_marked_as_not_coins(code: str) -> None:
+    """Kraken's older REST ids put a Z before each currency; they must not be stored as a coin named like 'ZEURZ'."""
+    symbol = symbol_for_pair_code(code)
+    assert symbol == f"{code[1:4]}/USD" and is_fiat_symbol(symbol)
 
 
 @pytest.mark.parametrize("symbol", ["BTC/USD", "DOGE/USD", "ETH/USD", "USDT/USD", "USDC/USD", "EURT/USD", "SEUR/USD"])
