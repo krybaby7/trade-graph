@@ -48,6 +48,7 @@ MAXIMUM_COVERAGE_RANGES = 1000
 FINANCIAL_DATABASE_NAME = "trade_graph.sqlite"
 FINANCIAL_DEFAULT_PATH = "runtime/trade_graph.sqlite"
 FINANCIAL_TABLES = frozenset({"schema_migrations", "portfolios", "ledger_events"})
+CANDLE_MARKER_TABLE = "market_data_migrations"
 _OPTION_NAMES = {"intervals": "--intervals", "pairs": "--pairs", "one_minute_pairs": "--one-minute-pairs",
                  "max_requests": "--max-requests"}
 
@@ -116,25 +117,48 @@ def _emit(report: dict, code: int) -> int:
 # --- the financial database is never touched ------------------------------------------------------------------------
 
 
+def _main_file_tables(path: Path) -> set[str]:
+    """Table names in the main file alone. immutable: no lock, no -shm file, no write of any kind."""
+    connection = sqlite3.connect(f"file:{quote(str(path.resolve()))}?mode=ro&immutable=1", uri=True)
+    try:
+        return {item[0] for item in connection.execute("SELECT name FROM sqlite_master")}
+    finally:
+        connection.close()
+
+
+def _log_in_use(path: Path) -> bool:
+    log = path.with_name(path.name + "-wal")
+    return log.is_file() and log.stat().st_size > 0
+
+
 def financial_database_refusal(path: Path) -> str | None:
     """Why this path may not be used as the candle database, or None. Nothing is created or changed."""
     if path.name == FINANCIAL_DATABASE_NAME:
         return "the file name is the financial database's"
     try:
-        if path.resolve() == Path(FINANCIAL_DEFAULT_PATH).resolve():
+        default = Path(FINANCIAL_DEFAULT_PATH)
+        if path.resolve() == default.resolve():
             return "the path is the default financial database"
+        if path.is_file() and default.is_file() and path.samefile(default):
+            return "the file is the default financial database under another name"
         if path.is_file():
-            # immutable: no lock, no -shm file, no write of any kind, even for a database in WAL mode
-            connection = sqlite3.connect(f"file:{quote(str(path.resolve()))}?mode=ro&immutable=1", uri=True)
-            try:
-                names = {item[0] for item in connection.execute("SELECT name FROM sqlite_master")}
-            finally:
-                connection.close()
+            names = _main_file_tables(path)
             if names & FINANCIAL_TABLES:
                 return "the file holds the financial database's tables"
+            # A database in use keeps its newest pages in the -wal log, which the read above cannot see. A log in
+            # use beside a main file that shows no candle tables yet could be a live financial database.
+            if CANDLE_MARKER_TABLE not in names and _log_in_use(path):
+                return "the file has a write-ahead log in use but shows no candle tables, so it may be a live database"
     except (OSError, sqlite3.Error):
         return None  # not readable as SQLite: opening it as a candle database will fail on its own
     return None
+
+
+def _unusable(command: str, path: Path, error: Exception) -> int:
+    # Our own refusals carry a plain message; an SQLite error text is not echoed.
+    detail = str(error) if isinstance(error, ValidationFailure) else "the file cannot be used as a SQLite database"
+    return _emit({"command": command, "status": "failed", "error": "market_database_unusable", "detail": detail,
+                  "market_database": str(path)}, 1)
 
 
 def _refuse(command: str, path: Path, reason: str) -> int:
@@ -200,9 +224,8 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         return _refuse(COLLECT_COMMAND, path, refusal)
     try:
         database, store = open_store(path)
-    except ValidationFailure as error:
-        return _emit({"command": COLLECT_COMMAND, "status": "failed", "error": "market_database_unusable",
-                      "detail": str(error), "market_database": str(path)}, 1)
+    except (ValidationFailure, sqlite3.Error) as error:
+        return _unusable(COLLECT_COMMAND, path, error)
     clock = build_clock()
     # A new process cannot know what an earlier one just asked for, so it assumes the counter is already at the ceiling.
     limiter = KrakenRestLimiter(limiter_clock_for(clock), build_sleeper(), initial_counter=ASSUMED_CEILING)
@@ -259,9 +282,8 @@ def _coverage(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                       "market_database": str(path)}, 1)
     try:
         database, store = open_store(path)
-    except ValidationFailure as error:
-        return _emit({"command": COVERAGE_COMMAND, "status": "failed", "error": "market_database_unusable",
-                      "detail": str(error), "market_database": str(path)}, 1)
+    except (ValidationFailure, sqlite3.Error) as error:
+        return _unusable(COVERAGE_COMMAND, path, error)
     try:
         series = []
         for item in store.series():

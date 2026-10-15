@@ -72,8 +72,14 @@ its receipt time (an inventory, not a point-in-time read), creates nothing and s
 if the file does not exist.
 
 Both commands refuse the financial database before reading or writing anything: a file called
-`trade_graph.sqlite`, the default `runtime/trade_graph.sqlite` (also through a link), or any file that holds
-the financial tables is refused with `status: refused`.
+`trade_graph.sqlite`, the default `runtime/trade_graph.sqlite` (also through a symbolic or hard link), any file
+that holds the financial tables, and any file that has a write-ahead log (`-wal`) in use while its main file shows
+no candle tables yet are refused with `status: refused`. The last rule exists because a database that is open keeps
+its newest pages, its table list included, in that log, and the check reads the main file only (it must not lock,
+create or change anything). It also refuses a candle database that is still in its very first moments; it works
+again after the other process closes it. A file that exists but is not a usable SQLite database ends with
+`status: failed`, `error: market_database_unusable` and exit 1, and is left untouched. A hard link to a live
+financial database stored somewhere other than the default path cannot be recognised.
 
 ## What is collected
 

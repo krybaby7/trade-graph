@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
@@ -26,6 +27,7 @@ from tests.network_guard import block_network
 from trade_graph.adapters.market.kraken_catalog import CATALOG_MAXIMUM_RESPONSE_BYTES
 from trade_graph.adapters.market.public import HttpxTextTransport
 from trade_graph.adapters.market.rate_limit import MonotonicClock
+from trade_graph.adapters.persistence.db import Database
 from trade_graph.adapters.persistence.market_data import MarketDataDatabase
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.cli import build_parser, main
@@ -292,6 +294,15 @@ def _financial_database(tmp_path: Path, name: str) -> Path:
     return path
 
 
+def _main_file_tables(path: Path) -> set[str]:
+    """The tables visible in the main file alone (a log that has not been checkpointed is not read)."""
+    connection = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+    try:
+        return {row[0] for row in connection.execute("SELECT name FROM sqlite_master")}
+    finally:
+        connection.close()
+
+
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -357,6 +368,102 @@ def test_a_symlink_to_the_financial_database_is_refused(tmp_path, monkeypatch, c
     code, report = run(capsys, "collect-kraken-candles", "--market-database", str(link), "--smoke")
     assert code == 1 and report["status"] == "refused" and _hash(financial) == before
     assert scripted.catalog.calls == []
+
+
+@pytest.mark.parametrize("command", [
+    ["collect-kraken-candles", "--smoke"], ["collect-kraken-candles", "--catalog-only"], ["candle-coverage"],
+])
+def test_a_live_financial_database_whose_schema_is_still_only_in_the_log_is_refused(
+        tmp_path, monkeypatch, capsys, command) -> None:
+    scripted = Scripted(monkeypatch)
+    folder = tmp_path / "live"
+    folder.mkdir(mode=0o700)
+    path = folder / "ledger_live.sqlite"  # not the default name, and still open: the schema has not left the log
+    live = Database(path)
+    try:
+        path.chmod(0o600)
+        assert Path(f"{path}-wal").stat().st_size > 0 and not _main_file_tables(path)  # the file alone looks empty
+        tables = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        before = [row[0] for row in live._connection.execute(tables)]
+        capsys.readouterr()
+        code, report = run(capsys, command[0], "--market-database", str(path), *command[1:])
+        assert code == 1 and report["status"] == "refused" and report["error"] == "financial_database"
+        assert [row[0] for row in live._connection.execute(tables)] == before
+        assert "market_candles" not in before and "ledger_events" in before
+    finally:
+        live.close()
+    assert scripted.catalog.calls == [] and scripted.exchange.calls == []
+
+
+def test_a_hard_link_to_the_live_default_financial_database_is_refused(tmp_path, monkeypatch, capsys) -> None:
+    scripted = Scripted(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "runtime").mkdir(mode=0o700)
+    financial = tmp_path / "runtime" / "trade_graph.sqlite"
+    live = Database(financial)  # open, so its schema is still in the log and the link shows an empty file
+    try:
+        financial.chmod(0o600)
+        link = tmp_path / "market_hardlink.sqlite"
+        os.link(financial, link)
+        assert not _main_file_tables(link)
+        capsys.readouterr()
+        code, report = run(capsys, "collect-kraken-candles", "--market-database", str(link), "--smoke")
+        assert code == 1 and report["status"] == "refused" and report["error"] == "financial_database"
+        assert "market_candles" not in {row[0] for row in live._connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        live.close()
+    assert scripted.catalog.calls == []
+
+
+def test_a_market_database_that_is_open_and_flushed_is_not_refused_for_its_log(tmp_path, monkeypatch, capsys) -> None:
+    Scripted(monkeypatch)
+    path = database_path(tmp_path)
+    _seed(path, [0, 1, 2], source="synthetic")
+    holder = MarketDataDatabase(path)  # another collector holding the file open, its log in use
+    try:
+        holder.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        _seed(path, [3, 4], source="synthetic")
+        assert Path(f"{path}-wal").exists()
+        code, report = run(capsys, "candle-coverage", "--market-database", path, "--source", "synthetic")
+        assert code == 0 and report["totals"]["candles"] == 5
+    finally:
+        holder.close()
+
+
+def test_an_empty_log_beside_an_empty_database_is_not_a_reason_to_refuse(tmp_path, monkeypatch, capsys) -> None:
+    Scripted(monkeypatch)
+    folder = tmp_path / "market"
+    folder.mkdir(mode=0o700)
+    path = folder / "fresh.sqlite"
+    holder = sqlite3.connect(path)
+    try:
+        holder.execute("PRAGMA journal_mode=WAL")
+        holder.execute("CREATE TABLE scratch (x)")
+        holder.execute("DROP TABLE scratch")
+        holder.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        path.chmod(0o600)
+        assert Path(f"{path}-wal").stat().st_size == 0 and not _main_file_tables(path)
+        code, report = run(capsys, "collect-kraken-candles", "--market-database", str(path), "--catalog-only")
+        assert code == 0 and report["status"] == "ok"
+    finally:
+        holder.close()
+
+
+@pytest.mark.parametrize("command", [["collect-kraken-candles", "--smoke"], ["candle-coverage"]])
+def test_a_file_that_is_not_a_database_is_a_json_failure_not_a_traceback(
+        tmp_path, monkeypatch, capsys, command) -> None:
+    scripted = Scripted(monkeypatch)
+    folder = tmp_path / "market"
+    folder.mkdir(mode=0o700)
+    path = folder / "bogus.sqlite"
+    path.write_text("this is not a SQLite database " * 8, encoding="utf-8")
+    path.chmod(0o600)
+    code, report = run(capsys, command[0], "--market-database", str(path), *command[1:])
+    assert code == 1 and report["status"] == "failed" and report["error"] == "market_database_unusable"
+    assert report["market_database"] == str(path) and "not a SQLite" not in json.dumps(report)
+    assert path.read_text(encoding="utf-8").startswith("this is not a SQLite database")  # left untouched
+    assert scripted.catalog.calls == [] and scripted.exchange.calls == []
 
 
 def test_a_market_data_file_is_not_mistaken_for_a_financial_one(tmp_path, monkeypatch, capsys) -> None:
