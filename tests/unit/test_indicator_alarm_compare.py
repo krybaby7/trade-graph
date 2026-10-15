@@ -13,8 +13,8 @@ from trade_graph.application.indicators.engine import (
     RELATIONS,
     LevelComparison,
     compare_to_level,
-    float_as_decimal,
 )
+from trade_graph.application.indicators.library import SNAPSHOT_DIGITS, compute_raw, rounded_decimal
 from trade_graph.domain.errors import ValidationFailure
 
 
@@ -99,23 +99,53 @@ def test_a_level_with_an_absurd_number_of_digits_is_refused() -> None:
         compare_to_level(result([71.0]), Decimal("1." + "0" * 80 + "1"), "above")
 
 
-def test_the_float_is_compared_through_its_shortest_decimal_form_with_no_tolerance() -> None:
-    # 0.1 as a float is a hair above one tenth; its shortest decimal form is exactly 0.1, so it equals the level.
-    assert float_as_decimal(0.1) == Decimal("0.1")
+def test_value_and_level_are_compared_at_twelve_significant_digits() -> None:
+    """The library's running sums add noise in the last digits, so the comparison is made at the digits it can vouch
+    for (the rule the stored snapshots use): a value that equals the level to twelve digits is equal to it."""
+    assert SNAPSHOT_DIGITS == 12
     assert compare_to_level(result([0.1]), Decimal("0.1"), "above").satisfied is False
     assert compare_to_level(result([0.1]), Decimal("0.1"), "below").satisfied is False
-    # 0.1 + 0.2 is the float 0.30000000000000004: really above 0.3, and compared exactly so.
-    assert float_as_decimal(0.1 + 0.2) == Decimal("0.30000000000000004")
-    assert compare_to_level(result([0.1 + 0.2]), Decimal("0.3"), "above").satisfied is True
-    # No tolerance: a hair away is a different side.
-    assert compare_to_level(result([70.00000000000001]), Decimal("70"), "above").satisfied is True
-    assert compare_to_level(result([69.99999999999999]), Decimal("70"), "below").satisfied is True
+    # 0.1 + 0.2 is the float 0.30000000000000004: equal to 0.3 at twelve digits, so neither above nor below it.
+    assert compare_to_level(result([0.1 + 0.2]), Decimal("0.3"), "above").satisfied is False
+    assert compare_to_level(result([70.00000000000001]), Decimal("70"), "above").satisfied is False
+    assert compare_to_level(result([69.99999999999999]), Decimal("70"), "below").satisfied is False
+    # A real difference at the twelfth digit is a difference.
+    assert compare_to_level(result([70.0000000001]), Decimal("70"), "above").satisfied is True
+    assert compare_to_level(result([69.9999999999]), Decimal("70"), "below").satisfied is True
+    # The level is rounded the same way, so a level written with more digits than that is read at twelve.
+    assert compare_to_level(result([70.0]), Decimal("70.00000000000004"), "below").satisfied is False
+    outcome = compare_to_level(result([69.99999999999999, 70.00000000000001]), Decimal("70"), "crosses_above")
+    assert outcome.satisfied is False  # the path 69.99999999999999 -> 70.00000000000001 only touched 70
+    assert outcome.value == Decimal("70") and outcome.previous_value == Decimal("70") and outcome.level == Decimal("70")
 
 
-def test_large_and_tiny_floats_convert_without_loss() -> None:
+@pytest.mark.parametrize("price", ["63000.1", "0.5", "1.2345", "2599.99", "31.07", "0.0123457", "4.4", "63000.7"])
+@pytest.mark.parametrize("period", [3, 7, 20, 50])
+def test_a_real_library_average_of_equal_closes_is_not_above_or_below_that_price(price, period) -> None:
+    """TA-Lib's running sum gives 63000.09999999999 or 63000.10000000006 for a flat 63000.1; the alarm must not fire."""
+    closes = {"close": (Decimal(price),) * (period + 5)}
+    value = float(compute_raw("SMA", {"timeperiod": period}, closes)["value"][-1])
+    flat = result([value])
+    for relation in ("above", "below"):
+        assert compare_to_level(flat, Decimal(price), relation).satisfied is False, (price, period, value)
+    assert compare_to_level(result([value, value]), Decimal(price), "crosses_above").satisfied is False
+
+
+def test_the_fixture_for_the_flat_average_really_contains_floating_point_noise() -> None:
+    noisy = [price for price in ("63000.1", "0.5", "1.2345", "2599.99", "31.07", "0.0123457", "4.4", "63000.7")
+             for period in (3, 7, 20, 50)
+             if float(compute_raw("SMA", {"timeperiod": period}, {"close": (Decimal(price),) * (period + 5)})
+                      ["value"][-1]) != float(price)]
+    assert noisy, "no flat-price average differs from the price, so the test above proves nothing"
+
+
+def test_huge_and_tiny_levels_and_values_compare_without_raising() -> None:
     for number in (1e22, 1.5e-9, 123456789.123456789, -0.0, 5e-324, 1.7976931348623157e308):
-        assert float(float_as_decimal(number)) == number
-    assert float_as_decimal(-0.0) == 0
+        for level in (Decimal("1E+999999999"), Decimal("-1E+999999999"), Decimal("1E-999999999"), Decimal("0")):
+            outcome = compare_to_level(result([number]), level, "above")
+            assert outcome.evaluated is True and isinstance(outcome.satisfied, bool)
+    assert compare_to_level(result([-0.0]), Decimal("0"), "below").satisfied is False
+    assert compare_to_level(result([-0.0]), Decimal("0"), "above").satisfied is False
 
 
 def test_a_non_finite_value_in_a_ready_result_is_never_compared() -> None:
@@ -123,7 +153,7 @@ def test_a_non_finite_value_in_a_ready_result_is_never_compared() -> None:
     outcome = compare_to_level(ready_with_nan, Decimal("0"), "below")
     assert outcome.satisfied is False and outcome.evaluated is False
     with pytest.raises(ValidationFailure):
-        float_as_decimal(math.inf)
+        rounded_decimal(math.inf)
 
 
 def test_comparison_records_when_the_value_belongs() -> None:

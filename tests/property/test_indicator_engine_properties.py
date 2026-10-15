@@ -19,9 +19,9 @@ from trade_graph.application.indicators.engine import (
     CandleSelectionError,
     compare_to_level,
     compute_from_window,
-    float_as_decimal,
     plan_history,
 )
+from trade_graph.application.indicators.library import SNAPSHOT_DIGITS, rounded_decimal, rounded_significant
 from trade_graph.contracts.candles import Candle, CandleSlot, CandleWindow, StoredCandle
 from trade_graph.contracts.indicators import INDICATOR_MENU, IndicatorSpec
 from trade_graph.domain.errors import ValidationFailure
@@ -155,32 +155,33 @@ def test_a_candle_that_closes_after_as_of_is_never_used(scenario, mode) -> None:
 
 _floats = st.floats(allow_nan=False, allow_infinity=False, width=64)
 _levels = st.one_of(
+    # The engine refuses levels with more than MAX_LEVEL_DIGITS digits on purpose; those are not alarm levels.
     st.decimals(allow_nan=False, allow_infinity=False, places=None, min_value=Decimal("-1e12"),
-                max_value=Decimal("1e12")),
+                max_value=Decimal("1e12")).filter(lambda x: len(x.as_tuple().digits) <= engine.MAX_LEVEL_DIGITS),
     st.integers(-10**6, 10**6).map(Decimal),
 )
 
 
 @settings(max_examples=300, derandomize=True, deadline=None)
 @given(value=_floats, level=_levels)
-def test_exactly_one_of_above_below_equal_and_the_decimal_form_is_the_floats_shortest_repr(value, level) -> None:
-    shown = float_as_decimal(value)
-    assert shown == Decimal(repr(value))
-    assert float(shown) == value  # the decimal form identifies the float uniquely
+def test_exactly_one_of_above_below_equal_at_twelve_significant_digits(value, level) -> None:
+    shown, limit = rounded_decimal(value), rounded_significant(level)
+    assert len(shown.normalize().as_tuple().digits) <= SNAPSHOT_DIGITS
     above = compare_to_level(make_result([value]), level, "above").satisfied
     below = compare_to_level(make_result([value]), level, "below").satisfied
-    assert above == (shown > level) and below == (shown < level)
-    assert [above, below, shown == level].count(True) == 1
+    assert above == (shown > limit) and below == (shown < limit)
+    assert [above, below, shown == limit].count(True) == 1
+    assert compare_to_level(make_result([value]), level, "above").value == shown
 
 
 @settings(max_examples=300, derandomize=True, deadline=None)
-@given(digits=st.integers(-10**15 + 1, 10**15 - 1), exponent=st.integers(-18, 12))
-def test_a_level_with_at_most_fifteen_digits_equals_the_nearest_float(digits, exponent) -> None:
+@given(digits=st.integers(-10**SNAPSHOT_DIGITS + 1, 10**SNAPSHOT_DIGITS - 1), exponent=st.integers(-18, 12))
+def test_a_level_with_at_most_twelve_digits_equals_the_nearest_float(digits, exponent) -> None:
     level = Decimal(digits).scaleb(exponent)
     value = float(level)
     if not math.isfinite(value) or (value == 0.0 and level != 0):
         return
-    assert float_as_decimal(value) == level
+    assert rounded_decimal(value) == level
     assert not compare_to_level(make_result([value]), level, "above").satisfied
     assert not compare_to_level(make_result([value]), level, "below").satisfied
 
@@ -199,9 +200,9 @@ def test_comparison_is_monotonic_in_the_value(low, high, level) -> None:
 @given(previous=_floats, latest=_floats, level=_levels)
 def test_crossings_are_defined_by_the_two_points_and_the_same_exact_comparison(previous, latest, level) -> None:
     both = make_result([previous, latest])
-    before, now = float_as_decimal(previous), float_as_decimal(latest)
-    assert compare_to_level(both, level, "crosses_above").satisfied == (before <= level < now)
-    assert compare_to_level(both, level, "crosses_below").satisfied == (before >= level > now)
+    before, now, limit = rounded_decimal(previous), rounded_decimal(latest), rounded_significant(level)
+    assert compare_to_level(both, level, "crosses_above").satisfied == (before <= limit < now)
+    assert compare_to_level(both, level, "crosses_below").satisfied == (before >= limit > now)
     assert not (compare_to_level(both, level, "crosses_above").satisfied
                 and compare_to_level(both, level, "crosses_below").satisfied)
 

@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "note": "Expected values are exact (fractions or decimals) and were derived by hand from the cited definitions, then checked against TA-Lib. Each case's derivation is written out so it can be repeated with a calculator. Cases marked definition_boundary need no source: the value follows from the definition alone.",
+ "note": "Expected values are exact (fractions or decimals). They were derived from the cited definitions in exact rational arithmetic (first with a throwaway script that is not committed), then checked against TA-Lib. Each case's derivation is written out so it can be repeated with a calculator. Where the definition does not decide the number (the cases with a convention: MACD's fast-average seed, the smoothing seed of ADX and the directional indicators, the Parabolic SAR start) the pinned number is TA-Lib's own, found by matching its output to a candidate rule, and the case says so. Cases marked definition_boundary need no source: the value follows from the definition alone.",
  "published_numeric_examples": "None. The StockCharts ChartSchool worked examples are downloadable spreadsheets (cs-rsi.xls, cs-adx.xls, cs-atr.xls, cs-bbands.xls and similar). They were not downloaded in this task, so no published numeric example could be sourced.",
  "cases": [
   {

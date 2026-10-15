@@ -6,11 +6,12 @@ No indicator formula is written here and nothing here imports the library. The e
   indicator needs, and asserts that every candle it receives had closed and been received by ``as_of``;
 - sizes that span from the menu: the library's own lookback, plus the menu's measured settling history for
   entries whose value depends on where the history began (``Settling`` in ``contracts/indicators.py``), plus
-  the requested number of output points;
+  the requested number of output points. For those start-sensitive entries the span is padded to the same start
+  for every number of points, so one candle always gets one value;
 - withholds every value when any slot of the span is missing, naming the slots (no carry-forward, no zero
   fill, no partial window, and the span is never lengthened to step around a hole);
 - labels the answer (status, mode, as-of, candle revisions and runs, library and menu versions);
-- compares an answer with an alarm level, exactly.
+- compares an answer with an alarm level at the twelve significant digits the library can vouch for.
 
 Indicator values are floats. Prices, quantities, fees and balances stay ``Decimal`` everywhere else.
 """
@@ -34,6 +35,8 @@ from trade_graph.application.indicators.library import (
     compute_raw,
     library_versions,
     lookback,
+    rounded_decimal,
+    rounded_significant,
 )
 from trade_graph.contracts.candles import AvailabilityBasis, CandleWindow, ReadMode, to_micros
 from trade_graph.contracts.indicators import MENU_VERSION, IndicatorSpec, get_indicator
@@ -44,9 +47,12 @@ from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 # ADX at 500 with 500 points, needs 13,499 candles, well under the store's own 100,000-slot limit).
 MAX_OUTPUT_POINTS = 500
 MAX_HISTORY_CANDLES = 20_000
-# Entries that are start-sensitive but forget nothing (Parabolic SAR, On-Balance Volume) have no measured settling
-# guidance. They are given this many candles beyond the lookback so two readings of the same end agree, and the
-# result says ``start_dependent`` so nobody mistakes the level for one that settles.
+# Entries that are start-sensitive but have no Settling guidance (Parabolic SAR, On-Balance Volume) are given this
+# many candles beyond the lookback. For SAR it is measured: with 200, two readings of a candle that start 1, 13 or
+# 61 candles apart agree on every sampled candle of both test series, and with 50 they do not
+# (tests/unit/test_indicator_settling.py). OBV is a running total, so no amount of history makes its level agree
+# between starts (only its changes do); 200 is just the same depth. The result says ``start_dependent`` so nobody
+# mistakes either level for one that settles.
 START_DEPENDENT_HISTORY = 200
 # Only this many missing close times are written into a document; the count is always complete.
 DOCUMENT_MISSING_LIMIT = 100
@@ -70,7 +76,9 @@ class HistoryPlan:
     """How many candles one request reads, and why."""
 
     lookback: int  # leading candles with no value, asked from the library for these settings
-    seeding: int  # extra candles for entries whose value depends on where the history began
+    # Extra candles before the first point's window for start-sensitive entries: the measured guidance, plus the
+    # points not asked for, so that the span starts at the same candle whatever the number of points.
+    seeding: int
     points: int  # output points requested
 
     @property
@@ -195,6 +203,11 @@ def plan_history(name: str, params: Mapping[str, object] | None, count: int) -> 
         seeding = spec.settle.periods * int(resolved[spec.settle.parameter])
     else:
         seeding = START_DEPENDENT_HISTORY if spec.recursive_seed else 0
+    if spec.recursive_seed:
+        # A start-sensitive value depends on where the span began, so the span must begin at the same candle for
+        # every ``count``: pad it with the points not asked for. The value at a candle then never depends on how
+        # many neighbours were requested with it (the largest request already reads this much).
+        seeding += MAX_OUTPUT_POINTS - count
     plan = HistoryPlan(lookback=lookback(name, params), seeding=seeding, points=count)
     if plan.span > MAX_HISTORY_CANDLES:
         raise ValidationFailure(
@@ -342,27 +355,17 @@ def _digest(uses: tuple[CandleUse, ...]) -> str:
     return hashlib.sha256(document.encode("ascii")).hexdigest()
 
 
-def float_as_decimal(value: float) -> Decimal:
-    """The float's shortest decimal string that converts back to the same float (``repr``), as a Decimal.
-
-    Exact in the sense that matters for alarms: two different floats never share a decimal, order is
-    preserved, and no tolerance or rounding is applied. A level of at most 15 significant digits equals the
-    float nearest to it (so 0.1 is not "above" the level 0.1), where the binary expansion of the float would
-    call it above by a hair.
-    """
-    if type(value) is not float or not math.isfinite(value):
-        raise ValidationFailure("an indicator value must be a finite float")
-    return Decimal(repr(value))
-
-
 def compare_to_level(result: IndicatorResult, level: Decimal, relation: Relation, *,
                      output: str | None = None) -> LevelComparison:
     """Compare the newest value with an alarm level. An indicator that is not ready never satisfies anything.
 
     ``above``/``below`` are strict and use the newest point. ``crosses_above`` is previous <= level < newest and
     ``crosses_below`` is previous >= level > newest, so a path that touches the level and then leaves it fires
-    once, and one that only touches it does not fire. Both sides are Decimals: the level as given and the
-    value through ``float_as_decimal``. The returned comparison carries the numbers used.
+    once, and one that only touches it does not fire. Both sides are compared as Decimals rounded half-even to the
+    twelve significant digits the library can vouch for (``SNAPSHOT_DIGITS``, the rule stored snapshots use): its
+    running sums add noise in the last digits, so a flat average of 63000.1 comes out as 63000.09999999999 or
+    63000.10000000006 and must neither be above nor below an alarm at 63000.1. The returned comparison carries the
+    rounded numbers used and the level as given.
     """
     if relation not in RELATIONS:
         raise ValidationFailure(f"relation must be one of {', '.join(RELATIONS)}")
@@ -384,23 +387,23 @@ def compare_to_level(result: IndicatorResult, level: Decimal, relation: Relation
     if len(series) < needed or not all(usable):
         reason = "a crossing needs two points" if needed == 2 and len(series) < 2 else "no finite value to compare"
         return outcome(False, reason, evaluated=False)
-    now = float_as_decimal(series[-1])
-    previous = float_as_decimal(series[-2]) if needed == 2 else None
+    now = rounded_decimal(series[-1])
+    previous = rounded_decimal(series[-2]) if needed == 2 else None
+    limit = rounded_significant(level)
     at = result.close_times_utc[-1]
     if relation == "above":
-        satisfied = now > level
+        satisfied = now > limit
     elif relation == "below":
-        satisfied = now < level
+        satisfied = now < limit
     elif relation == "crosses_above":
-        satisfied = previous <= level < now
+        satisfied = previous <= limit < now
     else:
-        satisfied = previous >= level > now
+        satisfied = previous >= limit > now
     return outcome(satisfied, "compared", now, previous, at)
 
 
 __all__ = [
     "DOCUMENT_MISSING_LIMIT", "MAX_HISTORY_CANDLES", "MAX_OUTPUT_POINTS", "RELATIONS", "START_DEPENDENT_HISTORY",
     "CandleSelectionError", "CandleUse", "HistoryPlan", "IndicatorResult", "IndicatorStatus", "LevelComparison",
-    "Relation", "compare_to_level", "compute_from_window", "compute_indicator", "float_as_decimal", "plan_history",
-    "spec_version",
+    "Relation", "compare_to_level", "compute_from_window", "compute_indicator", "plan_history", "spec_version",
 ]

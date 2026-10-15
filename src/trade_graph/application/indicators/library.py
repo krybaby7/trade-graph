@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from decimal import ROUND_HALF_EVEN, Context, Decimal
+from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal
 
 import numpy as np
 import talib
@@ -36,7 +36,7 @@ _CANDLE_FIELDS = ("open", "high", "low", "close", "volume")
 # of those, so twelve keeps the text identical across platforms and compilers while keeping every price an
 # exchange quotes (at most 7 digits for the hourly pairs) exactly.
 SNAPSHOT_DIGITS = 12
-_SNAPSHOT_CONTEXT = Context(prec=SNAPSHOT_DIGITS, rounding=ROUND_HALF_EVEN)
+_SNAPSHOT_CONTEXT = Context(prec=SNAPSHOT_DIGITS, rounding=ROUND_HALF_EVEN, Emin=MIN_EMIN, Emax=MAX_EMAX)
 # Process-wide TA-Lib settings that would silently change recursive indicators if anything set them.
 _UNSTABLE_PERIODS = ("ADX", "ATR", "DX", "EMA", "MINUS_DI", "MINUS_DM", "NATR", "PLUS_DI", "PLUS_DM", "RSI")
 
@@ -109,7 +109,15 @@ def rounded_decimal(value: float) -> Decimal:
     """
     if type(value) is not float or not math.isfinite(value):
         raise ValidationFailure("an indicator value must be a finite float")
-    return _SNAPSHOT_CONTEXT.plus(Decimal(value))
+    return rounded_significant(Decimal(value))
+
+
+def rounded_significant(value: Decimal) -> Decimal:
+    """A finite Decimal rounded half-even to ``SNAPSHOT_DIGITS`` significant digits, in a context of its own (with
+    the widest exponent range, so no finite Decimal overflows). One rule for stored text and for alarm comparison."""
+    if type(value) is not Decimal or not value.is_finite():
+        raise ValidationFailure("a value to round must be a finite Decimal")
+    return _SNAPSHOT_CONTEXT.plus(value)
 
 
 def _float_column(field: str, values: Sequence[Decimal]) -> NDArray[np.float64]:
@@ -144,5 +152,5 @@ def _require_library_defaults() -> None:
 
 __all__ = [
     "MAX_ROWS", "SNAPSHOT_DIGITS", "IndicatorComputationError", "columns_from_candles", "compute_raw",
-    "library_versions", "lookback", "rounded_decimal",
+    "library_versions", "lookback", "rounded_decimal", "rounded_significant",
 ]

@@ -47,8 +47,18 @@ def test_document_states_the_locked_versions_and_the_findings() -> None:
     assert re.search(r"No published numeric worked example|no published numeric worked example", _DOC)
 
 
+def test_prose_carries_no_hand_counted_totals_that_can_go_stale() -> None:
+    """Counts of entries, comparisons and reference cases are generated (coverage-counts); prose must not repeat them.
+
+    The prose once said 'All 25', '23 of 25' and '47 cases' after the menu had grown to 26 entries and 50 cases."""
+    prose = re.sub(r"<!-- BEGIN.*?<!-- END [a-z-]+ -->", "", _DOC, flags=re.DOTALL)
+    assert not re.search(r"\b(?:all|every) \d+\b|\b\d+ of (?:the )?\d+ entries|\b\d+ of \d+\b|\b\d+ cases\b|"
+                         r"\bmatches on \d+\b|\b\d+ (?:menu )?entries\b", prose, re.IGNORECASE)
+    assert f"{len(INDICATOR_MENU)} standard indicators" in prose  # the one plain-words total, checked against the menu
+
+
 def test_document_has_no_stray_markers() -> None:
-    assert _DOC.count("<!-- BEGIN") == _DOC.count("<!-- END") == 5
+    assert _DOC.count("<!-- BEGIN") == _DOC.count("<!-- END") == len(_RENDER.render_blocks())
 
 
 def test_document_describes_the_engine_and_the_hourly_features_with_the_numbers_the_code_uses() -> None:

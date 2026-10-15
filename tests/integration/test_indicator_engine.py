@@ -20,13 +20,14 @@ from trade_graph.application.indicators.engine import (
     MAX_OUTPUT_POINTS,
     START_DEPENDENT_HISTORY,
     CandleSelectionError,
+    compare_to_level,
     compute_from_window,
     compute_indicator,
     plan_history,
 )
 from trade_graph.application.indicators.library import compute_raw, library_versions, lookback
 from trade_graph.contracts.candles import Candle, CandleSlot, CandleWindow, StoredCandle
-from trade_graph.contracts.indicators import INDICATOR_MENU, SETTLE_TOLERANCE, get_indicator
+from trade_graph.contracts.indicators import INDICATOR_MENU, get_indicator
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
@@ -98,27 +99,31 @@ def test_ready_values_are_the_librarys_values_on_exactly_the_candles_read(store,
 
 
 def test_multi_output_indicators_return_every_output_in_step(store) -> None:
-    candles = _fill(store, count=200)
-    result = _read(store, candles, 150, "MACD", {}, count=4)
+    candles = _fill(store, count=800)
+    result = _read(store, candles, 790, "MACD", {}, count=4)
     assert result.status == "ready"
     assert set(result.values) == {"macd", "signal", "histogram"}
     assert all(len(series) == 4 for series in result.values.values())
     assert all(math.isfinite(x) for series in result.values.values() for x in series)
-    assert result.close_times_utc == tuple(c.close_time_utc for c in candles[147:151])
+    assert result.close_times_utc == tuple(c.close_time_utc for c in candles[787:791])
     with pytest.raises(ValidationFailure):
         result.latest()  # more than one output: the caller must name it
     assert result.latest("histogram") == result.values["histogram"][-1]
 
 
-def test_start_sensitive_indicators_are_given_the_documented_seeding_history(store) -> None:
-    candles = _fill(store, count=400)
+def test_start_sensitive_indicators_read_the_same_span_whatever_the_number_of_points(store) -> None:
+    candles = _fill(store, count=1200)
     spec = get_indicator("RSI")
-    plan = plan_history("RSI", {}, 1)
-    assert plan.lookback == lookback("RSI", {}) == 14
-    assert plan.seeding == spec.settle.periods * 14 == 280
-    assert plan.span == 14 + 280 + 1
-    result = _read(store, candles, 399, "RSI", {})
-    assert (result.lookback_candles, result.seeding_candles, result.required_candles) == (14, 280, 295)
+    guidance = spec.settle.periods * 14
+    assert guidance == 280
+    for points in (1, 2, 60, MAX_OUTPUT_POINTS):
+        plan = plan_history("RSI", {}, points)
+        assert plan.lookback == lookback("RSI", {}) == 14
+        # The measured guidance, plus the points not asked for: the span always starts at the same candle.
+        assert plan.seeding == guidance + MAX_OUTPUT_POINTS - points
+        assert plan.span == 14 + guidance + MAX_OUTPUT_POINTS == 794
+    result = _read(store, candles, 1100, "RSI", {})
+    assert (result.lookback_candles, result.seeding_candles, result.required_candles) == (14, 280 + 499, 794)
     assert result.start_dependent is True
 
 
@@ -126,11 +131,12 @@ def test_entries_that_never_forget_their_start_use_the_fixed_history_and_say_so(
     for name in ("SAR", "OBV"):
         spec = get_indicator(name)
         assert spec.recursive_seed and spec.settle is None
-        plan = plan_history(name, {}, 1)
-        assert plan.seeding == START_DEPENDENT_HISTORY
-    candles = _fill(store, count=300)
-    assert _read(store, candles, 299, "OBV", {}).start_dependent is True
-    assert _read(store, candles, 299, "SAR", {}).start_dependent is True
+        plan = plan_history(name, {}, MAX_OUTPUT_POINTS)
+        assert plan.seeding == START_DEPENDENT_HISTORY == 200
+        assert plan_history(name, {}, 1).span == plan.span == plan.lookback + 200 + MAX_OUTPUT_POINTS
+    candles = _fill(store, count=1000)
+    assert _read(store, candles, 999, "OBV", {}).start_dependent is True
+    assert _read(store, candles, 999, "SAR", {}).start_dependent is True
 
 
 def test_windowed_indicators_need_only_their_own_window_and_are_not_start_dependent(store) -> None:
@@ -140,17 +146,53 @@ def test_windowed_indicators_need_only_their_own_window_and_are_not_start_depend
     assert result.status == "ready"
 
 
-def test_the_last_value_does_not_depend_on_how_many_points_were_asked_beyond_the_settling_tolerance(store) -> None:
-    candles = _fill(store, count=600)
-    one = _read(store, candles, 590, "RSI", {}, count=1).latest()
-    many = _read(store, candles, 590, "RSI", {}, count=60).latest()
-    assert abs(one - many) <= SETTLE_TOLERANCE
+@pytest.mark.parametrize("name", [spec.name for spec in INDICATOR_MENU])
+def test_the_same_end_candle_gives_the_same_values_whatever_the_number_of_points(store, name) -> None:
+    """The value at a candle is a function of that candle, not of how many neighbours were asked for with it.
+
+    Start-sensitive entries read the same span for every count, so their numbers are identical bit for bit.
+    Window entries need nothing before their window; the library's running sums may still differ in the last
+    one or two digits when the window starts elsewhere, which the 12-digit comparison rule in compare_to_level absorbs.
+    """
+    candles = _fill(store, count=1300)
+    spec = get_indicator(name)
+    reference = _read(store, candles, 1250, name, {}, count=60)
+    assert reference.status == "ready"
+    for count in (1, 2, 3, 17):
+        other = _read(store, candles, 1250, name, {}, count=count)
+        assert other.status == "ready", (name, count)
+        for output, series in other.values.items():
+            expected = reference.values[output][-count:]
+            if spec.recursive_seed:
+                assert series == expected, (name, output, count)  # bit for bit
+            else:
+                assert series == pytest.approx(expected, rel=1e-12, abs=1e-9), (name, output, count)
+
+
+def test_an_alarm_level_cannot_flip_between_one_point_and_many_for_the_same_candle(store) -> None:
+    """When the span followed `count`, the newest MACD histogram moved by 0.03 percent between count 1 and count 2."""
+    candles = _fill(store, count=1300)
+
+    def followed_count(points: int) -> float:  # what the engine read when the span was lookback + 4 x slow + count
+        span = lookback("MACD", {}) + 4 * 26 + points
+        closes = {"close": tuple(c.close for c in candles[1251 - span : 1251])}
+        return float(compute_raw("MACD", {}, closes)["histogram"][-1])
+
+    one, two = followed_count(1), followed_count(2)
+    assert abs(one - two) > 1e-6 * abs(one), "the fixture must show the two spans disagreeing"
+    level = Decimal(repr((one + two) / 2))  # a level that the one-point and the two-point reading sat either side of
+    answers = set()
+    for count in (1, 2, 3, 60):
+        result = _read(store, candles, 1250, "MACD", {}, count=count)
+        answers.add((compare_to_level(result, level, "above", output="histogram").satisfied,
+                     compare_to_level(result, level, "below", output="histogram").satisfied))
+    assert len(answers) == 1, answers
 
 
 def test_each_menu_entry_at_its_defaults_is_ready_on_a_long_enough_history(store) -> None:
-    candles = _fill(store, count=700)
+    candles = _fill(store, count=1300)  # the longest span at the defaults is ADX: 27 + 336 + 500 = 863 candles
     for spec in INDICATOR_MENU:
-        result = _read(store, candles, 699, spec.name, {}, count=2)
+        result = _read(store, candles, 1299, spec.name, {}, count=2)
         assert result.status == "ready", spec.name
         assert set(result.values) == {output.name for output in spec.outputs}
         assert result.spec_version.startswith("indicator-menu-v") and "/" in result.spec_version
@@ -235,10 +277,10 @@ def test_the_look_behind_is_one_more_window_read_and_only_when_the_answer_needs_
 @pytest.mark.parametrize("name", [spec.name for spec in INDICATOR_MENU])
 def test_every_menu_entry_reports_a_hole_inside_its_own_span_and_only_there(tmp_path, name) -> None:
     plan = plan_history(name, {}, 2)
-    hole = 300
+    hole = plan.span  # far enough from the start that every span ending after it lies inside the stored series
     database = MarketDataDatabase(tmp_path / name / "market_data.sqlite")
     holed = CandleStore(database)
-    candles = _fill(holed, count=800, skip=(hole,))
+    candles = _fill(holed, count=hole + plan.span + 1, skip=(hole,))
     blocked = _read(holed, candles, hole + plan.span // 2, name, {}, count=2)  # the span contains the hole
     assert blocked.status == "gapped" and blocked.values == {} and blocked.close_times_utc == ()
     assert blocked.missing_close_times_utc == (_end(candles, hole),)
@@ -281,14 +323,14 @@ def test_a_gap_before_the_first_output_point_withholds_every_point_not_a_partial
 
 
 def test_a_gap_in_the_seeding_history_of_a_recursive_indicator_withholds_values(store) -> None:
-    candles = _fill(store, count=200, skip=(100,))
-    # EMA(10): lookback 9, seeding 40, one point: the span is 50 candles, 150..199 when ending at 199 ...
-    ok = _read(store, candles, 199, "EMA", {"timeperiod": 10})
-    assert ok.status == "ready" and ok.required_candles == 50
-    # ... and ending at 140 the span is 91..140, which contains the missing candle only in its seeding part.
-    result = _read(store, candles, 140, "EMA", {"timeperiod": 10})
+    candles = _fill(store, count=900, skip=(100,))
+    span = 9 + get_indicator("EMA").settle.periods * 10 + MAX_OUTPUT_POINTS  # EMA(10): lookback, guidance, padding
+    ok = _read(store, candles, 899, "EMA", {"timeperiod": 10})  # the span starts well after the missing candle
+    assert ok.status == "ready" and ok.required_candles == span
+    # Ending at 600 the span reaches back past the missing candle, which lies in the seeding part, not the warm-up.
+    result = _read(store, candles, 600, "EMA", {"timeperiod": 10})
     assert result.status == "gapped" and result.missing_close_times_utc == (_end(candles, 100),)
-    assert 140 - 100 > result.lookback_candles + result.requested_points  # the gap is older than the warm-up zone
+    assert 600 - 100 > result.lookback_candles + result.requested_points  # the gap is older than the warm-up zone
 
 
 def test_a_gap_at_the_newest_slot_is_gapped_and_the_lookback_is_not_lengthened(tmp_path) -> None:
@@ -557,6 +599,45 @@ def test_a_not_ready_document_lists_the_missing_slots_and_no_values(store) -> No
     document = _read(store, candles, 99, "SMA", {"timeperiod": 20}).to_document()
     assert document["status"] == "gapped" and document["values"] == {} and document["close_times_utc"] == []
     assert document["missing_count"] == 2 and len(document["missing_close_times_utc"]) == 2
+    json.dumps(document, allow_nan=False)
+
+
+def test_a_market_with_no_movement_gets_the_librarys_zero_convention_labelled_ready(store) -> None:
+    """Where a ratio is 0/0 (nothing moved, no volume) TA-Lib returns 0 and the engine says ready.
+
+    This pins the convention so a library change is noticed, and so nobody reads the zeros as measurements: a ready
+    RSI of 0 means 'all losses' only when something moved. The engine does not detect the degenerate case (see
+    docs/INDICATOR-MENU.md, rule 8); the Trader reads such oscillators next to the candles it already receives.
+    """
+    flat = [c.model_copy(update={"open": Decimal("0.5"), "high": Decimal("0.5"), "low": Decimal("0.5"),
+                                 "close": Decimal("0.5"), "volume": Decimal("0"), "vwap": None})
+            for c in build_candles("range_burst", count=1000)]
+    store.save(flat, run_id=_run(store, flat[-1].available_at_utc + timedelta(hours=1)))
+    zero_over_zero = {"RSI": ("value",), "MFI": ("value",), "STOCH": ("slow_k", "slow_d"), "WILLR": ("value",),
+                      "CCI": ("value",), "ADX": ("value",), "PLUS_DI": ("value",), "MINUS_DI": ("value",)}
+    for spec in INDICATOR_MENU:
+        result = _read(store, flat, 999, spec.name, {}, count=2)
+        assert result.status == "ready", spec.name
+        for output, series in result.values.items():
+            if output in zero_over_zero.get(spec.name, ()):
+                assert series == (0.0, 0.0), (spec.name, output)  # 0/0 read as 0, not as 'all losses' and so on
+            elif spec.name == "AROON":
+                assert series == (100.0, 100.0), (spec.name, output)
+            elif spec.group in ("moving_average", "price_range") or spec.name in ("BBANDS", "SAR"):
+                assert series == (0.5, 0.5), (spec.name, output)  # these are simply the price
+            else:
+                assert series == (0.0, 0.0), (spec.name, output)  # no movement, no range, no volume
+
+
+def test_a_document_lists_the_first_hundred_missing_slots_and_the_complete_count(store) -> None:
+    candles = _fill(store, count=100)
+    result = _read(store, candles, 99, "SMA", {"timeperiod": 300})  # 200 of the 300 slots are before the series
+    document = result.to_document()
+    assert result.status == "warming_up" and len(result.missing_close_times_utc) == 200
+    assert engine.DOCUMENT_MISSING_LIMIT == 100
+    assert document["missing_count"] == 200 and len(document["missing_close_times_utc"]) == 100
+    assert document["missing_close_times_utc"] == [utc_iso(at) for at in result.missing_close_times_utc[:100]]
+    assert document["available_candles"] == 100 and document["required_candles"] == 300
     json.dumps(document, allow_nan=False)
 
 

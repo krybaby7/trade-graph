@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import talib
+from tests.indicator_scale import output_scale
 from tests.indicator_second_library import pandas_ta_outputs, talipp_outputs
 from tests.indicator_series import SERIES_SPECS, build_candles
 
@@ -51,14 +52,6 @@ def _requests(library: str, spec: IndicatorSpec) -> list[tuple[dict, bool]]:
     return found
 
 
-def _scale(unit: str, ours: np.ndarray, series: str) -> float:
-    if unit == "price":
-        return float(np.median(_FLOATS[series]["close"]))
-    if unit == "volume":
-        return max(1.0, float(np.nanmax(np.abs(ours))))
-    return 1.0
-
-
 def _no_holes(values: np.ndarray) -> None:
     first = int(np.argmax(~np.isnan(values)))
     assert not np.isnan(values[first:]).any(), "a library left a gap after its first value"
@@ -76,7 +69,7 @@ def _differences(library: str, spec: IndicatorSpec, params: dict, series: str):
         _no_holes(b)
         both = ~np.isnan(a) & ~np.isnan(b)
         assert both.sum() >= len(a) // 2, f"{library} {spec.name}.{output.name} overlaps TA-Lib on too few candles"
-        yield output, a, b, np.abs(a - b) / _scale(output.unit, a, series), both
+        yield output, a, b, np.abs(a - b) / output_scale(output.unit, a), both
 
 
 def _longest_run(flags: np.ndarray) -> int:
@@ -221,7 +214,7 @@ def test_talib_macd_fast_average_is_seeded_where_the_slow_average_starts() -> No
     signal_line[slow - 1:] = talib.EMA(line[slow - 1:], signal)
     got = compute_raw("MACD", {}, _COLUMNS["trend_pullback"])
     start = lookback("MACD", {})
-    scale = float(np.median(closes))
+    scale = output_scale("price", got["macd"])  # the MACD line is judged against its own size, not the price
     assert np.nanmax(np.abs(got["macd"][start:] - line[start:])) <= 1e-9 * scale
     assert np.nanmax(np.abs(got["signal"][start:] - signal_line[start:])) <= 1e-9 * scale
     # Two ordinary EMAs (what the other libraries run) start the fast average at index fast - 1 and differ early.

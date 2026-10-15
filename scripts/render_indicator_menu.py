@@ -14,7 +14,7 @@ import json
 import re
 from pathlib import Path
 
-from trade_graph.application.indicators.engine import plan_history
+from trade_graph.application.indicators.engine import MAX_OUTPUT_POINTS, plan_history
 from trade_graph.application.indicators.library import lookback
 from trade_graph.application.price_history import _FEATURES, _RETIRED, FEATURE_VERSION, FEATURE_VERSION_V2
 from trade_graph.contracts.indicators import INDICATOR_MENU, SETTLE_TOLERANCE, IndicatorSpec, get_indicator
@@ -22,6 +22,7 @@ from trade_graph.contracts.indicators import INDICATOR_MENU, SETTLE_TOLERANCE, I
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "docs" / "INDICATOR-MENU.md"
 CROSS_CHECK = ROOT / "tests" / "fixtures" / "indicators" / "cross_check.json"
+REFERENCE_VALUES = ROOT / "tests" / "fixtures" / "indicators" / "reference_values.json"
 _MA_TYPE = {0: "simple average"}
 
 
@@ -74,17 +75,20 @@ def render_settling_table() -> str:
 
 
 def render_history_table() -> str:
-    rows = ["| Name | Warm-up (asked from TA-Lib) | Seeding history | Candles read for one value |",
-            "|---|---|---|---|"]
+    rows = ["| Name | Warm-up (asked from TA-Lib) | Seeding guidance | Candles read |", "|---|---|---|---|"]
     for spec in INDICATOR_MENU:
-        plan = plan_history(spec.name, {}, 1)
+        plan = plan_history(spec.name, {}, MAX_OUTPUT_POINTS)  # no padding at the largest request: the guidance alone
         if spec.settle is not None:
             seeding = f"{spec.settle.periods} x `{spec.settle.parameter}` = {plan.seeding}"
         elif spec.recursive_seed:
-            seeding = f"{plan.seeding} (fixed: it never forgets its start)"
+            seeding = f"{plan.seeding} (fixed: it never settles)"
         else:
             seeding = "none"
-        rows.append(f"| **{spec.name}** | {plan.lookback} | {seeding} | {plan.span} |")
+        if spec.recursive_seed:
+            read = f"{plan.span}, whatever the number of points"
+        else:
+            read = f"{plan_history(spec.name, {}, 1).span} for one value, one more for each extra point"
+        rows.append(f"| **{spec.name}** | {plan.lookback} | {seeding} | {read} |")
     return "\n".join(rows)
 
 
@@ -140,7 +144,7 @@ def _result(rule: dict) -> str:
         return (f"matches to rounding error{bound}, compared only when {applies}" if applies
                 else f"matches to rounding error{bound}")
     if mode == "converges":
-        return (f"differs early by up to {_number(rule['early_bound'])} (scaled); within "
+        return (f"differs early by up to {_number(rule['early_bound'])} (of the output's size); within "
                 f"{_number(rule['settled_tolerance'])} after {rule['settled_periods']} x `{rule['parameter']}` "
                 "candles past the warm-up")
     return (f"path dependent: agrees on at least {int(rule['min_agreement'] * 100)}% of candles, never disagrees "
@@ -150,12 +154,35 @@ def _result(rule: dict) -> str:
 
 def render_differences_table() -> str:
     table = json.loads(CROSS_CHECK.read_text(encoding="utf-8"))
-    rows = ["| Library | Entry | Result | What differs and why | TradingView |", "|---|---|---|---|---|"]
+    rows = ["| Library | Entry | Result | What differs and why | TradingView (unverified recollection) |",
+            "|---|---|---|---|---|"]
     for library, body in table["libraries"].items():
         for entry, rule in body["entries"].items():
             rows.append(f"| {library.replace('_', '-')} | **{entry}** | {_cell(_result(rule))} | "
                         f"{_cell(rule['reason'])} | {_cell(rule.get('tradingview', '-'))} |")
     return "\n".join(rows)
+
+
+def render_coverage_counts() -> str:
+    """The counts the prose used to carry by hand (and let go stale): entries, comparisons, reference cases."""
+    table = json.loads(CROSS_CHECK.read_text(encoding="utf-8"))
+    cases = json.loads(REFERENCE_VALUES.read_text(encoding="utf-8"))["cases"]
+    total = len(INDICATOR_MENU)
+    parts = []
+    for library, body in table["libraries"].items():
+        rules = body["entries"]
+        uncovered = [entry for entry, rule in rules.items() if rule["mode"] == "not_covered"]
+        differ = [entry for entry, rule in rules.items() if rule["mode"] in ("converges", "state_dependent")]
+        compared = total - len(uncovered)
+        sentence = f"{library.replace('_', '-')} is compared on {compared} of the {total} entries"
+        if uncovered:
+            sentence += f" (not {', '.join(uncovered)})"
+        sentence += f" and matches TA-Lib on {compared - len(differ)}"
+        if differ:
+            sentence += f"; it differs on {', '.join(differ)}"
+        parts.append(sentence)
+    return (f"The menu has {total} entries and the reference values hold {len(cases)} cases. "
+            + "; ".join(parts) + ". Every difference is documented below.")
 
 
 def render_blocks() -> dict[str, str]:
@@ -164,6 +191,7 @@ def render_blocks() -> dict[str, str]:
         "settling-table": render_settling_table(),
         "differences-table": render_differences_table(),
         "history-table": render_history_table(),
+        "coverage-counts": render_coverage_counts(),
         "hourly-table": render_hourly_table(),
     }
 

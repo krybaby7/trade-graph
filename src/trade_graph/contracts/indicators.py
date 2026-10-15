@@ -23,7 +23,9 @@ from trade_graph.domain.errors import ValidationFailure
 # Names the menu as a whole; engine results also carry a digest of the entry used (engine.spec_version).
 MENU_VERSION = "indicator-menu-v1"
 MAX_PERIOD = 500
-# How much of a recursive indicator's starting-point effect Settling guidance may leave, relative to the output scale.
+# How much of a recursive indicator's starting-point effect Settling guidance may leave, relative to the size of the
+# output being read: absolute points for the 0 to 100 readings, otherwise the output's own typical size (the median
+# absolute value of that output). Not the price: the MACD histogram and the ATR are small next to it.
 SETTLE_TOLERANCE = 1e-5
 CandleField = Literal["open", "high", "low", "close", "volume"]
 ParameterKind = Literal["int", "float"]
@@ -140,8 +142,9 @@ class Settling(_Frozen):
     """Engineering guidance for recursively seeded indicators, measured by tests (not a guarantee).
 
     Supplying ``periods`` times the value of ``parameter`` candles of history beyond the library lookback
-    keeps the remaining effect of the starting point below ``SETTLE_TOLERANCE`` of the output scale (the median
-    price for price outputs, 1 for points and percent), as measured by tests/unit/test_indicator_settling.py.
+    keeps the remaining effect of the starting point below ``SETTLE_TOLERANCE`` of the output being read (1 for
+    point readings, the output's own typical size for the rest), as measured by tests/unit/test_indicator_settling.py
+    at small, medium and large settings and at later starts of a few candles and of a fraction of the setting.
     """
 
     parameter: str
@@ -284,7 +287,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          warmup=_window("Needs one smoothing length of candles before the first value."), recursive_seed=True,
          seed_note="It starts from the plain average of the first N closes and then blends each new close into the "
                    "previous value, so where the history starts slightly changes every later value.",
-         settle=dict(parameter="timeperiod", periods=4)),
+         settle=dict(parameter="timeperiod", periods=5)),
     dict(name="WMA", talib_function="WMA", group="moving_average", title="Weighted moving average",
          description="An average of closing prices where the newest candle counts most and the weights fall in a "
                      "straight line to the oldest.",
@@ -297,7 +300,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          warmup=_window("Needs about two smoothing lengths of candles before the first value."), recursive_seed=True,
          seed_note="It is built from two exponential averages that both start from plain averages, so where the "
                    "history starts slightly changes every later value.",
-         settle=dict(parameter="timeperiod", periods=4)),
+         settle=dict(parameter="timeperiod", periods=5)),
     dict(name="BBANDS", talib_function="BBANDS", group="volatility", title="Bollinger Bands",
          description="A moving average with an upper and a lower band a set number of standard deviations away, "
                      "showing how stretched price is.",
@@ -362,7 +365,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          recursive_seed=True,
          seed_note="Fast, slow and signal averages all start from plain averages, so where the history starts "
                    "slightly changes later values.",
-         settle=dict(parameter="slowperiod", periods=4)),
+         settle=dict(parameter="slowperiod", periods=8)),
     dict(name="STOCH", talib_function="STOCH", group="momentum", title="Slow Stochastic",
          description="Shows where the close sits inside the recent high-low range on a 0 to 100 scale, smoothed "
                      "into a K line and a D line.",
@@ -459,7 +462,7 @@ _MENU: tuple[dict[str, Any], ...] = (
          recursive_seed=True,
          seed_note="The true range is smoothed with Wilder's method starting from a plain average of the first N "
                    "values, so where the history starts slightly changes later values.",
-         settle=dict(parameter="timeperiod", periods=8)),
+         settle=dict(parameter="timeperiod", periods=13)),
     dict(name="NATR", talib_function="NATR", group="volatility", title="Normalised ATR",
          description="The average true range as a percent of the close, so volatility can be compared between "
                      "coins with different prices.",
