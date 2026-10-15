@@ -25,6 +25,7 @@ from tests.network_guard import block_network
 
 from trade_graph.adapters.market.kraken_catalog import CATALOG_MAXIMUM_RESPONSE_BYTES
 from trade_graph.adapters.market.public import HttpxTextTransport
+from trade_graph.adapters.market.rate_limit import MonotonicClock
 from trade_graph.adapters.persistence.market_data import MarketDataDatabase
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.cli import build_parser, main
@@ -117,6 +118,8 @@ def test_smoke_collects_bitcoin_and_ether_at_15_minutes_in_at_most_four_requests
     assert [(item["symbol"], item["interval_minutes"]) for item in report["series"]] == [
         ("BTC/USD", 15), ("ETH/USD", 15)]
     assert report["requests"]["made"] == 2 and report["requests_total"] == 3 <= 4
+    # The bound is part of the report, not only of the test: 4 requests for the whole run, the pair list included.
+    assert collect_cli.SMOKE_MAXIMUM_REQUESTS == 4 and report["requests"]["max"] == 3
     assert len(scripted.catalog.calls) == 1 and len(scripted.exchange.calls) == 2
     assert report["paid_calls_enabled"] is False and report["live_trading_enabled"] is False
     assert report["catalog_refresh"]["status"] == "ok" and report["market_database"] == path
@@ -129,6 +132,22 @@ def test_smoke_collects_bitcoin_and_ether_at_15_minutes_in_at_most_four_requests
             ("catalog", "live_public_smoke"), ("public_collect", "live_public_smoke")]
     finally:
         database.close()
+
+
+def test_the_limiter_reads_a_monotonic_clock_for_the_host_clock_and_a_scripted_clock_as_given() -> None:
+    assert isinstance(collect_cli.limiter_clock_for(SystemClock()), MonotonicClock)
+    scripted = FrozenClock(NOW)
+    assert collect_cli.limiter_clock_for(scripted) is scripted
+
+
+def test_a_command_starts_its_limiter_at_the_ceiling_so_a_run_right_after_another_cannot_burst(
+        tmp_path, monkeypatch, capsys) -> None:
+    scripted = Scripted(monkeypatch)
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", database_path(tmp_path), "--smoke")
+    assert code == 0
+    assert report["requests"]["limiter"]["initial_counter"] == "10" and report["requests"]["limiter"]["ceiling"] == 10
+    assert scripted.sleeper.requests[0] == 3.333334  # the very first call, the pair list, already waited
+    assert report["requests"]["limiter"]["waited_seconds"] > 0
 
 
 def test_a_throttled_smoke_run_stays_within_four_requests(tmp_path, monkeypatch, capsys) -> None:

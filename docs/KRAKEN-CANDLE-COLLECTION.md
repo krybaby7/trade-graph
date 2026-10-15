@@ -117,6 +117,14 @@ counter for the whole address, shared with every other public request from it. T
 | Ceiling | 10 | 5 calls of headroom below Kraken's 15, for other users of the same address (the trading service's own polling) |
 | Drain | 0.30 per second | about 10% slower than Kraken's 0.33, so the mirror runs ahead of the real counter |
 | Result | a burst of 10, then one call per 3.33 seconds | |
+| Start of a command | the counter starts **at the ceiling** (`initial_counter` 10) | a new process cannot know what an earlier one asked for a moment ago. The first call waits 3.3 seconds, there is no burst, and a run that begins right after another never takes Kraken's real counter above 10. Simulated against Kraken's documented counter (15, drain 0.33): two runs of 30 calls back to back peak at 18.0 from an empty start and at 1.0 from the ceiling |
+| Clock | the limiter reads `time.monotonic`, not the host clock | a time-service correction of the host clock must neither empty the counter (a step forward) nor freeze it (a step back) |
+
+The mirror lives in one process. **Two collectors running at the same time are not coordinated** and can together
+pass Kraken's maximum (each assumes it has the ceiling to itself). Run one at a time. The suggested plan below
+(a short 1-minute run every 6 hours and a full run daily) will overlap once a day: start the full run first, or
+give the short run a different clock time. Whether Kraken counts keyless public calls on one counter per address
+is not documented; the limiter assumes it does.
 
 Full-scope timing (591 eligible USD pairs in the live catalog of 2026-10-13, confirmed by the smoke run): 1,775
 requests, about 98 minutes at the limiter rate; one interval for all pairs, 591 requests, about 32 minutes.
@@ -258,6 +266,16 @@ For the full default scope on 591 eligible pairs (and 1-minute for two): about 2
 per quarter; about 244,000 rows (29 MB) a day once caught up; the first run adds about 1.28 million rows
 (151 MB). The 5-minute candles are 70% of that. Narrow `--pairs` or `--intervals` to limit growth; the store
 never deletes.
+
+## The host clock
+
+Receipt times come from the host clock. If it is corrected backwards between two runs, a new run would date its
+receipts before the older ones, and a point-in-time read could then show a newer candle beside a hidden older one.
+So a collection run is refused with `error: clock_regression` (nothing is requested, nothing is stored, the failed
+run is recorded) when the clock reads earlier than the latest start or finish time of any recorded run of the same
+source; the report shows `latest_recorded_utc`. It works again once the clock has passed that time (at most the
+size of the correction). A run that crashed before it finished is compared by its start time only. The guard is
+per source: synthetic test runs and live runs never hold each other back.
 
 ## Restart safety
 

@@ -680,6 +680,37 @@ def test_an_unsupported_evidence_label_is_refused_before_anything_is_recorded(st
     assert [run.kind for run in store.runs()] == ["catalog"] and env.exchange.calls == []
 
 
+def test_a_clock_that_reads_earlier_than_a_recorded_run_is_refused_before_any_request(store: CandleStore) -> None:
+    env = Env(store)
+    scope = small_scope(symbols=("BTC/USD",))
+    env.clock.advance(600)  # well after the pair list was observed, so a step back of 153 s stays after it
+    first = env.collect(scope, label="recorded_public_fixture")
+    recorded = datetime.fromisoformat(first["finished_at_utc"])
+    stored = row_count(store)
+    made = len(env.exchange.calls)
+    env.clock.advance(-153)  # the host clock was corrected backwards by the time service
+    report = env.collect(scope, label="recorded_public_fixture")
+    assert report["status"] == "failed" and report["error"] == "clock_regression"
+    assert report["latest_recorded_utc"] == first["finished_at_utc"] and report["requests"]["made"] == 0
+    assert len(env.exchange.calls) == made and row_count(store) == stored
+    assert report["not_reached"] == [] and report["series"] == []
+    assert store.runs()[-1].status == "failed" and store.runs()[-1].started_at_utc < recorded
+    # Another source's runs are not this source's clock history: a synthetic run is not held back by it.
+    assert env.collect(scope, label="synthetic_fixture")["status"] == "ok"
+    env.clock.advance(153 + 1)
+    again = env.collect(scope, label="recorded_public_fixture")
+    assert again["status"] == "ok" and again["error"] is None
+    assert entry(again, "BTC/USD", 60)["continuity"]["status"] == "connected"
+
+
+def test_a_clock_reading_equal_to_the_last_recorded_time_is_allowed(store: CandleStore) -> None:
+    env = Env(store)
+    scope = small_scope(symbols=("BTC/USD",))
+    first = env.collect(scope, label="recorded_public_fixture")
+    second = env.collect(scope, label="recorded_public_fixture")  # the scripted clock did not move in between
+    assert second["started_at_utc"] == first["finished_at_utc"] and second["status"] == "ok"
+
+
 def test_a_naive_clock_is_refused_before_anything_is_recorded(store: CandleStore) -> None:
     env = Env(store)
 

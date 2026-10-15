@@ -20,7 +20,12 @@ from urllib.parse import quote
 from trade_graph.adapters.market.kraken_candles import make_ohlc_transport
 from trade_graph.adapters.market.kraken_catalog import make_catalog_transport
 from trade_graph.adapters.market.public import TextTransport
-from trade_graph.adapters.market.rate_limit import KrakenRestLimiter, LimitedTransport
+from trade_graph.adapters.market.rate_limit import (
+    ASSUMED_CEILING,
+    KrakenRestLimiter,
+    LimitedTransport,
+    MonotonicClock,
+)
 from trade_graph.application.candle_collection_plan import DEFAULT_ONE_MINUTE_SYMBOLS, CollectionScope
 from trade_graph.application.collect_candles import (
     CATALOG_RATE_LIMIT_STOPS,
@@ -61,6 +66,12 @@ def build_sleeper() -> Callable[[float], None]:
 def build_transports() -> tuple[TextTransport, TextTransport]:
     """The pair-list transport (large response limit) and the OHLC transport (small one)."""
     return make_catalog_transport(), make_ohlc_transport()
+
+
+def limiter_clock_for(clock: Clock) -> Clock:
+    """The clock the rate limiter reads: monotonic for the real host clock, so a correction of the host time
+    neither empties nor freezes the counter. A scripted clock is used as given."""
+    return MonotonicClock() if isinstance(clock, SystemClock) else clock
 
 
 # --- registration ---------------------------------------------------------------------------------------------------
@@ -193,7 +204,8 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         return _emit({"command": COLLECT_COMMAND, "status": "failed", "error": "market_database_unusable",
                       "detail": str(error), "market_database": str(path)}, 1)
     clock = build_clock()
-    limiter = KrakenRestLimiter(clock, build_sleeper())
+    # A new process cannot know what an earlier one just asked for, so it assumes the counter is already at the ceiling.
+    limiter = KrakenRestLimiter(limiter_clock_for(clock), build_sleeper(), initial_counter=ASSUMED_CEILING)
     try:
         catalog_transport, ohlc_transport = build_transports()
         catalog = refresh_catalog(store, clock, LimitedTransport(catalog_transport, limiter), label)

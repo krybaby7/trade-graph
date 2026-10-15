@@ -39,7 +39,7 @@ from trade_graph.application.pair_classification import (
     classification_summary,
     classify_pair,
 )
-from trade_graph.contracts.candles import CandleSource, to_unix
+from trade_graph.contracts.candles import CandleSource, from_micros, to_unix
 from trade_graph.contracts.pair_catalog import PairRecord
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
@@ -177,7 +177,11 @@ def collect_candles(store: CandleStore, clock: Clock, transport: TextTransport, 
         raise ValidationFailure("a collection scope is required")
     started_at = _aware_now(clock)
     source: CandleSource = "synthetic" if evidence_label == "synthetic_fixture" else "kraken_public_ohlc"
-    observation = store.latest_catalog(as_of=started_at)
+    latest_recorded = _latest_recorded_time(store, source)
+    # A clock that reads earlier than a finished run of this source (corrected backwards, or set wrongly) would
+    # date new receipts before older ones, so a point-in-time read could show a newer candle beside a hidden older one.
+    refusal = "clock_regression" if latest_recorded is not None and started_at < latest_recorded else None
+    observation = None if refusal else store.latest_catalog(as_of=started_at)
     records = [] if observation is None else [PairRecord.model_validate(pair) for pair in observation.pairs]
     newest = {(item.symbol, item.interval_minutes): to_unix(item.last_open_utc) for item in store.series()
               if item.source == source and item.last_open_utc is not None}
@@ -197,21 +201,35 @@ def collect_candles(store: CandleStore, clock: Clock, transport: TextTransport, 
     finished_at = _aware_now(clock)
     report = _collection_report(store, limiter, scope, plan, observation, records, outcome,
                                 max_requests=max_requests, evidence_label=evidence_label, source=source,
-                                run_id=run_id, started_at=started_at, finished_at=finished_at)
+                                run_id=run_id, started_at=started_at, finished_at=finished_at, refusal=refusal,
+                                latest_recorded=latest_recorded)
     store.finish_run(run_id, finished_at=finished_at, status=report["status"], report=report)
     return report
 
 
+def _latest_recorded_time(store: CandleStore, source: CandleSource) -> datetime | None:
+    """The latest start or finish time of any recorded run of this source. The run table has a few rows per day."""
+    rows = store.database.query(
+        "SELECT MAX(t) AS latest FROM (SELECT started_at AS t FROM candle_runs WHERE source = ? "
+        "UNION ALL SELECT x.finished_at FROM candle_run_results x JOIN candle_runs r ON r.run_id = x.run_id "
+        "WHERE r.source = ?)", (source, source))
+    latest = rows[0]["latest"]
+    return None if latest is None else from_micros(latest)
+
+
 def _collection_report(store: CandleStore, limiter: KrakenRestLimiter, scope: CollectionScope, plan: CollectionPlan,
                        observation, records: list[PairRecord], outcome, *, max_requests: int, evidence_label: str,
-                       source: CandleSource, run_id: int, started_at: datetime, finished_at: datetime) -> dict:
+                       source: CandleSource, run_id: int, started_at: datetime, finished_at: datetime,
+                       refusal: str | None, latest_recorded: datetime | None) -> dict:
     entries = [] if outcome is None else outcome.entries
     stop = None if outcome is None else outcome.stop
     ok = [entry for entry in entries if entry["status"] == "ok"]
     failed = [entry for entry in entries if entry["status"] == "failed"]
     unreached = [[item.record.symbol, item.interval_minutes] for item in plan.series[len(entries):]]
     error = None
-    if observation is None:
+    if refusal is not None:
+        status, error = "failed", refusal
+    elif observation is None:
         status, error = "failed", "no_catalog"
     elif not plan.series:
         status, error = "failed", "nothing_to_collect"
@@ -238,6 +256,7 @@ def _collection_report(store: CandleStore, limiter: KrakenRestLimiter, scope: Co
         "source": source,
         "started_at_utc": utc_iso(started_at),
         "finished_at_utc": utc_iso(finished_at),
+        "latest_recorded_utc": None if latest_recorded is None else utc_iso(latest_recorded),
         "paid_calls_enabled": False,
         "live_trading_enabled": False,
         "catalog": None if observation is None else {

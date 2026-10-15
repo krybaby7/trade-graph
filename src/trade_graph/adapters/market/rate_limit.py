@@ -8,9 +8,14 @@ restricts calls for a few seconds, longer if the calls continue.
 This limiter assumes the starter tier and stays well inside it:
 
 - ceiling 10 of 15, so five calls of headroom remain for other users of the same address (the trading
-  service's own public polling) and for a counter that started above zero;
+  service's own public polling);
 - drain 0.30 per second, about 10% slower than the documented 0.33, so the mirror runs ahead of Kraken's own
   counter. Starting from zero it allows a burst of 10 and then one call per 3.33 seconds.
+
+The mirror lives in one process. A process cannot know how many calls an earlier one made a moment ago, so a
+command starts it at the ceiling (``initial_counter``): there is no burst, the first call waits, and a run that
+begins right after another never takes Kraken's real counter above the ceiling. Two collectors running at the same
+time are not coordinated and can together pass Kraken's maximum: run one at a time.
 
 The clock and the sleeper are injected, so tests never wait. Arithmetic uses exact fractions.
 """
@@ -18,6 +23,7 @@ The clock and the sleeper are injected, so tests never wait. Arithmetic uses exa
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from fractions import Fraction
@@ -42,16 +48,19 @@ class KrakenRestLimiter:
     """Counts calls the way Kraken does and sleeps until the next call fits under the assumed ceiling."""
 
     def __init__(self, clock: Clock, sleeper: Callable[[float], None], *, ceiling: int = ASSUMED_CEILING,
-                 decay_per_second: Fraction = ASSUMED_DECAY_PER_SECOND) -> None:
+                 decay_per_second: Fraction = ASSUMED_DECAY_PER_SECOND, initial_counter: int = 0) -> None:
         if type(ceiling) is not int or not 1 <= ceiling <= KRAKEN_COUNTER_MAXIMUM:
             raise ValidationFailure("the assumed ceiling must be a whole number from 1 to Kraken's starter maximum")
         if not isinstance(decay_per_second, Fraction) or not 0 < decay_per_second <= KRAKEN_DECAY_PER_SECOND:
             raise ValidationFailure("the assumed drain must be a positive fraction no faster than Kraken's")
+        if type(initial_counter) is not int or not 0 <= initial_counter <= KRAKEN_COUNTER_MAXIMUM:
+            raise ValidationFailure("the starting counter must be a whole number from 0 to Kraken's starter maximum")
         self._clock = clock
         self._sleep = sleeper
         self.ceiling = ceiling
         self.decay_per_second = decay_per_second
-        self._counter = Fraction(0)
+        self.initial_counter = initial_counter
+        self._counter = Fraction(initial_counter)
         self._at: datetime | None = None
         self.calls = 0
         self._waited = Fraction(0)
@@ -104,10 +113,29 @@ class KrakenRestLimiter:
             "calls": self.calls,
             "waited_seconds": float(self._waited),
             "ceiling": self.ceiling,
+            "initial_counter": str(self.initial_counter),
             "assumed_decay_per_second": _fraction_text(self.decay_per_second),
             "kraken_starter_maximum": KRAKEN_COUNTER_MAXIMUM,
             "kraken_starter_decay_per_second": _fraction_text(KRAKEN_DECAY_PER_SECOND),
         }
+
+
+class MonotonicClock:
+    """An aware clock that follows ``time.monotonic`` only, for the limiter.
+
+    The limiter needs elapsed time, never the date. A host clock that is stepped (a time-service correction, a
+    manual change) would make the wall clock read hours ahead and empty the mirrored counter, or behind and grant
+    nothing. The readings here are not wall time and must not be stored as such; only differences mean anything.
+    """
+
+    _ORIGIN = datetime(1970, 1, 1, tzinfo=UTC)
+
+    def __init__(self, monotonic: Callable[[], float] = time.monotonic) -> None:
+        self._monotonic = monotonic
+        self._start = monotonic()
+
+    def now(self) -> datetime:
+        return self._ORIGIN + timedelta(seconds=self._monotonic() - self._start)
 
 
 class LimitedTransport:

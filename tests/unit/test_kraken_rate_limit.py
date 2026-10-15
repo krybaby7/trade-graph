@@ -15,6 +15,7 @@ from trade_graph.adapters.market.rate_limit import (
     KRAKEN_DECAY_PER_SECOND,
     KrakenRestLimiter,
     LimitedTransport,
+    MonotonicClock,
 )
 from trade_graph.domain.clock import FrozenClock
 from trade_graph.domain.errors import ValidationFailure
@@ -110,6 +111,79 @@ def test_a_clock_that_moves_backwards_grants_no_credit() -> None:
     limiter.acquire()
     assert sleeper.requests == [3.333334]
     assert limiter.counter() <= ASSUMED_CEILING
+
+
+def _kraken_counter_peak(runs: int, calls_per_run: int, *, start: int, gap_seconds: float = 0) -> Fraction:
+    """The highest value Kraken's own counter (documented drain, plus one per call) reaches over several runs, each
+    run a new limiter in a new process on the same clock."""
+    clock = FrozenClock(NOW)
+    sleeper = Sleeper(clock)
+    real = Fraction(0)
+    last = clock.now()
+    peak = Fraction(0)
+    for _ in range(runs):
+        limiter = KrakenRestLimiter(clock, sleeper, initial_counter=start)
+        for _ in range(calls_per_run):
+            limiter.acquire()
+            elapsed = Fraction((clock.now() - last) // timedelta(microseconds=1), 1_000_000)
+            last = clock.now()
+            real = max(Fraction(0), real - KRAKEN_DECAY_PER_SECOND * elapsed) + 1
+            peak = max(peak, real)
+        clock.advance(gap_seconds)
+    return peak
+
+
+def test_a_new_process_that_starts_from_an_empty_counter_can_push_krakens_over_its_maximum() -> None:
+    # The reason a command starts at the ceiling: two runs one after the other, each with a fresh limiter.
+    assert _kraken_counter_peak(2, 30, start=0) > KRAKEN_COUNTER_MAXIMUM
+
+
+@pytest.mark.parametrize("gap_seconds", [0, 5, 30, 600])
+def test_runs_that_start_at_the_ceiling_never_take_krakens_counter_past_the_ceiling(gap_seconds: int) -> None:
+    assert _kraken_counter_peak(3, 30, start=ASSUMED_CEILING, gap_seconds=gap_seconds) <= ASSUMED_CEILING
+
+
+def test_a_limiter_that_starts_at_the_ceiling_has_no_burst_and_its_first_call_waits() -> None:
+    limiter, _clock, sleeper = _limiter(initial_counter=ASSUMED_CEILING)
+    assert limiter.counter() == ASSUMED_CEILING
+    limiter.acquire()
+    assert sleeper.requests == [3.333334]
+    assert limiter.snapshot()["initial_counter"] == "10"
+
+
+def test_the_starting_counter_defaults_to_empty_and_cannot_exceed_krakens_maximum() -> None:
+    limiter, _clock, _sleeper = _limiter()
+    assert limiter.snapshot()["initial_counter"] == "0"
+    for bad in (-1, KRAKEN_COUNTER_MAXIMUM + 1, True, 2.5, "3"):
+        with pytest.raises(ValidationFailure):
+            _limiter(initial_counter=bad)
+    assert _limiter(initial_counter=KRAKEN_COUNTER_MAXIMUM)[0].counter() == KRAKEN_COUNTER_MAXIMUM
+
+
+def test_the_monotonic_clock_follows_its_monotonic_source_and_nothing_else() -> None:
+    readings = iter([5000.0, 5000.0, 5003.5, 5003.5, 5010.0])
+    clock = MonotonicClock(lambda: next(readings))
+    first, second, third = clock.now(), clock.now(), clock.now()
+    assert first.tzinfo is not None and first.utcoffset() == timedelta(0)
+    assert (second - first, third - second) == (timedelta(seconds=3.5), timedelta(0))
+    assert clock.now() - third == timedelta(seconds=6.5)
+
+
+def test_a_limiter_on_the_monotonic_clock_is_not_fooled_by_a_wall_clock_step() -> None:
+    monotonic = {"now": 100.0}
+    waits: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        waits.append(seconds)
+        monotonic["now"] += seconds
+
+    limiter = KrakenRestLimiter(MonotonicClock(lambda: monotonic["now"]), sleeper)
+    for _ in range(ASSUMED_CEILING):
+        limiter.acquire()
+    # The wall clock may step an hour here; the limiter never reads it, so the counter is untouched.
+    assert limiter.counter() == ASSUMED_CEILING
+    limiter.acquire()
+    assert waits == [3.333334]
 
 
 def test_a_sleeper_that_does_not_let_time_pass_fails_instead_of_looping() -> None:
