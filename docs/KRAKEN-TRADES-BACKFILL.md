@@ -22,6 +22,12 @@ order, uses a key, or costs money: every request is an unauthenticated public GE
   counter went over its maximum; `EService: Throttled: <unix time>` means too many concurrent requests and names the
   time to retry after. The page gives no backoff recipe or ban duration.
 
+Both pages were read again on 2026-10-15 and still say the above. The only addition is two optional Trades
+parameters, `asset_class` (for tokenized, non-crypto pairs) and `assetVersion` (switches result keys to display names
+such as `BTC/USD`). The backfill sends neither, so it keeps receiving the legacy keys (`XXBTZUSD`) it was recorded with.
+The pages still do not say whether `since` is inclusive, what the unit of `last` is, how far back Trades reaches, or
+whether unauthenticated calls count toward the counter.
+
 What the pages **do not** say, and what was therefore observed on 2026-10-13 from the recordings
 ([`tests/fixtures/kraken/README.md`](../tests/fixtures/kraken/README.md)):
 
