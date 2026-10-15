@@ -1,0 +1,12 @@
+{
+  "strategy_id": "slow-trend-pullback",
+  "status": "unproven",
+  "features": ["sma_20", "sma_50", "pullback_from_high"],
+  "entry": "Uptrend on the hourly close and a pullback that holds the slower average.",
+  "exit": "Close back through the slower average or a predeclared invalidation.",
+  "sizing_envelope": "At most the mandate single-asset fraction.",
+  "invalidation": "Hourly close below the slower average.",
+  "execution": "Spot limit or market on a fresh quote. No same-bar fill.",
+  "costs": "Conservative taker fee unless a resting limit is assumed maker.",
+  "validation": "Forward paper versus cash baseline. One change at a time."
+}

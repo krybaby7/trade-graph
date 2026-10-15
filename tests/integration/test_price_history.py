@@ -109,7 +109,9 @@ def test_retired_pullback_and_distance_fields_are_unsupported_and_point_to_their
     _, store, _ = _populate(tmp_path)
     retired = ["pullback_from_high", "pullback_depth", "midpoint_distance"]
     result = store.snapshot("BTC/USD", AS_OF, [*retired, "midpoint"], source="synthetic")
-    assert result["values"] == {"midpoint": "38.75"}
+    # The ingredients of the retired ratios are supplied although only midpoint was asked for by name.
+    assert result["values"] == {"midpoint": "38.75", "highest_high_20": "51"}
+    assert not set(retired) & set(result["values"])
     for name in retired:
         feature = result["features"][name]
         assert feature["status"] == "unsupported" and feature["lookback_candles"] is None

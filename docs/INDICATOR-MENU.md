@@ -560,9 +560,20 @@ second library (none offers it on the menu), or to retire the ratios and supply 
 was chosen: `highest_high_20` (TA-Lib `MAX` over the last 20 completed highs) is new, `midpoint` and
 `latest_close` were already supplied, and the Trader (or an alarm level it sets) reads the gap between them.
 A request for a retired name is answered with status `unsupported` and a definition that names its
-replacement; it does not widen the lookback and does not change any other field. If the owner wants the
-ratios back as numbers, that is a decision to allow a labelled in-house division or to find a library that
-provides it.
+replacement, and the replacement numbers (`highest_high_20` for the two pullback names, `midpoint` for the
+distance) are supplied in the same snapshot as if they had been requested, with their own `ready` entries. That
+last part matters for installations that already exist: the new `runtime_artifacts.json` and
+`strategies/templates/slow_trend_pullback.json` ask for `highest_high_20`, but `VersionController.ensure` keeps
+the active baseline a database already has, so such a database keeps the previous template, which asks for
+`pullback_from_high` and never for `highest_high_20`. Without the supply it would have received neither the ratio
+nor its ingredient (`test_an_installation_that_kept_the_v2_slow_trend_template_still_gets_usable_inputs` uses the
+previous template as a fixture). The ratio itself is never a value. The other fields do not change, except that the
+shared lookback follows the ingredients as it would if they had been asked for. The artifact grammar still accepts
+the retired names, because a retained bundle has to keep validating; a new Engineer bundle that names one gets the
+same answer (unsupported plus the ingredient). The cleaner remedy for an existing database is an owner-approved
+replacement of its stored baseline with the new templates (a migration or a reset), which this branch does not do.
+If the owner wants the ratios back as numbers, that is a decision to allow a labelled in-house division or to find
+a library that provides it.
 
 **Exact text, one rule.** The library returns floats; the snapshot keeps exact decimal text so hashing stays
 stable. The rule is `rounded_decimal`: take the float's exact binary value, round it half-even to 12
@@ -570,13 +581,33 @@ significant digits using a Decimal context of its own (the ambient context canno
 in plain notation without trailing zeros (`-0` becomes `0`). Why 12: a float64 carries about 15.95 digits and
 the library's running sums add rounding noise in the last one or two, so rounding at 12 makes the text identical
 across platforms and compilers, while every price the hourly pairs quote (at most 7 digits) passes through
-unchanged (`range_high`, `range_low`, `highest_high_20` and `midpoint` are exactly the candle prices). The cost
-is a relative rounding error of at most 5e-12 on the derived values (averages and returns). The v2
-arithmetic is kept as an oracle in the tests only: for 36 seeded random series (BTC-like, ETH-like and a
-5-decimal coin) every v3 value agrees with the v2 exact value within 6e-12 relative, and the four exact ones
-agree exactly. A value rounded across a 12-digit boundary by a one-bit platform difference would change the
-text (probability roughly 1 in 10,000 per value); a changed text changes that snapshot's hash, never a
-stored one.
+unchanged (`range_high`, `range_low`, `highest_high_20` and `midpoint` are exactly the candle prices).
+
+How exact the numbers are, stated as measured:
+
+- **The four selection fields** (`highest_high_20`, `range_high`, `range_low`, `midpoint`) are exact for inputs
+  of up to 11 significant digits (`EXACT_INPUT_DIGITS`): the value is an input price, or half the sum of two,
+  and fits the 12-digit text. v2 returned such a price exactly whatever its digits, and the candle contract allows
+  up to 128 characters, so for a window with a price of more than 11 significant digits these fields are
+  `unsupported` with a definition that says why, instead of a value that was silently rounded
+  (`test_a_price_with_more_digits_than_the_stored_text_carries_is_withheld_not_silently_rounded`). No price a
+  hourly pair quotes comes near that.
+- **The averages** (`sma_20`, `sma_50`) are within 5e-12 of their value, relative.
+- **The two returns** (`hourly_return`, `four_hour_drift`) are within 5e-12 of their value, relative, **plus 2.5e-16
+  absolute**. The absolute part comes from the float64 subtraction of two nearly equal prices and does not shrink
+  with the return, so a very small return has fewer than 12 trustworthy digits: a one-tick move of BTC/USD from
+  63000.1 to 63000.2 is stored as 0.00000158729906776 against the exact 0.000001587299067779..., a relative error
+  of 1.2e-11. The earlier statement that every value was within 6e-12 relative was true only for the moves of the
+  test (up to 2 percent a candle), where the return is large; for returns below roughly 4e-4 the absolute term
+  dominates. In trading terms the error is about 2e-16, immaterial; the digits shown are not all meaningful.
+  The feature definitions say so, and `test_returns_after_tiny_moves_stay_within_the_stated_absolute_bound` checks
+  the bound on 30 tick-sized random walks at five price levels.
+
+The v2 arithmetic is kept as an oracle in the tests only: for 36 seeded random series (BTC-like, ETH-like and a
+5-decimal coin, moves up to 2 percent a candle) every v3 value agrees with the v2 exact value within 6e-12
+relative, and the four selection fields agree exactly. A value rounded across a 12-digit boundary by a one-bit
+platform difference would change the text (probability roughly 1 in 10,000 per value); a changed text changes
+that snapshot's hash, never a stored one.
 
 **Retained snapshots.** `hourly-price-features-v2` snapshots and contexts that are already stored are never
 recomputed and stay as they were. `FEATURE_VERSION_V2` remains in `price_history.py`. The evidence reader keeps

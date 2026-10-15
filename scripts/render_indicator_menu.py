@@ -129,7 +129,7 @@ def render_hourly_table() -> str:
             new = (f"TA-Lib `{get_indicator(feature.indicator).talib_function}` ({parameters}) over "
                    f"{feature.lookback} completed hourly candles")
         else:
-            new = f"**retired**: read {_RETIRED[name]}"
+            new = f"**retired**: read {' and '.join(_RETIRED[name])} with latest_close"
         rows.append(f"| `{name}` | {_V2_WORDS[name]} | {_cell(new)} | {_V3_WHY[name]} |")
     return "\n".join(rows)
 

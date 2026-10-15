@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Context, Decimal, localcontext
 from pathlib import Path
 
+import numpy as np
 import pytest
 from tests.integration.test_price_history import _candle, _database
 
@@ -103,6 +104,105 @@ def test_library_values_agree_with_the_v2_exact_definitions_to_twelve_digits(tmp
     database.close()
 
 
+def _long_price_candles(*, high: str | None = None, base: str = "1000000000.1") -> list[HourlyCandle]:
+    """Fifty candles priced near 1e9 (11 significant digits); the last one's high may be given as many digits."""
+    candles = []
+    for index in range(1, 51):
+        close = Decimal(base) + Decimal(index) / 10
+        candles.append(_candle(index, open=close, high=close + Decimal("0.2"), low=close - Decimal("0.1"),
+                               close=close, vwap=close))
+    if high is not None:
+        last = candles[-1]
+        candles[-1] = last.model_copy(update={"high": Decimal(high)})
+    return candles
+
+
+def test_a_price_with_eleven_digits_comes_through_the_selection_features_exactly(tmp_path) -> None:
+    database = _database(tmp_path)
+    store = HistoryStore(database)
+    candles = _long_price_candles()
+    store.save(candles)
+    result = store.snapshot("BTC/USD", AS_OF, ["highest_high_20", "range_high", "range_low", "midpoint"],
+                            source="synthetic")
+    highs, lows = [c.high for c in candles[-24:]], [c.low for c in candles[-24:]]
+    assert Decimal(result["values"]["range_high"]) == max(highs) == Decimal("1000000005.3")
+    assert Decimal(result["values"]["range_low"]) == min(lows) == Decimal("1000000002.7")
+    assert Decimal(result["values"]["midpoint"]) == (max(highs) + min(lows)) / 2
+    assert all(feature["status"] == "ready" for feature in result["features"].values())
+    database.close()
+
+
+def test_a_price_with_more_digits_than_the_stored_text_carries_is_withheld_not_silently_rounded(tmp_path) -> None:
+    """v2 returned a candle price exactly. The 12-digit text cannot carry a 17-digit price, and rounding it would be
+    a silent change of an input, so the selection features that read that column say unsupported and say why."""
+    database = _database(tmp_path)
+    store = HistoryStore(database)
+    store.save(_long_price_candles(high="1000000005.512345678901"))
+    names = ["sma_20", "highest_high_20", "range_high", "range_low", "midpoint"]
+    result = store.snapshot("BTC/USD", AS_OF, names, source="synthetic")
+    for name in ("highest_high_20", "range_high", "midpoint"):  # these read the high column
+        assert name not in result["values"], name
+        feature = result["features"][name]
+        assert feature["status"] == "unsupported" and "significant digits" in feature["definition"], name
+        assert feature["lookback_candles"] == price_history._FEATURES[name].lookback  # the window is still named
+    for name in ("sma_20", "range_low"):  # these do not
+        assert result["features"][name]["status"] == "ready" and name in result["values"], name
+    json.dumps(result, allow_nan=False)
+    database.close()
+
+
+def _tick_walk(seed: int, *, base: str, tick: str, count: int = 60) -> list[HourlyCandle]:
+    """Candles whose closes move by one to three ticks at a time: the returns are tiny, as on a quiet hour."""
+    rng = random.Random(seed)
+    step, price = Decimal(tick), Decimal(base)
+    candles = []
+    for index in range(1, count + 1):
+        opened = price
+        price += step * rng.choice((-3, -2, -1, 1, 2, 3))
+        candles.append(_candle(index, count=count, open=opened, high=max(opened, price) + step,
+                               low=min(opened, price) - step, close=price, vwap=price))
+    return candles
+
+
+def _tick_bound(exact: Decimal) -> Decimal:
+    """The real accuracy of a return: 12-digit rounding (5e-12 of the value) plus the float64 cancellation of two
+    nearly equal prices, which is absolute (about 2.2e-16 whatever the size of the return), not relative."""
+    return abs(exact) * Decimal("5e-12") + Decimal("2.5e-16")
+
+
+def test_the_documented_twelve_digit_bound_is_false_for_a_one_tick_return_and_the_real_bound_holds(tmp_path) -> None:
+    database = _database(tmp_path)
+    store = HistoryStore(database)
+    flat = [_candle(index, open=Decimal("63000.1"), high=Decimal("63000.2"), low=Decimal("63000.1"),
+                    close=Decimal("63000.1"), vwap=Decimal("63000.1")) for index in range(1, 50)]
+    last = _candle(50, open=Decimal("63000.1"), high=Decimal("63000.2"), low=Decimal("63000.1"),
+                   close=Decimal("63000.2"), vwap=Decimal("63000.2"))
+    store.save([*flat, last])
+    got = Decimal(store.snapshot("BTC/USD", AS_OF, ["hourly_return"], source="synthetic")["values"]["hourly_return"])
+    exact = Context(prec=60).divide(Decimal("63000.2"), Decimal("63000.1")) - 1  # 1.5873...e-6
+    assert abs(got - exact) / exact > Decimal("6e-12")  # the 'every value within 6e-12 relative' claim fails here
+    assert abs(got - exact) <= _tick_bound(exact)  # and the stated bound (5e-12 relative + 2.5e-16 absolute) holds
+    database.close()
+
+
+@pytest.mark.parametrize("seed", range(6))
+@pytest.mark.parametrize("base,tick", [("63000.1", "0.1"), ("123456.7", "0.1"), ("2599.99", "0.01"),
+                                       ("0.0123457", "0.0000001"), ("31.07", "0.01")])
+def test_returns_after_tiny_moves_stay_within_the_stated_absolute_bound(tmp_path, seed, base, tick) -> None:
+    database = _database(tmp_path)
+    store = HistoryStore(database)
+    candles = _tick_walk(seed, base=base, tick=tick)
+    store.save(candles)
+    result = store.snapshot("BTC/USD", AS_OF, ["hourly_return", "four_hour_drift"], source="synthetic")
+    exact = Context(prec=60)
+    closes = [candle.close for candle in candles]
+    expected = {"hourly_return": exact.divide(closes[-1], closes[-2]) - 1,
+                "four_hour_drift": exact.divide(closes[-1], closes[-5]) - 1}
+    for name, value in expected.items():
+        assert abs(Decimal(result["values"][name]) - value) <= _tick_bound(value), (name, value)
+    database.close()
+
+
 def test_values_are_exact_decimal_strings_and_the_snapshot_hash_is_stable(tmp_path) -> None:
     database = _database(tmp_path)
     store = HistoryStore(database)
@@ -148,8 +248,49 @@ def test_window_lengths_are_the_librarys_lookback_plus_one() -> None:
         "hourly_return": 2, "four_hour_drift": 5}
 
 
+@pytest.mark.parametrize("name", V3_FIELDS)
+def test_every_feature_is_whatever_the_library_returns_for_its_window(tmp_path, monkeypatch, name) -> None:
+    """Delegation is proved, not scanned for: hand the module a library that answers with a number no candle holds
+    and every supported feature must carry exactly that number. A hand-written max, min, mean or ratio in
+    price_history.py would put a different number here (the first guard let such a formula through)."""
+    database = _database(tmp_path)
+    store = HistoryStore(database)
+    store.save([_candle(index) for index in range(1, 51)])
+    seen = []
+
+    def sentinel(indicator, parameters, columns):
+        seen.append((indicator, dict(parameters), {field: tuple(values) for field, values in columns.items()}))
+        return {"value": np.array([0.0, 987654.25])}
+
+    monkeypatch.setattr(price_history, "compute_raw", sentinel)
+    result = store.snapshot("BTC/USD", AS_OF, [name], source="synthetic")
+    assert result["values"] == {name: "987654.25"}, name
+    feature = price_history._FEATURES[name]
+    ((indicator, parameters, columns),) = seen
+    assert (indicator, parameters) == (feature.indicator, dict(feature.parameters))
+    assert set(columns) == set(get_indicator(indicator).requires)
+    assert all(len(values) == feature.lookback and all(type(v) is Decimal for v in values)
+               for values in columns.values())  # Decimal candle columns of exactly the window, never floats
+    database.close()
+
+
+def test_the_syntax_guards_see_a_hand_written_formula_the_old_guard_missed(tmp_path) -> None:
+    from tests.indicator_guard import arithmetic_on_prices
+
+    clean = Path(price_history.__file__)
+    assert arithmetic_on_prices(clean) == []
+    mutant = tmp_path / "mutant.py"
+    mutant.write_text("def f(candles):\n    return max(c.high for c in candles[-24:])\n", encoding="utf-8")
+    assert arithmetic_on_prices(mutant), "max over candle highs must be caught"
+    mutant.write_text("def f(candles):\n    return candles[-1].close - candles[-2].close\n", encoding="utf-8")
+    assert arithmetic_on_prices(mutant), "a difference of two closes must be caught"
+
+
 def test_price_history_contains_no_indicator_arithmetic() -> None:
     """The module may select candles and call the library; it may not average, divide or scan prices itself."""
+    from tests.indicator_guard import arithmetic_on_prices
+
+    assert arithmetic_on_prices(Path(price_history.__file__)) == []
     source = Path(price_history.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     operators = {type(node.op).__name__ for node in ast.walk(tree) if isinstance(node, ast.BinOp)}
@@ -200,21 +341,60 @@ def test_a_library_failure_is_never_swallowed_into_a_value(tmp_path, monkeypatch
 # --- retired fields ----------------------------------------------------------------------------------------------
 
 
-def test_retired_fields_are_unsupported_with_a_pointer_and_are_not_part_of_the_feature_table(tmp_path) -> None:
+def test_retired_fields_are_unsupported_with_a_pointer_and_their_ingredients_are_supplied(tmp_path) -> None:
+    """A retired ratio is still not a value, but asking for it now also supplies the library numbers it was made of,
+    because an installation that kept a v2 template never asks for highest_high_20 by name."""
     database = _database(tmp_path)
     store = HistoryStore(database)
     store.save([_candle(index) for index in range(1, 51)])
     result = store.snapshot("BTC/USD", AS_OF, V2_ONLY_FIELDS, source="synthetic")
-    assert result["values"] == {} and set(price_history._FEATURES).isdisjoint(V2_ONLY_FIELDS)
+    assert set(price_history._FEATURES).isdisjoint(V2_ONLY_FIELDS)
+    assert not set(V2_ONLY_FIELDS) & set(result["values"])  # the ratios themselves are never values
     for name in V2_ONLY_FIELDS:
         feature = result["features"][name]
         assert feature["status"] == "unsupported" and feature["candle_ids"] == []
         assert "retired" in feature["definition"].lower()
-    # Asking for them does not widen the lookback or change what the other fields return.
+    ingredients = store.snapshot("BTC/USD", AS_OF, ["highest_high_20", "midpoint"], source="synthetic")
+    assert result["values"] == ingredients["values"] and set(result["values"]) == {"highest_high_20", "midpoint"}
+    for name in ("highest_high_20", "midpoint"):
+        assert result["features"][name] == ingredients["features"][name]
+        assert result["features"][name]["status"] == "ready"
+    assert "highest_high_20" in result["features"]["pullback_from_high"]["definition"]
+    assert "midpoint" in result["features"]["midpoint_distance"]["definition"]
+    # The other fields are what they were without the retired names.
     mixed = store.snapshot("BTC/USD", AS_OF, ["sma_20", *V2_ONLY_FIELDS], source="synthetic")
     alone = store.snapshot("BTC/USD", AS_OF, ["sma_20"], source="synthetic")
-    assert mixed["values"] == alone["values"] and mixed["features"]["sma_20"] == alone["features"]["sma_20"]
+    assert mixed["features"]["sma_20"] == alone["features"]["sma_20"]
+    assert mixed["values"]["sma_20"] == alone["values"]["sma_20"]
     database.close()
+
+
+def test_an_installation_that_kept_the_v2_slow_trend_template_still_gets_usable_inputs(tmp_path) -> None:
+    """The new runtime_artifacts.json never reaches a database that already has an active baseline, so that
+    baseline keeps asking for pullback_from_high. The template of the previous commit (a0b2375) is the fixture:
+    its Trader context must still carry highest_high_20, which is what the ratio was made of."""
+    from tests.integration.test_history_contexts import HistoryFlow, _candles, _save
+
+    from trade_graph.paper_runtime import installed_artifacts
+
+    old_template = (Path(__file__).resolve().parents[1] / "fixtures" / "hourly" / "slow_trend_pullback_v2.json")
+    assert json.loads(old_template.read_text(encoding="utf-8"))["features"] == [
+        "sma_20", "sma_50", "pullback_from_high"]
+    files = dict(installed_artifacts())
+    files["strategies/templates/slow_trend_pullback.json"] = old_template.read_text(encoding="utf-8")
+    flow = HistoryFlow(tmp_path, templates=files)
+    try:
+        _save(flow, _candles(flow))
+        _, (request, _) = flow.run("trader")
+        market = request.context["market"]["BTC/USD"]
+        assert "pullback_from_high" in json.dumps(request.context["active_strategy_templates"])
+        assert market["history"]["features"]["pullback_from_high"]["status"] == "unsupported"
+        assert market["features"]["highest_high_20"] == "150"  # the ingredient, supplied although never requested
+        assert market["history"]["features"]["highest_high_20"]["status"] == "ready"
+        assert market["features"]["sma_20"] == "139.5" and market["features"]["sma_50"] == "124.5"
+        assert "pullback_from_high" not in market["features"]
+    finally:
+        flow.db.close()
 
 
 def test_the_installed_strategy_templates_only_request_supported_fields() -> None:

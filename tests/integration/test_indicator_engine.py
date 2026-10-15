@@ -664,6 +664,10 @@ def test_the_engine_reads_candles_only_through_the_store_window_and_never_import
     attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
     assert "window" in attributes
     assert not attributes & {"database", "query", "execute", "executemany", "coverage", "revisions", "series"}
+    # No arithmetic or aggregation on a candle price or volume field (this guard sees a hand-written max or min).
+    from tests.indicator_guard import arithmetic_on_prices
+
+    assert arithmetic_on_prices(_ENGINE_SOURCE) == []
     # No arithmetic on prices or indicator values: the only multiplication is the menu's settling multiplier.
     operators = [type(node.op).__name__ for node in ast.walk(tree) if isinstance(node, ast.BinOp)]
     assert "Div" not in operators and "Pow" not in operators and "MatMult" not in operators
