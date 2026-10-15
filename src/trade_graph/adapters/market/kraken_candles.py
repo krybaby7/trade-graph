@@ -28,6 +28,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from trade_graph.adapters.market.kraken_errors import MAXIMUM_UNIX_TIME, rate_limit_signal
 from trade_graph.adapters.market.public import KRAKEN_REST, HttpxTextTransport, TextTransport
 from trade_graph.contracts.candles import COLLECTED_INTERVALS, Candle, CandleSource, from_unix
 from trade_graph.contracts.pair_catalog import ListedPair
@@ -42,7 +43,6 @@ OHLC_MAXIMUM_ROWS = OHLC_COMMITTED_ROWS + 1  # plus the candle still forming
 # transport's own default, far below its 16 MiB ceiling.
 OHLC_MAXIMUM_RESPONSE_BYTES = 1_048_576
 OHLC_TIMEOUT_SECONDS = 15.0
-MAXIMUM_UNIX_TIME = 4_102_444_800  # 2100-01-01; anything later is not a plausible candle or cursor
 # Far above any real count and far below the 64-bit integer the store writes. A larger number is a corrupt answer: it
 # is refused as an invalid response here, not met later as an unexplained storage failure.
 OHLC_MAXIMUM_TRADE_COUNT = 10**12
@@ -53,7 +53,6 @@ OHLC_FAILURE_CATEGORIES = (
 )
 _PAIR_CODE = re.compile(r"[A-Z0-9][A-Z0-9._-]{1,23}")
 _STORABLE_SYMBOL = re.compile(r"[A-Z0-9]{1,16}/[A-Z]{3,5}")  # the Candle model's own symbol shape
-_THROTTLED = re.compile(r"EService:\s*Throttled(?::\s*(\d+))?")
 _ERROR_CLASS = re.compile(r"(E[A-Za-z]{1,15}):.*", re.DOTALL)
 _ROW_LENGTH = 8
 
@@ -132,15 +131,10 @@ def _utc_now(clock: Clock) -> datetime:
 
 
 def _classify_error(text: str) -> OhlcFetchError | None:
+    signal = rate_limit_signal(text)
+    if signal is not None:
+        return OhlcFetchError(signal.category, retry_at_unix=signal.retry_at_unix)
     squashed = re.sub(r"\s+", "", text).lower()
-    if squashed == "eapi:ratelimitexceeded":
-        return OhlcFetchError("rate_limited")
-    throttled = _THROTTLED.fullmatch(text.strip())
-    if throttled is not None:
-        digits = throttled.group(1)
-        stamp = int(digits) if digits is not None and len(digits) <= 12 else None
-        return OhlcFetchError("throttled", retry_at_unix=stamp if stamp is not None and stamp <= MAXIMUM_UNIX_TIME
-                              else None)
     if squashed.startswith("equery:unknownassetpair"):
         return OhlcFetchError("unknown_pair")
     if squashed.startswith("eservice:"):

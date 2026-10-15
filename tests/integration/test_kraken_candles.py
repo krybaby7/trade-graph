@@ -427,6 +427,10 @@ def test_an_http_429_is_a_rate_limit() -> None:
 
 @pytest.mark.parametrize(("message", "category"), [
     ("EAPI:Rate limit exceeded", "rate_limited"),
+    ("EGeneral:Too many requests", "rate_limited"),
+    ("EAuth:Too many requests", "rate_limited"),
+    ("EGeneral:Temporary lockout", "rate_limited"),
+    ("EOrder:Rate limit exceeded", "rate_limited"),
     ("EQuery:Unknown asset pair", "unknown_pair"),
     ("EService:Unavailable", "service_unavailable"),
     ("EService:Busy", "service_unavailable"),

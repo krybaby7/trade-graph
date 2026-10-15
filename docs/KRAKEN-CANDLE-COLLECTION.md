@@ -54,7 +54,8 @@ trade-graph candle-coverage --symbols BTC/USD --intervals 15 --max-ranges 50
 
 Every real run first refreshes the pair list (one request, `GET /0/public/AssetPairs`, slice A) so that a new
 listing or a status change is seen, then collects. If that refresh fails but an older list is stored, the
-candles are still collected from the older list and the run is reported `partial`.
+candles are still collected from the older list and the run is reported `partial`. The exception is a refresh
+that Kraken rate limited: nothing more is requested (see "Rates and stopping").
 
 Exit codes: `0` only when the printed `status` is `ok`; `1` for `partial`, `failed` or a refused database;
 `2` for a bad option (nothing is opened or created); `130` for an interrupted run (the run stays in the
@@ -124,7 +125,8 @@ What happens on an error (no retry loops anywhere):
 
 | Event | Behaviour |
 |---|---|
-| `EAPI:Rate limit exceeded`, or HTTP 429 | the run **stops**: `stop_reason: rate_limited`, that series is `failed`, the rest are listed as not reached |
+| `EAPI:Rate limit exceeded`, HTTP 429, or any other rate-limit wording (`Too many requests`, `Rate limit exceeded` under any prefix such as `EOrder:`, `Temporary lockout`) | the run **stops**: `stop_reason: rate_limited`, that series is `failed`, the rest are listed as not reached. Kraken's list has several wordings and I could not confirm which one a keyless public call gets, so all of them stop the run |
+| the same rate-limit answers (or `EService: Throttled`) to the **pair-list** call at the start | no candle is requested at all: the command prints `status: failed`, `error: public_catalog_rate_limited` (or `public_catalog_throttled`) and `stop_reason`, and exits 1, even when an older pair list is stored. The pair-list call is never waited out or repeated |
 | `EService: Throttled: <time>` with the retry time at most **30 seconds** ahead of the host clock | waited out **once per run**: the run sleeps until the stated time plus a 2 second margin, then repeats that one request (it counts against `--max-requests`) |
 | a second throttle, a retry time more than 30 seconds ahead, an unreadable one, or no request left in the limit | the run **stops**: `stop_reason: throttled` with the stated time |
 | 10 failed series in a row | the run **stops**: `stop_reason: consecutive_failures`. A dead network would otherwise cost thousands of timeouts. Any success resets the count |

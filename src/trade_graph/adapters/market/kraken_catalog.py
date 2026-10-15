@@ -18,6 +18,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from trade_graph.adapters.market.kraken_errors import RATE_LIMITED, rate_limit_in
 from trade_graph.adapters.market.public import KRAKEN_REST, HttpxTextTransport, TextTransport
 from trade_graph.contracts.pair_catalog import ListedPair, engine_symbol
 from trade_graph.domain.clock import Clock
@@ -72,10 +73,22 @@ class FetchedCatalog:
 
 
 class CatalogFetchError(ValidationFailure):
-    """The request or the response failed. ``category`` is a fixed string; no response text is carried."""
+    """The request or the response failed. ``category`` is a fixed string; no response text is carried.
+
+    Categories: ``request_failed``, ``response_invalid``, ``rate_limited`` and ``throttled``. The last two mean the
+    exchange asked for fewer calls: the caller must stop and not make further requests in the same run.
+    """
 
     def __init__(self, category: str) -> None:
         super().__init__(f"Kraken pair catalog {category}")
+        self.category = category
+
+
+class CatalogRateLimited(ValidationFailure):
+    """The answer was a rate-limit error, not a pair list (raised by ``parse_asset_pairs``)."""
+
+    def __init__(self, category: str) -> None:
+        super().__init__("Kraken pair catalog request was rate limited")
         self.category = category
 
 
@@ -150,6 +163,9 @@ def parse_asset_pairs(raw: str) -> ParsedCatalog:
     except (ValueError, TypeError, ArithmeticError, RecursionError):
         raise ValidationFailure("Kraken pair catalog response JSON is invalid") from None
     if not isinstance(payload, dict) or payload.get("error") != []:
+        signal = rate_limit_in(payload.get("error")) if isinstance(payload, dict) else None
+        if signal is not None:
+            raise CatalogRateLimited(signal.category)
         raise ValidationFailure("Kraken pair catalog response has missing or rejected error status")
     result = payload.get("result")
     if not isinstance(result, dict) or not result:
@@ -205,14 +221,17 @@ class KrakenPairCatalog:
         requested_at = _utc_now(self.clock)
         try:
             raw = self.transport.get_text(ASSET_PAIRS_URL)
-        except Exception:
-            raise CatalogFetchError("request_failed") from None
+        except Exception as error:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            raise CatalogFetchError(RATE_LIMITED if status == 429 else "request_failed") from None
         # Receipt is taken after the response, so a slow response is never dated earlier than it arrived.
         received_at = _utc_now(self.clock)
         if received_at < requested_at:
             raise CatalogFetchError("response_invalid")
         try:
             catalog = parse_asset_pairs(raw)
+        except CatalogRateLimited as signal:
+            raise CatalogFetchError(signal.category) from None
         except ValidationFailure:
             raise CatalogFetchError("response_invalid") from None
         return FetchedCatalog(catalog=catalog, requested_at=requested_at, received_at=received_at)

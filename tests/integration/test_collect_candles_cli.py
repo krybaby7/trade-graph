@@ -15,6 +15,7 @@ from tests.candle_support import (
     FIXTURES,
     AdvancingSleeper,
     FakeKraken,
+    HttpRateLimited,
     QueueTransport,
     error_wire,
     listed_pairs,
@@ -210,6 +211,35 @@ def test_a_failed_catalog_with_an_earlier_one_stored_still_collects_but_the_run_
     assert code == 1 and report["status"] == "partial"
     assert report["catalog_refresh"]["status"] == "failed" and report["counts"]["ok"] == 1
     assert "SECRET" not in json.dumps(report)
+
+
+@pytest.mark.parametrize(("answer", "error", "stop"), [
+    (error_wire("EAPI:Rate limit exceeded"), "public_catalog_rate_limited", "rate_limited"),
+    (HttpRateLimited(), "public_catalog_rate_limited", "rate_limited"),
+    (error_wire(f"EService: Throttled: {unix(NOW) + 3600 + 5}"), "public_catalog_throttled", "throttled"),
+    (error_wire("EService:Throttled"), "public_catalog_throttled", "throttled"),
+])
+def test_a_rate_limited_pair_list_stops_the_run_before_any_candle_is_requested(
+        tmp_path, monkeypatch, capsys, answer, error: str, stop: str) -> None:
+    Scripted(monkeypatch)
+    path = database_path(tmp_path)
+    assert run(capsys, "collect-kraken-candles", "--market-database", path, "--catalog-only")[0] == 0
+    scripted = Scripted(monkeypatch, catalog=[answer])
+    scripted.clock.advance(3600)  # an older list is stored: before this fix the run went on with it
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", path,
+                       "--pairs", "SOL/USD", "--intervals", "60", "--one-minute-pairs", "")
+    assert code == 1 and report["status"] == "failed" and report["error"] == error
+    assert report["stop_reason"] == stop and report["requests_total"] == 1
+    assert report["catalog_refresh"]["error"] == error and report["catalog_refresh"]["status"] == "failed"
+    assert scripted.exchange.calls == [] and len(scripted.catalog.calls) == 1
+    assert report["paid_calls_enabled"] is False and "SECRET" not in json.dumps(report)
+
+
+def test_a_rate_limited_catalog_only_run_reports_its_category_and_exits_1(tmp_path, monkeypatch, capsys) -> None:
+    Scripted(monkeypatch, catalog=[error_wire("EAPI:Rate limit exceeded")])
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", database_path(tmp_path),
+                       "--catalog-only")
+    assert code == 1 and report["status"] == "failed" and report["catalog"]["error"] == "public_catalog_rate_limited"
 
 
 def test_a_failed_catalog_with_nothing_stored_is_a_failed_run_with_no_candle_request(

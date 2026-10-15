@@ -77,6 +77,15 @@ def grid_rows(interval: int, first_open: int, count: int, **row_options) -> list
     return [row(first_open + index * interval * 60, **row_options) for index in range(count)]
 
 
+class HttpRateLimited(Exception):
+    """What the real transport raises for an HTTP 429 (the status code sits on ``response``). The text is a canary."""
+
+    response = type("Response", (), {"status_code": 429})()
+
+    def __init__(self) -> None:
+        super().__init__("SECRET 429 Too Many Requests")
+
+
 class QueueTransport:
     """Returns the queued responses in order. The clock moves on after each call, as in a slow network."""
 

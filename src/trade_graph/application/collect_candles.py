@@ -49,7 +49,12 @@ CATALOG_EVIDENCE_LABELS = ("synthetic_fixture", "recorded_public_fixture", "live
 COLLECT_EVIDENCE_LABELS = CATALOG_EVIDENCE_LABELS
 MAXIMUM_REQUESTS_PER_RUN = 10_000
 MAXIMUM_REJECTED_REPORTED = 200
-_FAILURES = {"request_failed": "public_catalog_request_failed", "response_invalid": "public_catalog_invalid"}
+_FAILURES = {
+    "request_failed": "public_catalog_request_failed", "response_invalid": "public_catalog_invalid",
+    "rate_limited": "public_catalog_rate_limited", "throttled": "public_catalog_throttled",
+}
+# A pair-list call that Kraken rate limited: the caller must not go on to request candles in the same run.
+CATALOG_RATE_LIMIT_STOPS = {"public_catalog_rate_limited": "rate_limited", "public_catalog_throttled": "throttled"}
 
 
 def _aware_now(clock: Clock) -> datetime:
@@ -79,9 +84,10 @@ def refresh_catalog(store: CandleStore, clock: Clock, transport: TextTransport, 
     """Fetch, classify and store the USD pair catalog, and record the run.
 
     The run is stored before the request, so a crash leaves a visible interrupted run. Unexpected failures
-    become a failed run with a fixed category (``public_catalog_request_failed``, ``public_catalog_invalid``
-    or ``catalog_persistence_failed``); response text never enters the report. A malformed pair makes the run
-    ``partial`` and is listed with its reason. An unchanged pair list adds no catalog row.
+    become a failed run with a fixed category (``public_catalog_request_failed``, ``public_catalog_invalid``,
+    ``public_catalog_rate_limited``, ``public_catalog_throttled`` or ``catalog_persistence_failed``); response text
+    never enters the report. A malformed pair makes the run ``partial`` and is listed with its reason. An
+    unchanged pair list adds no catalog row.
     """
     if evidence_label not in CATALOG_EVIDENCE_LABELS:
         raise ValidationFailure("unsupported evidence label for a catalog run")

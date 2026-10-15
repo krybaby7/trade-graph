@@ -428,6 +428,18 @@ def test_a_rate_limit_error_stops_the_run_and_lists_the_rest(store: CandleStore)
     assert report["stopped"]["reason"] == "rate_limited"
 
 
+@pytest.mark.parametrize("message", [
+    "EGeneral:Too many requests", "EAuth:Too many requests", "EGeneral:Temporary lockout",
+    "EOrder:Rate limit exceeded",
+])
+def test_the_other_wordings_of_a_rate_limit_also_stop_the_run_at_once(store: CandleStore, message: str) -> None:
+    env = Env(store)
+    env.exchange.queue("ETHUSD", 1, error_wire(message))
+    report = env.collect()
+    assert report["stop_reason"] == "rate_limited" and report["requests"]["made"] == 2
+    assert entry(report, "ETH/USD", 1)["error"] == "rate_limited"
+
+
 def test_an_http_429_also_stops_the_run(store: CandleStore) -> None:
     class Rejected(Exception):
         response = type("Response", (), {"status_code": 429})()

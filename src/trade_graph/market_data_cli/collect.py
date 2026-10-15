@@ -22,7 +22,12 @@ from trade_graph.adapters.market.kraken_catalog import make_catalog_transport
 from trade_graph.adapters.market.public import TextTransport
 from trade_graph.adapters.market.rate_limit import KrakenRestLimiter, LimitedTransport
 from trade_graph.application.candle_collection_plan import DEFAULT_ONE_MINUTE_SYMBOLS, CollectionScope
-from trade_graph.application.collect_candles import MAXIMUM_REQUESTS_PER_RUN, collect_candles, refresh_catalog
+from trade_graph.application.collect_candles import (
+    CATALOG_RATE_LIMIT_STOPS,
+    MAXIMUM_REQUESTS_PER_RUN,
+    collect_candles,
+    refresh_catalog,
+)
 from trade_graph.contracts.candles import CANDLE_INTERVALS, CANDLE_SOURCES, COLLECTED_INTERVALS, from_unix, to_unix
 from trade_graph.domain.clock import Clock, SystemClock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
@@ -196,6 +201,13 @@ def _collect(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             return _emit({"command": COLLECT_COMMAND, "mode": mode, "status": catalog["status"],
                           "market_database": str(path), "catalog": catalog, "requests_total": limiter.calls},
                          0 if catalog["status"] == "ok" else 1)
+        stop = CATALOG_RATE_LIMIT_STOPS.get(catalog["error"])
+        if stop is not None:  # Kraken asked for fewer calls: asking for candles now would only lengthen the restriction
+            return _emit({"command": COLLECT_COMMAND, "mode": mode, "market_database": str(path), "status": "failed",
+                          "error": catalog["error"], "stop_reason": stop, "paid_calls_enabled": False,
+                          "live_trading_enabled": False, "catalog_refresh": _compact_catalog(catalog),
+                          "requests_total": limiter.calls,
+                          "note": "the pair list was rate limited; no candle was requested. Run again later"}, 1)
         report = collect_candles(store, clock, ohlc_transport, limiter, scope, limit - 1, label)
         status = "partial" if report["status"] == "ok" and catalog["status"] != "ok" else report["status"]
         return _emit({"command": COLLECT_COMMAND, "mode": mode, "market_database": str(path), **report,

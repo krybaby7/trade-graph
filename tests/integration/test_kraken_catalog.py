@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.candle_support import HttpRateLimited, error_wire
 from tests.network_guard import block_network
 
 from trade_graph.adapters.market.kraken_catalog import (
@@ -343,6 +344,24 @@ def test_a_transport_that_refuses_the_response_is_still_a_request_failure() -> N
     assert failure.value.category == "request_failed"
 
 
+@pytest.mark.parametrize(("response", "category"), [
+    (error_wire("EAPI:Rate limit exceeded"), "rate_limited"),
+    (error_wire("EGeneral:Too many requests"), "rate_limited"),
+    (error_wire("EGeneral:Temporary lockout"), "rate_limited"),
+    (error_wire("EService: Throttled: 1791905000"), "throttled"),
+    (error_wire("EService:Throttled"), "throttled"),
+    (HttpRateLimited(), "rate_limited"),
+    (error_wire("EService:Unavailable"), "response_invalid"),
+    (error_wire("SECRET-BODY"), "response_invalid"),
+    (error_wire("SECRET-BODY", "EAPI:Rate limit exceeded"), "rate_limited"),
+])
+def test_a_rate_limit_answer_is_its_own_failure_category(response, category: str) -> None:
+    clock = FrozenClock(NOW)
+    with pytest.raises(CatalogFetchError) as failure:
+        KrakenPairCatalog(ScriptedTransport([response], clock), clock).fetch()
+    assert failure.value.category == category and "SECRET" not in str(failure.value)
+
+
 def test_a_response_that_cannot_be_trusted_is_a_response_failure() -> None:
     clock = FrozenClock(NOW)
     with pytest.raises(CatalogFetchError) as failure:
@@ -508,6 +527,19 @@ def test_a_failed_request_is_a_failed_run_with_a_fixed_category_and_no_body(stor
     assert run.status == "failed" and run.report == json.loads(json.dumps(report))
     assert "SECRET" not in json.dumps(run.report) + json.dumps(run.parameters)
     assert store.latest_catalog(as_of=NOW + timedelta(days=1)) is None
+
+
+@pytest.mark.parametrize(("response", "error"), [
+    (error_wire("EAPI:Rate limit exceeded"), "public_catalog_rate_limited"),
+    (HttpRateLimited(), "public_catalog_rate_limited"),
+    (error_wire("EService: Throttled: 1791905000"), "public_catalog_throttled"),
+])
+def test_a_rate_limited_pair_list_is_a_failed_run_with_its_own_category(
+        store: CandleStore, response, error: str) -> None:
+    report = _refresh(store, response)
+    assert report["status"] == "failed" and report["error"] == error and report["catalog_row_added"] is False
+    assert "SECRET" not in json.dumps(report) and store.runs()[0].status == "failed"
+    assert store.runs()[0].report == json.loads(json.dumps(report))
 
 
 @pytest.mark.parametrize("raw", [
