@@ -265,6 +265,22 @@ def test_rows_that_close_after_the_import_time_are_dropped_and_counted(store, tm
     assert result.report["series"][0]["last_open_utc"] == "2026-07-01T01:45:00.000000Z"
 
 
+def test_a_clock_with_fractions_of_a_second_works_and_stamps_the_exact_receipt_time(store, tmp_path) -> None:
+    """The real clock reads microseconds; only the finished-candle cutoff is whole seconds."""
+    now = from_unix(FIRST_OPEN + 8 * 900) + timedelta(microseconds=123_456)
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": _rows(10)}), at=now)
+    assert result.report["imported_at_utc"] == "2026-07-01T02:00:00.123456Z"
+    assert (result.report["totals"]["inserted"], result.report["totals"]["dropped_unfinished"]) == (8, 2)
+    window = _window(store, "BTC/USD", 15, 8, as_of=now)
+    assert {slot.stored.candle.available_at_utc for slot in window.slots} == {now}
+
+
+def test_a_candle_closing_a_microsecond_after_the_clock_is_not_finished(store, tmp_path) -> None:
+    just_short = from_unix(FIRST_OPEN + 8 * 900) - timedelta(microseconds=1)
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": _rows(10)}), at=just_short)
+    assert (result.report["totals"]["inserted"], result.report["totals"]["dropped_unfinished"]) == (7, 3)
+
+
 # --- bad rows and whole-file refusal ------------------------------------------------------------------------------
 
 
@@ -349,6 +365,17 @@ def test_archive_limits_apply_through_the_importer(store, tmp_path) -> None:
     with pytest.raises(ArchiveRejected) as big:
         _import(store, path, limits=ArchiveLimits(max_total_bytes=500, max_member_bytes=400))
     assert big.value.reason in {"member_size_limit", "total_size_limit"}
+
+
+def test_a_zip_with_bytes_missing_from_the_middle_is_a_recorded_corrupt_member_refusal(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(2500), "ETHUSD_15.csv": _rows(2500, seed=2)})
+    raw = path.read_bytes()
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
+    assert refused.value.reason == "corrupt_member" and refused.value.report["status"] == "failed"
+    [run] = store.runs()
+    assert run.status == "failed" and run.report["reason"] == "corrupt_member" and store.series() == []
 
 
 def test_a_missing_file_raises_without_recording_a_run(store, tmp_path) -> None:

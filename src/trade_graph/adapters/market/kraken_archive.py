@@ -250,8 +250,11 @@ class MemberReader:
                         self.first_open = row.open_unix
                     self.last_open = row.open_unix
                     yield row
-        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
-            raise ArchiveRejected("corrupt_member", f"{_shown(member.name)} is damaged or truncated") from error
+        except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as error:
+            # OSError: zipfile seeks to a stored offset, and bytes missing from the middle of the file (a mis-joined
+            # download) make that offset invalid; a failing disk read lands here too.
+            raise ArchiveRejected("corrupt_member", f"{_shown(member.name)} is damaged, truncated or unreadable"
+                                  ) from error
 
     def _lines(self, stream: BinaryIO) -> Iterator[bytes]:
         member, limits = self.member, self._archive.limits

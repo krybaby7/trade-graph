@@ -124,6 +124,17 @@ def test_a_refused_file_prints_the_failed_report_and_exits_1(tmp_path, capsys, a
     assert report["reason"] in {"member_size_limit", "total_size_limit"} and report["run_id"] == 1
 
 
+def test_a_zip_with_bytes_missing_from_the_middle_exits_1_with_json_not_a_traceback(tmp_path, capsys) -> None:
+    path = write_zip(tmp_path / "Kraken_OHLCVT_2026Q3_joined.zip", {
+        "XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15)),
+        "ETHUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15, seed=2))})
+    raw = path.read_bytes()
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    code, report = _run(capsys, "--archive", str(path), "--market-database", str(_database(tmp_path)))
+    assert code == 1 and report["status"] == "failed" and report["reason"] == "corrupt_member"
+    assert report["run_id"] == 1
+
+
 def test_a_missing_file_exits_1_with_a_reason_and_no_run(tmp_path, capsys) -> None:
     code, report = _run(capsys, "--archive", str(tmp_path / "absent.zip"),
                         "--market-database", str(_database(tmp_path)))

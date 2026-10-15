@@ -7,6 +7,7 @@ import io
 import os
 import stat
 import zipfile
+import zlib
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -441,6 +442,94 @@ def test_a_corrupt_member_is_refused(tmp_path: Path) -> None:
         with pytest.raises(ArchiveRejected) as refused:
             list(reader)
     assert refused.value.reason == "corrupt_member"
+
+
+def _three_deflated_members() -> dict[str, str]:
+    return {f"{code}USD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15, seed=seed))
+            for seed, code in enumerate(("XBT", "ETH", "ADA"), start=1)}
+
+
+def test_a_zip_with_bytes_missing_from_the_middle_is_a_corrupt_member(tmp_path: Path) -> None:
+    """A mis-joined download: the end of the file is intact so the ZIP opens, but the stored offsets are now wrong.
+
+    Cutting inside the first member moves its start before the beginning of the file, which zipfile reports as a
+    bare OSError; the later members still read, because their data is intact.
+    """
+    path = write_zip(tmp_path / "joined.zip", _three_deflated_members())
+    raw = path.read_bytes()
+    assert len(raw) > 30_000
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    assert zipfile.is_zipfile(path)
+    with open_archive(path) as archive:
+        damaged = next(member for member in archive.members if member.name == "XBTUSD_15.csv")
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, damaged, ReadBudget(archive.limits)))
+        assert refused.value.reason == "corrupt_member"
+        intact = [member for member in archive.members if member is not damaged]
+        assert [len(list(MemberReader(archive, member, ReadBudget(archive.limits)))) for member in intact] == [2500] * 2
+
+
+@pytest.mark.parametrize(("at", "fill"), [(200, 0x00), (200, 0xFF), (5000, 0x00), (5000, 0xFF)])
+def test_damaged_deflate_data_is_a_corrupt_member(tmp_path: Path, at: int, fill: int) -> None:
+    """A real format error from the decompressor, not the checksum mismatch that stored data would give."""
+    path = write_zip(tmp_path / "damaged.zip", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15))})
+    raw = bytearray(path.read_bytes())
+    start = 30 + len("XBTUSD_15.csv")  # the local header, then the compressed bytes
+    raw[start + at:start + at + 8] = bytes([fill]) * 8
+    path.write_bytes(bytes(raw))
+    with open_archive(path) as archive:
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, archive.members[0], ReadBudget(archive.limits)))
+    assert refused.value.reason == "corrupt_member" and isinstance(refused.value.__cause__, zlib.error)
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
+def test_a_file_cut_short_after_it_was_opened_is_a_corrupt_member(tmp_path: Path, compression: int) -> None:
+    """The listing was read while the file was whole; the member's bytes then run out before its stored size."""
+    path = write_zip(tmp_path / "cut.zip", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15))},
+                     compression=compression)
+    whole = path.read_bytes()
+    with open_archive(path) as archive:
+        path.write_bytes(whole[:1000])
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, archive.members[0], ReadBudget(archive.limits)))
+    assert refused.value.reason == "corrupt_member" and isinstance(refused.value.__cause__, EOFError)
+
+
+class _FailingStream:
+    def __init__(self, error: OSError) -> None:
+        self._error = error
+
+    def read(self, count: int) -> bytes:
+        raise self._error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+class _ScriptedSource:
+    limits = ArchiveLimits()
+
+    def __init__(self, stream: _FailingStream | None, error: OSError | None = None) -> None:
+        self._stream, self._error = stream, error
+
+    def open(self, member: ArchiveMember):
+        if self._error is not None:
+            raise self._error
+        return self._stream
+
+
+@pytest.mark.parametrize("fails_on", ["open", "read"])
+def test_an_input_output_error_while_reading_a_member_is_a_corrupt_member(fails_on: str) -> None:
+    error = OSError(5, "Input/output error")
+    source = _ScriptedSource(_FailingStream(error)) if fails_on == "read" else _ScriptedSource(None, error)
+    member = ArchiveMember("XBTUSD_15.csv", 100, 100, "XBTUSD", 15)
+    with pytest.raises(ArchiveRejected) as refused:
+        list(MemberReader(source, member, ReadBudget(source.limits)))
+    assert refused.value.reason == "corrupt_member" and refused.value.__cause__ is error
 
 
 def test_a_file_that_is_not_a_zip_is_refused(tmp_path: Path) -> None:

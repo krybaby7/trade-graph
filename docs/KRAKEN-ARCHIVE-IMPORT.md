@@ -154,7 +154,7 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 | `unsafe_member_type` | a member is a symbolic link or other special entry (or a folder, for a directory source) |
 | `duplicate_member_name` | two members share a name |
 | `unsupported_member` | an in-scope member is encrypted or uses a compression other than stored or deflate |
-| `corrupt_member` | a member is damaged or truncated (failed checksum or unreadable data) |
+| `corrupt_member` | a member is damaged, truncated or unreadable (failed checksum, bytes missing from inside a joined file, or a read error) |
 | `member_limit` | more members than the limit |
 | `member_size_limit` | an in-scope member declares or inflates past the per-member limit |
 | `total_size_limit` | in-scope data inflates past the total limit |
