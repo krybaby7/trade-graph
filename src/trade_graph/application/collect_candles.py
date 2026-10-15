@@ -259,10 +259,7 @@ def _collection_report(store: CandleStore, limiter: KrakenRestLimiter, scope: Co
         "latest_recorded_utc": None if latest_recorded is None else utc_iso(latest_recorded),
         "paid_calls_enabled": False,
         "live_trading_enabled": False,
-        "catalog": None if observation is None else {
-            "observed_at_utc": utc_iso(observation.observed_at_utc), "rules_version": observation.rules_version,
-            "usd_pairs": len(records), "eligible_pairs": sum(record.eligible_for_collection for record in records),
-        },
+        "catalog": None if observation is None else _catalog_section(observation, records),
         "scope": scope.to_document(),
         "requests": {
             "made": 0 if outcome is None else outcome.requests_made, "max": max_requests,
@@ -287,6 +284,17 @@ def _collection_report(store: CandleStore, limiter: KrakenRestLimiter, scope: Co
         },
         "cadence": cadence_report(series_by_interval, ceiling=limiter.ceiling,
                                   decay_per_second=limiter.decay_per_second),
+    }
+
+
+def _catalog_section(observation, records: list[PairRecord]) -> dict:
+    summary = classification_summary(records)
+    return {
+        "observed_at_utc": utc_iso(observation.observed_at_utc), "rules_version": observation.rules_version,
+        "usd_pairs": len(records), "eligible_pairs": summary["eligible_for_collection"],
+        "eligible_unreviewed_pairs": summary["eligible_unreviewed_pairs"],
+        "unreviewed_asset_count": summary["unreviewed_asset_count"],
+        "verification_note": VERIFICATION_NOTE,
     }
 
 

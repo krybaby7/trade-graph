@@ -182,4 +182,5 @@ def test_summary_counts_status_and_class_and_lists_unreviewed_assets() -> None:
     assert summary["not_normal_status"] == 1
     assert summary["unreviewed_assets"] == ["AAA", "ZZZ"]
     assert summary["unreviewed_asset_count"] == 2
+    assert summary["eligible_unreviewed_pairs"] == 1  # AAA is online and unmarked; ZZZ is cancel-only
     assert summary["reviewed_asset_count"] == 6

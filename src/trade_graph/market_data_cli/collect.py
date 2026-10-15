@@ -222,7 +222,7 @@ def _options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple
 
 def _compact_catalog(report: dict) -> dict:
     keys = ("status", "error", "observed_at_utc", "catalog_row_added", "usd_pairs", "eligible_for_collection",
-            "rejected_count", "unreviewed_asset_count", "rules_version", "request_count")
+            "eligible_unreviewed_pairs", "rejected_count", "unreviewed_asset_count", "rules_version", "request_count")
     return {key: report.get(key) for key in keys}
 
 

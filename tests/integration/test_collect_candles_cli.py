@@ -18,6 +18,7 @@ from tests.candle_support import (
     FakeKraken,
     HttpRateLimited,
     QueueTransport,
+    asset_pairs_with_new_coins,
     error_wire,
     listed_pairs,
     unix,
@@ -202,6 +203,19 @@ def test_one_minute_pairs_all_follows_a_pair_list_when_one_is_given(tmp_path, mo
     assert code == 0 and sorted((item["symbol"], item["interval_minutes"]) for item in report["series"]) == [
         ("LINK/USD", 1), ("LINK/USD", 60), ("SOL/USD", 1), ("SOL/USD", 60)]
     assert len(scripted.exchange.calls) == 4
+
+
+def test_a_normal_run_says_how_many_eligible_pairs_were_never_individually_reviewed(
+        tmp_path, monkeypatch, capsys) -> None:
+    Scripted(monkeypatch, catalog=[asset_pairs_with_new_coins("NEWA", "NEWB")])
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", database_path(tmp_path),
+                       "--pairs", "BTC/USD", "--intervals", "60", "--one-minute-pairs", "")
+    assert code == 0
+    assert report["catalog"]["eligible_pairs"] == 15 and report["catalog"]["eligible_unreviewed_pairs"] == 2
+    assert "verified clean" in report["catalog"]["verification_note"]
+    refresh = report["catalog_refresh"]
+    assert refresh["eligible_for_collection"] == 15 and refresh["eligible_unreviewed_pairs"] == 2
+    assert refresh["unreviewed_asset_count"] == 5
 
 
 def test_the_default_run_covers_every_eligible_pair_and_the_one_minute_default(tmp_path, monkeypatch, capsys) -> None:

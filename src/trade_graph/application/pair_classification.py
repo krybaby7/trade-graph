@@ -225,6 +225,9 @@ def classification_summary(records: Sequence[PairRecord]) -> dict:
         "by_class": by_class,
         "excluded_pairs": sum(1 for record in records if record.exclusion_reasons),
         "eligible_for_collection": sum(1 for record in records if record.eligible_for_collection),
+        # Eligible means "not marked", not "verified clean": this is how many of them nobody has looked at.
+        "eligible_unreviewed_pairs": sum(
+            1 for record in records if record.eligible_for_collection and record.base_asset_review != "reviewed"),
         "not_normal_status": sum(1 for record in records if not record.in_normal_status),
         "reviewed_asset_count": len(reviewed),
         "unreviewed_asset_count": len(unreviewed),

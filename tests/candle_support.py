@@ -46,6 +46,15 @@ def recorded_clock(name: str, delay_seconds: int = 0) -> FrozenClock:
     return FrozenClock(finished + timedelta(seconds=delay_seconds))
 
 
+def asset_pairs_with_new_coins(*bases: str) -> str:
+    """The recorded pair list plus online USD pairs for coins that have no classification entry (never reviewed)."""
+    document = json.loads((FIXTURES / "asset_pairs_2026-10-13.json").read_text(encoding="utf-8"))
+    for base in bases:
+        entry = dict(document["result"]["SOLUSD"], altname=f"{base}USD", wsname=f"{base}/USD", base=base)
+        document["result"][f"{base}USD"] = entry
+    return json.dumps(document)
+
+
 def listed_pairs() -> dict[str, ListedPair]:
     raw = (FIXTURES / "asset_pairs_2026-10-13.json").read_text(encoding="utf-8")
     return {pair.symbol: pair for pair in parse_asset_pairs(raw).pairs}

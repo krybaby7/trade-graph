@@ -16,6 +16,7 @@ from tests.candle_support import (
     AdvancingSleeper,
     FakeKraken,
     QueueTransport,
+    asset_pairs_with_new_coins,
     error_wire,
     fixture_text,
     listed_pairs,
@@ -77,11 +78,11 @@ class Env:
     """A catalog already in the store, a scripted exchange, and a limiter that moves the same scripted clock."""
 
     def __init__(self, store: CandleStore, *, seed_catalog: bool = True, start: datetime = NOW,
-                 **exchange_options) -> None:
+                 asset_pairs: str = ASSET_PAIRS, **exchange_options) -> None:
         self.store = store
         self.clock = FrozenClock(start)
         if seed_catalog:
-            refresh_catalog(store, self.clock, QueueTransport([ASSET_PAIRS], self.clock, delay_seconds=1),
+            refresh_catalog(store, self.clock, QueueTransport([asset_pairs], self.clock, delay_seconds=1),
                             "recorded_public_fixture")
         self.sleeper = AdvancingSleeper(self.clock)
         self.limiter = KrakenRestLimiter(self.clock, self.sleeper)
@@ -326,6 +327,15 @@ def test_quiet_intervals_are_stored_as_kraken_sent_them_and_counted(store: Candl
     quiet = [stored for stored in (store.revisions("SOL/USD", 60, "synthetic", opened + timedelta(hours=hour))
                                    for hour in range(8)) if stored and stored[0].candle.trade_count == 0]
     assert quiet and all(stored[0].candle.volume == 0 for stored in quiet)
+
+
+def test_the_report_says_how_many_eligible_pairs_were_never_individually_reviewed(store: CandleStore) -> None:
+    env = Env(store, asset_pairs=asset_pairs_with_new_coins("NEWA", "NEWB"))
+    catalog = env.collect(small_scope(symbols=("BTC/USD",)))["catalog"]
+    assert catalog["eligible_pairs"] == 15 and catalog["eligible_unreviewed_pairs"] == 2
+    assert catalog["unreviewed_asset_count"] == 5  # the three unreviewed coins of the recording and the two new ones
+    note = catalog["verification_note"]
+    assert "not individually reviewed" in note and "verified clean" in note
 
 
 def test_a_pair_with_no_data_returns_only_the_time_zero_row_and_is_reported_as_such(store: CandleStore) -> None:

@@ -96,7 +96,11 @@ financial database stored somewhere other than the default path cannot be recogn
   fetched at least every 12 hours), about 77.4 million rows and 9.1 GB per quarter on top of the rest. The report
   prints this cost for the run's own scope under `storage` before anything is decided.
 - Coins that nobody has looked at (`not_individually_reviewed`) are collected like the rest. The price-peg
-  check that would catch an unknown stablecoin belongs to the scanner (T31).
+  check that would catch an unknown stablecoin belongs to the scanner (T31). Every collection report says so in
+  its `catalog` section: `eligible_pairs` is how many pairs are not marked, `eligible_unreviewed_pairs` is how many
+  of those nobody has individually reviewed (566 of 591 in the live list of 2026-10-13 per
+  [PAIR-CATALOG.md](PAIR-CATALOG.md)), `unreviewed_asset_count` counts the coins, and `verification_note` states
+  that unmarked is not verified clean. The command's `catalog_refresh` block repeats the two counts.
 
 ### Order
 
