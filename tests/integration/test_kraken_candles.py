@@ -60,6 +60,10 @@ def _table(interval: int = 15, committed: int = 4, *, key: str = "XXBTZUSD", **r
     return wire(key, rows), rows
 
 
+class _PlainError(Exception):
+    pass
+
+
 def _refused(raw, *, interval: int = 15, **options) -> OhlcFetchError:
     with pytest.raises(OhlcFetchError) as failure:
         _fetch([raw], interval=interval, **options)
@@ -407,7 +411,15 @@ def test_a_transport_failure_is_a_request_failure_with_no_detail_and_no_retry() 
     with pytest.raises(OhlcFetchError) as failure:
         KrakenCandleFetcher(transport, clock).fetch(BTC, 15)
     assert failure.value.category == "request_failed" and "SECRET" not in str(failure.value)
+    assert failure.value.internal_class == "RuntimeError"  # which kind of failure, never its text
     assert len(transport.calls) == 1
+
+
+def test_the_class_name_of_an_internal_failure_is_kept_only_when_it_is_a_plain_identifier() -> None:
+    odd = type("Odd name with SECRET!", (Exception,), {})
+    assert _refused(odd("SECRET")).internal_class is None
+    assert _refused(_PlainError("SECRET")).internal_class == "_PlainError"
+    assert _refused(error_wire("EGeneral:Internal error")).internal_class is None  # an exchange answer, not ours
 
 
 def test_an_http_429_is_a_rate_limit() -> None:

@@ -160,6 +160,10 @@ What happens on an error (no retry loops anywhere):
 Failure categories are fixed words (`request_failed`, `rate_limited`, `throttled`, `unknown_pair`,
 `service_unavailable`, `exchange_error`, `response_invalid`, `pair_mismatch`, `candle_not_closed`,
 `clock_invalid`, `persistence_failed`). Response text and exception text never enter a report or a run record.
+A failed series also carries `exchange_error_class` (Kraken's own class such as `EGeneral`, when the answer was an
+exchange error) and `internal_error_class` (the class name of a local failure such as `ReadTimeout` or
+`OperationalError`, only when it is a plain identifier), so a network fault and a storage fault differ in the
+report without any text from either.
 
 ## What Kraken returns (recorded 2026-10-13)
 
@@ -187,7 +191,12 @@ USDUC, PAXG and a cancel-only pair, at 1, 5, 15 and 60 minutes; manifest in `tes
    Correction to [CANDLE-STORE.md](CANDLE-STORE.md) rule 5, which assumes Kraken returns no row for such an
    interval: for this endpoint it does return one. The store and the `Candle` model already accept it (vwap 0
    with volume 0). A slot is therefore missing in the store only when it was not collected or is outside the
-   window, not because it had no trades.
+   window, not because it had no trades. The frozen contract text is not edited here; the correction is
+   raised as a contract change request in the T25 handoff.
+   **A reader of the store must treat `trade_count == 0` as "no trade happened", never as a price that traded.**
+   The open, high, low and close of such a candle are the previous close carried over by Kraken, `Candle` and
+   `window()` carry no separate marker, and an indicator that does not look at the count will read prices that
+   never traded.
 5. **A pair with no data in the window returns one row**: time 0, zero prices, count 0 (`ACAUSD`, a cancel-only
    pair). That is the forming row; it is dropped and the series reports `no_data`.
 6. **The exchange clock ran 153 seconds behind the host clock** on every recorded response (the `Date` header

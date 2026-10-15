@@ -14,7 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from trade_graph.adapters.market.kraken_candles import KrakenCandleFetcher, OhlcFetch, OhlcFetchError
+from trade_graph.adapters.market.kraken_candles import (
+    KrakenCandleFetcher,
+    OhlcFetch,
+    OhlcFetchError,
+    exception_class_name,
+)
 from trade_graph.adapters.market.public import TextTransport
 from trade_graph.adapters.market.rate_limit import KrakenRestLimiter
 from trade_graph.application.candle_collection_plan import PlannedSeries
@@ -78,8 +83,8 @@ class CollectionRun:
             try:
                 saved = (self.store.save(list(fetched.candles), run_id=self.run_id) if fetched.candles
                          else SaveResult(inserted=0, revised=0, duplicates=0))
-            except Exception:
-                failure = OhlcFetchError("persistence_failed")
+            except Exception as error:
+                failure = OhlcFetchError("persistence_failed", internal_class=exception_class_name(error))
             else:
                 self._consecutive_failures = 0
                 return self._succeeded(item, fetched, saved)
@@ -99,8 +104,8 @@ class CollectionRun:
                     return None, error
                 self.outcome.throttle_retries += 1
                 self.limiter.pause(wait)
-            except Exception:
-                return None, OhlcFetchError("request_failed")
+            except Exception as error:
+                return None, OhlcFetchError("request_failed", internal_class=exception_class_name(error))
 
     def _throttle_wait(self, error: OhlcFetchError) -> float | None:
         if error.category != "throttled" or self.outcome.throttle_retries >= 1 or error.retry_at_unix is None:
@@ -140,7 +145,8 @@ class CollectionRun:
     def _failed_entry(self, item: PlannedSeries, failure: OhlcFetchError) -> dict:
         return {
             **self._base(item), "status": "failed", "error": failure.category,
-            "exchange_error_class": failure.error_class, "received_at_utc": None, "rows_received": 0,
+            "exchange_error_class": failure.error_class, "internal_error_class": failure.internal_class,
+            "received_at_utc": None, "rows_received": 0,
             "candles_returned": 0, "inserted": 0, "duplicates": 0, "revised": 0, "no_trade_candles": 0,
             "first_open_utc": None, "last_open_utc": None, "continuity": None, "coverage": None,
         }
@@ -149,6 +155,7 @@ class CollectionRun:
         candles = fetched.candles
         return {
             **self._base(item), "status": "ok", "error": None, "exchange_error_class": None,
+            "internal_error_class": None,
             "received_at_utc": utc_iso(fetched.received_at), "rows_received": fetched.rows_received,
             "candles_returned": len(candles), "inserted": saved.inserted, "duplicates": saved.duplicates,
             "revised": saved.revised, "no_trade_candles": fetched.no_trade_candles,

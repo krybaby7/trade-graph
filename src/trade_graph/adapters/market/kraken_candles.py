@@ -54,17 +54,30 @@ OHLC_FAILURE_CATEGORIES = (
 _PAIR_CODE = re.compile(r"[A-Z0-9][A-Z0-9._-]{1,23}")
 _STORABLE_SYMBOL = re.compile(r"[A-Z0-9]{1,16}/[A-Z]{3,5}")  # the Candle model's own symbol shape
 _ERROR_CLASS = re.compile(r"(E[A-Za-z]{1,15}):.*", re.DOTALL)
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 _ROW_LENGTH = 8
 
 
-class OhlcFetchError(ValidationFailure):
-    """The request or response failed. ``category`` is a fixed string; no response text is carried."""
+def exception_class_name(error: BaseException) -> str | None:
+    """The class name of an internal failure when it is a plain identifier, never its text."""
+    name = type(error).__name__
+    return name if _IDENTIFIER.fullmatch(name) else None
 
-    def __init__(self, category: str, *, retry_at_unix: int | None = None, error_class: str | None = None) -> None:
+
+class OhlcFetchError(ValidationFailure):
+    """The request or response failed. ``category`` is a fixed string; no response text is carried.
+
+    ``error_class`` is the exchange's own error class (``EGeneral``); ``internal_class`` is the class name of a local
+    failure (a timeout, a storage error) so that "request failed" and "persistence failed" can be told apart.
+    """
+
+    def __init__(self, category: str, *, retry_at_unix: int | None = None, error_class: str | None = None,
+                 internal_class: str | None = None) -> None:
         super().__init__(f"Kraken OHLC {category}")
         self.category = category
         self.retry_at_unix = retry_at_unix
         self.error_class = error_class
+        self.internal_class = internal_class
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +218,8 @@ class KrakenCandleFetcher:
             raw = self.transport.get_text(url)
         except Exception as error:
             status = getattr(getattr(error, "response", None), "status_code", None)
-            raise OhlcFetchError("rate_limited" if status == 429 else "request_failed") from None
+            raise OhlcFetchError("rate_limited" if status == 429 else "request_failed",
+                                 internal_class=exception_class_name(error)) from None
         # Receipt is taken after the response, so a slow response is never dated earlier than it arrived.
         received_at = _utc_now(self.clock)
         if received_at < requested_at:
@@ -259,5 +273,5 @@ class KrakenCandleFetcher:
 
 __all__ = [
     "OHLC_FAILURE_CATEGORIES", "OHLC_MAXIMUM_RESPONSE_BYTES", "OHLC_MAXIMUM_ROWS", "KrakenCandleFetcher", "OhlcFetch",
-    "OhlcFetchError", "candle_symbol_supported", "make_ohlc_transport", "ohlc_url",
+    "OhlcFetchError", "candle_symbol_supported", "exception_class_name", "make_ohlc_transport", "ohlc_url",
 ]

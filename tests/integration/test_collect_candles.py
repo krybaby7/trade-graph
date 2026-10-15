@@ -567,7 +567,9 @@ def test_a_storage_failure_fails_that_series_only_and_never_shows_its_detail(sto
     report = env.collect()
     failed = entry(report, "SOL/USD", 60)
     assert failed["status"] == "failed" and failed["error"] == "persistence_failed"
+    assert failed["internal_error_class"] == "OperationalError"  # the kind of failure, not its text
     assert report["counts"]["ok"] == 40 and "SECRET" not in json.dumps(report)
+    assert all(item["internal_error_class"] is None for item in report["series"] if item is not failed)
 
 
 def test_an_exception_from_the_transport_fails_that_series_with_a_fixed_category(store: CandleStore) -> None:
@@ -582,6 +584,7 @@ def test_an_exception_from_the_transport_fails_that_series_with_a_fixed_category
     env.exchange.before = explode
     report = env.collect()
     assert entry(report, "SOL/USD", 5)["error"] == "request_failed"
+    assert entry(report, "SOL/USD", 5)["internal_error_class"] == "Odd"
     assert report["counts"]["failed"] == 1 and "SECRET" not in json.dumps(report)
 
 
