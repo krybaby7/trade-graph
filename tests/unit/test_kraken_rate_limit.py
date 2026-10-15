@@ -169,7 +169,7 @@ def test_the_monotonic_clock_follows_its_monotonic_source_and_nothing_else() -> 
     assert clock.now() - third == timedelta(seconds=6.5)
 
 
-def test_a_limiter_on_the_monotonic_clock_is_not_fooled_by_a_wall_clock_step() -> None:
+def test_a_limiter_on_the_monotonic_clock_paces_exactly_as_on_any_other_clock() -> None:
     monotonic = {"now": 100.0}
     waits: list[float] = []
 
@@ -180,7 +180,6 @@ def test_a_limiter_on_the_monotonic_clock_is_not_fooled_by_a_wall_clock_step() -
     limiter = KrakenRestLimiter(MonotonicClock(lambda: monotonic["now"]), sleeper)
     for _ in range(ASSUMED_CEILING):
         limiter.acquire()
-    # The wall clock may step an hour here; the limiter never reads it, so the counter is untouched.
     assert limiter.counter() == ASSUMED_CEILING
     limiter.acquire()
     assert waits == [3.333334]
