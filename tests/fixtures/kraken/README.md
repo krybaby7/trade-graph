@@ -1,4 +1,4 @@
-# Recorded Kraken public fixtures
+# Kraken recorded public fixtures
 
 Trimmed public exchange data. No account, key or private information is in these files. Tests read them and never
 call the network. They show the format on the day they were recorded and are not live results; their evidence label
