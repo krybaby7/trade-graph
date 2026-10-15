@@ -100,7 +100,9 @@ becomes a new revision (reported as `revised`). A new series asks without `since
 
 ## Rates and stopping
 
-Source: https://docs.kraken.com/api/docs/guides/spot-rest-ratelimits (read 2026-10-13). A counter rises by one
+Source: https://docs.kraken.com/api/docs/guides/spot-rest-ratelimits (read 2026-10-13, read again 2026-10-15 with
+the same numbers: Starter maximum 15, drain 0.33 per second; the page also lists Intermediate 20 at 0.5 and Pro 20
+at 1, which this collector does not assume). A counter rises by one
 for each call, public calls included. The Starter tier maximum is 15 and the counter falls by 0.33 per second.
 Past the limit Kraken answers `EAPI:Rate limit exceeded` and restricts calls for a few seconds, longer if calls
 continue. `EService: Throttled: <unix time>` signals too many concurrent requests and carries the time to
@@ -135,7 +137,10 @@ Failure categories are fixed words (`request_failed`, `rate_limited`, `throttled
 
 ## What Kraken returns (recorded 2026-10-13)
 
-Source of the endpoint description: https://docs.kraken.com/api/docs/rest-api/get-ohlc-data (read 2026-10-13).
+Source of the endpoint description: https://docs.kraken.com/api/docs/rest-api/get-ohlc-data (read 2026-10-13, read
+again 2026-10-15 with the same content: intervals 1, 5, 15, 30, 60, 240, 1440, 10080, 21600; at most the 720 most
+recent entries; the last entry is the current, not-yet-committed timeframe and is always present; prices and
+volume are strings; the page does not say whether intervals without trades are omitted or filled).
 17 plain `curl` GET requests were recorded between 15:17 and 15:24 UTC (BTC, SOL, LINK, a thin coin
 USDUC, PAXG and a cancel-only pair, at 1, 5, 15 and 60 minutes; manifest in `tests/fixtures/kraken/`).
 
@@ -162,7 +167,11 @@ USDUC, PAXG and a cancel-only pair, at 1, 5, 15 and 60 minutes; manifest in `tes
 6. **The exchange clock ran 153 seconds behind the host clock** on every recorded response (the `Date` header
    against the host and against Windows time, which agreed with each other). I could not tell which was right.
    The collector uses the host clock for receipt times and refuses a response in which any row would close after
-   that receipt time. A host clock that is *ahead* is safe (receipts are later than true). A host clock
+   that receipt time. All 17 recordings show the same offset (153.3 to 154.0 seconds), which points at a fixed clock
+   difference, not at stale answers. On 2026-10-15 the Windows Time service on this PC was not running
+   (`w32tm /query /status` reported the service not started), and WSL takes its time from Windows, so the two
+   host readings are not independent of each other. That makes a drifting host clock the likelier cause, but it is
+   not proven. A host clock that is *ahead* is safe (receipts are later than true). A host clock
    *behind* the exchange by more than a few seconds would make that refusal fire right after each interval
    boundary: the series fails as `candle_not_closed` and succeeds on the next run; nothing wrong is stored.
    Keep the host clock synchronised.
@@ -223,7 +232,8 @@ rates), so run more often than the window.
 | 15 minutes | 7.5 days | 180 hours | every 3 days |
 | 60 minutes | 30 days | 720 hours | weekly |
 
-A practical plan that respects all four: the short `--intervals 1` run for BTC and ETH every 6 hours, and the
+The report's `recommended_every_hours` is the upper bound (half the window: 6, 30, 90 and 360 hours); the
+"Suggested" column above is deliberately tighter for 15 and 60 minutes. A practical plan that respects all four: the short `--intervals 1` run for BTC and ETH every 6 hours, and the
 full run once a day. The report prints these numbers for the run's own scope under `cadence`
 (`requests_per_pass` and `minutes_per_pass_at_the_limiter_rate` included). This module schedules nothing; the
 owner or the integrator decides how it is run.
