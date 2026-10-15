@@ -258,12 +258,13 @@ earlier or later. This matters for alarms and for comparing a live value with a 
 First, for the same end candle, supply the same history length every time (or at least beyond the guidance
 below), so two readings of the same indicator agree.
 
-Second, the contract carries measured guidance, and the engine adds exactly that much history (see "The engine"). `Settling` says how many periods of the main setting to add
-beyond the library lookback so that the remaining effect of the starting point is below `SETTLE_TOLERANCE`
-(1e-5 of the output scale). `tests/unit/test_indicator_settling.py` measures it by running TA-Lib on a full
-history and on histories that start 1, 13 and 61 candles later, for the default and two other settings of
-each entry, on both series. It also checks that a third of the guidance is not enough, so the numbers are not
-inflated. This is engineering guidance measured on two synthetic series, not a guarantee for every market.
+Second, the contract carries measured guidance, and the engine adds exactly that much history (see "The
+engine"). `Settling` says how many periods of the main setting to add beyond the library lookback so that the
+remaining effect of the starting point is below `SETTLE_TOLERANCE` (1e-5 of the output scale).
+`tests/unit/test_indicator_settling.py` measures it by running TA-Lib on a full history and on histories that
+start 1, 13 and 61 candles later, for the default and two other settings of each entry, on both series. It
+also checks that a third of the guidance is not enough, so the numbers are not inflated. This is engineering
+guidance measured on two synthetic series, not a guarantee for every market.
 
 <!-- BEGIN settling-table -->
 | Name | Extra history beyond warm-up | At defaults | Why the start matters |
