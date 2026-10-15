@@ -50,6 +50,14 @@ class TradesPageRefused(ValidationFailure):
         self.retry_after_unix = retry_after_unix
 
 
+class TradesTransportRefused(Exception):
+    """The request was sent, but the transport refused the answer (too large, too slow, undecodable).
+
+    Deliberately not a ``ValidationFailure``: the backfill reads that class as "the request could not be built, so
+    nothing was sent", and this is an ordinary transport failure that is backed off and retried.
+    """
+
+
 class TradesRateLimited(TradesPageRefused):
     """``EAPI:Rate limit exceeded``: the shared request counter went over its maximum."""
 
@@ -235,7 +243,10 @@ class KrakenTrades:
     def fetch(self, pair_code: str, *, since: int | None, count: int = MAX_TRADES_PER_PAGE) -> TradesPage:
         url = trades_url(pair_code, since=since, count=count)
         requested_at = self._now()
-        raw = self.transport.get_text(url)
+        try:
+            raw = self.transport.get_text(url)
+        except ValidationFailure as error:  # the public transport reports its answer limits this way
+            raise TradesTransportRefused(str(error)) from error
         # Availability is taken after the network operation, never before it.
         received_at = self._now()
         if received_at < requested_at:

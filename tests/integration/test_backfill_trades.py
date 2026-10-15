@@ -964,6 +964,32 @@ def test_a_persistent_transport_failure_stops_the_pair_and_keeps_what_was_saved(
     assert pair["intervals"]["15"]["next_open_unix"] > T0
 
 
+@pytest.mark.parametrize("message", [
+    "public response exceeded its byte limit", "public response exceeded its elapsed deadline",
+    "public response used unsupported content encoding", "public response encoding was invalid",
+])
+def test_an_answer_the_transport_refuses_is_a_transport_error_that_was_sent_and_is_retried(store, message) -> None:
+    """Not ``invalid_request``: that reason means the request could not be built and nothing was sent."""
+    trades = long_gap(store, hours=2)
+    rig = Rig(store, trades, hook=lambda call, url: ValidationFailure(message) if call >= 3 else None)
+    result = rig.drive(page_size=25)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "transport_error" and message in pair["message"]
+    assert len(rig.script.calls) == 2 + 3 and result.report["requests"]["transport_errors"] == 3
+    assert result.status == "partial" and pair["intervals"]["15"]["next_open_unix"] > T0
+    assert rig.sleeper.waits  # backed off between the tries, like any other transport failure
+
+
+def test_one_refused_answer_is_retried_after_a_back_off_and_the_run_finishes(store) -> None:
+    trades = long_gap(store, hours=2)
+    rig = Rig(store, trades,
+              hook=lambda call, url: ValidationFailure("public response exceeded its elapsed deadline")
+              if call == 3 else None)
+    result = rig.drive(page_size=25)
+    assert result.status == "ok" and result.report["requests"]["transport_errors"] == 1
+    assert Decimal("9.091") in rig.sleeper.waits and rig.script.calls[2] == rig.script.calls[3]
+
+
 @pytest.mark.parametrize(("hook", "reason"), [
     (lambda call, url: ConnectionError("network is down"), "transport_error"),
     (lambda call, url: "<html>Bad gateway</html>", "page_refused"),
