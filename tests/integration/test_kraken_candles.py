@@ -266,6 +266,9 @@ def _mutated(index: int, **changes) -> str:
     ({"p7": True}, "count as bool"),
     ({"p7": 7.0}, "count as float"),
     ({"p7": 0}, "volume without trades"),
+    ({"p7": 10**12 + 1}, "count beyond any plausible number of trades"),
+    ({"p7": 2**63}, "count beyond the storable integer"),
+    ({"p7": 10**30}, "absurd count"),
 ])
 def test_an_invalid_committed_row_refuses_the_whole_response(changes: dict, label: str) -> None:
     failure = _refused(_mutated(1, **changes))
@@ -301,6 +304,13 @@ def test_a_traded_candle_and_a_quiet_candle_with_exact_boundaries_are_accepted()
     assert [candle.trade_count for candle in fetched.candles] == [7, 0, 1]
     assert fetched.no_trade_candles == 1
     assert fetched.candles[2].volume == Decimal("1E-8")
+
+
+def test_the_largest_accepted_trade_count_is_stored_as_sent() -> None:
+    raw, rows = _table(committed=2)
+    rows[1] = [*rows[1][:7], 10**12]
+    fetched, _transport, _clock = _fetch([wire("XXBTZUSD", rows)])
+    assert fetched.candles[1].trade_count == 10**12
 
 
 def test_numeric_json_values_are_read_exactly_and_equal_the_text_form() -> None:

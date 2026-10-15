@@ -502,6 +502,20 @@ def test_one_failed_series_does_not_discard_the_others(store: CandleStore) -> No
     assert ("SOL/USD", 15) not in present and len(present) == 40
 
 
+def test_an_absurd_trade_count_fails_that_series_as_an_invalid_response_not_as_a_storage_error(
+        store: CandleStore) -> None:
+    env = Env(store)
+    step = 3600
+    forming = unix(NOW) - unix(NOW) % step
+    rows = [row(forming + offset * step) for offset in range(-5, 1)]
+    rows[2] = row(rows[2][0], count=10**30)
+    env.exchange.queue("SOLUSD", 60, wire("SOLUSD", rows, last=forming - step))
+    report = env.collect(small_scope())
+    failed = entry(report, "SOL/USD", 60)
+    assert (failed["status"], failed["error"], failed["inserted"]) == ("failed", "response_invalid", 0)
+    assert entry(report, "BTC/USD", 60)["status"] == "ok" and report["counts"]["failed"] == 1
+
+
 def test_ten_failures_in_a_row_stop_the_run_but_a_success_resets_the_count(store: CandleStore, new_store) -> None:
     env = Env(store)
     for symbol, interval in ORDER[:10]:

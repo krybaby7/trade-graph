@@ -43,6 +43,9 @@ OHLC_MAXIMUM_ROWS = OHLC_COMMITTED_ROWS + 1  # plus the candle still forming
 OHLC_MAXIMUM_RESPONSE_BYTES = 1_048_576
 OHLC_TIMEOUT_SECONDS = 15.0
 MAXIMUM_UNIX_TIME = 4_102_444_800  # 2100-01-01; anything later is not a plausible candle or cursor
+# Far above any real count and far below the 64-bit integer the store writes. A larger number is a corrupt answer: it
+# is refused as an invalid response here, not met later as an unexplained storage failure.
+OHLC_MAXIMUM_TRADE_COUNT = 10**12
 OHLC_SOURCES = ("kraken_public_ohlc", "synthetic")
 OHLC_FAILURE_CATEGORIES = (
     "request_failed", "rate_limited", "throttled", "unknown_pair", "service_unavailable", "exchange_error",
@@ -169,7 +172,7 @@ def _candle(row: object, pair: ListedPair, interval_minutes: int, received_at: d
     if type(opened) is not int or not 0 <= opened <= MAXIMUM_UNIX_TIME or opened % step:
         raise OhlcFetchError("response_invalid")
     count = row[7]
-    if type(count) is not int or count < 0:
+    if type(count) is not int or not 0 <= count <= OHLC_MAXIMUM_TRADE_COUNT:
         raise OhlcFetchError("response_invalid")
     open_time, close_time = from_unix(opened), from_unix(opened + step)
     if close_time > received_at:

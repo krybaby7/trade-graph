@@ -185,7 +185,8 @@ response (`response_invalid`) and nothing of that series is saved:
 
 - the final row is dropped, never inspected for values, and only its shape (8 items) is checked;
 - each committed row has 8 items, an integer open time on the interval grid, strictly increasing, and an integer
-  trade count of zero or more; a hole between rows is allowed (it simply stays a missing slot);
+  trade count from zero to 10^12 (a larger number is a corrupt answer, not a storage error); a hole between rows
+  is allowed (it simply stays a missing slot);
 - prices and volume are exact decimals (text or JSON numbers, never floats), positive prices, non-negative
   volume, high and low enclosing open and close, vwap inside the range, or 0 with zero volume;
 - a row with trades counted 0 but volume above 0 is refused;
