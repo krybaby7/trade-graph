@@ -1034,6 +1034,58 @@ def test_an_unusable_page_stops_the_pair_with_the_refusal_reason(store) -> None:
     assert pair["stop_reason"] == "page_refused" and pair["refusal_reason"] == "invalid_json"
 
 
+FAR = datetime(2026, 10, 20, tzinfo=UTC)  # after the collector's first synthetic candle has closed
+
+
+def beyond_the_range(store: CandleStore, *, slots: int = 288, days_later: int = 4) -> list[SyntheticTrade]:
+    """A three day range (288 quarter hours) for which the exchange holds trades only from days after its end."""
+    seed(store, collector_first_open=T0 + slots * 900, available=FAR)
+    return steady_trades(5000, T0 + days_later * 86_400, 300, every_seconds=60)
+
+
+def test_a_range_the_exchange_has_no_trades_for_is_not_reported_as_a_clean_run(store) -> None:
+    """No trade before the range end cannot be told apart from history that Kraken no longer serves."""
+    result = Rig(store, beyond_the_range(store), now=FAR).drive()
+    pair = result.report["pairs"]["BTC/USD"]
+    document = pair["intervals"]["15"]
+    assert document["status"] == "complete" and document["decided_slots"] == document["target_slots"] == 288
+    assert document["candles"]["built"] == 0 and document["no_candle_built"] is True
+    assert document["leading_gap_seconds"] == 4 * 86_400
+    assert pair["status"] == "partial" and result.status == "partial"
+    assert "no candle was built for the 15 minute" in pair["message"] and "96 h 0 min after the range start" in pair[
+        "message"]
+    assert pair["first_trade_time"].startswith(str(T0 + 4 * 86_400))  # the report already named the first trade
+
+
+def test_the_leading_gap_is_zero_for_a_range_that_has_trades_from_its_start(store) -> None:
+    two_slot_store(store)
+    result = Rig(store, two_slot_trades()).drive()
+    document = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] == 0 and document["no_candle_built"] is False
+    assert result.status == "ok" and result.report["pairs"]["BTC/USD"]["message"] is None
+
+
+def test_the_leading_gap_counts_from_the_range_start_to_the_first_trade(store) -> None:
+    seed(store, collector_first_open=T0 + 3600)
+    trades = [trade(1, "1000.5", "100.00", "1"), trade(2, "1500", "101.00", "1"), trade(3, "3601", "102.00", "1")]
+    document = Rig(store, trades).drive().report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] == 1000 and document["candles"]["built"] == 1  # only 12:15 had trades
+    assert document["no_candle_built"] is False
+
+
+def test_a_resumed_interval_has_no_leading_gap_to_report(store) -> None:
+    trades = long_gap(store)
+    Rig(store, trades).drive(max_requests=2, page_size=25)
+    document = Rig(store, trades).drive(page_size=25).report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["resumed_from_unix"] is not None and document["leading_gap_seconds"] is None
+
+
+def test_an_exchange_that_returned_nothing_has_no_leading_gap_and_is_not_called_a_gap(store) -> None:
+    two_slot_store(store)
+    document = Rig(store, []).drive().report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] is None and document["no_candle_built"] is False  # nothing was decided
+
+
 def test_a_page_for_the_wrong_pair_is_refused(store) -> None:
     trades = long_gap(store, hours=2)
     result = Rig(store, trades, key="XETHZUSD").drive()

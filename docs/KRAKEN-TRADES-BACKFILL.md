@@ -148,6 +148,15 @@ The `refusal_reason` of a `page_refused` stop is one of `response_too_large`, `i
 Candles already saved stay saved in every case. The report also lists `not_reached` (pair, interval, slot count and
 time span) and, for the decided part, the store's own coverage with the 25 largest empty ranges.
 
+A range can be read to its end and still produce nothing: if the first trade Kraken returns lies far after the range
+start, or after its end, every slot reads as empty, and that cannot be told apart from history Kraken no longer serves
+(how far back Trades reaches is unconfirmed) or from an outage. Each interval therefore reports `leading_gap_seconds`
+(the range start to the first trade this run received; null on a resumed run or when no trade came) and
+`no_candle_built` (slots were decided in this run, yet no candle was built or withheld). When `no_candle_built` is true
+the interval stays `complete` (every slot was decided) but the pair is `partial`, the run is `partial` instead of `ok`,
+and the pair `message` says so. A genuinely quiet pair over a short range can trigger it too; the first trade time and
+the leading gap show which case it is.
+
 ### Rate limiting
 
 `adapters/market/trades_rate_limit.py` models the counter: maximum 15, decay 0.33 per second, 1 per call, with 2
