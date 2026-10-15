@@ -6,6 +6,8 @@ import hashlib
 import io
 import os
 import stat
+import struct
+import tempfile
 import zipfile
 import zlib
 from datetime import UTC, datetime
@@ -25,6 +27,7 @@ from tests.archive_support import (
     write_zip,
 )
 
+from trade_graph.adapters.market import kraken_archive
 from trade_graph.adapters.market.kraken_archive import (
     CHUNK_BYTES,
     REJECTION_REASONS,
@@ -33,6 +36,7 @@ from trade_graph.adapters.market.kraken_archive import (
     ArchiveRejected,
     MemberReader,
     ReadBudget,
+    declared_directory,
     fingerprint_archive,
     is_fiat_symbol,
     open_archive,
@@ -380,6 +384,125 @@ def test_too_many_members_are_refused(tmp_path: Path) -> None:
     with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
         pass
     assert refused.value.reason == "member_limit"
+
+
+class _NoZipFile:
+    """Stands in for zipfile.ZipFile: constructing it is the memory cost that the early check must avoid."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise AssertionError("the central directory was loaded before the member count was checked")
+
+
+def test_too_many_members_are_refused_before_the_directory_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    path = write_zip(tmp_path / "many.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
+        pass
+    assert refused.value.reason == "member_limit" and "6 members" in str(refused.value)
+
+
+def test_exactly_the_member_limit_is_accepted_in_a_zip(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "six.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    with open_archive(path, ArchiveLimits(max_members=6)) as archive:
+        assert len(archive.members) == 6
+
+
+def test_an_oversized_central_directory_is_refused_before_it_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    """Few members, each with a large extra field: the directory is far bigger than any real archive's."""
+    path = tmp_path / "padded.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(3):
+            info = zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0))
+            info.extra = b"\xaa\xbb\xe8\x03" + b"x" * 1000  # an unknown extra field, 1004 bytes
+            archive.writestr(info, "")
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=3)):
+        pass
+    assert refused.value.reason == "member_limit" and "directory" in str(refused.value)
+
+
+def test_a_declared_count_that_lies_still_meets_the_count_check_after_loading(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "liar.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    raw = bytearray(path.read_bytes())
+    end = raw.rindex(b"PK\x05\x06")
+    raw[end + 8:end + 12] = (1).to_bytes(2, "little") * 2  # entries on this disk and in total, both said to be one
+    path.write_bytes(bytes(raw))
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
+        pass
+    assert refused.value.reason == "member_limit"
+
+
+def test_the_declared_directory_of_a_zip_is_its_entry_count_and_byte_size(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "six.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    entries, directory_bytes = declared_directory(path)
+    with zipfile.ZipFile(path) as archive:
+        assert entries == len(archive.infolist()) == 6
+    assert 6 * 46 < directory_bytes < 6 * 100
+
+
+def test_the_declared_directory_is_read_past_a_zip_comment(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "commented.zip", {"A_15.csv": "", "B_15.csv": ""})
+    before = declared_directory(path)
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.comment = b"a comment that the record is followed by " * 20
+    assert declared_directory(path) == before and before[0] == 2
+
+
+def test_the_declared_directory_of_a_zip64_file_comes_from_the_zip64_record(tmp_path: Path) -> None:
+    """More than 65,535 members saturate the ordinary record, which then says 0xFFFF and defers to the zip64 one."""
+    path = tmp_path / "huge.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(65_540):
+            archive.writestr(zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0)), "")
+    entries, directory_bytes = declared_directory(path)
+    assert entries == 65_540 and directory_bytes > 65_540 * 46
+
+
+def test_a_zip64_file_over_the_member_limit_is_refused_before_it_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "huge.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(65_540):
+            archive.writestr(zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0)), "")
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=65_536)):
+        pass
+    assert refused.value.reason == "member_limit" and "65540" in str(refused.value)
+
+
+@pytest.mark.parametrize("data", [
+    b"", b"PK", b"not a zip at all" * 10, b"PK\x05\x06" + b"\x00" * 10, b"PK\x03\x04" * 20,
+])
+def test_the_declared_directory_of_something_that_is_not_a_zip_is_unknown(tmp_path: Path, data: bytes) -> None:
+    path = tmp_path / "other.bin"
+    path.write_bytes(data)
+    assert declared_directory(path) is None
+
+
+def test_the_declared_directory_of_an_unreadable_path_is_unknown(tmp_path: Path) -> None:
+    assert declared_directory(tmp_path / "absent.zip") is None
+
+
+@pytest.mark.parametrize("record_at", [0, 2**40, 2**63 - 1, 2**64 - 1])
+def test_a_zip64_locator_that_points_nowhere_leaves_the_count_unknown(tmp_path: Path, record_at: int) -> None:
+    ordinary = struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, record_at, 1)
+    path = tmp_path / "bad64.zip"
+    path.write_bytes(b"x" * 100 + locator + ordinary)
+    assert declared_directory(path) is None
+
+
+@settings(max_examples=200, deadline=None)
+@given(data=st.binary(max_size=300), keep=st.integers(min_value=0, max_value=2000))
+def test_the_declared_directory_never_raises_whatever_the_bytes(data: bytes, keep: int) -> None:
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "any.zip"
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("A_15.csv", "x")
+        whole = buffer.getvalue()
+        path.write_bytes(whole[:keep] + data)
+        found = declared_directory(path)
+        assert found is None or (type(found[0]) is int and type(found[1]) is int)
 
 
 def test_too_many_files_in_a_directory_are_refused_and_exactly_the_limit_is_accepted(tmp_path: Path) -> None:

@@ -86,8 +86,8 @@ def test_the_archive_modules_never_extract_or_download() -> None:
 # looks at it and adds it here; none of these opens a socket or starts a process.
 ALLOWED_LIBRARIES = {
     "__future__", "argparse", "collections", "contextlib", "dataclasses", "datetime", "decimal", "functools",
-    "hashlib", "json", "os", "pathlib", "pydantic", "re", "shlex", "sqlite3", "stat", "threading", "typing", "uuid",
-    "zipfile", "zlib",
+    "hashlib", "json", "os", "pathlib", "pydantic", "re", "shlex", "sqlite3", "stat", "struct", "threading", "typing",
+    "uuid", "zipfile", "zlib",
 }
 EXTRA_LIBRARIES = {
     "trade_graph.market_data_cli": {"importlib", "pkgutil", "types"},  # finds the command modules next to it

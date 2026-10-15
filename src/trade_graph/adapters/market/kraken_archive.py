@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 import stat
+import struct
 import zipfile
 import zlib
 from collections import Counter
@@ -50,6 +51,16 @@ _LEGACY_CURRENCY_USD = re.compile(r"Z([A-Z]{3})ZUSD")
 _LEGACY_TETHER = "USDTZUSD"
 _BASE = re.compile(r"[A-Z0-9]{1,16}")
 _ALLOWED_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+# ZIP end-of-central-directory record (22 bytes), its zip64 locator (20) and the zip64 record (56).
+_EOCD = struct.Struct("<4s4H2LH")
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_EOCD64_LOCATOR = struct.Struct("<4sLQL")
+_EOCD64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_EOCD64 = struct.Struct("<4sQ2H2L4Q")
+_EOCD64_SIGNATURE = b"PK\x06\x06"
+_ZIP_MAX_COMMENT = 0xFFFF
+# A directory entry is 46 bytes plus its name (at most 128 here) and any extra field; real archives need far less.
+DIRECTORY_BYTES_PER_MEMBER = 256
 
 REJECTION_REASONS = (
     "malformed_row", "timestamp_out_of_range", "off_grid", "duplicate_timestamp", "out_of_order",
@@ -304,11 +315,63 @@ def _member(name: str, size: int, compressed: int) -> ArchiveMember:
                          interval_minutes=None if parsed is None else parsed[1])
 
 
+def declared_directory(path: Path) -> tuple[int, int] | None:
+    """(entries, bytes) of the ZIP central directory as its end-of-central-directory record declares them.
+
+    ``None`` when the record cannot be read; the normal ZIP open then decides what the file is. The record is found
+    the way ``zipfile`` finds it, and a record that says 0xFFFF or 0xFFFFFFFF is completed from the zip64 record.
+    """
+    try:
+        with open(path, "rb") as stream:
+            size = stream.seek(0, os.SEEK_END)
+            tail_start = max(0, size - _ZIP_MAX_COMMENT - _EOCD.size)
+            stream.seek(tail_start)
+            tail = stream.read()
+            end = len(tail) - _EOCD.size
+            if end < 0 or tail[end:end + 4] != _EOCD_SIGNATURE or tail[-2:] != b"\0\0":
+                end = tail.rfind(_EOCD_SIGNATURE)  # a record followed by a comment
+            if end < 0 or len(tail) - end < _EOCD.size:
+                return None
+            _, _, _, _, entries, directory_bytes, offset, _ = _EOCD.unpack_from(tail, end)
+            if entries == 0xFFFF or directory_bytes == 0xFFFFFFFF or offset == 0xFFFFFFFF:
+                locator_at = tail_start + end - _EOCD64_LOCATOR.size
+                if locator_at < 0:
+                    return None
+                stream.seek(locator_at)
+                signature, _, record_at, _ = _EOCD64_LOCATOR.unpack(stream.read(_EOCD64_LOCATOR.size))
+                if signature != _EOCD64_LOCATOR_SIGNATURE:
+                    return None
+                stream.seek(record_at)
+                fields = _EOCD64.unpack(stream.read(_EOCD64.size))
+                if fields[0] != _EOCD64_SIGNATURE:
+                    return None
+                entries, directory_bytes = fields[7], fields[8]
+    except (OSError, struct.error, OverflowError, ValueError):  # an offset that no file can have is not a record
+        return None
+    return entries, directory_bytes
+
+
+def _require_small_directory(path: Path, limits: ArchiveLimits) -> None:
+    """Refuse a ZIP whose directory is too large before ``zipfile`` builds an object for every entry in it."""
+    declared = declared_directory(path)
+    if declared is None:
+        return
+    entries, directory_bytes = declared
+    if entries > limits.max_members:
+        raise ArchiveRejected("member_limit", f"the archive has {entries} members, over the limit of "
+                              f"{limits.max_members}")
+    # The count in the record can be wrong, so the size of the directory bounds what is loaded as well.
+    if directory_bytes > limits.max_members * DIRECTORY_BYTES_PER_MEMBER:
+        raise ArchiveRejected("member_limit", f"the archive's file directory is {directory_bytes} bytes, more than "
+                              f"{limits.max_members} members can need")
+
+
 class ZipArchive:
     format = "zip"
 
     def __init__(self, path: Path, limits: ArchiveLimits) -> None:
         self.limits = limits
+        _require_small_directory(path, limits)
         try:
             self._zip = zipfile.ZipFile(path)
         except zipfile.BadZipFile as error:

@@ -176,6 +176,7 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 | Limit | Default |
 |---|---|
 | members in the archive | 50,000 |
+| size of the ZIP file directory | 256 bytes per allowed member (12.8 MB at the default) |
 | uncompressed size of one member | 2 GiB |
 | uncompressed size in total, actually read | 16 GiB (`--max-uncompressed-gb`, up to 1024) |
 | rows in total | 400,000,000 |
@@ -185,9 +186,13 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 
 Nothing is ever extracted to disk and no temporary file is written: ZIP members are streamed through a bounded
 read buffer, and names are checked against an allowlist and never used to build a path. Members that are not read
-(other pairs, other intervals) are never decompressed. A test with sockets disabled, and a static test over the
-modules and everything they import, fail if the importer touches `socket`, `http`, `urllib`, `httpx`, `requests`,
-`ssl` or similar.
+(other pairs, other intervals) are never decompressed. The member count and the size of a ZIP's file directory are
+read from its end-of-central-directory record and checked before the directory is loaded, so an archive with hundreds
+of thousands of entries is refused without loading them. A test with sockets disabled, and a static test over the
+modules and everything they import, enforce that the importer cannot download: the static test allows only a short
+list of standard libraries (anything else, such as `socket`, `asyncio`, `ctypes` or `urllib`, fails it) and refuses
+calls that start a program (`os.system`, `os.popen`, `os.exec*`, `os.spawn*`) or run text as code (`eval`, `exec`,
+`__import__`).
 
 ## Reports and exit codes
 
