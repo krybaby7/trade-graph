@@ -241,6 +241,9 @@ also refuses a folder or file that other users can open (the default `runtime/` 
 stopped for a failure reason (the table above: everything except `end_reached`, `max_requests`, `stream_exhausted`,
 `no_target` and `already_covered`) and no slot was decided in this run (`decided_this_run` is 0 in every interval).
 Real progress keeps `partial` even if a later request failed, so a scheduler can tell a dead network from a slow day.
+After Ctrl-C or SIGTERM the command prints the report of the run it began. If the stop came before that run was
+recorded it prints `{"run_id": null, "status": "interrupted"}`, and if the run began but its report was not saved it
+prints status `interrupted` with its `run_id`; an earlier run is never shown in its place.
 `reconcile-candles` refuses a missing file instead of creating
 it. Pair names may be written `BTC/USD` or `XBTUSD`; stablecoin pairs such as `USDT/USD` are refused as a typing
 guard only, and currency pairs such as `EUR/USD` are refused because they are not coins. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.

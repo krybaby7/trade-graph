@@ -313,6 +313,59 @@ def test_a_termination_request_is_recorded_like_ctrl_c_and_exits_143(tmp_path, c
     assert recorded.report["pairs"]["BTC/USD"]["intervals"]["15"]["next_open_unix"] > T0  # the cursor was saved
 
 
+def _stop_run(path: Path, capsys, monkeypatch, clock, stop: BaseException, where: str) -> tuple[int, dict]:
+    """A finished backfill, then a second command that is stopped at ``where`` (which of two store calls raises)."""
+    exchange(monkeypatch, clock, trades())
+    code, first = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path))
+    assert code == 0 and first["status"] == "ok"
+
+    def stopped(*args, **kwargs):
+        raise stop
+
+    monkeypatch.setattr(CandleStore, where, stopped)
+    return run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path), "--from-start")
+
+
+def test_an_interrupt_before_the_new_run_exists_does_not_print_an_earlier_runs_report(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, KeyboardInterrupt(), "begin_run")
+    assert code == 130 and report == {"status": "interrupted", "run_id": None}
+
+
+def test_a_termination_before_the_new_run_exists_does_not_print_an_earlier_runs_report(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, backfill_cli._Terminated(143), "begin_run")
+    assert code == 143 and report == {"status": "interrupted", "run_id": None}
+
+
+def test_an_interrupt_after_the_run_began_but_before_its_report_names_that_run(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, KeyboardInterrupt(), "finish_run")
+    database = MarketDataDatabase(path)
+    runs = CandleStore(database).runs()
+    database.close()
+    assert code == 130 and report == {"status": "interrupted", "run_id": runs[-1].run_id}
+    assert runs[-1].report is None and runs[-2].kind == "trades_backfill" and runs[-2].report is not None
+
+
+def test_an_interrupted_run_prints_its_own_report_not_the_previous_runs(tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    exchange(monkeypatch, clock, trades())
+    first_code, first = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path))
+    assert first_code == 0
+    exchange(monkeypatch, clock, trades(), hook=lambda call, url: KeyboardInterrupt() if call == 1 else None)
+    code, second = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path),
+                       "--from-start")
+    assert code == 130 and second["reason"] == "interrupted" and second["run_id"] > first["run_id"]
+
+
 def test_the_only_module_that_builds_a_real_http_transport_is_the_backfill_command() -> None:
     root = Path(__file__).resolve().parents[2] / "src" / "trade_graph"
     users = sorted(str(path.relative_to(root)) for path in root.rglob("*.py")
