@@ -29,26 +29,36 @@ Missing hours are reported; no synthetic carry-forward candles are created.
 ## Feature definitions
 
 The installed templates request the following fields. These are initial
-versioned software definitions, not validated profitable parameters.
+versioned software definitions, not validated profitable parameters. Since
+`hourly-price-features-v3` (D136) every value is computed by TA-Lib, so no
+indicator formula is written in this repository (D118). Earlier snapshots keep
+their v1/v2 values and are never recomputed.
 
-| Field | Required contiguous completed candles | Formula / units |
+| Field | Required contiguous completed candles | v3 definition (TA-Lib function) |
 |---|---:|---|
-| `sma_20` | 20 | Mean hourly close, USD per BTC/ETH |
-| `sma_50` | 50 | Mean hourly close, USD per BTC/ETH |
-| `pullback_from_high` | 20 | (Highest hourly high − latest close) / highest high; unitless fraction |
-| `range_high` | 24 | Highest hourly high, USD per BTC/ETH |
-| `range_low` | 24 | Lowest hourly low, USD per BTC/ETH |
-| `midpoint` | 24 | (Range high + range low) / 2, USD per BTC/ETH |
+| `sma_20` | 20 | `SMA` over 20 hourly closes, USD per BTC/ETH |
+| `sma_50` | 50 | `SMA` over 50 hourly closes |
+| `highest_high_20` | 20 | `MAX` over 20 hourly highs (new in v3) |
+| `range_high` | 24 | `MAX` over 24 hourly highs |
+| `range_low` | 24 | `MIN` over 24 hourly lows |
+| `midpoint` | 24 | `MIDPRICE` over 24 hours: (highest high + lowest low) / 2 |
+| `hourly_return` | 2 | `ROCP` over 1 hour: latest / prior − 1, a fraction |
+| `four_hour_drift` | 5 | `ROCP` over 4 hours: latest / four-hours-prior − 1, a fraction |
 
-The range midpoint is distinct from the current bid/ask midpoint (`mid`).
-For starter-template compatibility, `hourly_return` requires two closes and
-equals latest/prior − 1; `four_hour_drift` requires five closes and equals
-latest/four-hours-prior − 1. `pullback_depth` uses the same 20-hour pullback
-fraction; `midpoint_distance` uses the 24-hour range and equals
-(latest close − range midpoint) / range midpoint. Ratios are fractions, not
-percentages. All feature arithmetic uses a local Decimal context, precision
-50 and ROUND_HALF_EVEN; repeating division is rounded under that documented
-policy. Wire prices, volumes and output values retain decimal strings.
+`pullback_from_high`, `pullback_depth` and `midpoint_distance` are retired in
+v3: each was one division of two numbers and no library function returns it.
+A request for one gets status `unsupported`, and the snapshot supplies its
+ingredients instead (`highest_high_20` or `midpoint`, together with
+`latest_close`). The range midpoint is distinct from the current bid/ask
+midpoint (`mid`). Ratios are fractions, not percentages. The library works in
+binary floats, so v3 turns each result into exact decimal text by one stated
+rule (rounded half-even to 12 significant digits). The four selection fields are
+withheld, not rounded, for prices with more than 11 significant digits. Wire
+prices, volumes and output values retain decimal strings. The accuracy bounds
+and the retained-snapshot tests are in
+[the indicator menu](INDICATOR-MENU.md#hourly-price-features-v3). Before v3 the
+same fields were hand-written Decimal arithmetic (precision 50, ROUND_HALF_EVEN);
+that code is gone and survives only as a test oracle.
 
 ## Point-in-time context and retained evidence
 
@@ -73,10 +83,10 @@ the window start/end times show the anchored window. An internal gap
 withholds only the fields whose window covers it. The snapshot-level `stale`
 flag and `latest_close_time_utc` still compare the newest available candle
 with the latest completed hour. Unready values are omitted rather than filled
-with zero or an invented trend. This is feature version
-`hourly-price-features-v2`; retained `hourly-price-features-v1` snapshots
-ended every window at the latest completed hour, so one missing newest candle
-withheld every field.
+with zero or an invented trend. This anchoring was introduced in feature
+version `hourly-price-features-v2` and `hourly-price-features-v3` keeps it;
+retained `hourly-price-features-v1` snapshots ended every window at the latest
+completed hour, so one missing newest candle withheld every field.
 
 Research and Trader obtain requested fields from their pinned active strategy
 templates and mandate. Ready and stale values, source/candle identities,
@@ -105,3 +115,23 @@ Collection is bounded, while retention accumulates without deleting earlier
 decision evidence. This path prepares inputs; funded operation, venue
 conformance, forward economics, protected-host/image checks and live authority
 remain separate pending gates.
+
+## Multi-interval candles for many pairs (Phase D1)
+
+The hourly BTC/ETH path above is unchanged and still feeds the Trader's hourly
+features. Phase D1 adds a separate, much larger candle store for every Kraken
+USD pair at 1, 5, 15 and 60 minutes, in its own private SQLite file:
+
+- [Candle store contract](CANDLE-STORE.md) (D132): append-only revisions,
+  receipt-time availability, point-in-time and replay reads, coverage reports.
+- [Pair catalog and classification](PAIR-CATALOG.md): which pairs exist and
+  which are stablecoins, yield tokens or currencies (D131).
+- [Public candle collection](KRAKEN-CANDLE-COLLECTION.md): the bounded,
+  rate-limited collector and its gap reports.
+- [Archive import](KRAKEN-ARCHIVE-IMPORT.md) and
+  [Trades backfill](KRAKEN-TRADES-BACKFILL.md): months of history from a
+  locally supplied Kraken file, recent gaps from public trades, and a report of
+  where the sources differ. Delisted pairs are absent from Kraken's data, so
+  coin-selection tests on that history are optimistic.
+- [Indicator menu](INDICATOR-MENU.md) (D118, D136): standard indicators from
+  TA-Lib, cross-checked against independent libraries.

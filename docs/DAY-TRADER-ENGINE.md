@@ -1,8 +1,9 @@
 # Day-trader engine direction
 
 Status: owner-approved direction, 2026-10-12. This is a design record. The
-D114 fix list is implemented in source (D129, 2026-10-13) but not deployed; the
-running installation is unchanged. Decisions D114–D129 are in
+D114 fix list (D129, 2026-10-13) and the Phase D1 data foundation (D132–D136,
+2026-10-15) are implemented in source but not deployed; the running
+installation is unchanged. Decisions D114–D136 are in
 [DECISIONS.md](DECISIONS.md), and the build order is in
 [the build plan](DAY-TRADER-BUILD-PLAN.md).
 

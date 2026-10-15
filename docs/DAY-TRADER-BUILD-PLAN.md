@@ -1,8 +1,10 @@
 # Day-trader build plan
 
 Status: plan, 2026-10-12. Phase D0 (T23, T24) is built and tested in source
-on 2026-10-13 (D129) but not deployed. Nothing in the running system has
-changed.
+on 2026-10-13 (D129) but not deployed. Phase D1 (T25–T27) is built and tested
+in source on 2026-10-15 (D132–D136), also not deployed, with one small public
+Kraken smoke run; no real Kraken archive has been imported yet. Nothing in the
+running system has changed.
 
 This plan turns decisions D114–D128 into build steps. The reasons are in
 [the day-trader engine record](DAY-TRADER-ENGINE.md) and
@@ -449,9 +451,14 @@ may cost money.
 - **Check Perplexity auto top-up is off.** The prepaid credit is the outer
   bound while there is no limit (D125).
 - **Revoke the test key** when testing ends (D125).
-- **Get Kraken's archive file.** It is a large download from Kraken's support
-  pages. You download it, or permit an agent to. The importer only reads a
-  local file.
+- **Get Kraken's archive file.** It is a download from Kraken's support pages.
+  You download it, or permit an agent to. The importer only reads a local file.
+  Kraken's quarterly files are 576 MB (`Kraken_OHLCVT_2026Q3.zip`), 538 MB
+  (`2026Q2`) and 524 MB (`2026Q1`), sizes read from the file headers without
+  downloading. The complete archive is about 10 GB in five parts. The 2026Q3
+  file alone should give three months of 15-minute history, if a quarterly file
+  holds only its own quarter (Kraken's page does not say; the import report
+  shows it).
 - **Update the current mandate.** T24 fixes the default. The running
   installation keeps its old strategy list until you approve a new revision:
   with the service stopped, `trade-graph mandate-cleanup` shows the change and

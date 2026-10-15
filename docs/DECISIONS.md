@@ -538,3 +538,137 @@ None prevents offline development. Mark credentialed verification pending when c
   modes: `point_in_time` (receipt time at or before as-of) and `replay` (event
   time only, labelled `event_time_only`). CLI commands are added as modules in
   `trade_graph/market_data_cli/` so parallel work does not edit one list.
+
+- **D133 (2026-10-15, implementation defaults for T25; details in
+  [PAIR-CATALOG.md](PAIR-CATALOG.md) and
+  [KRAKEN-CANDLE-COLLECTION.md](KRAKEN-CANDLE-COLLECTION.md)):**
+  - *Pair catalog.* One public AssetPairs request returned 1,460 pairs on
+    2026-10-13, 677 of them quoted in USD. Normal trading status means
+    `online` only; other statuses stay in the dated catalog and are not
+    collected. Dated, versioned rules (`pair-rules-2026-10-13.1`) mark
+    stablecoins, yield-paying or liquid-staking tokens (D131) and fiat
+    currencies listed against USD; native proof-of-stake coins (ETH, SOL, ADA,
+    DOT, AVAX, ATOM) are not yield tokens. Marking is by asset name: 44 pairs
+    are marked and 608 coins are "not individually reviewed", which every
+    report lists, so an unmarked coin is never presented as verified clean. A
+    price-peg check is left to the scanner (T31). Calls that need the owner's
+    eye: U, STBL, UNITAS, CAP, DEBIT, RE, ST, and USDE (marked a stablecoin
+    although its reserve is hedged with perpetual futures, D127).
+  - *Quiet intervals.* Kraken's OHLC endpoint fills a minute or hour without
+    trades with a flat row (previous close, vwap 0, volume 0, count 0), as
+    recorded on 2026-10-13. The collector stores these as sent and counts them;
+    a missing slot in the collected series therefore means "not collected" or
+    "older than the 720-candle window". The archive source omits quiet
+    intervals, so reconciliation will show that difference.
+  - *Requests.* `since` is inclusive (observed), so each incremental request
+    starts one interval before the newest stored candle and re-verifies two
+    committed candles. The final row of every response is dropped unseen and
+    the receipt time is taken after the network call. The limiter mirrors
+    Kraken's documented counter conservatively (ceiling 10 of 15, drain 0.30
+    per second instead of 0.33) and starts each command at the ceiling, so
+    back-to-back runs never exceed Kraken's real counter; a rate-limit answer
+    stops the run, one short "Throttled" answer is waited out once, ten failed
+    series in a row stop the run, and a run whose clock is earlier than a
+    recorded run is refused. Two collectors running at once are not
+    coordinated; run one at a time.
+  - *Scope.* Eligible USD pairs at 5, 15 and 60 minutes; 1-minute only for an
+    explicit list (default BTC/USD and ETH/USD) because a full quarter at
+    one-minute for all 591 eligible pairs would be about 77 million rows and
+    9 GB. `--one-minute-pairs all` exists. Which pairs get 1-minute detail is an
+    owner decision. Most perishable data goes first when a request limit stops
+    a run, and the report lists exactly what was not reached.
+  - *Safety.* All five candle commands refuse the financial database by name,
+    path, link and content, and refuse any non-empty SQLite file that is not a
+    candle-history file.
+
+- **D134 (2026-10-15, implementation defaults for T26 importer; details in
+  [KRAKEN-ARCHIVE-IMPORT.md](KRAKEN-ARCHIVE-IMPORT.md)):** The importer reads
+  a local ZIP or folder only and has no network code (a test checks the import
+  closure of its modules). It scans the whole file first, reads the clock once
+  and uses that moment as the receipt time of every row (never the historical
+  close); rows closing after it are dropped and counted. More than 1% rejected
+  rows refuses the file. Member names must be plain flat file names; nothing
+  is extracted; member count, directory size, sizes, rows and compression ratio
+  are bounded. Default scope is USD pairs at 15 and 60 minutes (1 and 5 are
+  opt-in). Re-importing the same file adds nothing; a changed file adds
+  revisions only for changed rows, and stored candles that a corrected file no
+  longer contains are counted, not retracted. Every report states that
+  delisted pairs are absent from Kraken's data, so coin-selection tests on this
+  history are optimistic. The real file's layout (timestamp unit, open or close
+  convention, internal names, folders) is unconfirmed; the first real import is
+  the first real evidence.
+
+- **D135 (2026-10-15, implementation defaults for T26 backfill and
+  reconciliation; details in
+  [KRAKEN-TRADES-BACKFILL.md](KRAKEN-TRADES-BACKFILL.md)):** Public Trades are
+  aggregated into completed candles only after a later trade proves the close
+  passed; the receipt time is the completing page's. Kraken's `since` is
+  inclusive (observed), so a repeated boundary trade is removed by trade id
+  and must equal the stored row; a skipped trade id withholds the candles it
+  could change, and that withholding survives a resume. The cursor
+  (`next_open_unix` per pair and interval) lives in the run report, so a hard
+  kill repeats at most one run's requests; Ctrl-C and SIGTERM record the run.
+  Measured cost on 2026-10-13: BTC/USD made about 164,000 trades in a day
+  (about 165 requests, 8 minutes at the safe rate); BAT/USD about 13,700.
+  Reconciliation compares sources with no tolerance and reports every
+  difference; `precedence_window` picks the first source in a stated order
+  (default collector, archive, Trades-built) and labels the source and any
+  disagreement per slot; sources are never blended. A live smoke on 2026-10-15
+  compared one BTC/USD 15-minute slot built from 3,000 trades with Kraken's
+  own candle: open, high, low, close, volume and trade count were identical and
+  only vwap differed (Kraken rounds it to one decimal), by 0.00004%.
+
+- **D136 (2026-10-15, implementation defaults for T27; details in
+  [INDICATOR-MENU.md](INDICATOR-MENU.md)):**
+  - *Libraries.* TA-Lib 0.8.2 (bundled C library 0.8.1, Python 3.12 manylinux
+    wheel) and NumPy 2.5 are locked runtime dependencies, with TA-Lib capped
+    below 0.9 so a new C library cannot change numbers unnoticed. They are
+    imported only by the indicator wrapper, and a test keeps them out of
+    `domain`, `contracts` and `kernel`. pandas-ta-classic 0.8.32 (covers every
+    menu entry) and talipp 2.7 (its own conventions) are test-only
+    cross-check libraries. The menu has 26 entries with bounded settings;
+    warm-up comes only from TA-Lib's lookback. VWAP is not on the menu because
+    TA-Lib has none.
+  - *Differences.* Where libraries differ because of seeding (MACD, ADX and
+    the directional indices, ATR, Parabolic SAR), the difference is written
+    down, bounded and tested; nothing is patched with an in-house formula.
+    The TradingView comparison column is an unverified recollection. No
+    published numeric examples are in the tests (the StockCharts examples are
+    spreadsheets that need a download); the reference values are hand-derived.
+  - *Start-sensitive indicators.* RSI, MACD, ATR, ADX and similar give
+    slightly different numbers depending on how much history precedes them.
+    The engine reads the same span for every requested count, so one candle
+    has one number; it needs more history than the bare lookback (RSI 14 reads
+    794 candles, ADX 863, MACD 741). A coin younger than that reports
+    `warming_up` longer.
+  - *Gaps and alarms.* Any missing slot in the span withholds every value of
+    that indicator and lists the exact missing close times; nothing is carried
+    forward or partially computed. `compare_to_level` rounds the value and the
+    level to the same 12 significant digits before an exact comparison; an
+    unready indicator never satisfies a comparison. Undefined readings in a
+    market with no movement and no volume (RSI, MFI, Stochastic, Williams %R,
+    CCI, ADX read 0, Aroon reads 100) are still labelled `ready`; the Trader
+    must read oscillators beside the candles.
+  - *Hourly fields (D89 re-expressed, D118).* `hourly-price-features-v3`
+    computes sma_20, sma_50, range_high, range_low, midpoint, hourly_return and
+    four_hour_drift with TA-Lib (SMA, MAX, MIN, MIDPRICE, ROCP). New:
+    `highest_high_20`. Retired: `pullback_from_high`, `pullback_depth`,
+    `midpoint_distance`, because each is one division that no library function
+    returns; their ingredients are supplied instead (also for databases that
+    kept the old template, which asks only for the retired name). The
+    slow-trend-pullback template now reads `highest_high_20` and `latest_close`.
+    Values are exact decimal text, rounded half-even to 12 significant digits
+    (selection fields are withheld above 11 digits); one-tick returns carry
+    5e-12 relative plus 2.5e-16 absolute error. Stored v1 and v2 snapshots are
+    never recomputed and stay readable (fixtures from the v2 code are tested).
+    The hourly features still read `hourly_candles`; rewiring to the new store
+    is later work.
+  - *One in-house ratio remains,* in the owner dashboard's trend label
+    (`hq_state.market()`, an SMA ratio compared with 0.001). It is display only
+    and is not Trader input. Recommended reading of D118: display
+    classification is exempt. The owner may say otherwise.
+  - *Before deploying:* an existing database keeps its stored active baseline
+    (`VersionController.ensure` returns early), so the new templates need an
+    owner-approved baseline replacement; the protected image must be built with
+    the NumPy and TA-Lib wheels (`scripts/build_protected_image.py` was not
+    exercised); the kernel manifest is re-pinned as for any `.py` change.
