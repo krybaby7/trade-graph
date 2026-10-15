@@ -214,9 +214,12 @@ def compute_indicator(store: CandleStore, name: str, params: Mapping[str, object
     if as_of is not None:
         _require_aware("as_of", as_of)
     plan = plan_history(name, params, count)
-    window = store.window(symbol, interval_minutes, source, end_close_time=end_close_time, count=plan.span,
-                          as_of=as_of, mode=mode)
-    older = _only_the_oldest_slots_are_missing(window) and _candles_exist_before(store, window, plan)
+    try:
+        window = store.window(symbol, interval_minutes, source, end_close_time=end_close_time, count=plan.span,
+                              as_of=as_of, mode=mode)
+        older = _only_the_oldest_slots_are_missing(window) and _candles_exist_before(store, window, plan)
+    except OverflowError as error:  # a date whose span runs off the calendar is a bad request, not a crash
+        raise ValidationFailure("the date is too early or too late for the candle span this indicator needs") from error
     return _evaluate(name, params, window, plan, older_history=older)
 
 
@@ -271,11 +274,15 @@ def _evaluate(name: str, params: Mapping[str, object] | None, window: CandleWind
 
 
 def _only_the_oldest_slots_are_missing(window: CandleWindow) -> bool:
-    """Some slots are missing and they are all at the start of the span (possibly every slot)."""
+    """Some slots are missing, they are all at the start of the span, and the newest slots are present.
+
+    A span with no candle at all is not this: it shows nothing about whether the history has begun (it could be a
+    series that does not exist, or a feed that stopped long ago), so it stays a hole, never a young coin.
+    """
     present = [index for index, slot in enumerate(window.slots) if slot.stored is not None]
-    if len(present) == len(window.slots):
+    if not present or len(present) == len(window.slots):
         return False
-    return not present or len(present) == len(window.slots) - present[0]
+    return len(present) == len(window.slots) - present[0]
 
 
 def _candles_exist_before(store: CandleStore, window: CandleWindow, plan: HistoryPlan) -> bool:
@@ -298,13 +305,22 @@ def _status(window: CandleWindow, older_history: bool) -> IndicatorStatus:
 
 
 def _assert_completed(window: CandleWindow) -> None:
-    """The store promises completed candles known at ``as_of``; check it instead of trusting it."""
+    """The store promises consecutive slots of one series with completed candles known at ``as_of``; check it
+    instead of trusting it, because ``compute_from_window`` takes a window from any caller."""
+    step = timedelta(minutes=window.interval_minutes)
+    for earlier, later in zip(window.slots, window.slots[1:]):
+        if later.close_time_utc - earlier.close_time_utc != step:
+            raise CandleSelectionError("the slots of a window must be consecutive, one interval apart")
     for slot in window.slots:
         if slot.stored is None:
             continue
         candle = slot.stored.candle
         if candle.close_time_utc != slot.close_time_utc or candle.interval_minutes != window.interval_minutes:
             raise CandleSelectionError("a candle does not belong to the slot it was returned for")
+        if candle.symbol != window.symbol:
+            raise CandleSelectionError("a candle of another symbol than the window's was returned")
+        if candle.source != window.source:
+            raise CandleSelectionError("a candle of another source than the window's was returned")
         if candle.available_at_utc < candle.close_time_utc:
             raise CandleSelectionError("a candle was received before it closed")
         if candle.close_time_utc > window.as_of_utc:

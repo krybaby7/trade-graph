@@ -344,9 +344,12 @@ sizes, bounds), `tests/unit/test_indicator_alarm_compare.py` and `tests/property
    point-in-time reads require it). A test reads the engine's source and fails if it imports TA-Lib, NumPy, pandas or
    sqlite, or touches the store's database or any read other than `window`.
 2. **Only completed candles, checked.** The store already promises this; the engine asserts it for every candle
-   it receives and raises `CandleSelectionError` if a candle belongs to another slot, was received before it
-   closed, closes after `as_of`, or (in point-in-time mode) was received after `as_of`. The still-forming candle
-   is never stored (store contract), so it cannot reach the engine.
+   it receives and raises `CandleSelectionError` if the slots of the window are not consecutive (one interval
+   apart), a candle belongs to another slot or interval, a candle is of another symbol or source than the window's,
+   a candle was received before it closed, closes after `as_of`, or (in point-in-time mode) was received after
+   `as_of`. These checks also guard `compute_from_window`, which takes a window from any caller, so a hand-built
+   window with a hole between its slots is refused rather than computed across. The still-forming candle is never
+   stored (store contract), so it cannot reach the engine.
 3. **How much history is read** is the sum of three numbers, none of them computed here:
    - the library's own lookback for the chosen settings (`lookback()`, asked from TA-Lib);
    - the *seeding history* of a start-sensitive indicator: the menu's measured `Settling` guidance (for
@@ -373,17 +376,22 @@ sizes, bounds), `tests/unit/test_indicator_alarm_compare.py` and `tests/property
    | Status | When | Values |
    |---|---|---|
    | `ready` | every slot of the span has a candle | `count` points per output, oldest first, each with its close time |
-   | `warming_up` | only the oldest slots are missing, and no candle is visible in the stretch of the same length just before the span: the history has not begun | none |
-   | `gapped` | any other missing slot: in the middle, in the warm-up or seeding zone, at the newest slot (a collector that stopped), or at the oldest slots when candles exist before them | none |
+   | `warming_up` | only the oldest slots are missing, the newest slots are present, and no candle is visible in the stretch of the same length just before the span: the history has begun inside the span | none |
+   | `gapped` | any other missing slot: in the middle, in the warm-up or seeding zone, at the newest slot (a collector that stopped), at the oldest slots when candles exist before them, or every slot (a series that does not exist, a feed that stopped long ago, or a date before the series began) | none |
 
    `missing_close_times_utc` lists every missing slot (a document shows the first 100 and the full count).
    Nothing is carried forward or zero-filled, no partial answer is given (a hole that only touches the oldest
    point's window still withholds all points), and the span is never lengthened or shortened to get around a
    hole: the answer for a span is the answer for that span. Whether a missing slot means "no trades in that
    interval" or "not collected" is unknowable from the store (contract rule 5), so the report says "no
-   candle" and does not guess. The only extra read is the look-behind that tells `warming_up` from `gapped`;
-   it is one more `window` call of the same length, made only when the oldest slots are the only ones missing.
+   candle" and does not guess. A span in which no candle is present at all is `gapped`, never `warming_up`:
+   nothing the engine saw shows that the history has not begun, and a dead collector must not read as a young
+   coin (the price is that a date before the series began is `gapped` too). The only extra read is the
+   look-behind that tells `warming_up` from `gapped`; it is one more `window` call of the same length, made only
+   when the oldest slots are the only ones missing and at least one candle is present.
    A hole elsewhere in the older candles does not affect a span that does not contain it.
+   A request whose span would run off the calendar (a date in year 1, say) or whose settings are absurdly large
+   numbers is refused with `ValidationFailure`, like any other bad request.
 5. **A result carries its provenance:** indicator, resolved settings, symbol, interval, source, `mode` and
    `as_of`, the status, the number of candles required and available, the lookback and seeding sizes, the
    close time of every value, and for every candle read its revision, collection run and content hash, plus

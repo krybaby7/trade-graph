@@ -119,7 +119,9 @@ def test_a_missing_slot_always_withholds_values_and_is_named_exactly(scenario) -
         assert outcome.values == {} and outcome.close_times_utc == ()
         leading_only = missing == frozenset(range(len(missing)))
         # Only the oldest slots missing is a young history, unless candles exist before the window: then it is a hole.
-        assert outcome.status == ("warming_up" if leading_only and not older else "gapped")
+        # A window with no candle at all shows nothing about when the history began, so that is a hole too.
+        young = leading_only and not older and len(missing) < len(rows)
+        assert outcome.status == ("warming_up" if young else "gapped")
 
 
 @settings(max_examples=60, derandomize=True, deadline=None)

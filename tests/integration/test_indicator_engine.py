@@ -169,13 +169,37 @@ def test_not_enough_history_is_warming_up_and_withholds_values(store) -> None:
     assert result.missing_close_times_utc[-1] == _end(candles, 9) - timedelta(minutes=15 * 10)
 
 
-def test_a_series_that_does_not_exist_is_warming_up_with_nothing_available(store) -> None:
+def test_a_series_that_does_not_exist_is_gapped_not_a_young_coin(store) -> None:
+    """Nothing was seen in the span, so nothing shows that the history has not begun: it is a data problem."""
     end = datetime(2026, 2, 1, tzinfo=UTC)
     result = compute_indicator(store, "RSI", {}, symbol="ABC/USD", interval_minutes=15, source=_SOURCE,
                                end_close_time=end, as_of=end, count=1)
-    assert result.status == "warming_up" and result.available_candles == 0
+    assert result.status == "gapped" and result.available_candles == 0
     assert len(result.missing_close_times_utc) == result.required_candles
     assert result.values == {}
+
+
+@pytest.mark.parametrize("silent_slots", [5, 20, 40, 1000, 5000])
+def test_a_feed_that_stopped_long_ago_is_gapped_whatever_the_distance_never_a_young_coin(store, silent_slots) -> None:
+    candles = _fill(store, count=100)
+    end = _end(candles, 99) + timedelta(minutes=15 * silent_slots)
+    result = compute_indicator(store, "SMA", {"timeperiod": 20}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
+                               end_close_time=end, as_of=end, count=1)
+    assert result.status == "gapped" and result.values == {}
+    assert result.available_candles == max(0, 20 - silent_slots)
+    assert len(result.missing_close_times_utc) == min(20, silent_slots)
+
+
+def test_a_span_with_no_candle_in_it_does_not_read_the_look_behind(tmp_path) -> None:
+    database = MarketDataDatabase(tmp_path / "spy3" / "market_data.sqlite")
+    spy = SpyStore(database)
+    candles = _fill(spy, count=100)
+    spy.calls.clear()
+    end = _end(candles, 99) + timedelta(minutes=15 * 500)
+    result = compute_indicator(spy, "SMA", {"timeperiod": 20}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
+                               end_close_time=end, as_of=end, count=1)
+    assert result.status == "gapped" and len(spy.calls) == 1
+    database.close()
 
 
 def test_missing_oldest_slots_with_nothing_stored_before_them_are_warming_up(store) -> None:
@@ -401,6 +425,47 @@ def test_a_hand_built_complete_window_computes() -> None:
     assert result.status == "ready" and result.mode == "point_in_time"
 
 
+def test_the_engine_refuses_a_window_whose_slots_are_not_consecutive() -> None:
+    """compute_from_window is public: a hole between slots is not computed across because every slot is full."""
+    candles = build_candles("trend_pullback", count=40)
+    holed = candles[0:10] + candles[20:30]  # 20 slots, every one stored, ten slots missing between the halves
+    window = _hand_window(holed, as_of=candles[29].available_at_utc)
+    with pytest.raises(CandleSelectionError, match="consecutive"):
+        compute_from_window("SMA", {"timeperiod": 20}, window, count=1)
+    reversed_window = _hand_window(list(reversed(candles[10:30])), as_of=candles[29].available_at_utc)
+    with pytest.raises(CandleSelectionError, match="consecutive"):
+        compute_from_window("SMA", {"timeperiod": 20}, reversed_window, count=1)
+
+
+def test_the_engine_refuses_candles_of_another_symbol_or_source_than_the_window() -> None:
+    candles = build_candles("trend_pullback", count=30)[-20:]
+    as_of = candles[-1].available_at_utc
+    foreign = [c.model_copy(update={"symbol": "OTHER/USD"}) if index < 10 else c for index, c in enumerate(candles)]
+    with pytest.raises(CandleSelectionError, match="symbol"):
+        compute_from_window("SMA", {"timeperiod": 20}, _hand_window(foreign, as_of=as_of), count=1)
+    elsewhere = [c.model_copy(update={"source": "kraken_public_ohlc"}) if index == 3 else c
+                 for index, c in enumerate(candles)]
+    with pytest.raises(CandleSelectionError, match="source"):
+        compute_from_window("SMA", {"timeperiod": 20}, _hand_window(elsewhere, as_of=as_of), count=1)
+
+
+def test_the_engine_refuses_a_candle_that_belongs_to_another_slot_or_interval() -> None:
+    candles = build_candles("trend_pullback", count=30)[-20:]
+    as_of = candles[-1].available_at_utc
+    window = _hand_window(candles, as_of=as_of)
+    swapped = list(window.slots)
+    swapped[4], swapped[5] = (CandleSlot(close_time_utc=swapped[4].close_time_utc, stored=swapped[5].stored),
+                              CandleSlot(close_time_utc=swapped[5].close_time_utc, stored=swapped[4].stored))
+    with pytest.raises(CandleSelectionError, match="slot"):
+        compute_from_window("SMA", {"timeperiod": 20}, CandleWindow(
+            symbol=_SYMBOL, interval_minutes=15, source=_SOURCE, as_of_utc=as_of, mode="point_in_time",
+            slots=tuple(swapped)), count=1)
+    other_interval = [c.model_copy(update={"interval_minutes": 5}) if index == 7 else c
+                      for index, c in enumerate(candles)]
+    with pytest.raises(CandleSelectionError, match="slot"):
+        compute_from_window("SMA", {"timeperiod": 20}, _hand_window(other_interval, as_of=as_of), count=1)
+
+
 # --- bounds and refusals ----------------------------------------------------------------------------------------
 
 
@@ -447,6 +512,18 @@ def test_requests_outside_the_menu_are_refused(store) -> None:
     with pytest.raises(ValidationFailure):
         compute_indicator(store, "SMA", {}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
                           end_close_time=_end(candles, 30) + timedelta(seconds=1), as_of=_end(candles, 30), count=1)
+    # Both dates are valid, but a span of 20 slots ending there runs before year 1.
+    for year_one in (datetime(1, 1, 1, 0, 15, tzinfo=UTC), datetime(1, 1, 1, 4, 30, tzinfo=UTC)):
+        for mode in ("point_in_time", "replay"):
+            with pytest.raises(ValidationFailure, match="date"):
+                compute_indicator(store, "SMA", {}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
+                                  end_close_time=year_one, as_of=year_one, count=1, mode=mode)  # type: ignore[arg-type]
+    for name, params in (("SMA", {"timeperiod": 10**400}), ("BBANDS", {"nbdevup": 10**400}),
+                         ("SAR", {"acceleration": 10**309}), ("RSI", {"timeperiod": -(10**400)})):
+        with pytest.raises(ValidationFailure):
+            _read(store, candles, 30, name, params)
+        with pytest.raises(ValidationFailure):
+            plan_history(name, params, 1)
     naive = _end(candles, 30).replace(tzinfo=None)
     for end, as_of in ((naive, _end(candles, 30)), (_end(candles, 30), naive), ("2026-01-05T00:15:00Z", None),
                        (_end(candles, 30), 12345)):

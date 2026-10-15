@@ -83,11 +83,14 @@ class IndicatorParameter(_Frozen):
         if self.kind == "int":
             if type(value) is not int:
                 raise ValidationFailure(f"{self.name} must be a whole number")
-            number: Number = value
+            number: Number = value  # a whole number is finite however large; the bounds below refuse it
         else:
-            number = float(value)  # type: ignore[arg-type]
-        if not math.isfinite(number):
-            raise ValidationFailure(f"{self.name} must be finite")
+            try:
+                number = float(value)  # type: ignore[arg-type]
+            except OverflowError as error:  # an integer too large for a float is out of bounds, not a crash
+                raise ValidationFailure(f"{self.name} must be between {self.minimum} and {self.maximum}") from error
+            if not math.isfinite(number):
+                raise ValidationFailure(f"{self.name} must be finite")
         if not self.minimum <= number <= self.maximum:
             raise ValidationFailure(f"{self.name} must be between {self.minimum} and {self.maximum}")
         return number

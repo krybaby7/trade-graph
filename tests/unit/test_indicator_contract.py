@@ -119,6 +119,9 @@ def test_resolve_parameters_fills_defaults_and_keeps_declared_types() -> None:
     {"timeperiod": 1}, {"timeperiod": 501}, {"timeperiod": True}, {"timeperiod": 14.0}, {"timeperiod": "14"},
     {"timeperiod": None}, {"unknown": 3}, {"nbdevup": math.nan}, {"nbdevup": math.inf}, {"nbdevup": 0.1},
     {"nbdevdn": 9}, {"nbdevup": True},
+    # Integers too large for a float must be refused as a validation failure, not as a bare OverflowError.
+    {"timeperiod": 10**400}, {"timeperiod": -(10**400)}, {"nbdevup": 10**400}, {"nbdevdn": -(10**309)},
+    {"nbdevup": 10**200},
 ])
 def test_resolve_parameters_refuses_anything_outside_the_menu(params) -> None:
     with pytest.raises(ValidationFailure):
