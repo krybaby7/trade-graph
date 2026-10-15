@@ -1,3 +1,22 @@
+# Jev news alarm planned as the next task, not built — 2026-10-15
+
+Branch `claude/day-trader-engine-20261012`, not pushed. Plan and documents only: no code, no Jev or other paid call, nothing deployed.
+- **Owner decision [D137](docs/DECISIONS.md):** the next task is a news alarm built on Jev, TypeSafe AI's decision model. Jev only notices important headlines between Leader news rounds. It does not rank coins, label market types, check strategy rules or estimate prices. Recommended defaults wait for the owner: feeds, a 5-minute check, pinned `jev-1.13.0`, wake the Leader (and the Trader for held coins), and a USD5 testing alert.
+- **Tasks:** T44 (phase DN, ready now) runs the Jev connection, headline collection, receipts and would-wake logging in shadow mode. T45 turns the alarms into real wake-ups after T35, T38 and T39. Both sit right after T27 in `planning/tasks.json`, so `scripts/next_task.py --prompt` offers T44 first. Build plan section "DN — News alarm with Jev", owner decision 10, and source S40 (TypeSafe's official models and API pages, read 2026-10-15).
+- **Missing credential:** no Jev key exists. The owner signs up at console.typesafe.ai. T44 can be built and tested without a key.
+- **Phase D1 note:** T25–T27 are merged in source with decisions D133–D136 (`28689d4`). No status entry was written for them here, and they are still `in_progress` without evidence in `planning/progress.json`.
+
+Checks:
+- `python3 scripts/check_plan.py`: 46 tasks valid.
+- `python3 scripts/test_planning.py`: 11 OK. `test_day_trader_plan_order` was updated for the DN tasks and their place in the order.
+- `scripts/next_task.py`: ready tasks are T44, T28 and T36.
+- `git diff --check`: clean.
+- `tests/integration/test_progress_projection.py` and `test_dashboard.py`: only the 4 known `test_progress_projection` failures. The packaged `progress_catalog.json` already lacked T23–T43 and still does.
+
+Next: T44 on the owner's go-ahead. Owner: confirm the D137 defaults and get a Jev key. The open D1–D7 decisions in the build plan are unchanged.
+
+---
+
 # Owner follow-ups to the D114 fix list, not deployed — 2026-10-13
 
 Branch `claude/day-trader-engine-20261012`, not pushed; nothing deployed or started. Owner decisions recorded as [D130](docs/DECISIONS.md):

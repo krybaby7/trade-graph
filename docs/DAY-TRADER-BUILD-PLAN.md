@@ -3,13 +3,14 @@
 Status: plan, 2026-10-12. Phase D0 (T23, T24) is built and tested in source
 on 2026-10-13 (D129) but not deployed. Phase D1 (T25–T27) is built and tested
 in source on 2026-10-15 (D132–D136), also not deployed, with one small public
-Kraken smoke run; no real Kraken archive has been imported yet. Nothing in the
-running system has changed.
+Kraken smoke run; no real Kraken archive has been imported yet. On 2026-10-15
+you made the Jev news alarm (T44, phase DN) the next task (D137). Nothing in
+the running system has changed.
 
-This plan turns decisions D114–D128 into build steps. The reasons are in
-[the day-trader engine record](DAY-TRADER-ENGINE.md) and
-[the decision log](DECISIONS.md). The steps are tasks T23–T43 in
-`planning/tasks.json`, release `R2`, phases `D0`–`D7`.
+This plan turns decisions D114–D128 and D137 into build steps. The reasons
+are in [the day-trader engine record](DAY-TRADER-ENGINE.md) and
+[the decision log](DECISIONS.md). The steps are tasks T23–T45 in
+`planning/tasks.json`, release `R2`, phases `D0`–`D7` and `DN`.
 
 ## In one minute
 
@@ -24,9 +25,13 @@ This plan turns decisions D114–D128 into build steps. The reasons are in
   can be built early; they switch over once the event engine runs.
 - HQ shows every wake-up, all AI spending and proper price charts.
 - Last, a paper test run, judged by a scorecard.
+- Next up, by your choice: a news alarm. Jev, a cheap decision model, reads
+  headlines and logs which ones would have woken someone. Real wake-ups
+  come after the event engine (D137).
 
 Everything stays paper. Nothing here allows real trading or real spending,
-except the Perplexity test calls you already approved (D125).
+except the Perplexity test calls you already approved (D125). Jev calls start
+only when you install a key (D137).
 
 ## The phases
 
@@ -40,8 +45,10 @@ except the Perplexity test calls you already approved (D125).
 | D5 Research and Leader | Perplexity research and news rounds | T36–T38 | T36 after D0; T37 and T38 after D4 |
 | D6 HQ | Wake log, AI spending, charts | T39–T41 | Alongside D4 and D5 |
 | D7 Paper test | Scorecard and a scored paper run | T42, T43 | All of the above and your decisions |
+| DN News alarm | Jev watches headlines: logging first, then wake-ups | T44, T45 | T44 now, as the next task (D137); T45 after T35, T38 and T39 |
 
-T30 (US stocks) is marked "later". Nothing else waits for it.
+T30 (US stocks) is marked "later". Nothing else waits for it. T43 does not
+wait for T45.
 
 The longest chain of tasks, one after another, is:
 T23 → T25 → T26 → T31 → T32 → T34 → T35 → T37 → T43.
@@ -238,6 +245,37 @@ trades.
 - Research notes last for the day plan, not the 47 minutes they lasted in the
   first run.
 
+### DN — News alarm with Jev (D137)
+
+**What you get.** Between Leader news rounds, something big can happen: a
+Kraken delisting, a hack, or an outage on a coin we hold. Every few minutes,
+software collects headlines from public feeds and asks Jev three fixed
+questions about each one: which of our coins it concerns, what kind of event
+it is, and whether someone holding that coin would want to know within the
+hour. At first nothing is woken. The system only logs which headlines would
+have woken someone, so we can check Jev's judgement. Once the event engine,
+Leader news rounds and HQ's wake log exist, and the log looks right, the
+alarm wakes the Leader. It also wakes the Trader when the news concerns a coin
+we hold.
+
+- T44 — Watch headlines with Jev in shadow mode and log would-be news alarms.
+  This is the next task.
+- T45 — Turn Jev news alarms into real wake-ups.
+
+**How we'll know it works.**
+
+- Every headline is saved with its link and time before Jev reads it.
+- Every Jev call has a receipt at USD0.042 per million input tokens. A call
+  whose usage is not reported is shown as unresolved, never as free.
+  Expected cost is about 5 cents a day.
+- Tests pass with no key. A real call is opt-in and reported separately.
+- A headline written to trick the system changes nothing: no setting, order
+  or wake-up follows from its text.
+- A news alarm only adds wake-ups. It never delays or blocks another one
+  (D116), and it never places, approves or blocks a trade.
+- A test day with a planted delisting headline wakes the Leader, and the
+  Trader when the coin is held. An unrelated headline wakes nobody.
+
 ### D6 — HQ dashboard
 
 **What you get.** Three additions to HQ:
@@ -281,8 +319,8 @@ evidence and permission to trade real money are three separate gates.
 ## Rules every phase keeps
 
 - Paper only. Live trading needs its own, separate permission.
-- Paid calls stay off, except the Perplexity test calls (D125). Every one of
-  those gets a receipt.
+- Paid calls stay off, except the Perplexity test calls (D125) and, once you
+  install a key, Jev calls (D137). Every one of those gets a receipt.
 - No caps on how often agents wake or act (D116). Only money risk is limited.
 - No riba (D127): no futures or perpetuals, no short selling, no margin or
   borrowing, no lending, "earn" or interest. Spot only, long only.
@@ -443,7 +481,33 @@ may cost money.
 
 **Recommendation.** Decide only when crypto results justify stocks.
 
+### 10. News alarm settings (D137)
+
+**Question.** Which headline feeds are read, how often, whom an alarm wakes,
+and how Jev spending is watched during testing?
+
+**Recommendation.**
+
+- Free public feeds that need no key: Kraken's status page and
+  announcements, plus a few major crypto news outlets. The exact feeds are
+  checked when T44 is built.
+- A check every 5 minutes. This is a software check, not an agent wake-up.
+- The fixed Jev version `jev-1.13.0`, because the "latest" name can change
+  answers without warning.
+- An alarm wakes the Leader, and also the Trader when the news concerns a
+  coin the paper account holds.
+- Testing calls run with receipts and an HQ alert at USD5. It is an alert,
+  not a stop.
+
+**Needed before** T44 makes real Jev calls. Building and testing T44 do not
+wait for it.
+
 ## Things only you can do
+
+- **Get a Jev key.** Sign up yourself at console.typesafe.ai, and use only
+  typesafe.ai addresses. Several lookalike Jev sites exist, so never enter a
+  key anywhere else. Put the key in the private key file. Sign-ups have paused
+  before; if they are closed, T44 is still built and tested without a key.
 
 - **Apply protected settings.** Agents cannot change these: the Research and
   Leader switch to Perplexity (D124 changes the "one model for everything"
@@ -469,7 +533,8 @@ may cost money.
 
 ## What this plan does not do
 
-- No live trading, real budget, withdrawals or other paid APIs.
+- No live trading, real budget or withdrawals. No paid APIs beyond Perplexity
+  testing and Jev (D137).
 - No new exchange connections. OKX and Interactive Brokers appear only as
   cost profiles. A connection is built only if a strategy's results depend on
   that venue's costs (D126).
@@ -479,9 +544,15 @@ may cost money.
 
 ## Notes for implementers
 
-- Tasks are T23–T43, release `R2`, except T30, which is `LATER`.
+- Tasks are T23–T45, release `R2`, except T30, which is `LATER`.
   `python3 scripts/next_task.py` lists ready `R1` and `R2` tasks; `--all`
-  adds `LATER` ones.
+  adds `LATER` ones. T44 and T45 sit right after T27 in `planning/tasks.json`,
+  so `next_task.py --prompt` offers T44 first, as the owner chose (D137).
+- T44's Jev adapter is not a model-provider adapter. Jev writes no text, so it
+  cannot run a department. It gets its own small decision contract (state and
+  typed questions in, probabilities out), its own dated price card (the
+  existing `PriceCard` already accepts a zero output rate) and receipts
+  through the existing budget path.
 - Deployment still follows the owner-approved financial-manifest transition
   (docs/FINANCIAL-TRANSITION.md), with the paper account in `MANAGE_ONLY`.
 - T35 owns the wake, check-in and focus-step contracts; T37 and T38 build on

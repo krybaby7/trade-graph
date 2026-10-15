@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-13T10:40:00.000000Z",
-  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) waits for the owner.",
+  "updated_at": "2026-10-15T17:30:00.000000Z",
+  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) is merged in source (D133-D136) without progress evidence yet. The owner made the Jev news alarm (T44, shadow mode) the next task on 2026-10-15 (D137); T45 follows after T35, T38 and T39.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -491,6 +491,14 @@
       "evidence": []
     },
     "T43": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T44": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T45": {
       "status": "todo",
       "evidence": []
     }

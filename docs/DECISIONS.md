@@ -672,3 +672,35 @@ None prevents offline development. Mark credentialed verification pending when c
     owner-approved baseline replacement; the protected image must be built with
     the NumPy and TA-Lib wheels (`scripts/build_protected_image.py` was not
     exercised); the kernel manifest is re-pinned as for any `.py` change.
+
+- **D137 (2026-10-15, owner decision; defaults pending owner):** The next task
+  is a news alarm built on Jev, TypeSafe AI's decision model (released
+  2026-09-15). Jev answers typed questions with probabilities and writes no
+  text. The owner's Perplexity report and TypeSafe's official pages (S40)
+  show it is cheap and fast. The only public market test found it no better
+  than a coin flip at price direction. So Jev only notices important headlines
+  between Leader news rounds. It does not rank coins, label market types,
+  check strategy rules or estimate prices; software already does the first
+  three (D120), and the evidence does not support the last.
+  - *Two steps.* T44 builds the connection and runs it in shadow mode: it
+    stores headlines as dated sources, asks Jev fixed questions and logs which
+    headlines would have woken someone, but wakes nobody. T45 turns the alarms
+    into real wake-ups after the event engine (T35), Leader news rounds (T38)
+    and HQ's wake log (T39) exist, once shadow evidence supports it. T43 does
+    not wait for T45.
+  - *Rules.* A news alarm only adds wake-ups (D116). It never touches orders,
+    money limits or owner policy, and it is not a Trader confidence gate.
+    Headline text is data, never instructions.
+  - *Recommended defaults for the owner to confirm:* free public headline feeds
+    that need no key (Kraken's status page and announcements, plus a few major
+    crypto news outlets; exact feeds checked at build time); a check every 5
+    minutes; the pinned version `jev-1.13.0`, because `jev-latest` moves; the
+    alarm wakes the Leader, and also the Trader when the headline concerns a
+    coin the paper account holds; once a key is installed, testing calls run
+    with receipts and an HQ alert at USD5, which is an alert, not a stop.
+  - *Access.* The owner signs up at console.typesafe.ai and installs the key
+    through the private-file route. Paid Jev calls stay off until then.
+    OpenRouter, Vercel and lookalike Jev sites are not used.
+  - *Expected cost* at one check every 5 minutes: about USD0.05 a day (288
+    checks × about 4,000 input tokens × USD0.042 per million). The receipts
+    show the real figure.
