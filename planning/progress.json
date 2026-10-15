@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated_at": "2026-10-15T17:30:00.000000Z",
-  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) is merged in source (D133-D136) without progress evidence yet. The owner made the Jev news alarm (T44, shadow mode) the next task on 2026-10-15 (D137); T45 follows after T35, T38 and T39.",
+  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) is built and tested in source (D132-D136) on synthetic and recorded data plus one small live public smoke run; no real Kraken archive has been imported and nothing is deployed. The owner made the Jev news alarm (T44, shadow mode) the next task on 2026-10-15 (D137); T45 follows after T35, T38 and T39.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -413,22 +413,42 @@
       ]
     },
     "T25": {
-      "status": "in_progress",
+      "status": "done",
       "owner": "claude-sonnet-5.5",
       "branch": "claude/day-trader-engine-20261012",
-      "evidence": []
+      "evidence": [
+        "Store contract a0b2375 (D132): separate private candle file with append-only revisions keyed by series, open time and revision, receipt-time availability, point-in-time and replay reads, coverage reports and run records; tests/unit/test_candle_contract.py and tests/integration/test_candle_store.py. Existing hourly_candles, hourly feature snapshots and the financial schema are unchanged; tests/integration/test_candle_collection_isolation.py shows a collection run leaves the hourly BTC/ETH history and a feature snapshot byte for byte unchanged.",
+        "Collector merged as 09b3c2a (stream head dea575e): pair catalog and classification (D131), rate limiter, OHLC fetcher that drops the final forming row and takes receipt time after the network call, bounded collect_candles with perishable-first order, early-stop lists and per-series gap reports, commands collect-kraken-candles and candle-coverage. Recorded public fixtures: 1 AssetPairs response (1,460 pairs, 53 kept) and 17 OHLC responses for 8 pairs at 1, 5, 15 and 60 minutes; default tests make no network calls (network guard). Test files test_kraken_rate_limit.py, test_candle_collection_plan.py, test_kraken_candles.py, test_collect_candles.py, test_collect_candles_cli.py, test_kraken_catalog.py and others.",
+        "Two independent reviews found 16 issues; each was reproduced then fixed (for example a rate-limit answer to the pair list not stopping the run, the continuity gap boundary, a financial-database guard that failed open for a log-only database, an unrelated SQLite file being accepted as the candle file in the integration).",
+        "Live smoke, labelled live_public_smoke and separate from tests, 2026-10-15: collect-kraken-candles --smoke exit 0, 3 requests, 1,440 BTC/USD and ETH/USD 15-minute candles stored, 677 USD pairs, 591 eligible; no gap.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at 28689d4: 6274 passed, 20 failed, 12 skipped; 18 are the known failures and the 2 others were a merge README heading (fixed in 987bba8, passing) and a 2-second ledger-replay helper limit under load (financial_recovery file passes alone). ruff passes. Synthetic and recorded data only for the tests; not deployed. Findings: Kraken fills quiet intervals with flat rows; since is inclusive."
+      ]
     },
     "T26": {
-      "status": "in_progress",
+      "status": "done",
       "owner": "claude-sonnet-5.5",
       "branch": "claude/day-trader-engine-20261012",
-      "evidence": []
+      "evidence": [
+        "Importer merged as a35e959 (stream head 9d07a75): local-file-only Kraken OHLCVT reader and importer with streamed SHA-256, quarter, per-pair and interval coverage, zip-bomb and path limits, import-time availability, idempotent re-import and revisions for changed rows; command import-kraken-archive. Synthetic end-to-end test imports 95 days of 15-minute candles for five pairs with a planted gap and replays 92 days in one window read; tests/unit/test_kraken_archive.py, test_archive_modules_stay_offline.py (static import closure plus sockets blocked), tests/integration/test_import_candle_archive.py and test_archive_cli.py.",
+        "Every report names expected-but-missing pairs and states that delisted pairs are absent so coin-selection history is optimistic (SURVIVORSHIP_NOTICE, pinned by tests/unit/test_archive_docs.py).",
+        "Public Trades backfill with a resumable cursor in the run report, bounded requests, boundary-trade de-duplication by trade id, completed candles only, id-gap withholding that survives a resume, SIGTERM and Ctrl-C recording; commands backfill-kraken-trades and reconcile-candles; reconciliation reports differences with no tolerance and never blends sources; precedence_window labels the supplying source and any disagreement. Tests: test_kraken_trades.py, test_trade_aggregation.py, test_trades_rate_limit.py, test_backfill_trades.py, test_backfill_cli.py, test_reconcile_candles.py; six recorded public Trades pages.",
+        "Three independent two-reviewer rounds (the workflow was resumed twice) found issues in this stream, for example a taint lost on resume, a truncated ZIP escaping as a traceback, a limiter that no test proved was used; each was reproduced then fixed, and mutation checks now fail on the removed guards.",
+        "Live smoke, labelled live_public_smoke, 2026-10-15: backfill-kraken-trades --smoke for BTC/USD 12:45-13:00Z used 3 requests and 3,000 trades and built 1 candle with no id gaps; reconcile-candles against Kraken's own candle for that slot: open, high, low, close, volume and trade count identical, vwap differs by 0.00004% (Kraken rounds vwap to one decimal). One slot only.",
+        "NOT done: no real Kraken archive has been imported or downloaded (owner approval needed; Q3 file 576,348,633 bytes); the real file's timestamp unit, folder layout and open-or-close convention are unconfirmed. Full suite at 28689d4: 6274 passed, 20 failed (18 known, 2 explained in T25 evidence). Synthetic and recorded data only; not deployed."
+      ]
     },
     "T27": {
-      "status": "in_progress",
+      "status": "done",
       "owner": "claude-sonnet-5.5",
       "branch": "claude/day-trader-engine-20261012",
-      "evidence": []
+      "evidence": [
+        "Merged as 272b01c (stream head 882ad04): TA-Lib 0.8.2 (Python 3.12 manylinux wheel with bundled C library 0.8.1) and NumPy 2.5.4 locked in uv.lock (uv lock --check consistent; capped below 0.9); 26-entry menu contract in contracts/indicators.py with bounded settings and library-reported warm-up; wrapper application/indicators/library.py only converts, calls and labels. TA-Lib and NumPy are kept out of domain, contracts and kernel (test_import_boundary.py imports every module in a fresh interpreter).",
+        "Every menu entry is cross-checked against pandas-ta-classic (test-only, covers all entries) and talipp (test-only, own conventions; 17 of 24 compared) within documented tolerances and against 50 hand-derived reference cases; seeding differences (MACD, ADX and DI, ATR, Parabolic SAR) are written in docs/INDICATOR-MENU.md and tests/fixtures/indicators/cross_check.json, not patched. TradingView differences are an unverified recollection and are marked so. Hypothesis property test keeps candle and money types Decimal; only indicator outputs are floats.",
+        "Engine application/indicators/engine.py reads completed candles only through CandleStore.window, supplies measured settling history, returns ready, warming_up or gapped with exact missing close times and revisions used, and withholds every value when a slot is missing; compare_to_level rounds value and level alike and an unready indicator never satisfies it. Same candle gives the same value for any requested count (tested).",
+        "D89 hourly fields re-expressed with TA-Lib as hourly-price-features-v3; pullback_from_high, pullback_depth and midpoint_distance retired and highest_high_20 added, with an AST guard and sentinel-library tests so a hand-written formula cannot return. Stored v2 snapshots (tests/fixtures/hourly/snapshots_v2.json, produced by the v2 code) still hash to their source_ref and pass the readers. Existing price-history, context, candle-wait, first-run-replay and subscription tests pass except the known test_subscription_smoke timeout.",
+        "Two independent reviews found 9 and 6 issues in this stream (for example the same MACD histogram differing with the requested count, hand-written max/min passing the guard test, a retained v2 template that would have supplied neither the ratio nor its ingredient); each was reproduced, then fixed.",
+        "Full suite at 28689d4: 6274 passed, 20 failed (18 known, 2 explained in T25 evidence); ruff passes. Synthetic data only; not deployed. Before deploying: protected image build with the new wheels was not exercised; an existing database keeps its old strategy template until the owner approves a baseline replacement."
+      ]
     },
     "T28": {
       "status": "todo",
