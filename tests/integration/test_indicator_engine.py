@@ -447,6 +447,12 @@ def test_requests_outside_the_menu_are_refused(store) -> None:
     with pytest.raises(ValidationFailure):
         compute_indicator(store, "SMA", {}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
                           end_close_time=_end(candles, 30) + timedelta(seconds=1), as_of=_end(candles, 30), count=1)
+    naive = _end(candles, 30).replace(tzinfo=None)
+    for end, as_of in ((naive, _end(candles, 30)), (_end(candles, 30), naive), ("2026-01-05T00:15:00Z", None),
+                       (_end(candles, 30), 12345)):
+        with pytest.raises(ValidationFailure, match="timezone-aware"):
+            compute_indicator(store, "SMA", {}, symbol=_SYMBOL, interval_minutes=15, source=_SOURCE,
+                              end_close_time=end, as_of=as_of, count=1, mode="replay")  # type: ignore[arg-type]
 
 
 # --- the record the Trader and the receipts see ------------------------------------------------------------------

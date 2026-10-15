@@ -210,11 +210,20 @@ def compute_indicator(store: CandleStore, name: str, params: Mapping[str, object
     ``point_in_time`` (the default, for live use) sees only candles received by ``as_of``. ``replay`` uses close
     times only, is labelled so on the result, and is for research, never evidence that data had arrived.
     """
+    _require_aware("end_close_time", end_close_time)
+    if as_of is not None:
+        _require_aware("as_of", as_of)
     plan = plan_history(name, params, count)
     window = store.window(symbol, interval_minutes, source, end_close_time=end_close_time, count=plan.span,
                           as_of=as_of, mode=mode)
     older = _only_the_oldest_slots_are_missing(window) and _candles_exist_before(store, window, plan)
     return _evaluate(name, params, window, plan, older_history=older)
+
+
+def _require_aware(label: str, value: object) -> None:
+    """The store would raise a bare TypeError on a naive time; say it as a refusal before anything is read."""
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValidationFailure(f"{label} must be a timezone-aware datetime")
 
 
 def compute_from_window(name: str, params: Mapping[str, object] | None, window: CandleWindow, *,
