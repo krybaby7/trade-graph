@@ -149,7 +149,7 @@ def _result(rule: dict) -> str:
                 "candles past the warm-up")
     return (f"path dependent: agrees on at least {int(rule['min_agreement'] * 100)}% of candles, never disagrees "
             f"for more than {rule['max_disagreement_run']} in a row, never by more than "
-            f"{_number(rule['max_relative_difference'])} of price")
+            f"{_number(rule['max_relative_difference'])} of its size")
 
 
 def render_differences_table() -> str:
