@@ -512,6 +512,36 @@ def test_a_market_data_file_is_not_mistaken_for_a_financial_one(tmp_path, monkey
     assert run(capsys, "collect-kraken-candles", "--market-database", path, "--catalog-only")[0] == 0
 
 
+@pytest.mark.parametrize("command", [
+    ["collect-kraken-candles", "--smoke"], ["collect-kraken-candles", "--catalog-only"], ["candle-coverage"],
+])
+def test_an_unrelated_sqlite_file_is_refused_and_left_untouched(tmp_path, monkeypatch, capsys, command) -> None:
+    """The archive and backfill commands already refuse any non-empty file that is not a candle file; so does this."""
+    scripted = Scripted(monkeypatch)
+    folder = tmp_path / "private"
+    folder.mkdir(mode=0o700)
+    other = folder / "notes.sqlite"
+    other.touch(mode=0o600)
+    connection = sqlite3.connect(other)
+    try:
+        connection.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)")
+        connection.execute("INSERT INTO notes (body) VALUES ('keep me')")
+        connection.commit()
+    finally:
+        connection.close()
+    before = _hash(other)
+    code, report = run(capsys, command[0], "--market-database", str(other), *command[1:])
+    assert code == 1 and report["status"] == "refused" and report["error"] == "financial_database"
+    assert _hash(other) == before
+    connection = sqlite3.connect(other)
+    try:
+        names = {item[0] for item in connection.execute("SELECT name FROM sqlite_master")}
+    finally:
+        connection.close()
+    assert names == {"notes"}
+    assert scripted.catalog.calls == [] and scripted.exchange.calls == []
+
+
 # --- candle-coverage ------------------------------------------------------------------------------------------------
 
 

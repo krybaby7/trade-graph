@@ -151,6 +151,10 @@ def financial_database_refusal(path: Path) -> str | None:
             # use beside a main file that shows no candle tables yet could be a live financial database.
             if CANDLE_MARKER_TABLE not in names and _log_in_use(path):
                 return "the file has a write-ahead log in use but shows no candle tables, so it may be a live database"
+            # Same rule as the archive and backfill commands: a file that already holds other tables is someone
+            # else's database, and candle tables are never added to it.
+            if names and CANDLE_MARKER_TABLE not in names:
+                return "the file is a database that is not a candle-history file"
     except (OSError, sqlite3.Error):
         return None  # not readable as SQLite: opening it as a candle database will fail on its own
     return None
