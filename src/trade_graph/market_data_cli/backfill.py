@@ -28,11 +28,12 @@ from trade_graph.application.backfill_trades import (
     BackfillScope,
     backfill_trades,
 )
+from trade_graph.application.candle_store import CandleStore
 from trade_graph.application.import_candle_archive import normalise_pair_names
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
-from trade_graph.market_data_cli._common import add_market_database_option, open_store
-from trade_graph.market_data_cli._guard import refuse_financial_database
+from trade_graph.market_data_cli._common import add_market_database_option
+from trade_graph.market_data_cli._guard import open_store_or_exit, refuse_financial_database
 
 COMMAND = "backfill-kraken-trades"
 DEFAULT_MAX_REQUESTS = 100
@@ -140,6 +141,19 @@ def _emit(document: dict, code: int) -> int:
     return code
 
 
+def _interrupted_document(store: CandleStore, newest_before: int) -> dict:
+    """The report of the run this command began, or just its id when none was saved, or no id when it never began.
+
+    Only runs newer than ``newest_before`` count: an earlier run's report is a different run's result.
+    """
+    began = [run_ for run_ in store.runs() if run_.kind == "trades_backfill" and run_.run_id > newest_before]
+    if not began:
+        return {"status": "interrupted", "run_id": None}
+    newest = began[-1]
+    return {"run_id": newest.run_id, **newest.report} if newest.report else {
+        "status": "interrupted", "run_id": newest.run_id}
+
+
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None:
     if args.command != COMMAND:
         return None
@@ -147,21 +161,20 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
     refuse_financial_database(args.market_database, parser)
     label = "live_public_smoke" if args.smoke else "live_public"
     seconds = int(Decimal(budget) / LimiterSettings().decay_per_second)
+    clock = SystemClock()
+    database, store = open_store_or_exit(args.market_database, parser)
     print(f"{COMMAND}: up to {budget} public requests, about {seconds // 60} minutes at Kraken's request rate; "
           "Ctrl-C stops safely and the next run resumes.", file=sys.stderr)
-    clock = SystemClock()
-    database, store = open_store(args.market_database)
     try:
         limiter = RequestLimiter(clock, make_sleeper(), LimiterSettings())
         client = KrakenTrades(make_transport(), clock)
+        newest_before = max((run_.run_id for run_ in store.runs()), default=0)
         try:
             with _termination_recorded():
                 result = backfill_trades(store, clock, client, limiter, scope, max_requests=budget,
                                          evidence_label=label, ignore_cursor=args.from_start)
         except (KeyboardInterrupt, _Terminated) as stop:
-            recorded = [run_ for run_ in store.runs() if run_.kind == "trades_backfill" and run_.report]
-            document = {} if not recorded else {"run_id": recorded[-1].run_id, **recorded[-1].report}
-            return _emit(document or {"status": "interrupted"},
+            return _emit(_interrupted_document(store, newest_before),
                          TERMINATED_EXIT_CODE if isinstance(stop, _Terminated) else 130)
         for symbol, pair in result.report["pairs"].items():
             if pair["stop_reason"] == "max_requests" and pair["message"]:  # the budget could not finish one candle

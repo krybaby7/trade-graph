@@ -24,8 +24,8 @@ from trade_graph.application.import_candle_archive import (
 )
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import ValidationFailure
-from trade_graph.market_data_cli._common import add_market_database_option, open_store
-from trade_graph.market_data_cli._guard import refuse_financial_database
+from trade_graph.market_data_cli._common import add_market_database_option
+from trade_graph.market_data_cli._guard import open_store_or_exit, refuse_financial_database
 
 COMMAND = "import-kraken-archive"
 MAX_UNCOMPRESSED_GB = Decimal(1024)
@@ -101,7 +101,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None
         parser.error(f"--quarter/--expected-pairs: {error}")
     refuse_financial_database(args.market_database, parser)
     clock = SystemClock()
-    database, store = open_store(args.market_database)
+    database, store = open_store_or_exit(args.market_database, parser)
     try:
         if expected is None:
             expected = _catalog_pairs(store, clock)

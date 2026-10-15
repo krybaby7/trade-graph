@@ -18,6 +18,7 @@ from tests.archive_support import (
     csv_text,
     synthetic_rows,
     universe_members,
+    unreadable,
     write_directory,
     write_zip,
 )
@@ -30,6 +31,7 @@ from trade_graph.application.import_candle_archive import (
     UNCONFIRMED_ASSUMPTIONS,
     ImportScope,
     import_archive,
+    normalise_pair_names,
 )
 from trade_graph.contracts.candles import from_unix
 from trade_graph.domain.clock import FrozenClock
@@ -98,6 +100,33 @@ def test_the_default_scope_takes_usd_pairs_at_15_and_60_minutes_and_counts_every
     assert skipped["unrecognised_members"] == ["README.txt", "odd.csv"] and skipped["unrecognised_member_count"] == 2
     assert result.report["archive"]["manifest_present"] is True
     assert result.report["totals"]["inserted"] == 20
+
+
+def test_currency_pairs_in_the_archive_are_skipped_counted_and_never_stored_as_coins(store, tmp_path) -> None:
+    members = {"XBTUSD_15.csv": _rows(4), "EURUSD_15.csv": _rows(4, seed=2), "GBPUSD_15.csv": _rows(4, seed=3),
+               "AUDUSD_60.csv": _rows(4, 60), "AUDUSD_1.csv": _rows(30, 1), "USDTUSD_15.csv": _rows(4, seed=4)}
+    result = _import(store, _zip(tmp_path, members), expected_pairs=["BTC/USD", "ETH/USD"])
+    assert {s.symbol for s in store.series()} == {"BTC/USD", "USDT/USD"}  # stablecoins stay a scanner decision (D131)
+    assert result.report["skipped"]["fiat_files"] == 4  # three at the chosen intervals and one more at 1 minute
+    assert result.report["archive"]["usd_pairs_found"] == 2
+    assert result.report["skipped"]["interval_not_selected_files"] == {}
+    assert result.report["expected_pairs"]["missing"] == ["ETH/USD"]
+
+
+def test_legacy_ids_of_currency_pairs_are_skipped_and_a_legacy_stablecoin_id_keeps_its_name(store, tmp_path) -> None:
+    """An archive that uses Kraken's older REST ids must not store ZEURZ/USD or USDTZ/USD as if they were coins."""
+    members = {"XXBTZUSD_15.csv": _rows(4), "ZEURZUSD_15.csv": _rows(4, seed=2), "ZGBPZUSD_15.csv": _rows(4, seed=3),
+               "USDTZUSD_15.csv": _rows(4, seed=4), "ZXXXZUSD_15.csv": _rows(4, seed=5)}
+    result = _import(store, _zip(tmp_path, members))
+    assert {s.symbol for s in store.series()} == {"BTC/USD", "USDT/USD"}
+    assert result.report["skipped"]["fiat_files"] == 2 and result.report["skipped"]["non_usd_files"] == 1
+    assert result.report["archive"]["usd_pairs_found"] == 2
+
+
+@pytest.mark.parametrize("name", ["EUR/USD", "GBPUSD", "AUD/USD", "ZEURZUSD"])
+def test_a_currency_pair_cannot_be_named_as_a_coin(name) -> None:
+    with pytest.raises(ValidationFailure, match="currency"):
+        normalise_pair_names([name])
 
 
 def test_opt_in_intervals_and_a_pair_filter(store, tmp_path) -> None:
@@ -247,6 +276,22 @@ def test_rows_that_close_after_the_import_time_are_dropped_and_counted(store, tm
     assert result.report["series"][0]["last_open_utc"] == "2026-07-01T01:45:00.000000Z"
 
 
+def test_a_clock_with_fractions_of_a_second_works_and_stamps_the_exact_receipt_time(store, tmp_path) -> None:
+    """The real clock reads microseconds; only the finished-candle cutoff is whole seconds."""
+    now = from_unix(FIRST_OPEN + 8 * 900) + timedelta(microseconds=123_456)
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": _rows(10)}), at=now)
+    assert result.report["imported_at_utc"] == "2026-07-01T02:00:00.123456Z"
+    assert (result.report["totals"]["inserted"], result.report["totals"]["dropped_unfinished"]) == (8, 2)
+    window = _window(store, "BTC/USD", 15, 8, as_of=now)
+    assert {slot.stored.candle.available_at_utc for slot in window.slots} == {now}
+
+
+def test_a_candle_closing_a_microsecond_after_the_clock_is_not_finished(store, tmp_path) -> None:
+    just_short = from_unix(FIRST_OPEN + 8 * 900) - timedelta(microseconds=1)
+    result = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": _rows(10)}), at=just_short)
+    assert (result.report["totals"]["inserted"], result.report["totals"]["dropped_unfinished"]) == (7, 3)
+
+
 # --- bad rows and whole-file refusal ------------------------------------------------------------------------------
 
 
@@ -333,9 +378,28 @@ def test_archive_limits_apply_through_the_importer(store, tmp_path) -> None:
     assert big.value.reason in {"member_size_limit", "total_size_limit"}
 
 
+def test_a_zip_with_bytes_missing_from_the_middle_is_a_recorded_corrupt_member_refusal(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(2500), "ETHUSD_15.csv": _rows(2500, seed=2)})
+    raw = path.read_bytes()
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
+    assert refused.value.reason == "corrupt_member" and refused.value.report["status"] == "failed"
+    [run] = store.runs()
+    assert run.status == "failed" and run.report["reason"] == "corrupt_member" and store.series() == []
+
+
 def test_a_missing_file_raises_without_recording_a_run(store, tmp_path) -> None:
     with pytest.raises(ArchiveRejected) as refused:
         _import(store, tmp_path / "absent.zip")
+    assert refused.value.reason == "not_a_file" and store.runs() == []
+    assert refused.value.run_id is None and refused.value.report is None
+
+
+def test_an_unreadable_file_is_refused_as_not_a_file_without_recording_a_run(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(3)})
+    with unreadable(path), pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
     assert refused.value.reason == "not_a_file" and store.runs() == []
     assert refused.value.run_id is None and refused.value.report is None
 
@@ -405,6 +469,59 @@ def test_a_corrected_file_that_drops_a_row_does_not_look_clean(store, tmp_path) 
     assert series["stored_slots_not_in_file"] == 1 and corrected.report["totals"]["stored_slots_not_in_file"] == 1
     assert series["coverage"]["present_slots"] == 20 and series["coverage"]["missing_slots"] == 0
     assert store.runs()[-1].status == "partial" and store.runs()[-1].report["status"] == "partial"
+
+
+CORRECTED = "Kraken_OHLCVT_2026Q3_corrected.zip"  # a new name that still tells the quarter
+
+
+def test_a_corrected_file_that_drops_rows_at_its_edges_does_not_look_clean(store, tmp_path) -> None:
+    """Rows missing before its first and after its last candle lie in the quarter, so the quarter is what counts."""
+    rows = _quarter_hour_rows(200)  # the first 50 hours of the 2026Q3 quarter
+    first = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))
+    assert first.status == "ok" and first.report["retraction_check"] == "quarter"
+    corrected = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, CORRECTED), at=LATER)
+    series = corrected.report["series"][0]
+    assert corrected.status == "partial" and series["stored_slots_not_in_file"] == 10  # five at each end
+    assert corrected.report["totals"]["stored_slots_not_in_file"] == 10
+    assert series["coverage"]["present_slots"] == 190 and series["accepted"] == series["duplicates"] == 190
+
+
+def test_rows_dropped_from_the_middle_and_both_ends_are_all_counted(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(200)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}))
+    corrected = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[3:100] + rows[104:197])}, CORRECTED),
+                        at=LATER)
+    assert corrected.report["series"][0]["stored_slots_not_in_file"] == 3 + 4 + 3
+
+
+def test_the_next_quarters_file_is_not_flagged_for_the_earlier_quarters_candles(store, tmp_path) -> None:
+    second_quarter = FIRST_OPEN - 91 * DAY  # 2026-04-01
+    older = [csv_line(second_quarter + i * 900, "100", "102", "98", "101", "5", 3) for i in range(100)]
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(older)}, "Kraken_OHLCVT_2026Q2.zip"))
+    newer = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(_quarter_hour_rows(100))}), at=LATER)
+    assert newer.status == "ok" and newer.report["totals"]["stored_slots_not_in_file"] == 0
+    assert newer.report["retraction_check"] == "quarter"
+
+
+def test_without_a_known_quarter_only_the_files_own_span_is_checked_and_the_report_says_so(store, tmp_path) -> None:
+    rows = _quarter_hour_rows(200)
+    _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows)}, "Kraken_OHLCVT_Full.zip"))
+    trimmed = _import(store, _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, "Kraken_OHLCVT_Full_b.zip"),
+                      at=LATER)
+    assert trimmed.report["archive"]["quarter"] is None and trimmed.report["retraction_check"] == "file_span"
+    assert trimmed.report["totals"]["stored_slots_not_in_file"] == 0  # the limit: edge trims cannot be seen
+    named = _zip(tmp_path, {"XBTUSD_15.csv": csv_text(rows[5:195])}, "c.zip")
+    given = _import(store, named, at=LATER, quarter="2026Q3")  # the caller supplies the quarter the name lacks
+    assert given.report["retraction_check"] == "quarter" and given.report["totals"]["stored_slots_not_in_file"] == 10
+
+
+def test_rows_dropped_as_unfinished_are_in_the_file_and_not_counted_as_missing_from_it(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": csv_text(_quarter_hour_rows(20))})
+    _import(store, path)
+    early = _import(store, path, at=datetime.fromtimestamp(FIRST_OPEN - 3600, UTC))  # nothing has closed yet
+    series = early.report["series"][0]
+    assert series["dropped_unfinished"] == 20 and series["inserted"] == 0
+    assert series["stored_slots_not_in_file"] == 0
 
 
 def test_files_that_only_touch_or_overlap_the_stored_range_are_not_flagged(store, tmp_path) -> None:
@@ -538,6 +655,21 @@ def test_rows_appended_to_a_member_during_the_import_are_not_stored(store, tmp_p
     held = [s for s in store.series() if s.symbol == "BTC/USD"]
     # the first six rows read the same in both passes and may be stored; the appended ones must not be
     assert sum(s.candle_count for s in held) == 6
+
+
+def test_a_file_touched_after_its_last_save_is_still_reported_as_changed(store, tmp_path, monkeypatch) -> None:
+    """Every row was read twice and saved by then, so only the final look at the file's identity can notice."""
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(5)})
+
+    def touch() -> None:
+        status = path.stat()
+        os.utime(path, ns=(status.st_atime_ns, status.st_mtime_ns + 5_000_000_000))
+
+    sizes = _rewritten_after_the_first_save(store, monkeypatch, touch)
+    with pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
+    assert refused.value.reason == "changed_during_import" and sizes == [5]
+    assert store.runs()[0].status == "failed" and "already stored" in str(refused.value)
 
 
 def test_a_rewrite_that_leaves_every_row_alone_is_not_an_error(store, tmp_path, monkeypatch) -> None:

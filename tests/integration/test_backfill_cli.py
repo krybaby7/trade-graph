@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import signal
 import socket
 from datetime import UTC, datetime
@@ -147,11 +148,13 @@ def test_smoke_refuses_several_pairs_and_a_larger_budget(tmp_path, monkeypatch, 
 
 
 @pytest.mark.parametrize("arguments", [
-    ["--pairs", "BTC/EUR"], ["--pairs", "USDT/USD"], ["--pairs", ""], ["--pairs", "BTC/USD", "--intervals", "7"],
+    ["--pairs", "BTC/EUR"], ["--pairs", "USDT/USD"], ["--pairs", "EUR/USD"], ["--pairs", "EURUSD,BTC/USD"],
+    ["--pairs", ""], ["--pairs", "BTC/USD", "--intervals", "7"],
     ["--pairs", "BTC/USD", "--intervals", "240"], ["--pairs", "BTC/USD", "--intervals", "15,15"],
     ["--pairs", "BTC/USD", "--max-requests", "0"], ["--pairs", "BTC/USD", "--max-requests", "100001"],
     ["--pairs", "BTC/USD", "--max-requests", "many"], ["--pairs", "BTC/USD", "--start", "2026-10-13T12:00:00"],
     ["--pairs", "BTC/USD", "--end", "yesterday"], [],
+    ["--pairs", "BTC/USD", "--start", "1969-12-31T23:00:00Z"], ["--pairs", "BTC/USD", "--end", "2100-01-01T00:00:00Z"],
     ["--pairs", "BTC/USD", "--smoke", "--max-requests", "0"], ["--pairs", "BTC/USD", "--smoke", "--max-requests", "-5"],
 ])
 def test_bad_arguments_are_usage_errors_and_touch_nothing(tmp_path, arguments) -> None:
@@ -177,6 +180,39 @@ def test_the_financial_database_is_refused(tmp_path, monkeypatch, clock) -> None
     with pytest.raises(SystemExit) as stopped:
         cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(other)])
     assert stopped.value.code == 2
+
+
+def test_a_candle_folder_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys) -> None:
+    """The default runtime/ folder often has open permissions; the owner must not meet a traceback."""
+    folder = tmp_path / "open folder"
+    folder.mkdir()
+    folder.chmod(0o755)
+    database = folder / "market_data.sqlite"
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(folder))}" in message
+    assert not database.exists() and folder.stat().st_mode & 0o777 == 0o755
+
+
+def test_a_candle_file_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys) -> None:
+    database = database_path(tmp_path)
+    MarketDataDatabase(database).close()
+    database.chmod(0o644)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 600 {shlex.quote(str(database))}" in message
+    assert database.stat().st_mode & 0o777 == 0o644  # the command only explains; it never changes permissions
+
+
+def test_a_folder_given_as_the_candle_file_is_a_usage_error_without_a_permission_hint(tmp_path, capsys) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(tmp_path)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2 and "regular file" in message and "chmod" not in message
 
 
 def test_a_store_with_no_gap_to_fill_exits_one_and_says_why(tmp_path, capsys, monkeypatch, clock) -> None:
@@ -277,6 +313,59 @@ def test_a_termination_request_is_recorded_like_ctrl_c_and_exits_143(tmp_path, c
     assert recorded.report["pairs"]["BTC/USD"]["intervals"]["15"]["next_open_unix"] > T0  # the cursor was saved
 
 
+def _stop_run(path: Path, capsys, monkeypatch, clock, stop: BaseException, where: str) -> tuple[int, dict]:
+    """A finished backfill, then a second command that is stopped at ``where`` (which of two store calls raises)."""
+    exchange(monkeypatch, clock, trades())
+    code, first = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path))
+    assert code == 0 and first["status"] == "ok"
+
+    def stopped(*args, **kwargs):
+        raise stop
+
+    monkeypatch.setattr(CandleStore, where, stopped)
+    return run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path), "--from-start")
+
+
+def test_an_interrupt_before_the_new_run_exists_does_not_print_an_earlier_runs_report(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, KeyboardInterrupt(), "begin_run")
+    assert code == 130 and report == {"status": "interrupted", "run_id": None}
+
+
+def test_a_termination_before_the_new_run_exists_does_not_print_an_earlier_runs_report(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, backfill_cli._Terminated(143), "begin_run")
+    assert code == 143 and report == {"status": "interrupted", "run_id": None}
+
+
+def test_an_interrupt_after_the_run_began_but_before_its_report_names_that_run(
+        tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    code, report = _stop_run(path, capsys, monkeypatch, clock, KeyboardInterrupt(), "finish_run")
+    database = MarketDataDatabase(path)
+    runs = CandleStore(database).runs()
+    database.close()
+    assert code == 130 and report == {"status": "interrupted", "run_id": runs[-1].run_id}
+    assert runs[-1].report is None and runs[-2].kind == "trades_backfill" and runs[-2].report is not None
+
+
+def test_an_interrupted_run_prints_its_own_report_not_the_previous_runs(tmp_path, capsys, monkeypatch, clock) -> None:
+    path = database_path(tmp_path)
+    seed(path)
+    exchange(monkeypatch, clock, trades())
+    first_code, first = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path))
+    assert first_code == 0
+    exchange(monkeypatch, clock, trades(), hook=lambda call, url: KeyboardInterrupt() if call == 1 else None)
+    code, second = run(capsys, "backfill-kraken-trades", "--pairs", "BTC/USD", "--market-database", str(path),
+                       "--from-start")
+    assert code == 130 and second["reason"] == "interrupted" and second["run_id"] > first["run_id"]
+
+
 def test_the_only_module_that_builds_a_real_http_transport_is_the_backfill_command() -> None:
     root = Path(__file__).resolve().parents[2] / "src" / "trade_graph"
     users = sorted(str(path.relative_to(root)) for path in root.rglob("*.py")
@@ -361,6 +450,18 @@ def test_reconcile_bad_arguments_are_usage_errors(tmp_path, arguments) -> None:
     with pytest.raises(SystemExit) as stopped:
         cli.main(["reconcile-candles", "--market-database", str(path), *arguments])
     assert stopped.value.code == 2
+
+
+def test_reconcile_on_a_candle_folder_that_is_not_private_names_the_fix_and_changes_nothing(tmp_path, capsys) -> None:
+    path = database_path(tmp_path)
+    seed_overlap(path)
+    path.parent.chmod(0o755)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["reconcile-candles", "--pair", "BTC/USD", "--market-database", str(path)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(path.parent))}" in message
+    assert path.parent.stat().st_mode & 0o777 == 0o755
 
 
 def test_reconcile_with_no_candles_at_all_says_so(tmp_path) -> None:

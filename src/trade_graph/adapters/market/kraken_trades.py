@@ -28,6 +28,7 @@ MAX_ERROR_CHARS = 120
 # seven-decimal `time` rounds away. One second of slack catches a cursor that stopped meaning "time of the last trade".
 CURSOR_TOLERANCE_NS = 1_000_000_000
 MAX_CURSOR = 2**63 - 1
+MIN_UNIX_TIME = 1_262_304_000  # 2010-01-01, before Kraken's first trade; the archive reader uses the same window
 MAX_UNIX_TIME = 4_102_444_800  # 2100-01-01; a nanosecond cursor is far above this, seconds are below it
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _PAIR_CODE = re.compile(r"[A-Z0-9]{2,24}")
@@ -47,6 +48,14 @@ class TradesPageRefused(ValidationFailure):
         self.reason = reason
         self.kraken_errors = kraken_errors
         self.retry_after_unix = retry_after_unix
+
+
+class TradesTransportRefused(Exception):
+    """The request was sent, but the transport refused the answer (too large, too slow, undecodable).
+
+    Deliberately not a ``ValidationFailure``: the backfill reads that class as "the request could not be built, so
+    nothing was sent", and this is an ordinary transport failure that is backed off and retried.
+    """
 
 
 class TradesRateLimited(TradesPageRefused):
@@ -234,7 +243,10 @@ class KrakenTrades:
     def fetch(self, pair_code: str, *, since: int | None, count: int = MAX_TRADES_PER_PAGE) -> TradesPage:
         url = trades_url(pair_code, since=since, count=count)
         requested_at = self._now()
-        raw = self.transport.get_text(url)
+        try:
+            raw = self.transport.get_text(url)
+        except ValidationFailure as error:  # the public transport reports its answer limits this way
+            raise TradesTransportRefused(str(error)) from error
         # Availability is taken after the network operation, never before it.
         received_at = self._now()
         if received_at < requested_at:

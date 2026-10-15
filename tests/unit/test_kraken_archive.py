@@ -6,7 +6,10 @@ import hashlib
 import io
 import os
 import stat
+import struct
+import tempfile
 import zipfile
+import zlib
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -14,8 +17,17 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from tests.archive_support import FIRST_OPEN, csv_line, csv_text, synthetic_rows, write_directory, write_zip
+from tests.archive_support import (
+    FIRST_OPEN,
+    csv_line,
+    csv_text,
+    synthetic_rows,
+    unreadable,
+    write_directory,
+    write_zip,
+)
 
+from trade_graph.adapters.market import kraken_archive
 from trade_graph.adapters.market.kraken_archive import (
     CHUNK_BYTES,
     REJECTION_REASONS,
@@ -24,7 +36,9 @@ from trade_graph.adapters.market.kraken_archive import (
     ArchiveRejected,
     MemberReader,
     ReadBudget,
+    declared_directory,
     fingerprint_archive,
+    is_fiat_symbol,
     open_archive,
     parse_member_name,
     parse_row,
@@ -41,14 +55,36 @@ GOOD = f"{FIRST_OPEN},100.10,101,99.5,100.75,12.50000000,7"
 @pytest.mark.parametrize(("code", "symbol"), [
     ("XBTUSD", "BTC/USD"), ("XDGUSD", "DOGE/USD"), ("ETHUSD", "ETH/USD"), ("1INCHUSD", "1INCH/USD"),
     ("SUSD", "S/USD"), ("XXBTZUSD", "BTC/USD"), ("XETHZUSD", "ETH/USD"), ("USDTUSD", "USDT/USD"),
+    ("USDTZUSD", "USDT/USD"), ("XTZUSD", "XTZ/USD"), ("XXDGZUSD", "DOGE/USD"), ("EURTUSD", "EURT/USD"),
 ])
 def test_usd_pair_codes_map_to_symbols(code: str, symbol: str) -> None:
     assert symbol_for_pair_code(code) == symbol
 
 
-@pytest.mark.parametrize("code", ["ADAEUR", "XBTUSDT", "ETHXBT", "XBTEUR", "xbtusd", "", "USD", "XBTUSD ", "XBT/USD"])
+@pytest.mark.parametrize("code", [
+    "ADAEUR", "XBTUSDT", "ETHXBT", "XBTEUR", "xbtusd", "", "USD", "XBTUSD ", "XBT/USD",
+    "ZXXXZUSD", "ZEURZCAD", "ZUSDZCAD", "ZEURZ", "ZEURZUSDT",
+])
 def test_other_codes_are_not_usd_pairs(code: str) -> None:
     assert symbol_for_pair_code(code) is None
+
+
+@pytest.mark.parametrize("code", ["EURUSD", "GBPUSD", "AUDUSD", "CADUSD", "CHFUSD", "JPYUSD", "AEDUSD", "NZDUSD"])
+def test_currency_pairs_map_to_symbols_but_are_marked_as_not_coins(code: str) -> None:
+    symbol = symbol_for_pair_code(code)
+    assert symbol == f"{code[:3]}/USD" and is_fiat_symbol(symbol)
+
+
+@pytest.mark.parametrize("code", ["ZEURZUSD", "ZGBPZUSD", "ZAUDZUSD", "ZCADZUSD", "ZCHFZUSD", "ZJPYZUSD", "ZNZDZUSD"])
+def test_legacy_currency_pair_ids_are_also_marked_as_not_coins(code: str) -> None:
+    """Kraken's older REST ids put a Z before each currency; they must not be stored as a coin named like 'ZEURZ'."""
+    symbol = symbol_for_pair_code(code)
+    assert symbol == f"{code[1:4]}/USD" and is_fiat_symbol(symbol)
+
+
+@pytest.mark.parametrize("symbol", ["BTC/USD", "DOGE/USD", "ETH/USD", "USDT/USD", "USDC/USD", "EURT/USD", "SEUR/USD"])
+def test_coins_and_stablecoins_are_not_marked_as_currencies(symbol: str) -> None:
+    assert not is_fiat_symbol(symbol)  # stablecoins are a scanner decision (D131), not a currency filter here
 
 
 def test_member_names_split_into_pair_and_interval() -> None:
@@ -225,6 +261,40 @@ def test_a_member_with_no_newline_is_refused_before_it_is_buffered() -> None:
     assert sum(consumed) <= CHUNK_BYTES  # stopped after the first chunk, not after the whole member
 
 
+def _declaring(text: str, declared: int, limits: ArchiveLimits) -> tuple[MemberReader, list[str]]:
+    """A member whose listed size is ``declared`` whatever it really holds; the list records every open."""
+    data, opened = text.encode("ascii"), []
+
+    class _Source:
+        def __init__(self) -> None:
+            self.limits = limits
+
+        def open(self, member):
+            opened.append(member.name)
+            return io.BytesIO(data)
+
+    member = ArchiveMember(name="XBTUSD_15.csv", size=declared, compressed_size=len(data), pair_code="XBTUSD",
+                           interval_minutes=15)
+    return MemberReader(_Source(), member, ReadBudget(limits)), opened
+
+
+def test_a_member_that_lists_a_small_size_but_streams_a_large_one_is_stopped_while_streaming() -> None:
+    reader, opened = _declaring(csv_text(synthetic_rows(FIRST_OPEN, 50, 15)), 10, ArchiveLimits(max_member_bytes=1000))
+    with pytest.raises(ArchiveRejected) as refused:
+        list(reader)
+    assert refused.value.reason == "member_size_limit" and "inflates" in str(refused.value)
+    assert opened == ["XBTUSD_15.csv"] and reader.rows_read == 0
+
+
+def test_a_member_that_lists_a_size_over_the_limit_is_refused_without_being_opened() -> None:
+    small = csv_text(synthetic_rows(FIRST_OPEN, 3, 15))
+    reader, opened = _declaring(small, 10_000, ArchiveLimits(max_member_bytes=1000))
+    with pytest.raises(ArchiveRejected) as refused:
+        list(reader)
+    assert refused.value.reason == "member_size_limit" and "declares" in str(refused.value)
+    assert opened == [] and reader.rows_read == 0
+
+
 def test_the_row_limit_refuses_the_file() -> None:
     reader = _reader(csv_text(synthetic_rows(FIRST_OPEN, 10, 15)), limits=ArchiveLimits(max_rows=9))
     with pytest.raises(ArchiveRejected) as refused:
@@ -316,6 +386,125 @@ def test_too_many_members_are_refused(tmp_path: Path) -> None:
     assert refused.value.reason == "member_limit"
 
 
+class _NoZipFile:
+    """Stands in for zipfile.ZipFile: constructing it is the memory cost that the early check must avoid."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise AssertionError("the central directory was loaded before the member count was checked")
+
+
+def test_too_many_members_are_refused_before_the_directory_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    path = write_zip(tmp_path / "many.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
+        pass
+    assert refused.value.reason == "member_limit" and "6 members" in str(refused.value)
+
+
+def test_exactly_the_member_limit_is_accepted_in_a_zip(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "six.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    with open_archive(path, ArchiveLimits(max_members=6)) as archive:
+        assert len(archive.members) == 6
+
+
+def test_an_oversized_central_directory_is_refused_before_it_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    """Few members, each with a large extra field: the directory is far bigger than any real archive's."""
+    path = tmp_path / "padded.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(3):
+            info = zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0))
+            info.extra = b"\xaa\xbb\xe8\x03" + b"x" * 1000  # an unknown extra field, 1004 bytes
+            archive.writestr(info, "")
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=3)):
+        pass
+    assert refused.value.reason == "member_limit" and "directory" in str(refused.value)
+
+
+def test_a_declared_count_that_lies_still_meets_the_count_check_after_loading(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "liar.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    raw = bytearray(path.read_bytes())
+    end = raw.rindex(b"PK\x05\x06")
+    raw[end + 8:end + 12] = (1).to_bytes(2, "little") * 2  # entries on this disk and in total, both said to be one
+    path.write_bytes(bytes(raw))
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
+        pass
+    assert refused.value.reason == "member_limit"
+
+
+def test_the_declared_directory_of_a_zip_is_its_entry_count_and_byte_size(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "six.zip", {f"A{i}USD_15.csv": "" for i in range(6)})
+    entries, directory_bytes = declared_directory(path)
+    with zipfile.ZipFile(path) as archive:
+        assert entries == len(archive.infolist()) == 6
+    assert 6 * 46 < directory_bytes < 6 * 100
+
+
+def test_the_declared_directory_is_read_past_a_zip_comment(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "commented.zip", {"A_15.csv": "", "B_15.csv": ""})
+    before = declared_directory(path)
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.comment = b"a comment that the record is followed by " * 20
+    assert declared_directory(path) == before and before[0] == 2
+
+
+def test_the_declared_directory_of_a_zip64_file_comes_from_the_zip64_record(tmp_path: Path) -> None:
+    """More than 65,535 members saturate the ordinary record, which then says 0xFFFF and defers to the zip64 one."""
+    path = tmp_path / "huge.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(65_540):
+            archive.writestr(zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0)), "")
+    entries, directory_bytes = declared_directory(path)
+    assert entries == 65_540 and directory_bytes > 65_540 * 46
+
+
+def test_a_zip64_file_over_the_member_limit_is_refused_before_it_is_loaded(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "huge.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for index in range(65_540):
+            archive.writestr(zipfile.ZipInfo(f"A{index}USD_15.csv", date_time=(2026, 10, 1, 0, 0, 0)), "")
+    monkeypatch.setattr(kraken_archive.zipfile, "ZipFile", _NoZipFile)
+    with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=65_536)):
+        pass
+    assert refused.value.reason == "member_limit" and "65540" in str(refused.value)
+
+
+@pytest.mark.parametrize("data", [
+    b"", b"PK", b"not a zip at all" * 10, b"PK\x05\x06" + b"\x00" * 10, b"PK\x03\x04" * 20,
+])
+def test_the_declared_directory_of_something_that_is_not_a_zip_is_unknown(tmp_path: Path, data: bytes) -> None:
+    path = tmp_path / "other.bin"
+    path.write_bytes(data)
+    assert declared_directory(path) is None
+
+
+def test_the_declared_directory_of_an_unreadable_path_is_unknown(tmp_path: Path) -> None:
+    assert declared_directory(tmp_path / "absent.zip") is None
+
+
+@pytest.mark.parametrize("record_at", [0, 2**40, 2**63 - 1, 2**64 - 1])
+def test_a_zip64_locator_that_points_nowhere_leaves_the_count_unknown(tmp_path: Path, record_at: int) -> None:
+    ordinary = struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, record_at, 1)
+    path = tmp_path / "bad64.zip"
+    path.write_bytes(b"x" * 100 + locator + ordinary)
+    assert declared_directory(path) is None
+
+
+@settings(max_examples=200, deadline=None)
+@given(data=st.binary(max_size=300), keep=st.integers(min_value=0, max_value=2000))
+def test_the_declared_directory_never_raises_whatever_the_bytes(data: bytes, keep: int) -> None:
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "any.zip"
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("A_15.csv", "x")
+        whole = buffer.getvalue()
+        path.write_bytes(whole[:keep] + data)
+        found = declared_directory(path)
+        assert found is None or (type(found[0]) is int and type(found[1]) is int)
+
+
 def test_too_many_files_in_a_directory_are_refused_and_exactly_the_limit_is_accepted(tmp_path: Path) -> None:
     path = write_directory(tmp_path / "many", {f"A{i}USD_15.csv": "" for i in range(6)})
     with pytest.raises(ArchiveRejected) as refused, open_archive(path, ArchiveLimits(max_members=5)):
@@ -397,6 +586,94 @@ def test_a_corrupt_member_is_refused(tmp_path: Path) -> None:
     assert refused.value.reason == "corrupt_member"
 
 
+def _three_deflated_members() -> dict[str, str]:
+    return {f"{code}USD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15, seed=seed))
+            for seed, code in enumerate(("XBT", "ETH", "ADA"), start=1)}
+
+
+def test_a_zip_with_bytes_missing_from_the_middle_is_a_corrupt_member(tmp_path: Path) -> None:
+    """A mis-joined download: the end of the file is intact so the ZIP opens, but the stored offsets are now wrong.
+
+    Cutting inside the first member moves its start before the beginning of the file, which zipfile reports as a
+    bare OSError; the later members still read, because their data is intact.
+    """
+    path = write_zip(tmp_path / "joined.zip", _three_deflated_members())
+    raw = path.read_bytes()
+    assert len(raw) > 30_000
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    assert zipfile.is_zipfile(path)
+    with open_archive(path) as archive:
+        damaged = next(member for member in archive.members if member.name == "XBTUSD_15.csv")
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, damaged, ReadBudget(archive.limits)))
+        assert refused.value.reason == "corrupt_member"
+        intact = [member for member in archive.members if member is not damaged]
+        assert [len(list(MemberReader(archive, member, ReadBudget(archive.limits)))) for member in intact] == [2500] * 2
+
+
+@pytest.mark.parametrize(("at", "fill"), [(200, 0x00), (200, 0xFF), (5000, 0x00), (5000, 0xFF)])
+def test_damaged_deflate_data_is_a_corrupt_member(tmp_path: Path, at: int, fill: int) -> None:
+    """A real format error from the decompressor, not the checksum mismatch that stored data would give."""
+    path = write_zip(tmp_path / "damaged.zip", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15))})
+    raw = bytearray(path.read_bytes())
+    start = 30 + len("XBTUSD_15.csv")  # the local header, then the compressed bytes
+    raw[start + at:start + at + 8] = bytes([fill]) * 8
+    path.write_bytes(bytes(raw))
+    with open_archive(path) as archive:
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, archive.members[0], ReadBudget(archive.limits)))
+    assert refused.value.reason == "corrupt_member" and isinstance(refused.value.__cause__, zlib.error)
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
+def test_a_file_cut_short_after_it_was_opened_is_a_corrupt_member(tmp_path: Path, compression: int) -> None:
+    """The listing was read while the file was whole; the member's bytes then run out before its stored size."""
+    path = write_zip(tmp_path / "cut.zip", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15))},
+                     compression=compression)
+    whole = path.read_bytes()
+    with open_archive(path) as archive:
+        path.write_bytes(whole[:1000])
+        with pytest.raises(ArchiveRejected) as refused:
+            list(MemberReader(archive, archive.members[0], ReadBudget(archive.limits)))
+    assert refused.value.reason == "corrupt_member" and isinstance(refused.value.__cause__, EOFError)
+
+
+class _FailingStream:
+    def __init__(self, error: OSError) -> None:
+        self._error = error
+
+    def read(self, count: int) -> bytes:
+        raise self._error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+class _ScriptedSource:
+    limits = ArchiveLimits()
+
+    def __init__(self, stream: _FailingStream | None, error: OSError | None = None) -> None:
+        self._stream, self._error = stream, error
+
+    def open(self, member: ArchiveMember):
+        if self._error is not None:
+            raise self._error
+        return self._stream
+
+
+@pytest.mark.parametrize("fails_on", ["open", "read"])
+def test_an_input_output_error_while_reading_a_member_is_a_corrupt_member(fails_on: str) -> None:
+    error = OSError(5, "Input/output error")
+    source = _ScriptedSource(_FailingStream(error)) if fails_on == "read" else _ScriptedSource(None, error)
+    member = ArchiveMember("XBTUSD_15.csv", 100, 100, "XBTUSD", 15)
+    with pytest.raises(ArchiveRejected) as refused:
+        list(MemberReader(source, member, ReadBudget(source.limits)))
+    assert refused.value.reason == "corrupt_member" and refused.value.__cause__ is error
+
+
 def test_a_file_that_is_not_a_zip_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "plain.zip"
     path.write_bytes(b"this is not a zip file")
@@ -457,6 +734,31 @@ def test_opening_an_archive_never_extracts_or_uses_temporary_files(tmp_path: Pat
 # --- fingerprints -------------------------------------------------------------------------------------------------
 
 
+def test_an_unreadable_zip_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "Kraken_OHLCVT_2026Q3.zip", _members())
+    with unreadable(path):
+        with pytest.raises(ArchiveRejected) as hashing:
+            fingerprint_archive(path)
+        with pytest.raises(ArchiveRejected) as opening, open_archive(path):
+            pass
+    assert hashing.value.reason == opening.value.reason == "not_a_file"
+    assert isinstance(hashing.value.__cause__, PermissionError)
+
+
+def test_an_unreadable_csv_in_a_directory_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    folder = write_directory(tmp_path / "csv", _members())
+    with unreadable(folder / "XBTUSD_15.csv"), pytest.raises(ArchiveRejected) as refused:
+        fingerprint_archive(folder)
+    assert refused.value.reason == "not_a_file"
+
+
+def test_an_unreadable_directory_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    folder = write_directory(tmp_path / "csv", _members())
+    with unreadable(folder), pytest.raises(ArchiveRejected) as refused:
+        fingerprint_archive(folder)
+    assert refused.value.reason == "not_a_file"
+
+
 def test_the_fingerprint_of_a_zip_is_its_streamed_sha256(tmp_path: Path) -> None:
     path = write_zip(tmp_path / "Kraken_OHLCVT_2026Q3.zip", _members())
     fingerprint = fingerprint_archive(path)
@@ -480,6 +782,15 @@ def test_a_directory_fingerprint_follows_its_content(tmp_path: Path) -> None:
     assert fingerprint_archive(folder).sha256 == first.sha256
     (folder / "XBTUSD_15.csv").write_text(csv_text(synthetic_rows(FIRST_OPEN, 4, 15)))
     assert fingerprint_archive(folder).sha256 != first.sha256
+
+
+def test_a_directory_fingerprint_changes_when_a_member_is_only_renamed(tmp_path: Path) -> None:
+    """Same bytes under another pair name are another archive: the importer would store them as another series."""
+    folder = write_directory(tmp_path / "csv", {"XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 3, 15))})
+    first = fingerprint_archive(folder)
+    (folder / "XBTUSD_15.csv").rename(folder / "ETHUSD_15.csv")
+    renamed = fingerprint_archive(folder)
+    assert renamed.size_bytes == first.size_bytes and renamed.sha256 != first.sha256
 
 
 # --- properties -----------------------------------------------------------------------------------------------------

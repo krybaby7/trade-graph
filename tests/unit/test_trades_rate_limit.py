@@ -96,6 +96,13 @@ def test_a_rate_limit_answer_waits_for_the_counter_to_fall_below_the_ceiling() -
     assert limiter.acquire() == 0
 
 
+def test_after_a_rate_limit_answer_the_counter_is_taken_to_have_been_full() -> None:
+    limiter, _, _ = _limiter()
+    limiter.acquire()  # the counter is 1 here, but Kraken said it was over 15
+    limiter.penalize()
+    assert limiter.counter == Decimal("11.99997")  # 15 less 9.091 s of decay at 0.33 a second
+
+
 def test_a_throttle_timestamp_in_the_future_is_waited_out() -> None:
     limiter, clock, _ = _limiter()
     limiter.acquire()

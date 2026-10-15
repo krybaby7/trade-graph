@@ -15,6 +15,7 @@ from trade_graph.adapters.market.kraken_trades import (
     TradesPageRefused,
     TradesRateLimited,
     TradesThrottled,
+    TradesTransportRefused,
     pair_code_for_symbol,
     parse_trades_page,
     trades_url,
@@ -211,6 +212,16 @@ def test_malformed_rows_are_refused(row) -> None:
     assert _refusal(raw).reason in {"row_invalid", "too_many_rows"}
 
 
+def test_a_trade_time_may_carry_nine_fraction_digits_but_not_ten() -> None:
+    nine = wire_row(5, "10.0", "1.0", "1791897312.123456789")
+    ten = wire_row(5, "10.0", "1.0", "1791897312.1234567891")
+    page = parse_trades_page(wire_page([nine], last=1791897312123456789), pair_code="XBTUSD", since=None, count=10,
+                             received_at=NOW)
+    assert page.trades[0].time == Decimal("1791897312.123456789")
+    error = _refusal(wire_page([ten], last=1791897312123456789))
+    assert error.reason == "row_invalid" and "nine fraction digits" in str(error)
+
+
 def test_rows_must_rise_in_id_and_not_fall_in_time() -> None:
     same_id = [wire_row(5, "10.0", "1.0", "1791897312.1"), wire_row(5, "10.0", "1.0", "1791897312.2")]
     backwards_id = [wire_row(6, "10.0", "1.0", "1791897312.1"), wire_row(5, "10.0", "1.0", "1791897312.2")]
@@ -249,3 +260,22 @@ def test_transport_failures_propagate_to_the_caller_unchanged() -> None:
     transport = ScriptedTransport([TimeoutError("slow")], clock)
     with pytest.raises(TimeoutError):
         KrakenTrades(transport, clock).fetch("XBTUSD", since=None, count=10)
+
+
+def test_an_answer_the_transport_refuses_is_a_transport_failure_not_a_request_that_could_not_be_built() -> None:
+    """The public transport raises ValidationFailure for a too large, too slow or undecodable answer, after sending."""
+    clock = FrozenClock(NOW)
+    refusal = ValidationFailure("public response exceeded its byte limit")
+    transport = ScriptedTransport([refusal], clock)
+    with pytest.raises(TradesTransportRefused) as raised:
+        KrakenTrades(transport, clock).fetch("XBTUSD", since=None, count=10)
+    assert not isinstance(raised.value, ValidationFailure) and raised.value.__cause__ is refusal
+    assert "byte limit" in str(raised.value) and len(transport.calls) == 1
+
+
+def test_a_request_that_cannot_be_built_is_still_a_validation_failure_and_nothing_is_sent() -> None:
+    clock = FrozenClock(NOW)
+    transport = ScriptedTransport([], clock)
+    with pytest.raises(ValidationFailure) as raised:
+        KrakenTrades(transport, clock).fetch("xbt usd", since=None, count=10)
+    assert not isinstance(raised.value, TradesTransportRefused) and transport.calls == []

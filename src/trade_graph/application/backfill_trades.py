@@ -22,8 +22,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from trade_graph.adapters.market.kraken_archive import is_fiat_symbol
 from trade_graph.adapters.market.kraken_trades import (
     MAX_TRADES_PER_PAGE,
+    MAX_UNIX_TIME,
+    MIN_UNIX_TIME,
     PublicTrade,
     TradesPage,
     TradesPageRefused,
@@ -51,7 +54,9 @@ from trade_graph.contracts.candles import Candle, RunRecord, from_unix, to_unix
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
-BACKFILL_VERSION = "trades-backfill-v2"  # v2: an id gap before the open candle survives a resume
+# v3: an id gap before the slot at a finished range's end survives an extension, and a candle that a slow clock held
+# back stays undecided
+BACKFILL_VERSION = "trades-backfill-v3"
 BACKFILL_INTERVALS = (1, 5, 15, 60)
 BACKFILL_EVIDENCE_LABELS = ("live_public", "live_public_smoke", "recorded_public_fixture", "synthetic_fixture")
 MAX_REQUESTS_LIMIT = 100_000
@@ -87,6 +92,8 @@ class BackfillScope:
             pair_code_for_symbol(symbol)  # refuses anything that is not like BTC/USD
             if symbol.split("/")[0] in EXCLUDED_BASES:
                 raise ValidationFailure(f"{symbol} is a stablecoin pair; stablecoins are excluded (D131)")
+            if is_fiat_symbol(symbol):
+                raise ValidationFailure(f"{symbol} is a currency pair, not a coin; only coin pairs are backfilled")
         intervals = tuple(sorted(self.intervals))
         if (not intervals or len(set(intervals)) != len(intervals)
                 or any(type(i) is not int or i not in BACKFILL_INTERVALS for i in intervals)):
@@ -97,9 +104,12 @@ class BackfillScope:
                 if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
                     raise ValidationFailure(f"{name} must be a timezone-aware time")
                 try:
-                    to_unix(value)
+                    seconds = to_unix(value)
                 except ValueError as error:
                     raise ValidationFailure(f"{name} must be a whole second") from error
+                if not MIN_UNIX_TIME <= seconds < MAX_UNIX_TIME:
+                    raise ValidationFailure(f"{name} must fall from 2010-01-01 up to 2100-01-01 (Kraken has no trades "
+                                            "outside that window)")
         object.__setattr__(self, "symbols", symbols)
         object.__setattr__(self, "intervals", intervals)
 
@@ -266,6 +276,7 @@ def _candles(state: PairState, buckets: list[CompletedBucket], page: TradesPage)
             outcome.withheld_gap += 1
         elif page.received_at < close:
             outcome.withheld_receipt += 1  # never backdate availability to make a candle look earlier
+            state.holds.setdefault(bucket.interval, bucket.open_unix)  # and a later run builds it: it is not decided
         else:
             built.setdefault(bucket.interval, []).append(Candle(
                 symbol=state.symbol, source_pair=state.pair_code, interval_minutes=bucket.interval,
@@ -285,6 +296,25 @@ def _save(store: CandleStore, run_id: int, state: PairState, built: dict[int, li
         outcome.revised += saved.revised
 
 
+def _commit(state: PairState) -> None:
+    """Move the cursor to the oldest undecided slot: a candle the clock held back stays undecided, even though the
+    candles after it were stored, so the next run re-reads from it. Its own flag is clean, or it would be withheld."""
+    aggregator = state.aggregator
+    assert aggregator is not None
+    for interval in state.committed:
+        held = state.holds.get(interval)
+        state.committed[interval] = aggregator.next_open(interval) if held is None else held
+        state.open_tainted[interval] = held is None and aggregator.open_tainted(interval)
+
+
+def _held_message(state: PairState) -> str | None:
+    held = sum(outcome.withheld_receipt for outcome in state.outcomes.values())
+    if not held:
+        return None
+    return (f"the range was read to its end, but {held} candle(s) were held back because this computer's clock read "
+            "earlier than their close; they stay undecided and the next run rebuilds them, so check the clock first")
+
+
 def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: RequestLimiter, budget: Budget,
               state: PairState, page_size: int) -> None:
     aggregator = state.aggregator
@@ -298,7 +328,7 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
     while True:
         if budget.spent:
             state.not_started = state.requests == 0
-            if state.requests and state.committed == began:
+            if state.requests and state.committed == began and not state.holds:
                 # The next run restarts at the same open candle, so it would spend the same budget the same way.
                 state.stop("max_requests", f"the budget of {budget.maximum} requests ended before one whole candle "
                            "had been received, so this run decided no slot and the next one would repeat it; raise "
@@ -330,6 +360,9 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
         except TradesPageRefused as error:
             state.stop("page_refused", str(error), error.reason)
             return
+        except ValidationFailure as error:  # raised before anything was sent: waiting or asking again cannot help
+            state.stop("invalid_request", str(error)[:200])
+            return
         except Exception as error:  # a transport failure: keep the class name, drop any details
             budget.transport_errors += 1
             transport_retries += 1
@@ -354,10 +387,9 @@ def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: Re
         except ValidationFailure as error:
             state.stop("store_refused", str(error)[:200])
             return
-        state.committed = {interval: aggregator.next_open(interval) for interval in state.committed}
-        state.open_tainted = {interval: aggregator.open_tainted(interval) for interval in state.committed}
+        _commit(state)
         if aggregator.finished:
-            state.stop("end_reached")
+            state.stop("end_reached", _held_message(state))
             return
         if not page.full:
             state.stop("stream_exhausted", "Kraken had no more trades to give yet, before the end of the range")
@@ -395,8 +427,8 @@ def _prepare_pair(store: CandleStore, scope: BackfillScope, summaries: dict, sym
             store, symbol, pair_code, interval, range_start=target.start, runs=past_runs)
         state.cursors[interval] = None if point is None else point.next_open
         floors[interval] = target.start if point is None else min(point.next_open, target.end)
-        if point is not None and point.open_candle_has_id_gap and floors[interval] < target.end:
-            carried.add(interval)
+        if point is not None and point.open_candle_has_id_gap:
+            carried.add(interval)  # also at a finished range's end: the report keeps the flag for a later extension
     state.aggregator = TradeAggregator(floors, {interval: ready[interval].end for interval in ready},
                                        tainted_open=carried)
     state.committed = {interval: floors[interval] for interval in ready}

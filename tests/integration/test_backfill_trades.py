@@ -213,6 +213,15 @@ def test_overlapping_archive_and_collector_leave_no_gap_and_no_requests(store) -
     assert document["status"] == "already_covered" and "overlap" in document["reason"]
 
 
+def test_an_archive_that_ends_exactly_where_the_collector_starts_leaves_no_gap_and_no_requests(store) -> None:
+    seed(store, archive_last_close=T0, collector_first_open=T0)  # the last archive candle closes at the first open
+    rig = Rig(store, two_slot_trades())
+    result = rig.drive()
+    document = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["status"] == "already_covered" and "touch" in document["reason"]
+    assert rig.script.calls == [] and result.status == "ok"
+
+
 def test_a_chosen_start_and_end_are_aligned_inward_and_reported(store) -> None:
     seed(store, archive_last_close=None, collector_first_open=None)
     result = Rig(store, two_slot_trades()).drive(start=from_unix(T0 - 100), end=from_unix(T0 + 1801))
@@ -326,6 +335,77 @@ def test_a_candle_whose_close_is_after_the_receipt_is_withheld_not_backdated(sto
     assert sorted(stored(store, last=T0 + 1800)) == [T0]
     document = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
     assert document["candles"]["withheld_receipt_before_close"] == 1 and result.status == "partial"
+
+
+def test_a_candle_held_back_by_a_slow_clock_stays_undecided_and_the_next_run_builds_it(store) -> None:
+    two_slot_store(store)
+    slow = datetime.fromtimestamp(T0 + 1200, UTC)  # the clock says 12:20, before the 12:30 close of the second candle
+    first = Rig(store, two_slot_trades(), now=slow).drive()
+    pair = first.report["pairs"]["BTC/USD"]
+    document = pair["intervals"]["15"]
+    assert sorted(stored(store, last=T0 + 1800)) == [T0] and first.status == "partial"
+    assert document["candles"]["withheld_receipt_before_close"] == 1
+    assert (document["next_open_unix"], document["unreached_slots"], document["status"]) == (T0 + 900, 1, "partial")
+    assert document["open_candle_has_id_gap"] is False and document["decided_slots"] == 1
+    assert pair["stop_reason"] == "end_reached" and "clock" in pair["message"] and "1 candle" in pair["message"]
+    assert first.report["not_reached"][0]["from_utc"] == "2026-10-13T12:15:00.000000Z"
+
+    again = Rig(store, two_slot_trades(), now=slow).drive()  # still the wrong clock: held again, nothing is lost
+    assert again.report["pairs"]["BTC/USD"]["intervals"]["15"]["next_open_unix"] == T0 + 900
+    assert sorted(stored(store, last=T0 + 1800)) == [T0]
+
+    rig = Rig(store, two_slot_trades())  # the right clock
+    right = rig.drive()
+    fixed = right.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert right.status == "ok" and fixed["resumed_from_unix"] == T0 + 900 and fixed["status"] == "complete"
+    assert rig.script.calls[0].endswith(f"since={T0 + 899}&count=1000")
+    candles = stored(store, last=T0 + 1800)
+    assert sorted(candles) == [T0, T0 + 900] and candles[T0 + 900].available_at_utc >= candles[T0 + 900].close_time_utc
+
+
+def test_the_cursor_on_a_held_back_candle_is_clean_even_when_a_later_candle_is_known_to_lack_trades(
+        store, other_store) -> None:
+    trades = [trade(1, "10", "100.00", "1"), trade(2, "20", "101.00", "1"), trade(3, "30", "102.00", "1"),
+              trade(4, "905", "103.00", "1"), trade(6, "1000", "104.00", "1"),  # id 5 is missing: the 12:15 candle
+              trade(7, "1805", "105.00", "1"), trade(8, "2705", "106.00", "1")]
+    window = {"start": from_unix(T0), "end": from_unix(T0 + 2700)}
+    slow = datetime.fromtimestamp(T0 + 600, UTC)
+    first = Rig(store, trades, now=slow).drive(max_requests=1, page_size=5, **window)
+    document = first.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["candles"]["withheld_receipt_before_close"] == 1 and document["next_open_unix"] == T0
+    assert document["open_candle_has_id_gap"] is False  # the held candle itself had no known gap before it
+    Rig(store, trades).drive(**window)
+    Rig(other_store, trades).drive(**window)
+    assert content(store, last=T0 + 2700) == content(other_store, last=T0 + 2700)
+    assert sorted(content(other_store, last=T0 + 2700)) == [T0, T0 + 1800]
+
+
+def test_a_budget_that_ended_on_a_held_back_candle_does_not_blame_the_budget(store) -> None:
+    two_slot_store(store)
+    slow = datetime.fromtimestamp(T0 + 600, UTC)  # the first candle closes at 12:15, after the 12:10 the clock reads
+    result = Rig(store, two_slot_trades(), now=slow).drive(max_requests=1, page_size=5)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "max_requests" and pair["message"] is None  # a whole candle was received
+    assert pair["intervals"]["15"]["candles"]["withheld_receipt_before_close"] == 1
+    assert pair["intervals"]["15"]["next_open_unix"] == T0
+
+
+@pytest.mark.parametrize("clock_seconds", [1500, 2400, 3000])
+def test_candles_held_back_by_a_clock_that_was_wrong_end_up_as_if_it_had_been_right(store, other_store,
+                                                                                  clock_seconds) -> None:
+    for each in (store, other_store):
+        seed(each, interval=15, collector_first_open=T0 + 3600)
+        seed(each, interval=60, collector_first_open=T0 + 3600)
+    trades = steady_trades(1000, T0 - 600, 2 * 60 + 30, every_seconds=60)
+    Rig(other_store, trades).drive(intervals=(15, 60), page_size=40)
+    slow = datetime.fromtimestamp(T0 + clock_seconds, UTC)
+    held = Rig(store, trades, now=slow).drive(intervals=(15, 60), page_size=40)
+    assert held.report["totals"]["candles_withheld_receipt_before_close"] > 0
+    assert Rig(store, trades).drive(intervals=(15, 60), page_size=40).status == "ok"
+    for interval in (15, 60):
+        assert content(store, interval=interval, last=T0 + 3600) == content(other_store, interval=interval,
+                                                                           last=T0 + 3600)
+        assert content(store, interval=interval, last=T0 + 3600)
 
 
 # --- budget, cursor and resume -------------------------------------------------------------------------------------
@@ -454,6 +534,54 @@ def test_a_resume_keeps_the_id_gap_that_sits_just_before_the_open_candle(store, 
     assert content(store) == content(other_store) == {}
 
 
+def gap_right_before_the_trade_that_crosses_the_first_range_end() -> list[SyntheticTrade]:
+    """Ids 6 to 9 are missing between 12:00:50 and 12:15:05, so the candle that opens at 12:15 may lack trades."""
+    return [trade(1, "10", "100.00", "1"), trade(2, "20", "101.00", "1"), trade(3, "30", "102.00", "1"),
+            trade(4, "40", "103.00", "1"), trade(5, "50", "104.00", "1"),
+            trade(10, "905", "105.00", "1"), trade(11, "1000", "106.00", "1"),
+            trade(12, "1805", "107.00", "1"), trade(13, "1900", "108.00", "1"), trade(14, "2705", "109.00", "1")]
+
+
+def test_extending_a_finished_range_keeps_the_gap_that_sat_before_its_end(store, other_store) -> None:
+    """The trade that proved the first range complete was preceded by a gap, and the next run cannot see that."""
+    first_end, last_end = from_unix(T0 + 900), from_unix(T0 + 2700)
+    trades = gap_right_before_the_trade_that_crosses_the_first_range_end()
+    whole = Rig(other_store, trades).drive(start=from_unix(T0), end=last_end)
+    assert whole.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 2
+    assert sorted(content(other_store, last=T0 + 2700)) == [T0 + 1800]  # slots 0 and 900 may lack trades 6 to 9
+
+    one = Rig(store, trades).drive(start=from_unix(T0), end=first_end)
+    document = one.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["status"] == "complete" and document["next_open_unix"] == T0 + 900
+    assert document["open_candle_has_id_gap"] is True  # the candle that opens at the range end is already suspect
+    assert read_resume_point(store, "BTC/USD", "XBTUSD", 15, range_start=T0) == ResumePoint(T0 + 900, True)
+
+    two = Rig(store, trades).drive(start=from_unix(T0), end=last_end)
+    resumed = two.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert resumed["resumed_from_unix"] == T0 + 900 and resumed["candles"]["withheld_trade_id_gap"] == 1
+    assert content(store, last=T0 + 2700) == content(other_store, last=T0 + 2700)
+    assert sorted(content(store, last=T0 + 2700)) == [T0 + 1800]
+
+
+def test_a_clean_range_end_does_not_taint_the_slot_that_opens_there(store) -> None:
+    two_slot_store(store)
+    one = Rig(store, two_slot_trades()).drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    assert one.report["pairs"]["BTC/USD"]["intervals"]["15"]["open_candle_has_id_gap"] is False
+    Rig(store, two_slot_trades()).drive(start=from_unix(T0), end=from_unix(T0 + 1800))
+    assert sorted(content(store)) == [T0, T0 + 900]
+
+
+def test_repeating_a_finished_range_keeps_reporting_the_gap_at_its_end(store) -> None:
+    trades = gap_right_before_the_trade_that_crosses_the_first_range_end()
+    Rig(store, trades).drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    rig = Rig(store, trades)
+    again = rig.drive(start=from_unix(T0), end=from_unix(T0 + 900))
+    assert rig.script.calls == []
+    assert again.report["pairs"]["BTC/USD"]["intervals"]["15"]["open_candle_has_id_gap"] is True
+    extended = Rig(store, trades).drive(start=from_unix(T0), end=from_unix(T0 + 2700))
+    assert extended.report["pairs"]["BTC/USD"]["intervals"]["15"]["candles"]["withheld_trade_id_gap"] == 1
+
+
 def test_the_open_candle_flag_is_read_back_with_the_cursor(store) -> None:
     two_slot_store(store)
     trades = gap_before_the_trade_that_opens_the_second_candle()
@@ -556,6 +684,29 @@ def test_resumed_runs_equal_one_uninterrupted_run_when_ids_are_missing(tmp_path,
                 kept += len(content(whole, interval=interval, last=last))
     assert withheld > 0 and kept > 0  # the streams really contain gaps, and candles still get through
     assert rounds >= 3 * streams  # and they were cut into several runs each
+
+
+@pytest.mark.parametrize(("intervals", "cuts"), [((15,), (3, 6)), ((15, 60), (4, 7))])
+def test_extending_a_finished_range_equals_one_run_over_the_whole_range_when_ids_are_missing(
+        tmp_path, intervals, cuts) -> None:
+    """The range ends are moved out in steps, each run finishing its range: the stored candles must not differ."""
+    hours, streams, flagged = 10, 30, 0
+    end = from_unix(T0 + hours * 3600)
+    for number in range(streams):
+        trades = random_stream(number, hours)
+        with (seeded_store(tmp_path / f"{number}-whole" / "m.sqlite", hours, intervals) as whole,
+              seeded_store(tmp_path / f"{number}-split" / "m.sqlite", hours, intervals) as split):
+            Rig(whole, trades, now=LATE).drive(intervals=intervals, start=from_unix(T0), end=end)
+            for cut in (*cuts, hours):
+                result = Rig(split, trades, now=LATE).drive(intervals=intervals, start=from_unix(T0),
+                                                            end=from_unix(T0 + cut * 3600))
+                assert result.report["pairs"]["BTC/USD"]["stop_reason"] == "end_reached"
+                flagged += sum(document["open_candle_has_id_gap"] is True
+                               for document in result.report["pairs"]["BTC/USD"]["intervals"].values())
+            for interval in intervals:
+                assert content(split, interval=interval, last=T0 + hours * 3600) == content(
+                    whole, interval=interval, last=T0 + hours * 3600), f"stream {number}, {interval} minutes"
+    assert flagged > 0  # some range end really was preceded by a gap
 
 
 def stored_cursor(store: CandleStore, next_open, *, range_start=T0, pair_code: str = "XBTUSD", **extra) -> None:
@@ -695,6 +846,30 @@ def rate_limit_once(call: int, url: str) -> str | None:
     return '{"error":["EAPI:Rate limit exceeded"],"result":{}}' if call == 2 else None
 
 
+def test_every_request_waits_its_turn_at_the_limiter(store) -> None:
+    """The scripted exchange answers at once (delay 0), so only the limiter can put time between two requests."""
+    rig = Rig(store, long_gap(store, hours=2), delay=0)
+    result = rig.drive(page_size=25)
+    calls = len(rig.script.calls)
+    assert result.status == "ok" and calls >= 5
+    assert rig.sleeper.waits == [Decimal("1.000")] * (calls - 1)  # the first request goes at once, then one second each
+    assert result.report["requests"]["waited_seconds"] == str(Decimal("1.000") * (calls - 1))
+
+
+def test_a_long_run_keeps_kraken_s_counter_under_the_ceiling_by_slowing_down(store) -> None:
+    times: list[datetime] = []
+    rig = Rig(store, long_gap(store, hours=2), delay=0, hook=lambda call, url: times.append(rig.clock.now()))
+    result = rig.drive(page_size=2, max_requests=400)  # about 150 requests, far more than one a second allows
+    assert result.status == "ok" and len(times) > 100
+    counter, previous, peak = Decimal(0), times[0], Decimal(0)
+    for moment in times:  # replay the requests against a model of Kraken's counter (decay 0.33 a second, cost 1)
+        elapsed = Decimal(str((moment - previous).total_seconds()))
+        counter = max(Decimal(0), counter - elapsed * Decimal("0.33")) + 1
+        previous, peak = moment, max(peak, counter)
+    assert peak <= 13  # the limiter keeps two points of headroom below Kraken's maximum of 15
+    assert max(rig.sleeper.waits) > Decimal(3) and min(rig.sleeper.waits) == Decimal("1.000")  # sped up, then eased off
+
+
 def test_a_rate_limit_answer_is_waited_out_and_the_same_page_is_asked_again(store) -> None:
     trades = long_gap(store, hours=2)
     rig = Rig(store, trades, hook=rate_limit_once)
@@ -789,6 +964,32 @@ def test_a_persistent_transport_failure_stops_the_pair_and_keeps_what_was_saved(
     assert pair["intervals"]["15"]["next_open_unix"] > T0
 
 
+@pytest.mark.parametrize("message", [
+    "public response exceeded its byte limit", "public response exceeded its elapsed deadline",
+    "public response used unsupported content encoding", "public response encoding was invalid",
+])
+def test_an_answer_the_transport_refuses_is_a_transport_error_that_was_sent_and_is_retried(store, message) -> None:
+    """Not ``invalid_request``: that reason means the request could not be built and nothing was sent."""
+    trades = long_gap(store, hours=2)
+    rig = Rig(store, trades, hook=lambda call, url: ValidationFailure(message) if call >= 3 else None)
+    result = rig.drive(page_size=25)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "transport_error" and message in pair["message"]
+    assert len(rig.script.calls) == 2 + 3 and result.report["requests"]["transport_errors"] == 3
+    assert result.status == "partial" and pair["intervals"]["15"]["next_open_unix"] > T0
+    assert rig.sleeper.waits  # backed off between the tries, like any other transport failure
+
+
+def test_one_refused_answer_is_retried_after_a_back_off_and_the_run_finishes(store) -> None:
+    trades = long_gap(store, hours=2)
+    rig = Rig(store, trades,
+              hook=lambda call, url: ValidationFailure("public response exceeded its elapsed deadline")
+              if call == 3 else None)
+    result = rig.drive(page_size=25)
+    assert result.status == "ok" and result.report["requests"]["transport_errors"] == 1
+    assert Decimal("9.091") in rig.sleeper.waits and rig.script.calls[2] == rig.script.calls[3]
+
+
 @pytest.mark.parametrize(("hook", "reason"), [
     (lambda call, url: ConnectionError("network is down"), "transport_error"),
     (lambda call, url: "<html>Bad gateway</html>", "page_refused"),
@@ -831,6 +1032,58 @@ def test_an_unusable_page_stops_the_pair_with_the_refusal_reason(store) -> None:
     result = rig.drive(page_size=25)
     pair = result.report["pairs"]["BTC/USD"]
     assert pair["stop_reason"] == "page_refused" and pair["refusal_reason"] == "invalid_json"
+
+
+FAR = datetime(2026, 10, 20, tzinfo=UTC)  # after the collector's first synthetic candle has closed
+
+
+def beyond_the_range(store: CandleStore, *, slots: int = 288, days_later: int = 4) -> list[SyntheticTrade]:
+    """A three day range (288 quarter hours) for which the exchange holds trades only from days after its end."""
+    seed(store, collector_first_open=T0 + slots * 900, available=FAR)
+    return steady_trades(5000, T0 + days_later * 86_400, 300, every_seconds=60)
+
+
+def test_a_range_the_exchange_has_no_trades_for_is_not_reported_as_a_clean_run(store) -> None:
+    """No trade before the range end cannot be told apart from history that Kraken no longer serves."""
+    result = Rig(store, beyond_the_range(store), now=FAR).drive()
+    pair = result.report["pairs"]["BTC/USD"]
+    document = pair["intervals"]["15"]
+    assert document["status"] == "complete" and document["decided_slots"] == document["target_slots"] == 288
+    assert document["candles"]["built"] == 0 and document["no_candle_built"] is True
+    assert document["leading_gap_seconds"] == 4 * 86_400
+    assert pair["status"] == "partial" and result.status == "partial"
+    assert "no candle was built for the 15 minute" in pair["message"] and "96 h 0 min after the range start" in pair[
+        "message"]
+    assert pair["first_trade_time"].startswith(str(T0 + 4 * 86_400))  # the report already named the first trade
+
+
+def test_the_leading_gap_is_zero_for_a_range_that_has_trades_from_its_start(store) -> None:
+    two_slot_store(store)
+    result = Rig(store, two_slot_trades()).drive()
+    document = result.report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] == 0 and document["no_candle_built"] is False
+    assert result.status == "ok" and result.report["pairs"]["BTC/USD"]["message"] is None
+
+
+def test_the_leading_gap_counts_from_the_range_start_to_the_first_trade(store) -> None:
+    seed(store, collector_first_open=T0 + 3600)
+    trades = [trade(1, "1000.5", "100.00", "1"), trade(2, "1500", "101.00", "1"), trade(3, "3601", "102.00", "1")]
+    document = Rig(store, trades).drive().report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] == 1000 and document["candles"]["built"] == 1  # only 12:15 had trades
+    assert document["no_candle_built"] is False
+
+
+def test_a_resumed_interval_has_no_leading_gap_to_report(store) -> None:
+    trades = long_gap(store)
+    Rig(store, trades).drive(max_requests=2, page_size=25)
+    document = Rig(store, trades).drive(page_size=25).report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["resumed_from_unix"] is not None and document["leading_gap_seconds"] is None
+
+
+def test_an_exchange_that_returned_nothing_has_no_leading_gap_and_is_not_called_a_gap(store) -> None:
+    two_slot_store(store)
+    document = Rig(store, []).drive().report["pairs"]["BTC/USD"]["intervals"]["15"]
+    assert document["leading_gap_seconds"] is None and document["no_candle_built"] is False  # nothing was decided
 
 
 def test_a_page_for_the_wrong_pair_is_refused(store) -> None:
@@ -894,6 +1147,28 @@ def test_a_full_page_of_only_repeats_stalls_instead_of_looping(store) -> None:
     assert pair["stop_reason"] == "cursor_stalled" and len(rig.script.calls) == 2
     assert pair["intervals"]["15"]["status"] == "partial"
     assert result.status == "failed"  # a failure stop and no slot decided in this run
+
+
+def test_a_timestamp_group_wider_than_a_page_keeps_its_early_members_for_the_comparison(store) -> None:
+    """Page 1 ends inside nine trades that share one instant. Page 2 starts at the group's first trade again and is
+    full of group members, so a third answer is the first to repeat the early ones: they must still be on record."""
+    two_slot_store(store)
+    group = [trade(number, "100.2500000", "100.00", "1") for number in range(4, 13)]
+    trades = [trade(1, "10", "99.00", "1"), trade(2, "20", "99.00", "1"), trade(3, "30", "99.00", "1"), *group,
+              trade(13, "200", "101.00", "1")]
+    cursor = int(Decimal(at("100.25")) * 10**9)
+
+    def hook(call: int, url: str) -> str | None:
+        if call != 3:
+            return None
+        rows = [wire_row(4, "100.50", "1", at("100.25")), *(member.row() for member in group[1:8])]
+        return wire_page(rows, last=cursor)  # the first trade of the group, now with another price
+
+    rig = Rig(store, trades, hook=hook)
+    result = rig.drive(page_size=8)
+    pair = result.report["pairs"]["BTC/USD"]
+    assert len(rig.script.calls) == 3 and pair["stop_reason"] == "boundary_mismatch"
+    assert pair["trades_used"] == 11 and pair["duplicate_trades"] == 5  # only page 2 was applied: it repeated 4 to 8
 
 
 def test_time_going_backwards_between_pages_is_refused(store) -> None:
@@ -970,14 +1245,46 @@ def test_a_second_pass_over_the_same_data_adds_no_revisions(store) -> None:
 
 @pytest.mark.parametrize("kwargs", [
     {"symbols": ()}, {"symbols": ("BTC/EUR",)}, {"symbols": ("btc/usd",)}, {"symbols": ("USDT/USD",)},
-    {"symbols": ("USDC/USD",)}, {"symbols": ("BTC/USD", "BTC/USD")}, {"intervals": ()}, {"intervals": (7,)},
+    {"symbols": ("USDC/USD",)}, {"symbols": ("EUR/USD",)}, {"symbols": ("GBP/USD", "BTC/USD")},
+    {"symbols": ("BTC/USD", "BTC/USD")}, {"intervals": ()}, {"intervals": (7,)},
     {"intervals": (15, 15)}, {"intervals": (240,)},
+    {"start": datetime(1969, 12, 31, 23, tzinfo=UTC)}, {"start": datetime(2009, 12, 31, 23, 59, 59, tzinfo=UTC)},
+    {"end": datetime(1970, 1, 1, 2, tzinfo=UTC)}, {"end": datetime(2100, 1, 1, tzinfo=UTC)},
 ])
 def test_a_bad_scope_is_refused_before_any_run_exists(store, kwargs) -> None:
     arguments = {"symbols": ("BTC/USD",), "intervals": (15,), **kwargs}
     with pytest.raises(ValidationFailure):
         BackfillScope(**arguments)
     assert store.runs() == []
+
+
+def test_the_range_may_start_on_the_first_second_of_2010_and_end_just_before_2100() -> None:
+    scope = BackfillScope(symbols=("BTC/USD",), start=datetime(2010, 1, 1, tzinfo=UTC),
+                          end=datetime(2099, 12, 31, 23, 59, 59, tzinfo=UTC))
+    assert scope.start is not None and scope.end is not None
+
+
+class _RefusingClient:
+    """A client whose request cannot even be built: Kraken is never asked, so the failure is local."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch(self, pair_code: str, *, since: int | None, count: int = 1000):
+        self.calls += 1
+        raise ValidationFailure("since must be a non-negative integer")
+
+
+def test_a_request_that_cannot_be_built_stops_the_pair_without_waiting_or_retrying(store) -> None:
+    two_slot_store(store)
+    clock = FrozenClock(NOW)
+    sleeper, client = FakeSleeper(clock), _RefusingClient()
+    result = backfill_trades(store, clock, client, RequestLimiter(clock, sleeper), BackfillScope(symbols=("BTC/USD",)),
+                             max_requests=10, evidence_label="synthetic_fixture")
+    pair = result.report["pairs"]["BTC/USD"]
+    assert pair["stop_reason"] == "invalid_request" and "non-negative" in pair["message"]
+    assert client.calls == 1 and sleeper.waits == [] and result.report["requests"]["transport_errors"] == 0
+    assert result.status == "failed" and pair["status"] == "failed"
 
 
 @pytest.mark.parametrize("kwargs", [

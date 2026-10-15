@@ -127,7 +127,8 @@ class TradeAggregator:
         return state.decided_until
 
     def open_tainted(self, interval: int) -> bool:
-        """Whether the candle now open (or the next one to open) is known to be missing trades."""
+        """Whether the candle now open (or the next one to open, or the one that would open at a finished range's end)
+        is known to be missing trades."""
         state = self._state(interval)
         return state.pending_taint if state.bucket is None else state.bucket.tainted
 
@@ -161,6 +162,9 @@ class TradeAggregator:
             if slot >= state.end:
                 state.finished = True
                 state.decided_until = state.end
+                # Trades missing just before this one may belong to the slot that opens at the end, which a later run
+                # that extends the range starts from; it cannot see them again, so the fact is kept.
+                state.pending_taint = gap_before
                 continue
             if slot < max(state.decided_until, state.bucket.open_unix if state.bucket else 0):
                 raise ValidationFailure("trade times ran backwards")

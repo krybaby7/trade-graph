@@ -62,6 +62,11 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
     cursor = state.cursors.get(target.interval)
     unreached = max(0, (target.end - next_open) // target.step)
     began = target.start if cursor is None else min(cursor, target.end)
+    decided_now = (next_open - began) // target.step
+    first = state.first_trade
+    # Seconds before the first trade this run received. Only a run that began at the range start can say it: a resumed
+    # run's first trade is near its cursor. Slots before that trade are empty, or Kraken no longer serves them.
+    leading_gap = None if cursor is not None or first is None else max(0, int(first.time) - target.start)
     return {
         "status": "complete" if unreached == 0 else "partial",
         "range_start_unix": target.start, "range_end_unix": target.end,
@@ -69,11 +74,15 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
         "range_source": {"start": target.start_source, "end": target.end_source},
         "target_slots": target.slots, "resumed_from_unix": cursor,
         "next_open_unix": next_open, "next_open_utc": iso(next_open),
-        "open_candle_has_id_gap": bool(unreached and state.open_tainted.get(target.interval, False)),
+        "open_candle_has_id_gap": bool(state.open_tainted.get(target.interval, False)),
         "decided_slots": (next_open - target.start) // target.step,
-        "decided_this_run": (next_open - began) // target.step, "unreached_slots": unreached,
+        "decided_this_run": decided_now, "unreached_slots": unreached,
         "unreached_from_utc": iso(next_open) if unreached else None,
         "unreached_to_utc": iso(target.end) if unreached else None,
+        "leading_gap_seconds": leading_gap,
+        # Slots were decided this run, yet no candle came of them and none was withheld: every one of them read as
+        # empty, which looks the same as history that Kraken does not serve (how far back it reaches is unconfirmed).
+        "no_candle_built": decided_now > 0 and not (outcome.built or outcome.withheld_gap or outcome.withheld_receipt),
         "candles": {"built": outcome.built, "saved_inserted": outcome.inserted, "duplicates": outcome.duplicates,
                     "revisions": outcome.revised, "withheld_trade_id_gap": outcome.withheld_gap,
                     "withheld_receipt_before_close": outcome.withheld_receipt},
@@ -81,10 +90,24 @@ def interval_document(store: CandleStore, state: PairState, target: Target) -> d
     }
 
 
+def _empty_range_message(state: PairState, empty: dict[str, dict[str, Any]]) -> str:
+    leading = next(document["leading_gap_seconds"] for document in empty.values())
+    first = state.first_trade
+    hours, minutes = divmod((leading or 0) // 60, 60)
+    where = "" if first is None or leading is None else (
+        f" The first trade Kraken returned is at {iso(int(first.time))}, {hours} h {minutes} min after the range "
+        "start.")
+    return (f"no candle was built for the {', '.join(empty)} minute interval(s): every slot read as empty.{where} "
+            "That cannot be told apart from history Kraken no longer serves or an outage, so check how far back the "
+            "Trades list reaches before treating those slots as having no trades.")
+
+
 def pair_document(store: CandleStore, state: PairState) -> dict[str, Any]:
     intervals = {str(interval): interval_document(store, state, target)
                  for interval, target in sorted(state.targets.items())}
     states = {document["status"] for document in intervals.values()}
+    empty = {interval: document for interval, document in intervals.items() if document.get("no_candle_built")}
+    message = state.message
     if state.not_started:
         status = "not_started"
     elif state.stop_reason in FAILURE_REASONS:
@@ -92,12 +115,14 @@ def pair_document(store: CandleStore, state: PairState) -> dict[str, Any]:
     elif states <= {"no_target"}:
         status = "no_target"
     elif states <= {"complete", "already_covered"}:
-        status = "complete"
+        status = "partial" if empty else "complete"
+        if empty and message is None:
+            message = _empty_range_message(state, empty)
     else:
         status = "partial"
     first, last = state.first_trade, state.last_trade
     return {
-        "pair_code": state.pair_code, "status": status, "stop_reason": state.stop_reason, "message": state.message,
+        "pair_code": state.pair_code, "status": status, "stop_reason": state.stop_reason, "message": message,
         "refusal_reason": state.refusal_reason, "requests": state.requests, "pages": state.pages,
         "trades_received": state.received, "trades_used": state.used, "duplicate_trades": state.duplicates,
         "unexpected_overlap": state.unexpected_overlap,

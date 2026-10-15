@@ -22,6 +22,12 @@ order, uses a key, or costs money: every request is an unauthenticated public GE
   counter went over its maximum; `EService: Throttled: <unix time>` means too many concurrent requests and names the
   time to retry after. The page gives no backoff recipe or ban duration.
 
+Both pages were read again on 2026-10-15 and still say the above. The only addition is two optional Trades
+parameters, `asset_class` (for tokenized, non-crypto pairs) and `assetVersion` (switches result keys to display names
+such as `BTC/USD`). The backfill sends neither, so it keeps receiving the legacy keys (`XXBTZUSD`) it was recorded with.
+The pages still do not say whether `since` is inclusive, what the unit of `last` is, how far back Trades reaches, or
+whether unauthenticated calls count toward the counter.
+
 What the pages **do not** say, and what was therefore observed on 2026-10-13 from the recordings
 ([`tests/fixtures/kraken/README.md`](../tests/fixtures/kraken/README.md)):
 
@@ -43,7 +49,8 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 
 1. **Target range.** For each pair and interval: from the end of the archive series (last archive candle's close) to
    the start of the collector series (its first candle's open), both read from the store's series summaries. `--start`
-   and `--end` replace either bound and are aligned inward to the interval. A bound that is neither in the store nor
+   and `--end` replace either bound and are aligned inward to the interval; both must lie from 2010-01-01 up to
+   2100-01-01 (a usage error otherwise, before any run is recorded). A bound that is neither in the store nor
    given is reported (`no_target`, with the sentence saying which), never guessed. If the archive ends after the
    collector starts there is no gap (`already_covered`; use `reconcile-candles`).
 2. **One stream, every interval.** Trades are fetched oldest first, 1000 per request, `since` = the range start
@@ -60,7 +67,10 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 5. **Receipt time.** `available_at` is the injected clock read after the network call of the page whose trades
    completed the candle. Archive and backfilled candles are available at fetch time, not at their historical close.
    If a page arrives with a receipt earlier than a candle's close (a slow clock) that candle is withheld and counted
-   (`withheld_receipt_before_close`), never backdated.
+   (`withheld_receipt_before_close`), never backdated. Unlike a candle withheld for an id gap, it is **not decided**:
+   the cursor stays on the oldest such candle, the stop `message` says how many were held back, and the next run
+   (with a correct clock) rebuilds it. Candles after it that were already stored come back as duplicates, so a clock
+   fault never leaves a permanent hole, and `--from-start` is not needed to recover from it.
 6. **The boundary trade.** Because `since` is inclusive, the page after a full page begins with the trades that share
    the previous page's final timestamp. A trade is consumed once, by id: a row whose id is at or below the highest
    consumed id is a repeat. A repeat must equal the row already consumed (the whole row); the
@@ -85,8 +95,9 @@ halve (every time would double). `LimiterSettings.cost` is the one number to cha
 Every run is recorded with `kind = "trades_backfill"`, `source = "kraken_public_trades"` and an evidence label
 (`live_public`, or `live_public_smoke` under `--smoke`; tests use `recorded_public_fixture` or
 `synthetic_fixture`). Its report holds, for each pair and interval, `range_start_unix`, `range_end_unix` and
-`next_open_unix`: **every slot before `next_open_unix` was decided** (stored, empty, or withheld). It is the open
-time of the oldest candle that was still forming when the run stopped.
+`next_open_unix`: **every slot before `next_open_unix` was decided** (stored, empty, or withheld for an id gap). It
+is the open time of the oldest candle that was still forming when the run stopped, or of the oldest candle held back
+by a slow clock (`unreached_slots` then counts from there, although later candles may already be stored).
 
 The next run reads it with `store.runs()`: `read_resume_points(store, symbol, pair_code, interval, range_start=...)`
 returns the highest `next_open_unix` among finished runs that covered the same venue pair code and began at or
@@ -96,7 +107,11 @@ so no partly built candle is ever stored. The cost is re-fetching at most one ca
 interval. The one thing the re-fetch cannot rebuild is a gap in trade ids just before the candle it starts at (the
 trade before it is not fetched again), so each interval's entry also records `open_candle_has_id_gap`: whether the
 candle still forming at the stop was already known to lack trades. The next run starts that candle tainted, so it is
-withheld exactly as an uninterrupted run would have withheld it. A cursor written without this flag counts as flagged
+withheld exactly as an uninterrupted run would have withheld it. The same holds when a range was completed and is
+later extended (a new `--end`): if trades were missing just before the trade that proved the range complete, the
+flag of that finished interval is true, because the missing trades may belong to the slot that opens at the old
+end, and the extending run starts that slot tainted. So extending a range stores the same candles as one run over
+the whole range. A cursor written without this flag counts as flagged
 (unknown withholds), and when several runs ended on the same cursor any flagged one counts. `--from-start` ignores stored cursors. A run that never finished (for
 example a power cut) has no report and gives no cursor; the next run then starts from the range start and the store
 turns repeated candles into no-ops. Ctrl-C and a termination request (SIGTERM) do finish and record the run.
@@ -107,13 +122,14 @@ Each pair ends with exactly one `stop_reason`:
 
 | `stop_reason` | Meaning |
 |---|---|
-| `end_reached` | A trade at or after every interval's range end was seen: the range is complete. |
+| `end_reached` | A trade at or after every interval's range end was seen: the range was read to its end. It is complete unless a slow clock held candles back; then the `message` says how many and the interval stays `partial` until the next run builds them. |
 | `max_requests` | The request budget was spent. A pair that never got a request is `not_started`. If the run decided no slot at all (the budget was smaller than the requests one whole candle needs, because a run restarts at the open candle), the pair's `message` says so and the command repeats it on the error stream: raise `--max-requests`. `--smoke` (3 requests) is for a first look at one pair and may end this way on a busy pair. |
 | `stream_exhausted` | Kraken had no further trades yet, before the range end (the final partial candle is not built). |
 | `rate_limited` | Kraken still answered `EAPI:Rate limit exceeded` or `EService: Throttled` after two waits. |
 | `rate_limit_wait_too_long` | The required wait exceeded 120 seconds. The whole run stops instead of sleeping on: pairs not yet started are reported `not_started` with this reason and get no request, so a long pause asked for by Kraken is not probed once per remaining pair. |
-| `transport_error` | The HTTP request failed three times (two back-off retries). |
+| `transport_error` | The HTTP request failed three times (two back-off retries). This includes an answer the transport refused after the request was sent: too large, too slow, in an unsupported encoding or character set. |
 | `page_refused` | The page failed validation; `refusal_reason` names why (for example `invalid_json`, `pair_mismatch`, `kraken_error`, `row_invalid`). |
+| `invalid_request` | The request could not be built (a bug or an out-of-range input that got past the checks), so nothing was sent. It is not waited out or retried, and it is not counted as a transport error; the attempt counts toward the request budget. |
 | `cursor_stalled` | A full page contained only trades already consumed. |
 | `cursor_regressed` | The returned cursor went backwards. |
 | `boundary_mismatch` | A repeated trade differed from the one consumed earlier. |
@@ -131,6 +147,15 @@ The `refusal_reason` of a `page_refused` stop is one of `response_too_large`, `i
 
 Candles already saved stay saved in every case. The report also lists `not_reached` (pair, interval, slot count and
 time span) and, for the decided part, the store's own coverage with the 25 largest empty ranges.
+
+A range can be read to its end and still produce nothing: if the first trade Kraken returns lies far after the range
+start, or after its end, every slot reads as empty, and that cannot be told apart from history Kraken no longer serves
+(how far back Trades reaches is unconfirmed) or from an outage. Each interval therefore reports `leading_gap_seconds`
+(the range start to the first trade this run received; null on a resumed run or when no trade came) and
+`no_candle_built` (slots were decided in this run, yet no candle was built or withheld). When `no_candle_built` is true
+the interval stays `complete` (every slot was decided) but the pair is `partial`, the run is `partial` instead of `ok`,
+and the pair `message` says so. A genuinely quiet pair over a short range can trigger it too; the first trade time and
+the leading gap show which case it is.
 
 ### Rate limiting
 
@@ -217,15 +242,20 @@ uv run --frozen trade-graph reconcile-candles --pair BTC/USD --interval 15 --cou
 ```
 
 Both take `--market-database` (default `runtime/market_data.sqlite`), refuse the financial database
-(`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report.
+(`trade_graph.sqlite`) and any SQLite file that is not a candle-history file, and print one JSON report. The store
+also refuses a folder or file that other users can open (the default `runtime/` often is): that is a usage error
+(exit 2) which names the `chmod 700` / `chmod 600` fix and changes nothing, before any request is made.
 `backfill-kraken-trades` exits 0 when the run was recorded (status `ok` or `partial`), 1 when nothing could be done
 (`failed`), 2 for a usage error, 130 after Ctrl-C and 143 after SIGTERM. A run is `failed` when no range could be planned, or when a pair
 stopped for a failure reason (the table above: everything except `end_reached`, `max_requests`, `stream_exhausted`,
 `no_target` and `already_covered`) and no slot was decided in this run (`decided_this_run` is 0 in every interval).
 Real progress keeps `partial` even if a later request failed, so a scheduler can tell a dead network from a slow day.
+After Ctrl-C or SIGTERM the command prints the report of the run it began. If the stop came before that run was
+recorded it prints `{"run_id": null, "status": "interrupted"}`, and if the run began but its report was not saved it
+prints status `interrupted` with its `run_id`; an earlier run is never shown in its place.
 `reconcile-candles` refuses a missing file instead of creating
 it. Pair names may be written `BTC/USD` or `XBTUSD`; stablecoin pairs such as `USDT/USD` are refused as a typing
-guard only. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.
+guard only, and currency pairs such as `EUR/USD` are refused because they are not coins. The authority on stablecoin and yield-token exclusion (D131) is the collector's dated pair catalog.
 
 ## Evidence and what is not proven
 

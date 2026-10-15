@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 import stat
+import struct
 import zipfile
 import zlib
 from collections import Counter
@@ -40,9 +41,26 @@ _INTEGER = re.compile(r"-?[0-9]{1,18}")
 # At most 21 digits and a two-digit exponent keep the fixed-point width under the Candle contract's 128.
 _DECIMAL = re.compile(r"-?[0-9]{1,20}(?:\.[0-9]{1,20})?(?:[eE][+-]?[0-9]{1,2})?")
 _PAIR_ALIASES = {"XBT": "BTC", "XDG": "DOGE"}
+# National currencies that Kraken also quotes against the dollar (EURUSD, GBPUSD, ...). They are not coins, so they are
+# never stored as one. Stablecoins are deliberately not listed: excluding them (D131) is the scanner's decision.
+FIAT_BASES = frozenset({"AED", "AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"})
+# Kraken's older REST ids: X before a crypto asset (XXBTZUSD), Z before a currency (ZEURZUSD), and Tether's one odd id.
+# Only these exact shapes are unwrapped, because a coin such as XTZ also ends its pair code in 'ZUSD'.
 _LEGACY_USD = re.compile(r"X([A-Z]{3})ZUSD")
+_LEGACY_CURRENCY_USD = re.compile(r"Z([A-Z]{3})ZUSD")
+_LEGACY_TETHER = "USDTZUSD"
 _BASE = re.compile(r"[A-Z0-9]{1,16}")
 _ALLOWED_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+# ZIP end-of-central-directory record (22 bytes), its zip64 locator (20) and the zip64 record (56).
+_EOCD = struct.Struct("<4s4H2LH")
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_EOCD64_LOCATOR = struct.Struct("<4sLQL")
+_EOCD64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_EOCD64 = struct.Struct("<4sQ2H2L4Q")
+_EOCD64_SIGNATURE = b"PK\x06\x06"
+_ZIP_MAX_COMMENT = 0xFFFF
+# A directory entry is 46 bytes plus its name (at most 128 here) and any extra field; real archives need far less.
+DIRECTORY_BYTES_PER_MEMBER = 256
 
 REJECTION_REASONS = (
     "malformed_row", "timestamp_out_of_range", "off_grid", "duplicate_timestamp", "out_of_order",
@@ -134,14 +152,26 @@ def symbol_for_pair_code(code: str) -> str | None:
     Kraken's AssetPairs catalog; this function can later be replaced by a catalog lookup without other changes.
     """
     legacy = _LEGACY_USD.fullmatch(code)
+    currency = _LEGACY_CURRENCY_USD.fullmatch(code)
     if legacy is not None:
         base = legacy.group(1)
+    elif currency is not None:
+        base = currency.group(1)
+        if base not in FIAT_BASES:  # a Z-wrapped id is only ever a currency; anything else is not understood
+            return None
+    elif code == _LEGACY_TETHER:
+        base = "USDT"
     elif code.endswith("USD") and len(code) > 3:
         base = code[:-3]
     else:
         return None
     base = _PAIR_ALIASES.get(base, base)
     return f"{base}/USD" if _BASE.fullmatch(base) else None
+
+
+def is_fiat_symbol(symbol: str) -> bool:
+    """Whether the base of a symbol such as 'EUR/USD' is a national currency rather than a coin."""
+    return symbol.split("/")[0] in FIAT_BASES
 
 
 # --- rows ----------------------------------------------------------------------------------------------------------
@@ -242,8 +272,11 @@ class MemberReader:
                         self.first_open = row.open_unix
                     self.last_open = row.open_unix
                     yield row
-        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
-            raise ArchiveRejected("corrupt_member", f"{_shown(member.name)} is damaged or truncated") from error
+        except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as error:
+            # OSError: zipfile seeks to a stored offset, and bytes missing from the middle of the file (a mis-joined
+            # download) make that offset invalid; a failing disk read lands here too.
+            raise ArchiveRejected("corrupt_member", f"{_shown(member.name)} is damaged, truncated or unreadable"
+                                  ) from error
 
     def _lines(self, stream: BinaryIO) -> Iterator[bytes]:
         member, limits = self.member, self._archive.limits
@@ -282,11 +315,63 @@ def _member(name: str, size: int, compressed: int) -> ArchiveMember:
                          interval_minutes=None if parsed is None else parsed[1])
 
 
+def declared_directory(path: Path) -> tuple[int, int] | None:
+    """(entries, bytes) of the ZIP central directory as its end-of-central-directory record declares them.
+
+    ``None`` when the record cannot be read; the normal ZIP open then decides what the file is. The record is found
+    the way ``zipfile`` finds it, and a record that says 0xFFFF or 0xFFFFFFFF is completed from the zip64 record.
+    """
+    try:
+        with open(path, "rb") as stream:
+            size = stream.seek(0, os.SEEK_END)
+            tail_start = max(0, size - _ZIP_MAX_COMMENT - _EOCD.size)
+            stream.seek(tail_start)
+            tail = stream.read()
+            end = len(tail) - _EOCD.size
+            if end < 0 or tail[end:end + 4] != _EOCD_SIGNATURE or tail[-2:] != b"\0\0":
+                end = tail.rfind(_EOCD_SIGNATURE)  # a record followed by a comment
+            if end < 0 or len(tail) - end < _EOCD.size:
+                return None
+            _, _, _, _, entries, directory_bytes, offset, _ = _EOCD.unpack_from(tail, end)
+            if entries == 0xFFFF or directory_bytes == 0xFFFFFFFF or offset == 0xFFFFFFFF:
+                locator_at = tail_start + end - _EOCD64_LOCATOR.size
+                if locator_at < 0:
+                    return None
+                stream.seek(locator_at)
+                signature, _, record_at, _ = _EOCD64_LOCATOR.unpack(stream.read(_EOCD64_LOCATOR.size))
+                if signature != _EOCD64_LOCATOR_SIGNATURE:
+                    return None
+                stream.seek(record_at)
+                fields = _EOCD64.unpack(stream.read(_EOCD64.size))
+                if fields[0] != _EOCD64_SIGNATURE:
+                    return None
+                entries, directory_bytes = fields[7], fields[8]
+    except (OSError, struct.error, OverflowError, ValueError):  # an offset that no file can have is not a record
+        return None
+    return entries, directory_bytes
+
+
+def _require_small_directory(path: Path, limits: ArchiveLimits) -> None:
+    """Refuse a ZIP whose directory is too large before ``zipfile`` builds an object for every entry in it."""
+    declared = declared_directory(path)
+    if declared is None:
+        return
+    entries, directory_bytes = declared
+    if entries > limits.max_members:
+        raise ArchiveRejected("member_limit", f"the archive has {entries} members, over the limit of "
+                              f"{limits.max_members}")
+    # The count in the record can be wrong, so the size of the directory bounds what is loaded as well.
+    if directory_bytes > limits.max_members * DIRECTORY_BYTES_PER_MEMBER:
+        raise ArchiveRejected("member_limit", f"the archive's file directory is {directory_bytes} bytes, more than "
+                              f"{limits.max_members} members can need")
+
+
 class ZipArchive:
     format = "zip"
 
     def __init__(self, path: Path, limits: ArchiveLimits) -> None:
         self.limits = limits
+        _require_small_directory(path, limits)
         try:
             self._zip = zipfile.ZipFile(path)
         except zipfile.BadZipFile as error:
@@ -406,9 +491,20 @@ def archive_signature(path: Path | str) -> tuple:
 
 
 def fingerprint_archive(path: Path | str) -> ArchiveFingerprint:
-    """File name, size and streamed SHA-256. A directory hashes its files' names, sizes and SHA-256 values."""
+    """File name, size and streamed SHA-256. A directory hashes its files' names, sizes and SHA-256 values.
+
+    A path that cannot be read (no permission, a file that vanishes while it is hashed) is refused as ``not_a_file``.
+    """
     path = Path(path)
     kind = _classify_path(path)
+    try:
+        return _fingerprint(path, kind)
+    except OSError as error:
+        raise ArchiveRejected("not_a_file", f"the archive cannot be read: {error.strerror or type(error).__name__}"
+                              ) from error
+
+
+def _fingerprint(path: Path, kind: str) -> ArchiveFingerprint:
     signature = archive_signature(path)
     if kind == "zip":
         with open(path, "rb") as stream:

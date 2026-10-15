@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import socket
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from tests.archive_support import FIRST_OPEN, csv_text, synthetic_rows, write_zip
+from tests.archive_support import FIRST_OPEN, csv_text, synthetic_rows, unreadable, write_zip
 
 from trade_graph import cli, market_data_cli
 from trade_graph.adapters.market.kraken_archive import ARCHIVE_SOURCE
@@ -123,9 +124,27 @@ def test_a_refused_file_prints_the_failed_report_and_exits_1(tmp_path, capsys, a
     assert report["reason"] in {"member_size_limit", "total_size_limit"} and report["run_id"] == 1
 
 
+def test_a_zip_with_bytes_missing_from_the_middle_exits_1_with_json_not_a_traceback(tmp_path, capsys) -> None:
+    path = write_zip(tmp_path / "Kraken_OHLCVT_2026Q3_joined.zip", {
+        "XBTUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15)),
+        "ETHUSD_15.csv": csv_text(synthetic_rows(FIRST_OPEN, 2500, 15, seed=2))})
+    raw = path.read_bytes()
+    path.write_bytes(raw[:1000] + raw[1000 + 4096:])
+    code, report = _run(capsys, "--archive", str(path), "--market-database", str(_database(tmp_path)))
+    assert code == 1 and report["status"] == "failed" and report["reason"] == "corrupt_member"
+    assert report["run_id"] == 1
+
+
 def test_a_missing_file_exits_1_with_a_reason_and_no_run(tmp_path, capsys) -> None:
     code, report = _run(capsys, "--archive", str(tmp_path / "absent.zip"),
                         "--market-database", str(_database(tmp_path)))
+    assert code == 1 and report["status"] == "failed" and report["reason"] == "not_a_file"
+    assert report["run_id"] is None
+
+
+def test_an_unreadable_file_exits_1_with_not_a_file_json_and_no_run(tmp_path, capsys, archive) -> None:
+    with unreadable(archive):
+        code, report = _run(capsys, "--archive", str(archive), "--market-database", str(_database(tmp_path)))
     assert code == 1 and report["status"] == "failed" and report["reason"] == "not_a_file"
     assert report["run_id"] is None
 
@@ -178,8 +197,46 @@ def test_an_existing_candle_file_is_accepted_again(tmp_path, capsys, archive) ->
     assert second["same_file_seen_in_runs"] == [1]
 
 
+def test_a_candle_folder_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys, archive) -> None:
+    """The default runtime/ folder often exists with open permissions; the owner must not meet a traceback."""
+    folder = tmp_path / "open folder"
+    folder.mkdir()
+    folder.chmod(0o755)
+    database = folder / "market_data.sqlite"
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 700 {shlex.quote(str(folder))}" in message
+    assert not database.exists() and folder.stat().st_mode & 0o777 == 0o755
+
+
+def test_a_candle_file_that_is_not_private_is_a_usage_error_that_names_the_fix(tmp_path, capsys, archive) -> None:
+    database = _database(tmp_path)
+    MarketDataDatabase(database).close()
+    database.chmod(0o644)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(database)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2
+    assert "must be private" in message and f"chmod 600 {shlex.quote(str(database))}" in message
+    assert database.stat().st_mode & 0o777 == 0o644  # the command only explains; it never changes permissions
+
+
+def test_a_symlinked_candle_file_is_a_usage_error_without_a_permission_hint(tmp_path, capsys, archive) -> None:
+    real = _database(tmp_path)
+    MarketDataDatabase(real).close()
+    link = real.parent / "linked.sqlite"
+    link.symlink_to(real)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["import-kraken-archive", "--archive", str(archive), "--market-database", str(link)])
+    message = capsys.readouterr().err
+    assert stopped.value.code == 2 and "symlinks" in message and "chmod" not in message
+
+
 @pytest.mark.parametrize("arguments", [
-    ["--intervals", "7"], ["--intervals", "abc"], ["--intervals", ""], ["--pairs", "BTC/EUR"], ["--quarter", "Q3"],
+    ["--intervals", "7"], ["--intervals", "abc"], ["--intervals", ""], ["--pairs", "BTC/EUR"], ["--pairs", "EUR/USD"],
+    ["--quarter", "Q3"],
     ["--max-uncompressed-gb", "0"], ["--max-uncompressed-gb", "-1"], ["--max-uncompressed-gb", "lots"],
     ["--max-uncompressed-gb", "100000"], ["--expected-pairs", "ETHXBT"],
     ["--max-uncompressed-gb", "NaN"], ["--max-uncompressed-gb", "-NaN"], ["--max-uncompressed-gb", "sNaN"],

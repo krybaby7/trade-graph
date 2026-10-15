@@ -152,6 +152,29 @@ def test_the_open_taint_follows_the_open_candle() -> None:
     assert not aggregator.open_tainted(15)
 
 
+def test_a_gap_before_the_trade_that_ends_the_range_is_remembered_for_the_slot_that_opens_there() -> None:
+    aggregator = TradeAggregator({15: T0, 60: T0}, {15: T0 + 900, 60: T0 + 3600})
+    aggregator.feed(trade("10", "10", "1"), gap_before=False)
+    done = aggregator.feed(trade("905", "11", "1"), gap_before=True)  # trades missing, then the first trade past 15 min
+    assert [(c.interval, c.tainted) for c in done] == [(15, True)]
+    assert aggregator.next_open(15) == T0 + 900 and aggregator.open_tainted(15)  # finished; its end slot is suspect
+    assert not aggregator.finished and aggregator.open_tainted(60)  # the hour candle is open and tainted by the gap
+
+
+def test_a_clean_trade_past_the_end_leaves_the_slot_at_the_end_clean() -> None:
+    aggregator = TradeAggregator({15: T0}, {15: T0 + 900})
+    aggregator.feed(trade("10", "10", "1"), gap_before=False)
+    done = aggregator.feed(trade("905", "11", "1"), gap_before=False)
+    assert [c.tainted for c in done] == [False] and aggregator.finished and not aggregator.open_tainted(15)
+
+
+def test_a_carried_taint_is_replaced_at_the_end_by_what_the_ending_trade_shows() -> None:
+    """The interval is carried in tainted but no trade ever opened its candle: only the ending trade's gap counts."""
+    aggregator = TradeAggregator({15: T0}, {15: T0 + 900}, tainted_open=[15])
+    aggregator.feed(trade("905", "11", "1"), gap_before=False)
+    assert aggregator.finished and not aggregator.open_tainted(15)
+
+
 def test_a_carried_taint_stays_pending_until_a_trade_in_range_opens_the_candle() -> None:
     aggregator = TradeAggregator({15: T0 + 900}, far_end(), tainted_open=[15])
     aggregator.feed(trade("10", "10", "1"), gap_before=False)  # before the floor: the pending taint is untouched

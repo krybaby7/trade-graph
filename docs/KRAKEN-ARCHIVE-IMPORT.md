@@ -29,7 +29,7 @@ data](https://support.kraken.com/hc/en-us/articles/360047124832-Downloadable-his
 Read on 2026-10-13 through a web-fetch tool that summarises the page, twice (once per address), with identical
 results; it was not opened in a browser and nothing was downloaded. The page showed "last updated October 12,
 2026"; a search-engine snippet of an older copy said April 26, 2026, so re-read the page before relying on the file
-list below.
+list below. A further fetch later the same day returned the same file list, host, columns, header and gap facts.
 
 | Fact | What the page says |
 |---|---|
@@ -65,6 +65,20 @@ report lists these assumptions every time. Treat them as open until a real file 
   quarter's rows (the report counts rows outside the stated quarter, `rows_outside_quarter`), and whether delisted
   pairs appear at all (assumed absent, per D119).
 
+### Two other pages read, and one disagreement
+
+- Kraken's API guide, [Historical data](https://docs.kraken.com/exchange/guides/general/historical-data) (read again
+  2026-10-13 for this document), says Kraken "does not provide a bulk historical data dump" and points to the public
+  REST endpoints. It gives no file names, sizes, column order, header or timestamp unit for any download. That
+  contradicts the support article, which lists the downloadable files above. The support article is newer in content
+  (it names the 2026 quarterly files and links the files itself), so this document follows it, but the disagreement
+  is a reason to confirm that a link works before relying on it, and to treat every layout fact above as unconfirmed
+  until a real file has been opened.
+- The Concretum guide (third party, unofficial) also says delisted, dead and short-lived assets are missing, which
+  matches the survivorship sentence, and says some of the downloadable files are larger than 7 GB without saying
+  which (probably an older full archive). Its sample row begins `1381095240`, a 2013 Unix-seconds value on the
+  one-minute grid.
+
 ## What the importer does
 
 1. **Fingerprint.** The file name, size and SHA-256 are computed by streaming. A directory of CSV files (used by tests)
@@ -72,7 +86,11 @@ report lists these assumptions every time. Treat them as open until a real file 
    `2026-q3`) or from `--quarter`; a name like `Kraken_OHLCVT_Full.zip` is a complete archive with no quarter.
 2. **Select.** Only USD-quoted pairs at the chosen intervals (default 15 and 60 minutes; 1 and 5 are opt-in
    because they are very large; the other intervals are skipped and counted). Other quote currencies, files
-   not requested through `--pairs`, and unrecognised members are counted. Stablecoin pairs such as `USDT/USD` are
+   not requested through `--pairs`, and unrecognised members are counted. Currency pairs such as `EURUSD`, `GBPUSD`
+   or `AUDUSD` (the base is a national currency: AED, AUD, CAD, CHF, EUR, GBP, JPY, NZD, USD) end in `USD` but are
+   not coins: they are skipped at every interval, counted as `skipped.fiat_files`, left out of `usd_pairs_found`
+   and never stored, and naming one in `--pairs` is a usage error. (Whether the real archive holds any is
+   unconfirmed; the file has not been opened.) Stablecoin pairs such as `USDT/USD` are
    imported if present; the exclusion in D131 belongs to the scanner (T31) using the collector's catalog marks.
    Pass `--pairs` to keep any pair out of storage.
 3. **Scan (pass one).** Every in-scope row is parsed and checked; nothing is written. The file is refused whole if
@@ -96,7 +114,11 @@ report lists these assumptions every time. Treat them as open until a real file 
 
 `symbol_for_pair_code` is the one place pair names are read: `XBTUSD` becomes `BTC/USD`, `XDGUSD` becomes `DOGE/USD`,
 legacy `XXBTZUSD` becomes `BTC/USD`, everything else ending in `USD` keeps its base (`1INCHUSD` becomes
-`1INCH/USD`). The venue pair code is kept as `source_pair` (a stored series can never change it). The collector
+`1INCH/USD`; `EURUSD` becomes `EUR/USD`, which the selection step then skips as a currency pair). Kraken's older
+REST ids are read the same way: `ZEURZUSD` is the currency pair `EUR/USD` (skipped, counted under `fiat_files`), `USDTZUSD`
+is `USDT/USD`, and any other Z-wrapped id is not understood and is counted as a non-USD file. `EURTUSD` is a coin
+(Tether's euro token), not a currency. The venue pair
+code is kept as `source_pair` (a stored series can never change it). The collector
 stream reads names from Kraken's AssetPairs catalog; this function is isolated so it can be replaced by a catalog
 lookup. Two files mapping to one series (for example `XBTUSD_15.csv` and `XXBTZUSD_15.csv`) refuse the file
 (`ambiguous_pair_codes`).
@@ -135,7 +157,7 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 | `unsafe_member_type` | a member is a symbolic link or other special entry (or a folder, for a directory source) |
 | `duplicate_member_name` | two members share a name |
 | `unsupported_member` | an in-scope member is encrypted or uses a compression other than stored or deflate |
-| `corrupt_member` | a member is damaged or truncated (failed checksum or unreadable data) |
+| `corrupt_member` | a member is damaged, truncated or unreadable (failed checksum, bytes missing from inside a joined file, or a read error) |
 | `member_limit` | more members than the limit |
 | `member_size_limit` | an in-scope member declares or inflates past the per-member limit |
 | `total_size_limit` | in-scope data inflates past the total limit |
@@ -154,6 +176,7 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 | Limit | Default |
 |---|---|
 | members in the archive | 50,000 |
+| size of the ZIP file directory | 256 bytes per allowed member (12.8 MB at the default) |
 | uncompressed size of one member | 2 GiB |
 | uncompressed size in total, actually read | 16 GiB (`--max-uncompressed-gb`, up to 1024) |
 | rows in total | 400,000,000 |
@@ -163,17 +186,21 @@ and `multipart_archive`, which are refused before a run exists and report `run_i
 
 Nothing is ever extracted to disk and no temporary file is written: ZIP members are streamed through a bounded
 read buffer, and names are checked against an allowlist and never used to build a path. Members that are not read
-(other pairs, other intervals) are never decompressed. A test with sockets disabled, and a static test over the
-modules and everything they import, fail if the importer touches `socket`, `http`, `urllib`, `httpx`, `requests`,
-`ssl` or similar.
+(other pairs, other intervals) are never decompressed. The member count and the size of a ZIP's file directory are
+read from its end-of-central-directory record and checked before the directory is loaded, so an archive with hundreds
+of thousands of entries is refused without loading them. A test with sockets disabled, and a static test over the
+modules and everything they import, enforce that the importer cannot download: the static test allows only a short
+list of standard libraries (anything else, such as `socket`, `asyncio`, `ctypes` or `urllib`, fails it) and refuses
+calls that start a program (`os.system`, `os.popen`, `os.exec*`, `os.spawn*`) or run text as code (`eval`, `exec`,
+`__import__`).
 
 ## Reports and exit codes
 
 `trade-graph import-kraken-archive` prints one JSON document. Top level: `run_id`, `status`, `archive` (name, size,
 SHA-256, format, kind, quarter, members, USD pairs found), `scope`, `imported_at_utc`, `totals`
 (rows read, accepted, rejected, dropped, inserted, duplicates, revisions, rows outside the quarter), `rejected_by_reason`,
-`rejected_share`, `skipped` (counts of non-USD files, files not requested, intervals not selected, unrecognised member
-names), `same_file_seen_in_runs`, `expected_pairs`, `assumptions`, `survivorship_notice` and `series`.
+`rejected_share`, `retraction_check`, `skipped` (counts of non-USD files, currency-pair files, files not requested, intervals not selected,
+unrecognised member names), `same_file_seen_in_runs`, `expected_pairs`, `assumptions`, `survivorship_notice` and `series`.
 
 Each entry in `series` (one per pair and interval) has rows read, accepted, rejected with reasons, dropped, `inserted`,
 `duplicates`, `revisions`, first and last open time, and `coverage`: the candle store's own coverage over the imported
@@ -182,9 +209,10 @@ largest, in time order) with `missing_ranges_total` giving the real count. A mis
 the report cannot tell a quiet interval from a row absent from the file and does not guess.
 
 `status`: `ok` when every in-scope row was stored or was an identical duplicate; `partial` when some rows were rejected
-or dropped, or when the store already holds archive candles inside a file's first-to-last span that the file does not
-contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
-reason and the recorded run), 2 for a usage error.
+or dropped, or when the store already holds archive candles inside a file's first-to-last span, or elsewhere in its
+known quarter, that the file does not contain (`stored_slots_not_in_file`, per series and in `totals`); `failed` for a refused file. Exit code 0 for `ok` and `partial`, 1 for a refusal (the JSON names the
+reason and the recorded run), 2 for a usage error (a bad option, a web address instead of a file, the financial
+database, or a candle folder or file that is not private).
 
 ### Repeat and changed imports
 
@@ -196,10 +224,18 @@ readable, and `point_in_time` reads at an earlier time still see the earlier rev
 **A row a corrected file no longer has is not retracted.** The store is append-only, so importing a corrected quarter
 that drops a row inserts nothing for it and leaves the old candle in place. The report's `coverage` is the store's, not
 the file's, so it still shows that slot present. To keep that from passing as clean, each series reports
-`stored_slots_not_in_file`: the number of archive candles already stored between the file's first and last candle that
-the file does not contain, and a non-zero value makes the run `partial`. The report does not list which slots; compare
+`stored_slots_not_in_file`: the number of archive candles already stored that the file does not contain, between the
+file's first and last candle and, when the file's quarter is known, anywhere else in that quarter (so rows trimmed from
+either end are counted too). A non-zero value makes the run `partial`. The report does not list which slots; compare
 the two sources with `reconcile-candles` or read the stored series. Resolving it (a new store file, or accepting the old
 candle) is a deliberate step, not something the importer decides.
+
+The report says which check ran in `retraction_check`: `quarter` (the quarter came from the file name or `--quarter`)
+or `file_span`. **Limit:** without a known quarter, as for the complete archive or a file whose name lacks one, there
+is nothing that says where the file should have begun or ended, so rows trimmed from its two ends cannot be seen; name
+a corrected quarterly file so that its name carries the quarter (a rename such as `b.zip` loses it) or pass `--quarter`.
+The check cannot simply cover the whole stored series, because a Q3 file imported after a Q2 file would then be flagged
+for the Q2 candles. Candles of the file that were dropped as unfinished are in the file and are not counted as missing.
 
 ### Missing pairs and survivorship
 
@@ -230,7 +266,16 @@ only with the owner's explicit yes (a download of this size is a file transfer o
    ```
 
 4. **Keep it private and out of Git**, for example in `runtime/archives/` (ignored by Git).
-5. **Import** (a first look with one pair is wise):
+5. **Make the candle folder private once.** The candle-history file lives in `runtime/` by default, and the store
+   refuses a folder or file that other users can open. If `runtime/` already exists with open permissions, the
+   command stops with a usage error that says the folder must be private and prints the fix; it changes nothing
+   itself. Run it yourself and import again:
+
+   ```bash
+   chmod 700 runtime
+   ```
+
+6. **Import** (a first look with one pair is wise):
 
    ```bash
    uv run --frozen trade-graph import-kraken-archive --archive runtime/archives/Kraken_OHLCVT_2026Q3.zip --pairs BTC/USD
@@ -238,7 +283,7 @@ only with the owner's explicit yes (a download of this size is a file transfer o
    ```
 
    Add `--intervals 1,5,15,60` for finer history (large). Re-running is safe.
-6. **Send back the first report** (or the refusal). A refusal in the first minutes usually means one of the
+7. **Send back the first report** (or the refusal). A refusal in the first minutes usually means one of the
    unconfirmed layout assumptions above was wrong, and the report says which member and why.
 
 The first import of a real file is the first real evidence for this stream and should be recorded as such. Everything
