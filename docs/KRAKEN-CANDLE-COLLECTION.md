@@ -92,7 +92,7 @@ financial database stored somewhere other than the default path cannot be recogn
   BTC/USD and ETH/USD), because a quarter of one-minute candles is about 131,000 rows per pair. **This default is
   narrower than the task wording ("1/5/15/60 minutes", build plan: "for every Kraken USD coin") and has not been
   decided by the owner.** `--one-minute-pairs all` collects 1 minute for every eligible pair: on the 591 eligible
-  pairs of 2026-10-13 that is 591 requests per pass (about 33 minutes at the limiter rate; 1-minute data must be
+  pairs of 2026-10-13 that is 591 requests per pass (about 32 minutes at the limiter rate; 1-minute data must be
   fetched at least every 12 hours), about 77.4 million rows and 9.1 GB per quarter on top of the rest. The report
   prints this cost for the run's own scope under `storage` before anything is decided.
 - Coins that nobody has looked at (`not_individually_reviewed`) are collected like the rest. The price-peg
@@ -306,10 +306,18 @@ per source: synthetic test runs and live runs never hold each other back.
 ## Evidence
 
 - Default tests make no network calls (a guard fails any socket use).
-- `recorded_public_fixture`: the 17 recorded responses (trimmed), run through the whole collector.
+- `recorded_public_fixture`: 17 plain requests were recorded; 16 responses are stored (trimmed) in
+  `tests/fixtures/kraken/` (the 17th, a `since=1` probe, returned exactly the same rows as the plain request and
+  is only a manifest entry). The end-to-end test runs 5 pairs at all four intervals, 20 series, through the whole
+  collector: **13 of the 20 series are served from the stored recordings and 7 from the scripted exchange**
+  (LINK and USDUC at 5 and 15 minutes, PAXG at 5, 15 and 60 minutes were not recorded). Only BTC and SOL have all
+  four intervals recorded. The run carries the label `recorded_public_fixture` because most of it is recorded.
 - `synthetic_fixture`: table-built responses from a scripted exchange that behaves like the recordings.
 - `live_public_smoke`: `--smoke` against the real exchange, run once by the implementing agent on 2026-10-13 at
-  15:54 UTC into a throwaway candle file that was not kept. Result: exit 0, status `ok`, 3 requests (pair list 1,
+  15:54 UTC into a throwaway candle file that was not kept. **This result is a statement in this document, not a
+  checkable file: neither the report JSON nor the database was kept, so nobody can verify it from the repository.**
+  Repeating it is one command (3 requests); save its printed report with the status notes to turn it into
+  evidence. Result as the agent reported it: exit 0, status `ok`, 3 requests (pair list 1,
   candles 2), no waiting in the limiter. The pair list had 677 USD pairs, 591 eligible, 0 rejected and 608 base
   coins not individually reviewed. BTC/USD and ETH/USD at 15 minutes each returned 721 rows, 720 candles stored,
   no quiet candles, one unbroken run of 720 slots (2026-10-06 03:45 to 2026-10-13 15:45), and `candle-coverage`

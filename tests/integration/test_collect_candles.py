@@ -766,7 +766,10 @@ def test_recorded_public_responses_for_many_pairs_and_all_four_intervals_are_col
     scope = CollectionScope(symbols=symbols, one_minute_symbols=symbols)
     report = env.collect(scope, label="recorded_public_fixture", transport=recorded)
     assert report["status"] == "ok" and report["evidence_label"] == "recorded_public_fixture"
+    # 13 of the 20 series come from stored recordings; the other 7 were never recorded and are answered by the scripted
+    # exchange (LINK and USDUC at 5 and 15 minutes, PAXG at 5, 15 and 60 minutes).
     assert len(recorded.served) == 13 and report["counts"]["planned_series"] == 20
+    assert len(env.exchange.requests) == 7
     assert {interval for _pair, interval in recorded.served} == {1, 5, 15, 60}
     assert {pair for pair, _interval in recorded.served} == {"XBTUSD", "SOLUSD", "LINKUSD", "USDUCUSD", "PAXGUSD"}
     assert sources(store) == {"kraken_public_ohlc"}
