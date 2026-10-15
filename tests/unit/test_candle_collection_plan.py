@@ -135,6 +135,18 @@ def test_the_one_minute_list_is_independent_of_the_pair_list_and_reports_unknown
     assert [item.symbol for item in _plan(scope).skipped] == ["USDC/USD"]
 
 
+def test_no_one_minute_list_means_the_same_pairs_as_the_other_intervals() -> None:
+    everything = _plan(CollectionScope(one_minute_symbols=None))
+    one_minute = sorted(item.record.symbol for item in everything.series if item.interval_minutes == 1)
+    assert one_minute == ELIGIBLE and len(everything.series) == 4 * len(ELIGIBLE) == 52
+    narrowed = _plan(CollectionScope(symbols=("SOL/USD", "LINK/USD"), one_minute_symbols=None))
+    assert sorted((item.record.symbol, item.interval_minutes) for item in narrowed.series) == [
+        (symbol, interval) for symbol in ("LINK/USD", "SOL/USD") for interval in (1, 5, 15, 60)]
+    assert CollectionScope(one_minute_symbols=None).to_document()["one_minute_symbols"] is None
+    skipped = _plan(CollectionScope(intervals=(1,), one_minute_symbols=None))
+    assert len(skipped.series) == len(ELIGIBLE) and len(skipped.skipped) == 31 and skipped.unknown_symbols == ()
+
+
 def test_an_empty_catalog_plans_nothing_and_every_requested_name_is_unknown() -> None:
     plan = plan_collection([], CollectionScope(symbols=("SOL/USD",)), {})
     assert plan.series == () and plan.unknown_symbols == ("BTC/USD", "ETH/USD", "SOL/USD")

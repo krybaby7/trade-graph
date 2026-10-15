@@ -2,7 +2,8 @@
 
 Scope (docs/KRAKEN-CANDLE-COLLECTION.md): every eligible USD pair at 5, 15 and 60 minutes, and 1 minute only for
 an explicit short list (default BTC/USD and ETH/USD), because a quarter of one-minute candles is about 130,000
-rows per pair. Eligible means normal trading status and no stablecoin, yield-token or fiat mark (D131, D127).
+rows per pair. ``one_minute_symbols=None`` widens 1 minute to the same pairs as the other intervals. Eligible
+means normal trading status and no stablecoin, yield-token or fiat mark (D131, D127).
 
 Order: a response holds the 720 most recent candles, so data that is not collected falls out of reach after
 12 hours at 1 minute, 60 hours at 5, 7.5 days at 15 and 30 days at 60. A run that stops early therefore does
@@ -51,7 +52,8 @@ def _symbols(name: str, value: object, *, allow_empty: bool) -> tuple[str, ...]:
 class CollectionScope:
     intervals: tuple[int, ...] = COLLECTED_INTERVALS
     symbols: tuple[str, ...] | None = None          # None means every eligible pair at the wide intervals
-    one_minute_symbols: tuple[str, ...] = DEFAULT_ONE_MINUTE_SYMBOLS
+    # None means the same pairs as the wide intervals use (every eligible pair unless ``symbols`` narrows them)
+    one_minute_symbols: tuple[str, ...] | None = DEFAULT_ONE_MINUTE_SYMBOLS
 
     def __post_init__(self) -> None:
         intervals = self.intervals
@@ -62,13 +64,14 @@ class CollectionScope:
         object.__setattr__(self, "intervals", tuple(sorted(intervals)))
         if self.symbols is not None:
             _symbols("symbols", self.symbols, allow_empty=False)
-        _symbols("one_minute_symbols", self.one_minute_symbols, allow_empty=True)
+        if self.one_minute_symbols is not None:
+            _symbols("one_minute_symbols", self.one_minute_symbols, allow_empty=True)
 
     def to_document(self) -> dict:
         return {
             "intervals": list(self.intervals),
             "symbols": None if self.symbols is None else list(self.symbols),
-            "one_minute_symbols": list(self.one_minute_symbols),
+            "one_minute_symbols": None if self.one_minute_symbols is None else list(self.one_minute_symbols),
         }
 
 
@@ -124,9 +127,10 @@ def plan_collection(records: Sequence[PairRecord], scope: CollectionScope,
             return None
         return record
 
+    one_minute_names = wide_names if scope.one_minute_symbols is None else scope.one_minute_symbols
     series: list[PlannedSeries] = []
     for interval in scope.intervals:
-        for symbol in scope.one_minute_symbols if interval == 1 else wide_names:
+        for symbol in one_minute_names if interval == 1 else wide_names:
             record = usable(symbol)
             if record is not None:
                 series.append(PlannedSeries(record, interval, newest_stored.get((symbol, interval))))

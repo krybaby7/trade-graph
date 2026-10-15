@@ -49,6 +49,7 @@ FINANCIAL_DATABASE_NAME = "trade_graph.sqlite"
 FINANCIAL_DEFAULT_PATH = "runtime/trade_graph.sqlite"
 FINANCIAL_TABLES = frozenset({"schema_migrations", "portfolios", "ledger_events"})
 CANDLE_MARKER_TABLE = "market_data_migrations"
+ALL_PAIRS_WORD = "all"
 _OPTION_NAMES = {"intervals": "--intervals", "pairs": "--pairs", "one_minute_pairs": "--one-minute-pairs",
                  "max_requests": "--max-requests"}
 
@@ -86,7 +87,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     collect.add_argument("--pairs", default=None, help="comma list of BASE/USD symbols for the 5, 15 and 60 minute "
                          "candles (default: every eligible USD pair)")
     collect.add_argument("--one-minute-pairs", default=None, help="comma list of BASE/USD symbols for 1-minute "
-                         "candles (default: BTC/USD,ETH/USD; an empty value collects none)")
+                         "candles (default: BTC/USD,ETH/USD; an empty value collects none; 'all' uses the same "
+                         "pairs as the other intervals, about 131,000 rows per pair and quarter)")
     collect.add_argument("--max-requests", type=int, default=None,
                          help=f"most requests of the whole run, the pair-list refresh included (default "
                               f"{DEFAULT_MAX_REQUESTS}, at most {MAXIMUM_REQUESTS_PER_RUN + 1})")
@@ -198,8 +200,16 @@ def _options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple
         except ValueError:
             parser.error("--intervals must be a comma list of whole numbers from 1, 5, 15 and 60")
     symbols = None if args.pairs is None else _split(parser, "--pairs", args.pairs, allow_empty=False)
-    one_minute = (DEFAULT_ONE_MINUTE_SYMBOLS if args.one_minute_pairs is None
-                  else _split(parser, "--one-minute-pairs", args.one_minute_pairs, allow_empty=True))
+    one_minute: tuple[str, ...] | None = DEFAULT_ONE_MINUTE_SYMBOLS
+    if args.one_minute_pairs is not None:
+        every = args.one_minute_pairs.strip().lower() == ALL_PAIRS_WORD
+        one_minute = None if every else _split(parser, "--one-minute-pairs", args.one_minute_pairs, allow_empty=True)
+    # An option that selects nothing the run collects would be dropped without a word; refuse it instead.
+    if args.pairs is not None and all(interval == 1 for interval in intervals):
+        parser.error("--pairs applies to the 5, 15 and 60 minute candles and --intervals selects none of them; "
+                     "name the coins for 1-minute candles with --one-minute-pairs")
+    if args.one_minute_pairs is not None and 1 not in intervals and one_minute != ():
+        parser.error("--one-minute-pairs applies to 1-minute candles and --intervals does not include 1")
     limit = DEFAULT_MAX_REQUESTS if args.max_requests is None else args.max_requests
     if not 2 <= limit <= MAXIMUM_REQUESTS_PER_RUN + 1:
         parser.error(f"--max-requests must be from 2 to {MAXIMUM_REQUESTS_PER_RUN + 1}")

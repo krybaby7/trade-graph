@@ -96,6 +96,9 @@ def test_the_real_transports_clock_and_sleeper_are_the_bounded_ones() -> None:
     ["--one-minute-pairs", "BTC"], ["--smoke", "--pairs", "SOL/USD"], ["--smoke", "--intervals", "5"],
     ["--smoke", "--max-requests", "3"], ["--smoke", "--one-minute-pairs", "SOL/USD"],
     ["--smoke", "--catalog-only"], ["--catalog-only", "--intervals", "5"], ["--catalog-only", "--pairs", "SOL/USD"],
+    # an option that would change nothing is a mistake, not a silent success
+    ["--intervals", "1", "--pairs", "SOL/USD"], ["--intervals", "5,15", "--one-minute-pairs", "LINK/USD"],
+    ["--intervals", "60", "--one-minute-pairs", "all"], ["--one-minute-pairs", "all,BTC/USD"],
 ])
 def test_bad_options_exit_2_before_any_file_or_request(tmp_path, monkeypatch, capsys, argv: list[str]) -> None:
     scripted = Scripted(monkeypatch)
@@ -177,6 +180,28 @@ def test_a_normal_run_uses_the_live_label_the_given_scope_and_prints_one_json_re
     assert report["requests"]["max"] == 49 and report["counts"]["planned_series"] == 4
     assert report["series"][0]["interval_minutes"] == 5 and report["series"][-1]["interval_minutes"] == 60
     assert set(report) >= {"series", "not_reached", "skipped_pairs", "storage", "cadence", "totals", "by_interval"}
+
+
+@pytest.mark.parametrize("word", ["all", "ALL", " All "])
+def test_one_minute_pairs_all_collects_one_minute_candles_for_every_eligible_pair(
+        tmp_path, monkeypatch, capsys, word: str) -> None:
+    scripted = Scripted(monkeypatch)
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", database_path(tmp_path),
+                       "--intervals", "1", "--one-minute-pairs", word)
+    assert code == 0 and report["status"] == "ok" and report["counts"]["planned_series"] == 13
+    assert report["scope"] == {"intervals": [1], "symbols": None, "one_minute_symbols": None}
+    assert len(scripted.exchange.calls) == 13 and {item["interval_minutes"] for item in report["series"]} == {1}
+    projection = report["storage"]["per_quarter"]["per_quarter"]["1"]
+    assert projection["series"] == 13 and projection["rows"] == 13 * 131_040  # the cost is in the report
+
+
+def test_one_minute_pairs_all_follows_a_pair_list_when_one_is_given(tmp_path, monkeypatch, capsys) -> None:
+    scripted = Scripted(monkeypatch)
+    code, report = run(capsys, "collect-kraken-candles", "--market-database", database_path(tmp_path),
+                       "--intervals", "1,60", "--pairs", "SOL/USD,LINK/USD", "--one-minute-pairs", "all")
+    assert code == 0 and sorted((item["symbol"], item["interval_minutes"]) for item in report["series"]) == [
+        ("LINK/USD", 1), ("LINK/USD", 60), ("SOL/USD", 1), ("SOL/USD", 60)]
+    assert len(scripted.exchange.calls) == 4
 
 
 def test_the_default_run_covers_every_eligible_pair_and_the_one_minute_default(tmp_path, monkeypatch, capsys) -> None:

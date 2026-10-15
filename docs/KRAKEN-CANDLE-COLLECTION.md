@@ -38,6 +38,7 @@ trade-graph collect-kraken-candles --catalog-only
 trade-graph collect-kraken-candles
 trade-graph collect-kraken-candles --intervals 5,15,60 --pairs SOL/USD,LINK/USD --max-requests 100
 trade-graph collect-kraken-candles --intervals 1 --one-minute-pairs BTC/USD,ETH/USD
+trade-graph collect-kraken-candles --intervals 1 --one-minute-pairs all
 trade-graph candle-coverage
 trade-graph candle-coverage --symbols BTC/USD --intervals 15 --max-ranges 50
 ```
@@ -46,8 +47,8 @@ trade-graph candle-coverage --symbols BTC/USD --intervals 15 --max-ranges 50
 |---|---|
 | `--market-database` | the candle file (default `runtime/market_data.sqlite`) |
 | `--intervals` | comma list from 1, 5, 15, 60 (default all four) |
-| `--pairs` | restrict the 5, 15 and 60 minute candles to these `BASE/USD` symbols (default every eligible pair) |
-| `--one-minute-pairs` | the only coins collected at 1 minute (default `BTC/USD,ETH/USD`; an empty value collects none) |
+| `--pairs` | restrict the 5, 15 and 60 minute candles to these `BASE/USD` symbols (default every eligible pair). Refused (exit 2) when `--intervals` selects none of 5, 15 and 60, because it would change nothing |
+| `--one-minute-pairs` | the only coins collected at 1 minute (default `BTC/USD,ETH/USD`; an empty value collects none; `all` collects the same pairs as the other intervals, so every eligible pair unless `--pairs` narrows them). Refused when `--intervals` does not include 1, unless the value is empty |
 | `--max-requests` | most requests of the whole run, the pair-list refresh included (default 2000, 2 to 10001) |
 | `--smoke` | BTC/USD and ETH/USD at 15 minutes, at most 4 requests (pair list 1, candles 2, one repeat after a short throttle), labelled `live_public_smoke`; cannot be combined with the scope or limit options |
 | `--catalog-only` | refresh the pair list and collect no candles |
@@ -87,8 +88,13 @@ financial database stored somewhere other than the default path cannot be recogn
   stablecoin, yield-token or fiat mark (D131, D127). The others are listed in `skipped_pairs` with the reason
   (`status:cancel_only`, `excluded:stablecoin`, ...) and are never requested. A name given on the command
   line that is not in the catalog is listed in `unknown_symbols` and makes the run `partial`.
-- Intervals: 5, 15 and 60 minutes for every eligible pair; 1 minute only for the explicit list, because a
-  quarter of one-minute candles is about 131,000 rows per pair.
+- Intervals: 5, 15 and 60 minutes for every eligible pair; 1 minute only for the explicit list (default
+  BTC/USD and ETH/USD), because a quarter of one-minute candles is about 131,000 rows per pair. **This default is
+  narrower than the task wording ("1/5/15/60 minutes", build plan: "for every Kraken USD coin") and has not been
+  decided by the owner.** `--one-minute-pairs all` collects 1 minute for every eligible pair: on the 591 eligible
+  pairs of 2026-10-13 that is 591 requests per pass (about 33 minutes at the limiter rate; 1-minute data must be
+  fetched at least every 12 hours), about 77.4 million rows and 9.1 GB per quarter on top of the rest. The report
+  prints this cost for the run's own scope under `storage` before anything is decided.
 - Coins that nobody has looked at (`not_individually_reviewed`) are collected like the rest. The price-peg
   check that would catch an unknown stablecoin belongs to the scanner (T31).
 
