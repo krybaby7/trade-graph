@@ -209,8 +209,8 @@ Per series the report has two views.
 | Status | Meaning |
 |---|---|
 | `first_collection` | nothing was stored; the series now starts at the window start (older history comes from T26) |
-| `connected` | the first returned candle is at or before the newest stored one: no candle was lost |
-| `gap` | the first returned candle is later than the newest stored one. `missing_slots` candles between them can no longer be fetched from this endpoint. `action` says: use the Trades backfill or the archive import (T26) |
+| `connected` | the first returned candle is at most one interval after the newest stored one (the usual case is that it is the same candle again): no candle was lost |
+| `gap` | at least one slot lies between the newest stored candle and the first returned one. `missing_slots` candles between them can no longer be fetched from this endpoint. `action` says: use the Trades backfill or the archive import (T26) |
 | `no_data` | nothing stored and nothing returned (the pair has no data in the window) |
 | `unverified` | something was stored but this response held no committed candle, so connection could not be checked |
 

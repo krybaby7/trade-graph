@@ -193,7 +193,7 @@ def continuity(item: PlannedSeries, candles: tuple[Candle, ...]) -> dict:
         result["status"] = "first_collection" if candles else "no_data"
     elif first is None:
         result["status"] = "unverified"
-    elif first <= newest:
+    elif first <= newest + step:  # the very next slot leaves nothing between the two candles
         result["status"] = "connected"
     else:
         result["status"] = "gap"

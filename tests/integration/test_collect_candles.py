@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from tests.candle_support import (
@@ -22,6 +23,7 @@ from tests.candle_support import (
     pair_records,
     row,
     unix,
+    wire,
 )
 from tests.network_guard import block_network
 
@@ -30,7 +32,7 @@ from trade_graph.adapters.persistence.market_data import MarketDataDatabase
 from trade_graph.application.candle_collection_plan import CollectionScope, plan_collection
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.application.collect_candles import collect_candles, refresh_catalog
-from trade_graph.contracts.candles import from_unix
+from trade_graph.contracts.candles import Candle, from_unix
 from trade_graph.domain.clock import FrozenClock
 from trade_graph.domain.errors import ValidationFailure
 
@@ -220,6 +222,52 @@ def test_a_later_collection_asks_from_one_interval_before_the_newest_stored_cand
         assert item["inserted"] == advanced
         assert item["since"] == unix(before) - step
     assert second["totals"]["inserted"] > 0 and second["totals"]["series_with_gap"] == 0
+
+
+def other_source_candle(open_unix: int, source: str) -> Candle:
+    """A stored 60-minute BTC/USD candle of another source, for tests of the incremental cursor."""
+    return Candle(
+        symbol="BTC/USD", source_pair="XBTUSD", interval_minutes=60, open_time_utc=from_unix(open_unix),
+        close_time_utc=from_unix(open_unix + 3600), available_at_utc=from_unix(open_unix + 3603), open=Decimal("100"),
+        high=Decimal("101"), low=Decimal("99"), close=Decimal("100.5"), vwap=Decimal("100.2"),
+        volume=Decimal("2"), trade_count=3, source=source)
+
+
+def test_the_since_cursor_comes_only_from_the_series_of_the_runs_own_source(store: CandleStore) -> None:
+    env = Env(store)
+    scope = small_scope(symbols=("BTC/USD",))
+    first = env.collect(scope, label="recorded_public_fixture")
+    newest = unix(datetime.fromisoformat(first["series"][0]["last_open_utc"]))
+    trades_run = store.begin_run(kind="trades_backfill", source="kraken_public_trades",
+                                 evidence_label="synthetic_fixture", started_at=env.clock.now(), parameters={})
+    store.save([other_source_candle(newest + 3600 * hours, "kraken_public_trades") for hours in range(1, 6)],
+               run_id=trades_run)  # a newer series of another source, same symbol and interval
+    store.save([other_source_candle(newest - 3600 * hours, "synthetic") for hours in range(10, 12)],
+               run_id=trades_run)  # and a synthetic one that sorts after the collector's source
+    assert {item.source for item in store.series()} == {"kraken_public_ohlc", "kraken_public_trades", "synthetic"}
+    env.clock.advance(3600)
+    made = len(env.exchange.requests)
+    env.collect(scope, label="recorded_public_fixture")
+    assert env.exchange.requests[made:] == [("XBTUSD", 60, newest - 3600)]
+    synthetic = env.collect(scope, label="synthetic_fixture")
+    assert env.exchange.requests[-1] == ("XBTUSD", 60, newest - 3600 * 11)  # the synthetic series' own newest candle
+    assert synthetic["series"][0]["continuity"]["status"] == "connected"
+
+
+def test_a_response_holding_only_the_forming_candle_cannot_confirm_a_stored_series(store: CandleStore) -> None:
+    env = Env(store)
+    scope = small_scope(symbols=("BTC/USD",))
+    env.collect(scope)
+    env.clock.advance(3600)
+    forming = unix(env.clock.now()) - unix(env.clock.now()) % 3600
+    env.exchange.queue("XBTUSD", 60, wire("XXBTZUSD", [row(forming)], last=forming - 3600))
+    report = env.collect(scope)
+    item = report["series"][0]
+    assert item["status"] == "ok" and item["candles_returned"] == 0 and item["inserted"] == 0
+    assert item["continuity"]["status"] == "unverified" and item["continuity"]["action"] is None
+    assert item["coverage"] is None
+    assert report["totals"]["series_unverified"] == 1 and report["totals"]["series_with_gap"] == 0
+    assert report["status"] == "ok"
 
 
 def test_rerunning_with_the_whole_window_again_inserts_nothing_and_keeps_the_original_receipts(
