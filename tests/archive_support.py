@@ -6,10 +6,14 @@ and every build is identical. Nothing here is real Kraken data.
 
 from __future__ import annotations
 
+import os
 import zipfile
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
+
+import pytest
 
 FIRST_OPEN = 1_782_864_000  # 2026-07-01T00:00:00Z, the first open of the synthetic 2026Q3 quarter
 DAY = 86_400
@@ -81,3 +85,23 @@ def write_directory(path: Path, members: Mapping[str, str | bytes]) -> Path:
         data = content.encode("ascii") if isinstance(content, str) else content
         (path / name).write_bytes(data)
     return path
+
+
+@contextmanager
+def unreadable(path: Path) -> Iterator[Path]:
+    """Strip every permission from a file or folder for the block; skip when this user ignores modes (root)."""
+    mode = path.stat().st_mode & 0o777
+    path.chmod(0)
+    try:
+        try:
+            if path.is_dir():
+                os.scandir(path).close()
+            else:
+                path.open("rb").close()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("this user can read a file whatever its mode")
+        yield path
+    finally:
+        path.chmod(mode)

@@ -15,7 +15,15 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from tests.archive_support import FIRST_OPEN, csv_line, csv_text, synthetic_rows, write_directory, write_zip
+from tests.archive_support import (
+    FIRST_OPEN,
+    csv_line,
+    csv_text,
+    synthetic_rows,
+    unreadable,
+    write_directory,
+    write_zip,
+)
 
 from trade_graph.adapters.market.kraken_archive import (
     CHUNK_BYTES,
@@ -590,6 +598,31 @@ def test_opening_an_archive_never_extracts_or_uses_temporary_files(tmp_path: Pat
 
 
 # --- fingerprints -------------------------------------------------------------------------------------------------
+
+
+def test_an_unreadable_zip_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    path = write_zip(tmp_path / "Kraken_OHLCVT_2026Q3.zip", _members())
+    with unreadable(path):
+        with pytest.raises(ArchiveRejected) as hashing:
+            fingerprint_archive(path)
+        with pytest.raises(ArchiveRejected) as opening, open_archive(path):
+            pass
+    assert hashing.value.reason == opening.value.reason == "not_a_file"
+    assert isinstance(hashing.value.__cause__, PermissionError)
+
+
+def test_an_unreadable_csv_in_a_directory_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    folder = write_directory(tmp_path / "csv", _members())
+    with unreadable(folder / "XBTUSD_15.csv"), pytest.raises(ArchiveRejected) as refused:
+        fingerprint_archive(folder)
+    assert refused.value.reason == "not_a_file"
+
+
+def test_an_unreadable_directory_is_refused_as_not_a_file(tmp_path: Path) -> None:
+    folder = write_directory(tmp_path / "csv", _members())
+    with unreadable(folder), pytest.raises(ArchiveRejected) as refused:
+        fingerprint_archive(folder)
+    assert refused.value.reason == "not_a_file"
 
 
 def test_the_fingerprint_of_a_zip_is_its_streamed_sha256(tmp_path: Path) -> None:

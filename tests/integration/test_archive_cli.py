@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from tests.archive_support import FIRST_OPEN, csv_text, synthetic_rows, write_zip
+from tests.archive_support import FIRST_OPEN, csv_text, synthetic_rows, unreadable, write_zip
 
 from trade_graph import cli, market_data_cli
 from trade_graph.adapters.market.kraken_archive import ARCHIVE_SOURCE
@@ -138,6 +138,13 @@ def test_a_zip_with_bytes_missing_from_the_middle_exits_1_with_json_not_a_traceb
 def test_a_missing_file_exits_1_with_a_reason_and_no_run(tmp_path, capsys) -> None:
     code, report = _run(capsys, "--archive", str(tmp_path / "absent.zip"),
                         "--market-database", str(_database(tmp_path)))
+    assert code == 1 and report["status"] == "failed" and report["reason"] == "not_a_file"
+    assert report["run_id"] is None
+
+
+def test_an_unreadable_file_exits_1_with_not_a_file_json_and_no_run(tmp_path, capsys, archive) -> None:
+    with unreadable(archive):
+        code, report = _run(capsys, "--archive", str(archive), "--market-database", str(_database(tmp_path)))
     assert code == 1 and report["status"] == "failed" and report["reason"] == "not_a_file"
     assert report["run_id"] is None
 

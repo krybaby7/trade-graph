@@ -417,9 +417,20 @@ def archive_signature(path: Path | str) -> tuple:
 
 
 def fingerprint_archive(path: Path | str) -> ArchiveFingerprint:
-    """File name, size and streamed SHA-256. A directory hashes its files' names, sizes and SHA-256 values."""
+    """File name, size and streamed SHA-256. A directory hashes its files' names, sizes and SHA-256 values.
+
+    A path that cannot be read (no permission, a file that vanishes while it is hashed) is refused as ``not_a_file``.
+    """
     path = Path(path)
     kind = _classify_path(path)
+    try:
+        return _fingerprint(path, kind)
+    except OSError as error:
+        raise ArchiveRejected("not_a_file", f"the archive cannot be read: {error.strerror or type(error).__name__}"
+                              ) from error
+
+
+def _fingerprint(path: Path, kind: str) -> ArchiveFingerprint:
     signature = archive_signature(path)
     if kind == "zip":
         with open(path, "rb") as stream:

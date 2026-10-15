@@ -18,6 +18,7 @@ from tests.archive_support import (
     csv_text,
     synthetic_rows,
     universe_members,
+    unreadable,
     write_directory,
     write_zip,
 )
@@ -381,6 +382,14 @@ def test_a_zip_with_bytes_missing_from_the_middle_is_a_recorded_corrupt_member_r
 def test_a_missing_file_raises_without_recording_a_run(store, tmp_path) -> None:
     with pytest.raises(ArchiveRejected) as refused:
         _import(store, tmp_path / "absent.zip")
+    assert refused.value.reason == "not_a_file" and store.runs() == []
+    assert refused.value.run_id is None and refused.value.report is None
+
+
+def test_an_unreadable_file_is_refused_as_not_a_file_without_recording_a_run(store, tmp_path) -> None:
+    path = _zip(tmp_path, {"XBTUSD_15.csv": _rows(3)})
+    with unreadable(path), pytest.raises(ArchiveRejected) as refused:
+        _import(store, path)
     assert refused.value.reason == "not_a_file" and store.runs() == []
     assert refused.value.run_id is None and refused.value.report is None
 
