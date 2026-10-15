@@ -50,10 +50,18 @@ are no floats in the store.
    `kraken_ohlcvt_archive` (T26 import), `kraken_public_trades` (T26 backfill)
    and `synthetic` (tests). Each is its own series. Differences between them
    are reported by T26's reconciliation, never smoothed away in storage.
-5. **A missing slot stays missing.** No carry-forward, no zero fill. Kraken
-   returns no row for an interval without trades, so a missing slot means
-   either "no trades" or "not collected"; reports say "no candle" and do not
-   guess which.
+5. **A missing slot stays missing.** No carry-forward, no zero fill by us.
+   What a missing slot means depends on the source (recorded 2026-10-13):
+   - `kraken_public_ohlc`: Kraken's OHLC endpoint itself fills quiet
+     intervals with a flat row (vwap 0, volume 0, trade count 0). The
+     collector stores such rows as sent. A missing slot therefore means "not
+     collected" or "older than the 720-candle window".
+   - `kraken_ohlcvt_archive`: Kraken's page says a row exists only for
+     intervals with trades, so a missing slot may simply mean "no trades".
+   - `kraken_public_trades`: built from trades; a slot with no trades is not
+     emitted.
+   Reports say "no candle" and never guess which reason applies; T26's
+   reconciliation shows where sources differ because of this.
 6. **Money stays Decimal.** Candle fields are `Decimal`. Only indicator
    outputs (T27) may be floats.
 
