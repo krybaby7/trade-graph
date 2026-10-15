@@ -16,16 +16,12 @@ from trade_graph.domain.clock import utc_iso
 
 END = datetime(2026, 10, 5, 12, tzinfo=UTC)
 WAKE = END + timedelta(minutes=13)
-ALL = ["sma_20", "sma_50", "pullback_from_high", "pullback_depth", "range_high", "range_low", "midpoint",
-       "midpoint_distance", "hourly_return", "four_hour_drift"]
+ALL = ["sma_20", "sma_50", "highest_high_20", "range_high", "range_low", "midpoint", "hourly_return",
+       "four_hour_drift"]
 EXPECTED = {
-    "sma_20": "40.5", "sma_50": "25.5",
-    "pullback_from_high": "0.01960784313725490196078431372549019607843137254902",
-    "pullback_depth": "0.01960784313725490196078431372549019607843137254902",
+    "sma_20": "40.5", "sma_50": "25.5", "highest_high_20": "51",
     "range_high": "51", "range_low": "26.5", "midpoint": "38.75",
-    "midpoint_distance": "0.29032258064516129032258064516129032258064516129032",
-    "hourly_return": "0.0204081632653061224489795918367346938775510204082",
-    "four_hour_drift": "0.0869565217391304347826086956521739130434782608696",
+    "hourly_return": "0.0204081632653", "four_hour_drift": "0.0869565217391",
 }
 
 
@@ -54,7 +50,7 @@ def test_pending_newest_candle_keeps_every_feature_from_the_latest_available_clo
     store = _store(tmp_path)
     lagged = store.snapshot("BTC/USD", WAKE, ALL, source="synthetic")
     prior = store.snapshot("BTC/USD", END - timedelta(minutes=30), ALL, source="synthetic")
-    assert lagged["feature_version"] == "hourly-price-features-v2"
+    assert lagged["feature_version"] == "hourly-price-features-v3"
     assert lagged["stale"] is True
     assert lagged["latest_close_time_utc"] == utc_iso(END - timedelta(hours=1))
     assert lagged["latest_expected_close_time_utc"] == utc_iso(END)
@@ -123,7 +119,7 @@ def test_role_context_receives_stale_features_while_newest_candle_is_pending(tmp
         assert market["features"]["range_high"] == "150"
         assert market["features"]["midpoint"] == "137.5"
         history = market["history"]
-        assert history["stale"] is True and history["feature_version"] == "hourly-price-features-v2"
+        assert history["stale"] is True and history["feature_version"] == "hourly-price-features-v3"
         assert all(feature["status"] == "stale" for feature in history["features"].values())
         assert all(feature["window_end_close_time_utc"] == utc_iso(last.close_time_utc)
                    and feature["missing_close_times_utc"] == [utc_iso(close_time)]

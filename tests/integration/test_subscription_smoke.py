@@ -325,9 +325,9 @@ def test_diagnostic_retains_measured_missing_public_history_coverage(smoke_flow)
     assert run(h)["status"] == "SUCCEEDED"
     history = h.cli.requests[0].context["market"]["BTC/USD"]["history"]
     assert history["source"] == "kraken_public_ohlc" and history["candle_ids"] == []
-    assert history["features"]["pullback_depth"]["status"] == "insufficient_history"
-    assert history["features"]["pullback_depth"]["available_candles"] == 0
-    assert len(history["features"]["pullback_depth"]["missing_close_times_utc"]) == 20
+    assert history["features"]["highest_high_20"]["status"] == "insufficient_history"
+    assert history["features"]["highest_high_20"]["available_candles"] == 0
+    assert len(history["features"]["highest_high_20"]["missing_close_times_utc"]) == 20
 
 
 def test_diagnostic_and_normal_cycle_supply_same_completed_public_strategy_history(smoke_flow):
@@ -346,7 +346,7 @@ def test_diagnostic_and_normal_cycle_supply_same_completed_public_strategy_histo
     # The 20-hour template windows plus the recent candle series supplied to the Trader.
     supplied = max(20, RECENT_CANDLES)
     assert len(history["candle_ids"]) == supplied and history["provenance"]["retained_candle_count"] == supplied
-    assert set(history["values"]) == {"hourly_return", "four_hour_drift", "pullback_depth"}
+    assert set(history["values"]) == {"hourly_return", "four_hour_drift", "highest_high_20"}
     assert all(feature["status"] == "ready" and not feature["missing_close_times_utc"]
                for feature in history["features"].values())
 

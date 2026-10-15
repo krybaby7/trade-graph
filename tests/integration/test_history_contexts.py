@@ -127,7 +127,7 @@ def test_actual_context_reports_installed_feature_requirements_without_history(t
         _, (request, snapshot) = flow.run(role)
         history = request.context["market"]["BTC/USD"]["history"]
         assert set(history["features"]) == {
-            "sma_20", "sma_50", "pullback_from_high", "range_high", "range_low", "midpoint"}
+            "sma_20", "sma_50", "highest_high_20", "range_high", "range_low", "midpoint"}
         assert all(feature["status"] == "insufficient_history" for feature in history["features"].values())
         assert history["values"] == {}
         assert history["source"] == "kraken_public_ohlc"

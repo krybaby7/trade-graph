@@ -91,9 +91,10 @@ _DECISION = (
 )
 _TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "DEAD_LETTER"}
 _MARKET_FEATURES = (
-    "bid", "ask", "mid", "spread", "observation_id", "sma_20", "sma_50", "pullback_from_high",
-    "pullback_depth", "range_high", "range_low", "midpoint", "midpoint_distance", "hourly_return",
-    "four_hour_drift", "trend",
+    "bid", "ask", "mid", "spread", "observation_id", "sma_20", "sma_50", "highest_high_20", "range_high",
+    "range_low", "midpoint", "hourly_return", "four_hour_drift", "trend",
+    # Retired in hourly-price-features-v3 but still present in retained v1/v2 snapshots and contexts.
+    "pullback_from_high", "pullback_depth", "midpoint_distance",
 )
 _OBSERVATION = (
     "schema_version", "observation_id", "venue", "symbol", "event_time_utc", "available_at_utc", "source",

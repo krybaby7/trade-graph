@@ -1,70 +1,121 @@
-"""Bounded, receipt-aware hourly features from immutable completed candles."""
+"""Bounded, receipt-aware hourly features from immutable completed candles.
+
+Every feature value is computed by the indicator library (D118: no indicator formula is written in this repository).
+This module selects the exact window of completed hourly candles each feature needs, hands the Decimal columns to
+``application/indicators/library.py`` and stores the result as exact decimal text. Which feature maps to which
+menu entry is the table below; the version history is in docs/KRAKEN-PRICE-HISTORY.md and docs/INDICATOR-MENU.md.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
+from decimal import Decimal
 from typing import Any
 
 from trade_graph.adapters.persistence.db import Database, atomic
+from trade_graph.application.indicators.library import SNAPSHOT_DIGITS, compute_raw, lookback, rounded_decimal
+from trade_graph.contracts.indicators import get_indicator
 from trade_graph.contracts.price_history import HourlyCandle
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.money import canonical_decimal
 
-FEATURE_VERSION = "hourly-price-features-v2"
+FEATURE_VERSION = "hourly-price-features-v3"
+# Snapshots retained under v2 are read as they were stored and never recomputed; the constant keeps them nameable.
+FEATURE_VERSION_V2 = "hourly-price-features-v2"
 MAX_INGEST_CANDLES = 720
 MAX_LOOKBACK_CANDLES = 50
 # Windows end at the newest available close if it is at most this far behind the expected close.
 MAX_ANCHOR_LAG_HOURS = 2
 # Expected hourly slots, ending at the expected close, whose available candles the Trader sees directly.
 RECENT_CANDLES = 24
+# A feature whose value is an input price (or half the sum of two) is stored exactly, which the 12-digit stored text can
+# only do for inputs of at most this many significant digits; with more it is withheld, never silently rounded.
+EXACT_INPUT_DIGITS = SNAPSHOT_DIGITS - 1
 _RECENT_FIELDS = frozenset({
     "open_time_utc", "close_time_utc", "available_at_utc", "open", "high", "low", "close", "volume"})
-_ARITHMETIC = Context(prec=50, rounding=ROUND_HALF_EVEN)
 
 
 @dataclass(frozen=True)
 class _Feature:
-    lookback: int
+    indicator: str  # a name on the indicator menu (contracts/indicators.py)
+    parameters: Mapping[str, int | float]
+    lookback: int  # completed hourly candles in the window: the library's own lookback plus the candle it ends on
     definition: str
+    selects: bool = False  # the value is an input price (or half the sum of two): it must be stored exactly
+
+
+def _feature(indicator: str, parameters: Mapping[str, int | float], definition: str, *,
+             selects: bool = False) -> _Feature:
+    return _Feature(indicator, parameters, lookback(indicator, parameters) + 1, definition, selects)
 
 
 _FEATURES = {
-    "sma_20": _Feature(20, "Arithmetic mean of the last 20 completed hourly closes, in USD."),
-    "sma_50": _Feature(50, "Arithmetic mean of the last 50 completed hourly closes, in USD."),
-    "pullback_from_high": _Feature(20, "(Maximum high of the last 20 completed hours - latest close) / maximum high."),
-    "pullback_depth": _Feature(20, "Alias of pullback_from_high: 20-hour high-to-latest-close fractional pullback."),
-    "range_high": _Feature(24, "Maximum high of the last 24 completed hourly candles, in USD."),
-    "range_low": _Feature(24, "Minimum low of the last 24 completed hourly candles, in USD."),
-    "midpoint": _Feature(24, "(24-hour range_high + 24-hour range_low) / 2, in USD."),
-    "midpoint_distance": _Feature(24, "(Latest hourly close - 24-hour range midpoint) / range midpoint."),
-    "hourly_return": _Feature(2, "Latest completed hourly close / previous hourly close - 1 (fractional return)."),
-    "four_hour_drift": _Feature(5, "Latest completed hourly close / close four hours earlier - 1 (fractional return)."),
+    "sma_20": _feature("SMA", {"timeperiod": 20},
+                       "Simple moving average (TA-Lib SMA) of the last 20 completed hourly closes, in USD."),
+    "sma_50": _feature("SMA", {"timeperiod": 50},
+                       "Simple moving average (TA-Lib SMA) of the last 50 completed hourly closes, in USD."),
+    "highest_high_20": _feature(
+        "HIGHEST_HIGH", {"timeperiod": 20},
+        "Highest high (TA-Lib MAX) of the last 20 completed hourly candles, in USD. Compare it with latest_close "
+        "to read how far price has pulled back.", selects=True),
+    "range_high": _feature("HIGHEST_HIGH", {"timeperiod": 24},
+                           "Highest high (TA-Lib MAX) of the last 24 completed hourly candles, in USD.",
+                           selects=True),
+    "range_low": _feature("LOWEST_LOW", {"timeperiod": 24},
+                          "Lowest low (TA-Lib MIN) of the last 24 completed hourly candles, in USD.", selects=True),
+    "midpoint": _feature("MIDPRICE", {"timeperiod": 24},
+                         "Midpoint of the highest high and the lowest low (TA-Lib MIDPRICE) of the last 24 "
+                         "completed hourly candles, in USD.", selects=True),
+    "hourly_return": _feature("ROCP", {"timeperiod": 1},
+                              "Change of the latest completed hourly close from the previous one as a fraction of "
+                              "the previous close (TA-Lib ROCP over 1 hour); 0.01 is up 1 percent. Accurate to 5e-12 "
+                              "of its size plus 2.5e-16, so a very small return has fewer than 12 trustworthy digits."),
+    "four_hour_drift": _feature("ROCP", {"timeperiod": 4},
+                                "Change of the latest completed hourly close from the close four hours earlier as "
+                                "a fraction of that close (TA-Lib ROCP over 4 hours); 0.01 is up 1 percent. Accurate "
+                                "to 5e-12 of its size plus 2.5e-16, so a very small return has fewer than 12 "
+                                "trustworthy digits."),
+}
+# Ratios of library outputs that v2 computed by hand. They are not part of v3. Asking for one is answered with
+# status unsupported, a pointer to the library numbers it was made of, and those numbers themselves (supplied as if
+# they had been asked for, because an installation that kept a v2 template never asks for them by name), never with
+# a value for the ratio and never with a hidden recomputation.
+_RETIRED = {
+    "pullback_from_high": ("highest_high_20",),
+    "pullback_depth": ("highest_high_20",),
+    "midpoint_distance": ("midpoint",),
 }
 
 
-def _value(name: str, candles: list[HourlyCandle]) -> str:
-    """One pinned Decimal context applies to all operations, including sums."""
-    with localcontext(_ARITHMETIC):
-        latest = candles[-1].close
-        if name in {"sma_20", "sma_50"}:
-            value = sum((candle.close for candle in candles), Decimal(0)) / Decimal(len(candles))
-        elif name in {"pullback_from_high", "pullback_depth"}:
-            high = max(candle.high for candle in candles)
-            value = (high - latest) / high
-        elif name == "hourly_return" or name == "four_hour_drift":
-            value = latest / candles[0].close - Decimal(1)
-        else:
-            high = max(candle.high for candle in candles)
-            low = min(candle.low for candle in candles)
-            midpoint = (high + low) / Decimal(2)
-            value = {"range_high": high, "range_low": low, "midpoint": midpoint}.get(name)
-            if value is None:
-                value = (latest - midpoint) / midpoint
-        return canonical_decimal(value)
+def _retired_definition(name: str) -> str:
+    return (f"Retired in {FEATURE_VERSION}: a ratio of two library numbers was hand-written arithmetic, which the "
+            f"repository no longer does (D118). Read {' and '.join(_RETIRED[name])} with latest_close instead; "
+            "it is supplied with this snapshot.")
+
+
+def _significant_digits(value: Decimal) -> int:
+    return len("".join(map(str, value.as_tuple().digits)).rstrip("0")) or 1
+
+
+def _value(name: str, candles: list[HourlyCandle]) -> str | None:
+    """The library's newest value for the window, as exact decimal text (rounding rule: library.rounded_decimal).
+
+    None when the feature is an input price (or half the sum of two) and an input has more significant digits than
+    the stored text can carry exactly: that value is withheld rather than rounded.
+    """
+    feature = _FEATURES[name]
+    columns = {field: tuple(getattr(candle, field) for candle in candles)
+               for field in get_indicator(feature.indicator).requires}
+    if feature.selects and any(_significant_digits(item) > EXACT_INPUT_DIGITS
+                               for values in columns.values() for item in values):
+        return None
+    series = compute_raw(feature.indicator, feature.parameters, columns)
+    (output,) = series.values()
+    return canonical_decimal(rounded_decimal(float(output[-1])))
 
 
 def _provenance(candle: HourlyCandle, revision_id: str) -> dict[str, Any]:
@@ -139,6 +190,8 @@ class HistoryStore:
         as_of = as_of.astimezone(UTC)
         expected_close = as_of.replace(minute=0, second=0, microsecond=0)
         names = list(dict.fromkeys(requested_features))
+        # A retired ratio brings the library numbers it was made of (see _RETIRED).
+        names = list(dict.fromkeys([*names, *(item for name in names for item in _RETIRED.get(name, ()))]))
         lookback = max((_FEATURES[name].lookback for name in names if name in _FEATURES), default=1)
         recent_expected = [expected_close - timedelta(hours=offset) for offset in reversed(range(RECENT_CANDLES))]
         search_start = min(expected_close - timedelta(hours=lookback - 1 + MAX_ANCHOR_LAG_HOURS), recent_expected[0])
@@ -178,7 +231,9 @@ class HistoryStore:
             spec = _FEATURES.get(name)
             if spec is None:
                 features[name] = {
-                    "status": "unsupported", "definition": "No supported hourly definition for this feature.",
+                    "status": "unsupported",
+                    "definition": (_retired_definition(name) if name in _RETIRED
+                                   else "No supported hourly definition for this feature."),
                     "lookback_candles": None, "available_candles": 0,
                     "missing_close_times_utc": [], "candle_ids": [],
                     "window_start_close_time_utc": None, "window_end_close_time_utc": None,
@@ -193,10 +248,18 @@ class HistoryStore:
             if gaps:
                 status = ("gapped_history" if earliest is not None and any(at >= earliest for at in gaps)
                           else "insufficient_history")
+            definition = spec.definition
             if status in {"ready", "stale"}:
-                values[name] = _value(name, selected)
+                text = _value(name, selected)
+                if text is None:
+                    status = "unsupported"
+                    definition = (f"{spec.definition} Withheld: an input price in this window has more than "
+                                  f"{EXACT_INPUT_DIGITS} significant digits, which the {SNAPSHOT_DIGITS}-digit stored "
+                                  "text cannot carry exactly.")
+                else:
+                    values[name] = text
             features[name] = {
-                "status": status, "definition": spec.definition, "lookback_candles": spec.lookback,
+                "status": status, "definition": definition, "lookback_candles": spec.lookback,
                 "available_candles": len(selected), "missing_close_times_utc": [utc_iso(at) for at in gaps + pending],
                 "candle_ids": [revision_ids[candle.close_time_utc] for candle in selected],
                 "window_start_close_time_utc": utc_iso(expected[0]),

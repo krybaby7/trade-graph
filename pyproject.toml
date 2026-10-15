@@ -12,17 +12,22 @@ dependencies = [
   "jsonschema>=4.25",
   "langgraph>=0.6",
   "langgraph-checkpoint-sqlite>=2.0",
+  "numpy>=2.0",
   "pydantic>=2.11",
   "referencing>=0.37",
   "sqlalchemy>=2.0",
+  "ta-lib>=0.8.2,<0.9",
   "uvicorn>=0.35",
 ]
 
 [dependency-groups]
 dev = [
   "hypothesis>=6.135",
+  "pandas>=2.0",
+  "pandas-ta-classic>=0.8.32",
   "pytest>=8.4",
   "ruff>=0.12",
+  "talipp>=2.7",
 ]
 
 [project.scripts]
