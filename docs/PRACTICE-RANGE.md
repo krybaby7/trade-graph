@@ -194,3 +194,5 @@ uv run trade-graph practice-range-verify --database runtime/trade_graph.sqlite \
 - Exit quantities are what was bought; the fill engine's volume share can produce quantities off the venue's lot,
   which a real venue would round.
 - Kraken has no history for delisted coins, so coin-selection results are optimistic (D119).
+- A tuning replay reads indicator warm-up candles from before its window. If those fall on an earlier study's
+  confirmation days, they shape the first indicator values only, never a fill or a decision.
