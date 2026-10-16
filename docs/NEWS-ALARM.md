@@ -101,6 +101,10 @@ trade-graph news-alarm-report --since 2026-10-16T00:00:00Z --until 2026-10-17T00
 
 The fixture settings add the invented coin `EXMPL` to the watch list (`extra_watch_coins`), because the
 scripted replies name it. `config/news-alarm.example.json` holds the recommended defaults, with Jev off.
+The fixture headlines carry fixed times on 2026-10-16 between 11:20 and 11:55 UTC. Run at any other time,
+they are stored but are older than the one-hour check window, so none is sent to Jev; the tests run the same
+command with the clock fixed at 12:00 UTC that day. Use a scratch database for fixture runs, so synthetic
+records stay out of the real paper log.
 
 The report reads only: it opens the database read-only, never creates or upgrades it, calls nothing and never
 recomputes an answer or a verdict.
