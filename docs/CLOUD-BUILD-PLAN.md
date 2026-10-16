@@ -32,7 +32,10 @@ the running system without your approval.
    repository **krybaby7/trade-graph**.
 2. The first time, create a cloud environment with the default network setting
    and **no secrets or environment variables**. No session in this plan needs a
-   key.
+   key. Claude's GitHub app must have access to this repository, or sessions
+   can read it but not push: on GitHub, open Settings → Applications →
+   Installed GitHub Apps → Claude → Configure, and add `trade-graph` under
+   Repository access.
 3. Paste the package's prompt from Part 2 and send it. Each prompt is a short
    block that starts with "You are a cloud build session".
 4. Start one session per package. Sessions in the same wave can all run at
@@ -169,9 +172,17 @@ These rules add to [AGENTS.md](../AGENTS.md), which always applies.
     `planning/handoffs/README.md`. Start it with three plain-English sentences
     for the owner, who is not a programmer or trader.
 15. Commit in small steps with plain sentences as messages, like the existing
-    history. Push your branch and open a pull request into
-    `claude/day-trader-engine-20261012`, titled `<package> <task>: <title>`.
-    Put the handoff's owner summary in the description. Do not merge it.
+    history. Push your branch (`git push -u origin <your branch>`) and open a
+    pull request into `claude/day-trader-engine-20261012`, titled
+    `<package> <task>: <title>`, with the handoff's owner summary as the
+    description. Do not merge it. In a cloud session `gh pr create` is refused
+    because it uses GitHub's GraphQL API; use the REST API instead:
+    `gh api repos/krybaby7/trade-graph/pulls -f title="..." -f head="<your branch>" -f base="claude/day-trader-engine-20261012" -f body="..."`.
+    If that is refused too, use the session's Create PR button and set the
+    base branch to `claude/day-trader-engine-20261012` on GitHub's page.
+    If a push is refused with an authorization error, keep your commits, say
+    so plainly, and retry when the owner says access is fixed: Claude's GitHub
+    app needs access to this repository.
 16. If something only the owner can provide is missing (a key, a decision,
     private data), build and test everything you can without it, and list the
     rest in the handoff. Do not stop early and do not ask for a key.
@@ -221,8 +232,12 @@ on branch claude/day-trader-engine-20261012.
 
 ### Integration (INT)
 
-1. List the wave's open pull requests into the integration branch. If a package
-   has none, stop and report which one is missing.
+1. List the wave's open pull requests into the integration branch with the
+   REST API (`gh api "repos/krybaby7/trade-graph/pulls?base=claude/day-trader-engine-20261012&state=open"`;
+   `gh pr` commands are refused in cloud sessions). If a package has none,
+   look for its pushed branch (`git ls-remote --heads origin "claude/*"`) and
+   merge that instead; if there is neither, stop and report which one is
+   missing.
 2. For each pull request, in the order the wave lists them:
    - Read the handoff and the diff. Check it against the rules above and the
      task's acceptance criteria in `planning/tasks.json`. Reject (comment and
@@ -249,7 +264,8 @@ on branch claude/day-trader-engine-20261012.
    and the full suite once. A new failure means the wave is not merged: fix it
    if it is an integration mistake, otherwise revert that merge and report.
 5. Push the integration branch. Merged pull requests close themselves. Comment
-   on any pull request you did not merge, saying why.
+   on any pull request you did not merge, saying why
+   (`gh api repos/krybaby7/trade-graph/issues/<number>/comments -f body="..."`).
 6. End with three plain-English sentences for the owner: what merged, what
    didn't, and whether the next wave can start.
 
