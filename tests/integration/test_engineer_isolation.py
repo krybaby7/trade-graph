@@ -81,14 +81,15 @@ def test_checker_cpu_limit_is_kernel_enforced(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "body, expected",
+    "body, wall, expected",
     [
-        ('sandbox["confine"]()\ntime.sleep(30)\n', "wall-clock"),
-        ('sandbox["confine"]()\nwhile True: os.write(1,b"x" * 8192)\n', "output limit"),
+        ('sandbox["confine"]()\ntime.sleep(30)\n', 0.3, "wall-clock"),
+        # The output cap must stop the flood by itself, so the wall clock gets the full default.
+        ('sandbox["confine"]()\nwhile True: os.write(1,b"x" * 8192)\n', 10, "output limit"),
     ],
 )
-def test_checker_wall_and_output_limits_are_enforced(tmp_path, body, expected):
-    result = probe(tmp_path, body, wall=0.3)
+def test_checker_wall_and_output_limits_are_enforced(tmp_path, body, wall, expected):
+    result = probe(tmp_path, body, wall=wall)
     assert result["exit_code"] != 0 and expected in result["stderr"]
     assert len(result["stdout"].encode()) <= OUTPUT_BYTES
 
