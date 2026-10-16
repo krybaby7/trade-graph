@@ -193,8 +193,16 @@ caused by new work: `e2e/test_dashboard_loop`, 4 `test_paper_soak`, 3
 `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers`,
 and timing cases that fail only under load (`test_plugin_staging` 0.3-second
 cases, `test_financial_recovery`, `test_financial_transition`,
-`test_engineer_isolation`). After W1-E is merged, the suite should be clean;
-any failure then counts.
+`test_engineer_isolation`). After W1-E is merged, the suite should be clean
+on a normal Linux host; any failure there then counts.
+
+**Cloud container failures.** In a cloud session some isolation tests also
+fail because of the container itself: bubblewrap (`bwrap`) is not installed,
+and the plugin runtime refuses a symlinked `_sysconfigdata` file (found by
+W1-B, 2026-10-16). These are security checks: never skip, loosen or rewrite
+them to pass in the cloud. A failure is "new" only if the untouched base
+branch passes that test in the same container; check by running the failing
+tests on the base commit before reporting.
 
 ### Prompt for a package
 
@@ -261,8 +269,10 @@ on branch claude/day-trader-engine-20261012.
    - Update the status board in this file.
 4. Run `uv run ruff check src tests`, `python3 scripts/check_plan.py`,
    `python3 scripts/test_planning.py`, `python3 scripts/check_repository_hygiene.py`
-   and the full suite once. A new failure means the wave is not merged: fix it
-   if it is an integration mistake, otherwise revert that merge and report.
+   and the full suite once. A new failure (one the base branch does not have
+   in the same container; see "Cloud container failures") means the wave is
+   not merged: fix it if it is an integration mistake, otherwise revert that
+   merge and report.
 5. Push the integration branch. Merged pull requests close themselves. Comment
    on any pull request you did not merge, saying why
    (`gh api repos/krybaby7/trade-graph/issues/<number>/comments -f body="..."`).
