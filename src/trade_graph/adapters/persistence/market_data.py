@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from trade_graph.adapters.persistence.market_data_schema import MARKET_DATA_MIGRATIONS
+from trade_graph.adapters.persistence.market_data_schema import MARKET_DATA_MIGRATIONS, REBUILD_VERSIONS
 from trade_graph.domain.clock import SystemClock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
@@ -55,25 +55,36 @@ class MarketDataDatabase:
             raise
 
     def _migrate(self) -> None:
+        """Apply pending versions in one transaction. A table rebuild (``REBUILD_VERSIONS``) runs with foreign keys
+        off, as SQLite documents for rebuilding a referenced table, and commits only after a full foreign-key check
+        finds nothing; foreign keys are switched back on whatever happens."""
         connection = self._connection
-        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("PRAGMA foreign_keys=OFF")  # only takes effect outside a transaction, so set it first
         try:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS market_data_migrations "
-                "(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
-            done = {row[0] for row in connection.execute("SELECT version FROM market_data_migrations")}
-            for version, statements in MARKET_DATA_MIGRATIONS:
-                if version in done:
-                    continue
-                for statement in statements:
-                    connection.execute(statement)
-                connection.execute("INSERT INTO market_data_migrations VALUES (?, ?)",
-                                   (version, utc_iso(SystemClock().now())))
-            connection.execute("COMMIT")
-        except BaseException:
-            if connection.in_transaction:
-                connection.execute("ROLLBACK")
-            raise
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS market_data_migrations "
+                    "(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+                done = {row[0] for row in connection.execute("SELECT version FROM market_data_migrations")}
+                rebuilt = False
+                for version, statements in MARKET_DATA_MIGRATIONS:
+                    if version in done:
+                        continue
+                    for statement in statements:
+                        connection.execute(statement)
+                    connection.execute("INSERT INTO market_data_migrations VALUES (?, ?)",
+                                       (version, utc_iso(SystemClock().now())))
+                    rebuilt = rebuilt or version in REBUILD_VERSIONS
+                if rebuilt and connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise ValidationFailure("a candle-history upgrade left a broken reference; nothing was changed")
+                connection.execute("COMMIT")
+            except BaseException:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise
+        finally:
+            connection.execute("PRAGMA foreign_keys=ON")
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
