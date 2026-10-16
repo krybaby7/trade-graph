@@ -52,6 +52,7 @@ EXCLUSION_REASONS = (
     "missing_spread",          # no usable bid and ask for the pair (live scans only)
     "thin_volume",             # less traded volume than the threshold
     "wide_spread",             # a wider spread than the threshold
+    "evaluation_failed",       # the candle store or indicator engine refused this pair; the others carry on
 )
 # Facts worth knowing that do not stop a pair from being ranked.
 FLAGS = (
@@ -175,8 +176,12 @@ class ScannerRules(BaseModel):
     def _consistent(self) -> ScannerRules:
         if not Decimal("0") < self.usd_peg_low < Decimal("1") < self.usd_peg_high < Decimal("2"):
             raise ValueError("the USD peg band must lie around 1 (low below 1, high above 1)")
-        if not self.swing.single_output or not self.trend.single_output:
-            raise ValueError("the swing and trend inputs must be menu entries with one output")
+        if self.swing.indicator != "NATR":
+            # The swing is compared with a fee rate, so it must already be a share of the price; NATR is the only
+            # menu entry that is, so no in-house division turns a price-unit swing into one (D118).
+            raise ValueError("the swing input is NATR, the menu's only swing measured as a percentage of the price")
+        if not self.trend.single_output:
+            raise ValueError("the trend input must be a menu entry with one output")
         assets = [hold.asset for hold in self.holds]
         if len(set(assets)) != len(assets):
             raise ValueError("a held asset appears twice")
