@@ -134,3 +134,42 @@ def test_a_replay_time_must_be_utc(installation, capsys) -> None:
     with pytest.raises(SystemExit):
         main(["scan-coins", *_args(installation, "--replay")])
     assert "--as-of" in capsys.readouterr().err
+
+
+def test_repeated_live_scans_run_once_an_hour_after_the_hours_candle(installation, capsys, monkeypatch) -> None:
+    from trade_graph.market_data_cli import coin_scanner
+
+    clock = FrozenClock(AS_OF + timedelta(minutes=10))  # 12:15, after this hour's scan minute
+    waits = []
+
+    def sleep(seconds: float) -> None:
+        waits.append(seconds)
+        clock.advance(seconds)
+
+    monkeypatch.setattr(coin_scanner, "build_clock", lambda: clock)
+    monkeypatch.setattr(coin_scanner, "build_sleep", lambda: sleep)
+    assert main(["scan-coins", *_args(installation, "--fixture-ticker", str(installation["ticker"]),
+                                      "--scans", "3", "--at-minute", "5")]) == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [line["as_of_utc"] for line in lines] == [
+        "2026-10-16T12:15:00.000000Z", "2026-10-16T13:05:00.000000Z", "2026-10-16T14:05:00.000000Z"]
+    assert waits == [50 * 60, 60 * 60]
+    # The fixture's bid and ask are from 12:04:40, so the later scans honestly find them too old to use.
+    assert [line["status"] for line in lines] == ["no_candidates", "no_candidates", "no_candidates"]
+    assert lines[1]["ticker"]["reason"] == "ticker_older_than_allowed"
+    connection = sqlite3.connect(installation["database"])
+    assert connection.execute("SELECT COUNT(*) FROM coin_scans WHERE mode = 'live'").fetchone()[0] == 3
+    connection.close()
+
+
+def test_a_replay_range_scans_one_moment_per_hour_without_waiting(installation, capsys, monkeypatch) -> None:
+    from trade_graph.market_data_cli import coin_scanner
+
+    monkeypatch.setattr(coin_scanner, "build_sleep", lambda: pytest.fail)
+    assert main(["scan-coins", *_args(installation, "--replay", "--as-of", "2026-10-16T10:05:00Z", "--source",
+                                      "kraken_public_ohlc", "--scans", "3")]) == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [line["as_of_utc"][11:16] for line in lines] == ["10:05", "11:05", "12:05"]
+    assert all(line["optimistic"] and line["status"] == "ok" for line in lines)
+    with pytest.raises(SystemExit):
+        main(["scan-coins", *_args(installation, "--scans", "0")])

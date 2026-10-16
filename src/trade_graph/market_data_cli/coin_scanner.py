@@ -5,8 +5,9 @@ database: one public Kraken Ticker request for the bid and ask (none with ``--fi
 and no paid call. ``--replay`` scans a past moment on stored history instead; a replay takes no ticker and is
 always labelled optimistic. ``coin-shortlist`` only reads the newest recorded live scan (or replay).
 
-Running the scan every hour is an installation step (the event engine or a scheduled task); this command is one
-scan.
+``--scans N`` repeats a live scan once an hour, at ``--at-minute`` past the hour (default 5, so the hour's candle
+is in), and records each one; ``--replay --as-of T --scans N`` replays N hourly moments from T. Wiring the hourly
+scan into the paper service or a scheduled task is an installation step.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,10 @@ def build_clock() -> Clock:
     return SystemClock()
 
 
+def build_sleep():
+    return time.sleep
+
+
 def build_ticker_transport():
     from trade_graph.adapters.market.kraken_ticker import make_ticker_transport
 
@@ -57,6 +63,10 @@ def register(sub: argparse._SubParsersAction) -> None:
     scan.add_argument("--replay", action="store_true", help="scan a past moment on stored history (optimistic)")
     scan.add_argument("--as-of", help="replay moment in UTC, for example 2026-09-30T23:05:00Z")
     scan.add_argument("--source", default="kraken_ohlcvt_archive", help="candle source a replay reads")
+    scan.add_argument("--scans", type=int, default=1,
+                      help="scans to make: live, one per hour at --at-minute; a replay, one per hour from --as-of")
+    scan.add_argument("--at-minute", type=int, default=5,
+                      help="minute past the hour for repeated live scans (default 5, after the hour's candle)")
     report = sub.add_parser(SHORTLIST, help="read-only: the newest recorded coin shortlist")
     report.add_argument("--database", default=DEFAULT_DATABASE, help="the paper state database")
     report.add_argument("--replay", action="store_true", help="show the newest replay instead of the live list")
@@ -99,21 +109,57 @@ def _moment(value: str | None, parser: argparse.ArgumentParser) -> datetime:
     return parsed
 
 
+def _next_scan_time(now: datetime, minute: int) -> datetime:
+    """The next ``minute`` past an hour that is strictly after ``now``."""
+    target = now.replace(minute=minute, second=0, microsecond=0)
+    return target if target > now else target + timedelta(hours=1)
+
+
 def _scan(args, parser) -> int:
-    from trade_graph.adapters.market.kraken_ticker import KrakenTickerFetcher, TickerFetchError, load_ticker_fixture
     from trade_graph.adapters.persistence.db import Database
-    from trade_graph.application.coin_scanner.scanner import CoinScanner
-    from trade_graph.application.coin_scanner.store import CoinScanStore
     from trade_graph.market_data_cli._common import open_store
 
     if args.replay and args.fixture_ticker:
         parser.error("a replay has no historical bid and ask; --fixture-ticker is for live scans only")
-    as_of = _moment(args.as_of, parser) if args.replay else None
+    if not 1 <= args.scans <= 10_000:
+        parser.error("--scans must be a whole number from 1 to 10000")
+    if not 0 <= args.at_minute <= 59:
+        parser.error("--at-minute must be from 0 to 59")
+    start = _moment(args.as_of, parser) if args.replay else None
     state_path = _state_database(args.database, parser)
     market_path = _market_database(args.market_database, parser)
-    clock = build_clock()
+    clock, sleep = build_clock(), build_sleep()
+    market = database = None
+    try:
+        market, candles = open_store(market_path)
+        database = Database(state_path)
+        for number in range(args.scans):
+            if args.replay:
+                as_of = start + timedelta(hours=number)
+            elif number:
+                now = clock.now()
+                sleep((_next_scan_time(now, args.at_minute) - now).total_seconds())
+            print(json.dumps(_one_scan(args, parser, clock, candles, database, None if not args.replay else as_of)))
+    except KeyboardInterrupt:
+        pass  # the scans already recorded are kept
+    except (ValueError, OSError, sqlite3.DatabaseError, TradeGraphError) as error:
+        parser.error(f"coin scan stopped ({type(error).__name__}); scans recorded before it are kept")
+    finally:
+        if database is not None:
+            database.close()
+        if market is not None:
+            market.close()
+    return 0
+
+
+def _one_scan(args, parser, clock: Clock, candles, database, replay_as_of: datetime | None) -> dict[str, Any]:
+    """One scan, recorded. A live scan asks Kraken's Ticker once unless a fixture is given."""
+    from trade_graph.adapters.market.kraken_ticker import KrakenTickerFetcher, TickerFetchError, load_ticker_fixture
+    from trade_graph.application.coin_scanner.scanner import CoinScanner
+    from trade_graph.application.coin_scanner.store import CoinScanStore
+
     ticker, ticker_error, requests = None, None, 0
-    if not args.replay:
+    if replay_as_of is None:
         if args.fixture_ticker:
             try:
                 ticker = load_ticker_fixture(args.fixture_ticker)
@@ -125,31 +171,18 @@ def _scan(args, parser) -> int:
                 ticker = KrakenTickerFetcher(build_ticker_transport(), clock).fetch()
             except TickerFetchError as error:
                 ticker_error = error.category
-        as_of = clock.now()
-    market = database = None
-    try:
-        market, candles = open_store(market_path)
-        result = CoinScanner(candles, clock=clock).scan(
-            as_of=as_of, ticker=ticker, mode="replay" if args.replay else "live",
-            source=args.source if args.replay else None, ticker_error=ticker_error)
-        database = Database(state_path)
-        stored = CoinScanStore(database, clock).record(result)
-    except (ValueError, OSError, sqlite3.DatabaseError, TradeGraphError) as error:
-        parser.error(f"coin scan stopped ({type(error).__name__}); nothing was recorded")
-    finally:
-        if database is not None:
-            database.close()
-        if market is not None:
-            market.close()
+    as_of = replay_as_of if replay_as_of is not None else clock.now()
+    result = CoinScanner(candles, clock=clock).scan(
+        as_of=as_of, ticker=ticker, mode="live" if replay_as_of is None else "replay",
+        source=None if replay_as_of is None else args.source, ticker_error=ticker_error)
+    stored = CoinScanStore(database, clock).record(result)
     document = stored.document
-    print(json.dumps({
+    return {
         "command": SCAN, "scan_id": stored.scan_id, "as_of_utc": document["scan"]["as_of_utc"],
         **{key: document["scan"][key] for key in ("mode", "status", "error", "evidence", "optimistic",
                                                    "optimism_reasons", "ranking_version")},
         "public_requests": requests, "model_calls": 0, "paid_calls": False, "ticker": document["ticker"],
-        "counts": document["counts"], "excluded": document["excluded"],
-        "shortlist": _shortlist_rows(stored)}))
-    return 0
+        "counts": document["counts"], "excluded": document["excluded"], "shortlist": _shortlist_rows(stored)}
 
 
 def _shortlist_rows(stored) -> list[dict[str, Any]]:
