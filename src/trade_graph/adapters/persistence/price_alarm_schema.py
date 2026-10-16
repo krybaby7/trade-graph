@@ -122,6 +122,8 @@ STATEMENTS: Final[list[str]] = [
         closed_at   TEXT,
         CHECK ((status = 'claimed') = (closed_at IS NULL))
     )""",
+    """CREATE UNIQUE INDEX alarm_wake_claims_one_open ON alarm_wake_claims (department)
+        WHERE status = 'claimed'""",
     """CREATE TRIGGER alarm_wake_claims_no_delete BEFORE DELETE ON alarm_wake_claims
         BEGIN SELECT RAISE(ABORT, 'alarm wake claims are append-only'); END""",
     """CREATE TRIGGER alarm_wake_claims_close_once BEFORE UPDATE ON alarm_wake_claims

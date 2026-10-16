@@ -165,7 +165,10 @@ def test_a_delivery_moves_pending_claimed_delivered_and_never_back_from_delivere
 
 def test_a_wake_claim_closes_once(upgraded) -> None:
     upgraded.execute("INSERT INTO alarm_wake_claims VALUES ('w1', 'trader', 'claimed', 0, ?, NULL)", (LATER,))
+    with pytest.raises(sqlite3.IntegrityError):  # one open wake per department
+        upgraded.execute("INSERT INTO alarm_wake_claims VALUES ('w2', 'trader', 'claimed', 0, ?, NULL)", (LATER,))
     upgraded.execute("UPDATE alarm_wake_claims SET status='acknowledged', closed_at=?", (LATER,))
+    upgraded.execute("INSERT INTO alarm_wake_claims VALUES ('w2', 'trader', 'claimed', 0, ?, NULL)", (LATER,))
     with pytest.raises(sqlite3.IntegrityError, match="closes once"):
         upgraded.execute("UPDATE alarm_wake_claims SET status='released'")
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
