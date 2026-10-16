@@ -19,6 +19,7 @@ from trade_graph.adapters.persistence.news_alarm_schema import NEWS_ALARM_STATEM
 from trade_graph.adapters.persistence.owner_checkin_schema import OWNER_CHECKIN_STATEMENTS
 from trade_graph.adapters.persistence.owner_expense_schema import STATEMENTS as OWNER_EXPENSE_STATEMENTS
 from trade_graph.adapters.persistence.pilot_schema import STATEMENTS as PILOT_STATEMENTS
+from trade_graph.adapters.persistence.practice_range_schema import STATEMENTS as PRACTICE_RANGE_STATEMENTS
 from trade_graph.adapters.persistence.price_alarm_schema import STATEMENTS as PRICE_ALARM_STATEMENTS
 from trade_graph.adapters.persistence.price_history_schema import STATEMENTS as PRICE_HISTORY_STATEMENTS
 from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS as PROTECTED_RUNTIME_STATEMENTS
@@ -466,6 +467,7 @@ STATEMENTS.append(("0026", NEWS_ALARM_STATEMENTS))
 # 0027 was reserved for cloud wave 1 package W1-B, which needed no migration (docs/CLOUD-BUILD-PLAN.md).
 STATEMENTS.append(("0028", WEB_RESEARCH_STATEMENTS))
 STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
+STATEMENTS.append(("0030", PRACTICE_RANGE_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
