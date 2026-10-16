@@ -19,6 +19,7 @@ from trade_graph.application.candle_store import CandleStore
 from trade_graph.contracts.candles import CANDLE_SOURCES, Candle
 
 T0 = datetime(2026, 7, 1, tzinfo=UTC)
+REGISTERED = [version for version, _ in MARKET_DATA_MIGRATIONS]
 TABLES = ("candle_series", "candle_runs", "candle_run_results", "market_candles", "pair_catalog_observations")
 
 
@@ -60,7 +61,8 @@ def _rows(path) -> dict[str, list]:
 
 
 def test_0002_is_registered_after_0001_and_okx_is_a_source() -> None:
-    assert [version for version, _ in MARKET_DATA_MIGRATIONS] == ["0001", "0002"]
+    versions = [version for version, _ in MARKET_DATA_MIGRATIONS]
+    assert versions[:2] == ["0001", "0002"] and versions == sorted(versions)
     assert "okx_public_candles" in CANDLE_SOURCES
 
 
@@ -71,7 +73,7 @@ def test_an_old_file_upgrades_with_every_row_kept_and_rules_intact(tmp_path) -> 
     database = MarketDataDatabase(path)
     try:
         versions = [row[0] for row in database.query("SELECT version FROM market_data_migrations ORDER BY version")]
-        assert versions == ["0001", "0002"]
+        assert versions == REGISTERED
         assert database.query("PRAGMA foreign_keys")[0][0] == 1
         assert database.query("PRAGMA foreign_key_check") == []
         triggers = {row[0] for row in database.query("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
@@ -104,15 +106,15 @@ def test_an_old_file_upgrades_with_every_row_kept_and_rules_intact(tmp_path) -> 
     for table in TABLES:
         assert after[table][:len(before[table])] == before[table], table
     reopened = MarketDataDatabase(path)
-    assert [row[0] for row in reopened.query("SELECT version FROM market_data_migrations")] == ["0001", "0002"]
+    assert sorted(row[0] for row in reopened.query("SELECT version FROM market_data_migrations")) == REGISTERED
     reopened.close()
 
 
 def test_a_new_file_gets_both_versions(tmp_path) -> None:
     database = MarketDataDatabase(tmp_path / "fresh" / "market_data.sqlite")
     try:
-        assert [row[0] for row in database.query("SELECT version FROM market_data_migrations ORDER BY version")] == [
-            "0001", "0002"]
+        assert [row[0] for row in database.query("SELECT version FROM market_data_migrations ORDER BY version")] == (
+            REGISTERED)
         sql = database.query("SELECT sql FROM sqlite_master WHERE name = 'candle_series'")[0][0]
         assert "okx_public_candles" in sql
     finally:
