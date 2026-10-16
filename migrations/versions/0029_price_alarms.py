@@ -3,8 +3,8 @@
 from alembic import op
 
 revision = "0029"
-# 0026-0028 are reserved for other wave-1 packages; the integrator re-links this to the newest earlier revision.
-down_revision = "0025"
+# Wave 1 integration linked this to 0028 (W1-C); W1-B left its reserved 0027 unused.
+down_revision = "0028"
 branch_labels = None
 depends_on = None
 

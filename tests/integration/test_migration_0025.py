@@ -46,7 +46,7 @@ def test_0025_is_registered_once_right_after_0024():
     assert dict(STATEMENTS)["0025"] == OWNER_CHECKIN_STATEMENTS
     assert versions.count("0025") == 1
     assert versions[versions.index("0025") - 1] == "0024"
-    assert all(version > "0025" for version in versions[versions.index("0025") + 1:])  # later migrations follow
+    assert versions == sorted(versions)  # later packages (0026+) only ever append newer versions
 
 
 def test_0025_upgrades_a_0024_database_once_without_rewriting_rows(tmp_path):
@@ -54,6 +54,7 @@ def test_0025_upgrades_a_0024_database_once_without_rewriting_rows(tmp_path):
     assert connection.execute("SELECT name FROM sqlite_master WHERE name='owner_checkins'").fetchone() is None
     before = _retained(connection)
     later = [version for version, _ in STATEMENTS if version >= "0025"]  # 0025, then any later migration
+    assert later[0] == "0025"
     assert apply_migrations(connection, LATER) == later
     portfolios, bills, versions = _retained(connection)
     assert (portfolios, bills) == before[:2]
@@ -84,7 +85,7 @@ def test_alembic_revision_follows_0024_and_refuses_downgrade():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == [STATEMENTS[-1][0]]  # one linear chain; 0025 is in it
+    assert scripts.get_heads() == [STATEMENTS[-1][0]]  # one linear chain, headed by the newest registered version
     assert "0025" in {revision.revision for revision in scripts.walk_revisions()}
     assert scripts.get_revision("0025").down_revision == "0024"
     spec = importlib.util.spec_from_file_location("migration_0025", ROOT / "migrations" / "versions" /

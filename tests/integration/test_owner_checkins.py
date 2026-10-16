@@ -474,6 +474,7 @@ def test_schema_is_one_additive_migration_after_0024(tmp_path, monkeypatch):
     if version in registered:  # once migrate.py registers 0025, it must be exactly this schema, right after 0024
         assert registered[version] == statements
         versions = [name for name, _ in migrate.STATEMENTS]
+        assert versions.count(version) == 1 and versions == sorted(versions)
         assert versions[versions.index(version) - 1] == "0024"
     earlier = [(name, ddl) for name, ddl in migrate.STATEMENTS if name < version]
     assert earlier[-1][0] == "0024"

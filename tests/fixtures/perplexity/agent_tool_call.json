@@ -1,0 +1,24 @@
+{
+  "id": "resp_synthetic_tool_1",
+  "object": "response",
+  "model": "anthropic/claude-sonnet-5-5",
+  "status": "completed",
+  "output": [
+    {
+      "type": "function_call",
+      "id": "fc_synthetic_1",
+      "call_id": "call_synthetic_1",
+      "name": "web_search",
+      "arguments": "{\"query\": \"Solana network outage October 2026\", \"recency\": \"week\"}",
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1200,
+    "input_tokens_details": {"cached_tokens": 200},
+    "output_tokens": 40,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 1240,
+    "cost": {"currency": "USD", "input_cost": 0.0024, "output_cost": 0.0004, "tool_calls_cost": 0, "total_cost": 0.0028}
+  }
+}

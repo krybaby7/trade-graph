@@ -30,6 +30,7 @@ from trade_graph.adapters.persistence.subscription_admission_schema import (
 from trade_graph.adapters.persistence.subscription_attempt_schema import STATEMENTS as SUBSCRIPTION_ATTEMPT_STATEMENTS
 from trade_graph.adapters.persistence.transport_evidence_schema import STATEMENTS as TRANSPORT_EVIDENCE_STATEMENTS
 from trade_graph.adapters.persistence.usage_provenance_schema import STATEMENTS as USAGE_PROVENANCE_STATEMENTS
+from trade_graph.adapters.persistence.web_research_schema import STATEMENTS as WEB_RESEARCH_STATEMENTS
 
 STATEMENTS: list[tuple[str, list[str]]] = [
     (
@@ -460,7 +461,8 @@ STATEMENTS.append(("0022", FINANCIAL_TRANSITION_STATEMENTS))
 STATEMENTS.append(("0023", FINANCIAL_RECOVERY_STATEMENTS))
 STATEMENTS.append(("0024", OWNER_EXPENSE_STATEMENTS))
 STATEMENTS.append(("0025", OWNER_CHECKIN_STATEMENTS))
-# 0026-0028 are reserved for the other wave-1 packages (docs/CLOUD-BUILD-PLAN.md, "Reserved numbers").
+# 0026 and 0027 are reserved for cloud wave 1 packages W1-A and W1-B (docs/CLOUD-BUILD-PLAN.md).
+STATEMENTS.append(("0028", WEB_RESEARCH_STATEMENTS))
 STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:

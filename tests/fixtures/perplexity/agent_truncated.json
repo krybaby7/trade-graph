@@ -1,0 +1,17 @@
+{
+  "id": "resp_synthetic_truncated_1",
+  "object": "response",
+  "model": "anthropic/claude-sonnet-5-5",
+  "status": "incomplete",
+  "incomplete_details": {"reason": "max_output_tokens"},
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_synthetic_truncated",
+      "role": "assistant",
+      "status": "incomplete",
+      "content": [{"type": "output_text", "text": "{\"summary\": \"One dated rep", "annotations": []}]
+    }
+  ],
+  "usage": {"input_tokens": 2400, "output_tokens": 2000, "total_tokens": 4400}
+}

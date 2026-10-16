@@ -1,0 +1,29 @@
+{
+  "id": "resp_synthetic_final_1",
+  "object": "response",
+  "model": "anthropic/claude-sonnet-5-5",
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_synthetic_1",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"summary\": \"One dated report of a short Solana slowdown.\", \"findings\": [{\"question\": \"Did Solana have an outage this week?\", \"claim\": \"A news site reports a short block-production slowdown on Solana.\", \"source_ref\": \"SOURCE_REF\", \"instruments\": [\"SOL/USD\"], \"counterevidence\": \"Only one source; the network status page was not checked.\", \"invalidation\": \"The status page shows no incident for that day.\", \"expires_after_seconds\": 86400}]}",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 2500,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 300,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 2800,
+    "cost": {"currency": "USD", "input_cost": 0.005, "output_cost": 0.003, "tool_calls_cost": 0, "total_cost": 0.008}
+  }
+}

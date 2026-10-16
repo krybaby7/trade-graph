@@ -114,8 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--portfolio-id")
     cleanup.add_argument("--confirm", action="store_true", help="install the previewed revision")
     from trade_graph.market_data_cli import register_all
+    from trade_graph.perplexity_smoke import register as register_perplexity_smoke
 
     register_all(sub)
+    register_perplexity_smoke(sub)
     return parser
 
 
@@ -687,6 +689,10 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "mandate-cleanup":
         return _mandate_cleanup(args, parser)
+    if args.command == "perplexity-smoke":
+        from trade_graph.perplexity_smoke import run as run_perplexity_smoke
+
+        return run_perplexity_smoke(args)
     from trade_graph.market_data_cli import dispatch
 
     handled = dispatch(args, parser)
