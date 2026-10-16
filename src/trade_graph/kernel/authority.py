@@ -17,6 +17,9 @@ LEADER_FORBIDDEN = frozenset(
         "rewrite_ledger",
         "rewrite_gates",
         "lower_price_card",
+        # T32: the owner's money limits, day start and coin list are owner policy; a mandate may only narrow.
+        "edit_owner_policy",
+        "raise_money_limits",
     }
 )
 ENGINEER_FORBIDDEN = frozenset(
@@ -48,6 +51,9 @@ PROTECTED_PATH_PREFIXES = (
     ".github/",
     "config/owner_policy",
     "planning/model-prices.json",
+    # T32 money limits and coin list: owner policy and execution controls outside the kernel folder.
+    "src/trade_graph/contracts/money_limits.py",
+    "src/trade_graph/application/money_limits.py",
 )
 
 
@@ -72,6 +78,8 @@ def mandate_within_owner(mandate: Mandate, policy: OwnerPolicy) -> None:
     unknown = [symbol for symbol in mandate.symbols if symbol not in policy.allowed_symbols]
     if unknown:
         raise AuthorityDenied(f"symbols outside owner universe: {unknown}")
+    if mandate.coin_scope == "owner_rule" and policy.coin_scope is None:
+        raise AuthorityDenied("the mandate follows a coin rule the owner policy does not have")
     if policy.leverage_allowed is False and mandate.order_types_long_only is False:
         raise AuthorityDenied("short exposure is outside the owner envelope")
 

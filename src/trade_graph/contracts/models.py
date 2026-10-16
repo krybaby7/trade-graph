@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_serializer, model_validator
 
+from trade_graph.contracts.money_limits import CoinScope, OwnerMoneyLimits
 from trade_graph.domain.money import Money, Quantity, parse_decimal
 
 Mode = Literal["paper", "replay", "live"]
@@ -116,6 +117,12 @@ class OwnerPolicy(ContractModel):
     budget_exhaustion_profile: PauseProfile = "MANAGE_ONLY"
     fx_reserve_buffer: Decimal = Decimal("1.02")
     maximum_quote_age_seconds: int = 15
+    # T32 (D138 items 1, 3 and 6). Absent in older revisions, which serialise exactly as before. A revision that
+    # holds ``money_limits`` is where the owner recorded the loss limit, the day start and, in the two fractions
+    # above, the amount per coin and the total; day-plan orders stay off until one exists.
+    money_limits: OwnerMoneyLimits | None = None
+    # None keeps the paper coin list as ``allowed_symbols``; a scope makes it the scanner rule (D138 item 3).
+    coin_scope: CoinScope | None = None
 
     @field_validator(
         "maximum_gross_exposure_fraction",
@@ -137,6 +144,15 @@ class OwnerPolicy(ContractModel):
 
         return canonical_decimal(value)
 
+    @model_serializer(mode="wrap")
+    def _omit_absent_money_limits(self, handler):
+        # Stored revisions are hashed and compared as documents; an older one must re-serialise byte for byte.
+        result = handler(self)
+        for name in ("money_limits", "coin_scope"):
+            if getattr(self, name) is None:
+                result.pop(name, None)
+        return result
+
 
 class Mandate(ContractModel):
     schema_version: int = 1
@@ -155,6 +171,9 @@ class Mandate(ContractModel):
     max_quote_age_seconds: int
     expires_at_utc: datetime
     resource_note: str
+    # "listed": entries and exits name ``symbols``. "owner_rule": entries follow the owner policy's coin rule
+    # (D138 item 3) and exits may close any held coin; only valid while the owner policy has a ``coin_scope``.
+    coin_scope: Literal["listed", "owner_rule"] = "listed"
 
     @field_validator(
         "max_gross_exposure_fraction",
@@ -170,6 +189,14 @@ class Mandate(ContractModel):
         from trade_graph.domain.money import canonical_decimal
 
         return canonical_decimal(value)
+
+    @model_serializer(mode="wrap")
+    def _omit_listed_scope(self, handler):
+        # Older mandate documents re-serialise exactly as stored.
+        result = handler(self)
+        if self.coin_scope == "listed":
+            result.pop("coin_scope", None)
+        return result
 
 
 class Decision(Envelope):
