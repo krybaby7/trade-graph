@@ -46,13 +46,14 @@ from trade_graph.contracts.alarms import (
 from trade_graph.contracts.candles import CandleSlot, align_close_time
 from trade_graph.contracts.models import Observation
 from trade_graph.domain.clock import Clock, parse_utc, utc_iso
-from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.domain.money import canonical_decimal
 
 # One tick evaluates at most this many candles per alarm; the rest wait for the next tick. This bounds the work of
 # one call (and one store read, whose own limit is 100,000 slots); it never skips a candle or limits fires.
 CATCH_UP_SLOTS = 5_000
 _QUOTE_KINDS = ("quote", "trade")
+_REASON_LENGTH = 500
 _CROSSING_SIDES = {"crosses_above": ("at_or_below", "above"), "crosses_below": ("at_or_above", "below")}
 
 
@@ -82,6 +83,7 @@ class WatchReport:
     candles_evaluated: int
     feeds: Mapping[str, str] = field(default_factory=dict)
     blind_alarms: tuple[str, ...] = ()
+    errors: tuple[tuple[str, str], ...] = ()  # (alarm id, what failed): reported, retried next tick
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,14 +237,23 @@ class PriceWatcher:
         with self._lock:
             now = self.clock.now()
             fired: list[AlarmDelivery] = []
+            errors: list[tuple[str, str]] = []
             evaluated = 0
             for alarm in self.book.armed(basis="candle"):
-                deliveries, count = self._candle_alarm(alarm, now)
+                try:
+                    deliveries, count = self._candle_alarm(alarm, now)
+                except TradeGraphError as error:
+                    # One alarm that cannot be evaluated must not blind the others. Its cursor stays where it was,
+                    # so the same candle is tried again next tick, and the failure is reported, not swallowed.
+                    reason = f"evaluation failed ({error.code}): {error}"[:_REASON_LENGTH]
+                    errors.append((alarm.alarm_id, reason))
+                    self.book.advance(alarm.alarm_id, alarm.generation, last_reason=reason)
+                    continue
                 fired.extend(deliveries)
                 evaluated += count
             feeds, notices, blind = self._feed_health(now)
             return WatchReport(at=now, fired=tuple(fired), feed_notices=tuple(notices), candles_evaluated=evaluated,
-                               feeds=feeds, blind_alarms=tuple(blind))
+                               feeds=feeds, blind_alarms=tuple(blind), errors=tuple(errors))
 
     def _candle_alarm(self, alarm: AlarmRecord, now: datetime) -> tuple[list[AlarmDelivery], int]:
         condition = alarm.condition
@@ -375,11 +386,14 @@ class PriceWatcher:
         step = timedelta(minutes=interval)
         due = align_close_time(now - self.policy.candle_grace, interval)  # the newest close that must be here
         newest = align_close_time(now, interval)
-        window = self.store.window(series.symbol, interval, series.source, end_close_time=newest,
-                                   count=(newest - due) // step + 1, as_of=now)
-        alive = any(slot.stored is not None for slot in window.slots)
-        return alive, {"due_close_time_utc": utc_iso(due), "checked_through_utc": utc_iso(newest),
-                       "grace_seconds": self.policy.candle_grace.total_seconds()}
+        detail: dict[str, Any] = {"due_close_time_utc": utc_iso(due), "checked_through_utc": utc_iso(newest),
+                                  "grace_seconds": self.policy.candle_grace.total_seconds()}
+        try:
+            window = self.store.window(series.symbol, interval, series.source, end_close_time=newest,
+                                       count=(newest - due) // step + 1, as_of=now)
+        except TradeGraphError as error:  # candles that cannot be read are not a quiet market either
+            return False, {**detail, "read_error": f"{error.code}: {error}"[:_REASON_LENGTH]}
+        return any(slot.stored is not None for slot in window.slots), detail
 
 
 __all__ = ["CATCH_UP_SLOTS", "PriceWatcher", "WatchPolicy", "WatchReport"]

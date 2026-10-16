@@ -32,7 +32,7 @@ from trade_graph.application.alarms.book import AlarmBook
 from trade_graph.application.alarms.queue import AlarmQueue
 from trade_graph.application.alarms.watcher import PriceWatcher, WatchPolicy
 from trade_graph.application.candle_store import CandleStore
-from trade_graph.application.indicators.engine import compare_to_level, compute_indicator
+from trade_graph.application.indicators.engine import CandleSelectionError, compare_to_level, compute_indicator
 from trade_graph.domain.clock import FrozenClock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
@@ -378,3 +378,25 @@ def test_no_limit_on_alarm_count_or_firing_frequency(rig, clock) -> None:
         assert len(rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="70000", ask="70000"))) == 1
     assert rig.book.get(alarm.alarm_id).generation == 101
     assert len(rig.queue.pending("trader")) == 100
+
+
+def test_one_alarm_that_cannot_be_evaluated_does_not_blind_the_others(rig, clock) -> None:
+    class BrokenForOneSymbol(CandleStore):
+        def window(self, symbol, *args, **kwargs):
+            if symbol == "BAD/USD":
+                raise CandleSelectionError("the store returned a candle of another slot")
+            return super().window(symbol, *args, **kwargs)
+
+    rig.watcher = PriceWatcher(rig.book, BrokenForOneSymbol(rig.market), clock)
+    save(rig.store, [candle(_at(12, 0), "100")])
+    broken = rig.book.create(candle_request("105", "above", symbol="BAD/USD"))
+    healthy = rig.book.create(candle_request("105", "above"))
+    save(rig.store, [candle(_at(12, 15), "110")])
+    _to(clock, _at(12, 16))
+    report = rig.watcher.tick()
+    assert [item.alarm_id for item in report.fired] == [healthy.alarm_id]
+    assert [alarm_id for alarm_id, _ in report.errors] == [broken.alarm_id]
+    record = rig.book.get(broken.alarm_id)
+    assert record.status == "armed" and record.evaluated_through is None  # the cursor did not move
+    assert "candle_selection_invalid" in record.last_reason
+    assert report.feeds["candle:BAD/USD:15:synthetic"] == "lost"  # a series that cannot be read is not quiet
