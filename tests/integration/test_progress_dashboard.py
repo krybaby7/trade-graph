@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 from tests.integration.test_api_security_live import _Runtime
+from tests.integration.test_progress_projection import planning_counts
 
 from trade_graph.api import progress_runs
 from trade_graph.api.app import create_app
@@ -16,7 +17,9 @@ def _client(tmp_path):
 
 def test_progress_is_private_and_reading_it_starts_no_trades(tmp_path):
     runtime, client, token, _ = _client(tmp_path)
-    assert client.get("/progress").status_code == 401
+    signed_out = client.get("/progress", follow_redirects=False)
+    assert signed_out.status_code == 303 and signed_out.headers["location"] == "/login"
+    assert "Mission Control" not in signed_out.text
     assert client.get("/api/v1/progress").status_code == 401
     headers = {"Authorization": f"Bearer {token}"}
     page = client.get("/progress", headers=headers)
@@ -27,8 +30,8 @@ def test_progress_is_private_and_reading_it_starts_no_trades(tmp_path):
     assert page.headers["Cache-Control"] == "no-store"
     assert "script-src 'self'" in page.headers["Content-Security-Policy"]
     projection = client.get("/api/v1/progress", headers=headers).json()
-    assert projection["project"]["completed"] == 17
-    assert projection["project"]["total"] == 23
+    assert projection["project"]["completed"] == planning_counts().completed
+    assert projection["project"]["total"] == planning_counts().total
     assert projection["service"]["status"] == "idle"
     assert projection["test_runs"] == []
     assert any(check["id"] == "kraken-live-pilot" and not check["available"] for check in projection["checks"])
@@ -106,7 +109,7 @@ def test_reported_test_pass_cannot_complete_project_or_enable_live(tmp_path, mon
     }])
     headers = {"Authorization": f"Bearer {token}"}
     projection = client.get("/api/v1/progress", headers=headers).json()
-    assert projection["project"]["completed"] == 17
+    assert projection["project"]["completed"] == planning_counts().completed
     assert next(item for item in projection["project"]["tasks"] if item["id"] == "T20")["status"] == "blocked"
     assert client.get("/api/v1/health", headers=headers).json()["live_enabled"] is False
     assert runtime.database.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
@@ -123,6 +126,6 @@ def test_unavailable_test_history_keeps_the_project_view_readable(tmp_path, monk
     response = client.get("/api/v1/progress", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     projection = response.json()
-    assert projection["project"]["completed"] == 17
+    assert projection["project"]["completed"] == planning_counts().completed
     assert projection["test_storage_error"]
     assert all(not check["available"] for check in projection["checks"])

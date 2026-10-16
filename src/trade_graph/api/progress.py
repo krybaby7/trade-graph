@@ -13,7 +13,9 @@ from trade_graph.domain.clock import utc_iso
 _SOURCE_ROOT = Path(__file__).resolve().parents[3]
 _PACKAGED_CATALOG = Path(__file__).resolve().parents[1] / "progress_catalog.json"
 _MAX_BYTES = 1024 * 1024
-_STATUSES = {"done", "in_progress", "blocked", "pending", "not_started"}
+_STATUSES = {"done", "in_progress", "blocked", "pending", "not_started", "todo"}
+# Planning records a date (older snapshots) or a full UTC timestamp.
+_UPDATED_AT = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)?")
 _DESCRIPTIONS = {
     "T00": "Set up the Python project and repeatable development tools.",
     "T01": "Define the information agents exchange and who may control money.",
@@ -236,9 +238,9 @@ def _project() -> dict:
             catalog = _bounded_json(_PACKAGED_CATALOG)
             tasks = _normalize_tasks(catalog.get("tasks"))
             updated_at, source = _text(catalog.get("updated_at"), 40), "packaged_snapshot"
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", updated_at):
+        if not _UPDATED_AT.fullmatch(updated_at):
             raise ValueError("invalid progress date")
-        datetime.strptime(updated_at, "%Y-%m-%d")
+        datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
     except (OSError, ValueError, TypeError, RecursionError):
         return {
             "completed": None,

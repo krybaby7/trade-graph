@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06",
+  "updated_at": "2026-10-15T17:30:00.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -219,7 +219,7 @@
       "dependencies": [
         "T16"
       ],
-      "evidence_summary": "Subscription/controller tested; no real inference. Native login, protected provider egress and intended-image commissioning remain blocked."
+      "evidence_summary": "Software preparation exists; genuine provider, public-data and intended-host evidence is pending."
     },
     {
       "id": "T18",
@@ -243,7 +243,7 @@
         "T16",
         "T17"
       ],
-      "evidence_summary": "Protected live startup, reconciliation and queued owner Resume pass scripted tests. Actual Kraken conformance/live commissioning pending."
+      "evidence_summary": "Adapter preparation exists; authenticated Kraken conformance is pending."
     },
     {
       "id": "T20",
@@ -267,7 +267,7 @@
         "T14",
         "T16"
       ],
-      "evidence_summary": "Actual WSL process/file isolation tests pass. Credentialed intended-image boundary, provider egress and broader grants remain pending."
+      "evidence_summary": "Local isolation evidence exists; intended-host verification and broader grants remain pending."
     },
     {
       "id": "T22",
@@ -280,6 +280,312 @@
         "T21"
       ],
       "evidence_summary": "Broader Engineer scope remains blocked; current artifact scope is retained."
+    },
+    {
+      "id": "T23",
+      "title": "Supply complete Trader market inputs on time",
+      "status": "done",
+      "description": "Supply complete Trader market inputs on time",
+      "phase": "D0",
+      "dependencies": [
+        "T04",
+        "T09",
+        "T10"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T24",
+      "title": "Unblock USD exposure checks, show refusals and clean mandate defaults",
+      "status": "done",
+      "description": "Unblock USD exposure checks, show refusals and clean mandate defaults",
+      "phase": "D0",
+      "dependencies": [
+        "T03",
+        "T08",
+        "T10"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T25",
+      "title": "Collect 1-, 5-, 15- and 60-minute Kraken candles for many pairs",
+      "status": "done",
+      "description": "Collect 1-, 5-, 15- and 60-minute Kraken candles for many pairs",
+      "phase": "D1",
+      "dependencies": [
+        "T04",
+        "T23"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T26",
+      "title": "Import the Kraken OHLCVT archive and fill gaps from public Trades",
+      "status": "done",
+      "description": "Import the Kraken OHLCVT archive and fill gaps from public Trades",
+      "phase": "D1",
+      "dependencies": [
+        "T25"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T27",
+      "title": "Compute a TA-Lib indicator menu with cross-checked tests",
+      "status": "done",
+      "description": "Compute a TA-Lib indicator menu with cross-checked tests",
+      "phase": "D1",
+      "dependencies": [
+        "T23",
+        "T25"
+      ],
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
+    },
+    {
+      "id": "T44",
+      "title": "Watch headlines with Jev in shadow mode and log would-be news alarms",
+      "status": "todo",
+      "description": "Watch headlines with Jev in shadow mode and log would-be news alarms",
+      "phase": "DN",
+      "dependencies": [
+        "T06",
+        "T07",
+        "T09",
+        "T10",
+        "T23",
+        "T24"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T45",
+      "title": "Turn Jev news alarms into real wake-ups",
+      "status": "todo",
+      "description": "Turn Jev news alarms into real wake-ups",
+      "phase": "DN",
+      "dependencies": [
+        "T35",
+        "T38",
+        "T39",
+        "T44"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T28",
+      "title": "Share conservative limit-fill and protective-exit simulation with dated cost profiles",
+      "status": "todo",
+      "description": "Share conservative limit-fill and protective-exit simulation with dated cost profiles",
+      "phase": "D2",
+      "dependencies": [
+        "T05",
+        "T24"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T29",
+      "title": "Replay strategies in the practice range and report results",
+      "status": "todo",
+      "description": "Replay strategies in the practice range and report results",
+      "phase": "D2",
+      "dependencies": [
+        "T14",
+        "T26",
+        "T27",
+        "T28"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T30",
+      "title": "Add a US-stock cash-account profile at Interactive Brokers",
+      "status": "todo",
+      "description": "Add a US-stock cash-account profile at Interactive Brokers",
+      "phase": "D2",
+      "dependencies": [
+        "T29"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T31",
+      "title": "Rank Kraken USD pairs hourly and shortlist focus candidates",
+      "status": "todo",
+      "description": "Rank Kraken USD pairs hourly and shortlist focus candidates",
+      "phase": "D3",
+      "dependencies": [
+        "T26",
+        "T27",
+        "T28"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T32",
+      "title": "Enforce the owner money-risk envelope and paper symbol scope",
+      "status": "todo",
+      "description": "Enforce the owner money-risk envelope and paper symbol scope",
+      "phase": "D4",
+      "dependencies": [
+        "T15",
+        "T24",
+        "T31"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T33",
+      "title": "Watch prices with persisted one-shot alarms",
+      "status": "todo",
+      "description": "Watch prices with persisted one-shot alarms",
+      "phase": "D4",
+      "dependencies": [
+        "T09",
+        "T25",
+        "T27"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T34",
+      "title": "Install Trader day plans with resting entries and protective exits",
+      "status": "todo",
+      "description": "Install Trader day plans with resting entries and protective exits",
+      "phase": "D4",
+      "dependencies": [
+        "T08",
+        "T28",
+        "T29",
+        "T32",
+        "T33"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T35",
+      "title": "Wake departments on events and their own chosen check-ins",
+      "status": "todo",
+      "description": "Wake departments on events and their own chosen check-ins",
+      "phase": "D4",
+      "dependencies": [
+        "T12",
+        "T31",
+        "T33",
+        "T34"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T36",
+      "title": "Add the Perplexity Agent API adapter with search evidence and receipts",
+      "status": "todo",
+      "description": "Add the Perplexity Agent API adapter with search evidence and receipts",
+      "phase": "D5",
+      "dependencies": [
+        "T06",
+        "T07",
+        "T23",
+        "T24"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T37",
+      "title": "Pick daily focus coins and refresh research on Perplexity",
+      "status": "todo",
+      "description": "Pick daily focus coins and refresh research on Perplexity",
+      "phase": "D5",
+      "dependencies": [
+        "T31",
+        "T35",
+        "T36"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T38",
+      "title": "Run Leader news rounds and Trader wake notes",
+      "status": "todo",
+      "description": "Run Leader news rounds and Trader wake notes",
+      "phase": "D5",
+      "dependencies": [
+        "T12",
+        "T35",
+        "T36"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T39",
+      "title": "Show every wake, its reason and next check-ins in HQ",
+      "status": "todo",
+      "description": "Show every wake, its reason and next check-ins in HQ",
+      "phase": "D6",
+      "dependencies": [
+        "T15",
+        "T35"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T40",
+      "title": "Show AI allowance and spending per department in HQ",
+      "status": "todo",
+      "description": "Show AI allowance and spending per department in HQ",
+      "phase": "D6",
+      "dependencies": [
+        "T15",
+        "T36"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T41",
+      "title": "Chart candles, indicators, alarms and orders with Lightweight Charts",
+      "status": "todo",
+      "description": "Chart candles, indicators, alarms and orders with Lightweight Charts",
+      "phase": "D6",
+      "dependencies": [
+        "T15",
+        "T27",
+        "T33",
+        "T34"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T42",
+      "title": "Compute the day-trader scorecard",
+      "status": "todo",
+      "description": "Compute the day-trader scorecard",
+      "phase": "D7",
+      "dependencies": [
+        "T03",
+        "T29",
+        "T34",
+        "T36"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
+    },
+    {
+      "id": "T43",
+      "title": "Run the scored paper test",
+      "status": "todo",
+      "description": "Run the scored paper test",
+      "phase": "D7",
+      "dependencies": [
+        "T32",
+        "T35",
+        "T37",
+        "T38",
+        "T39",
+        "T40",
+        "T41",
+        "T42"
+      ],
+      "evidence_summary": "Task acceptance remains pending."
     }
   ]
 }
