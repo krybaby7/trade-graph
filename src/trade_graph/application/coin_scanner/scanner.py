@@ -29,6 +29,8 @@ from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.cost_profiles import CostProfileBook, load_cost_profiles
 
+# The fixed failure categories of one ticker request (adapters/market/kraken_ticker.py).
+TICKER_FAILURES = ("request_failed", "response_invalid", "rate_limited", "throttled")
 # Weakest first: a scan is only as real as its least real input.
 _EVIDENCE_ORDER = ("synthetic_fixture", "recorded_public_fixture", "local_archive_file", "live_public_smoke",
                    "live_public")
@@ -136,6 +138,10 @@ def _ranking_row(item: Ranked) -> dict[str, Any]:
             "values": values}
 
 
+def _no_ticker_reason(error: str | None) -> str:
+    return "no_ticker_answer" if error is None else f"ticker_{error}"
+
+
 def _aware(label: str, value: object) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValidationFailure(f"{label} must be a timezone-aware datetime")
@@ -153,8 +159,11 @@ class CoinScanner:
         self.cost_profiles = cost_profiles or load_cost_profiles()
 
     def scan(self, *, as_of: datetime, ticker: TickerSnapshot | None, mode: ScanMode = "live",
-             source: str | None = None) -> ScanResult:
+             source: str | None = None, ticker_error: str | None = None) -> ScanResult:
+        """``ticker_error`` names why a live scan has no ticker answer (the fetch's fixed failure category)."""
         as_of = _aware("as_of", as_of)
+        if ticker_error is not None and (ticker is not None or ticker_error not in TICKER_FAILURES):
+            raise ValidationFailure("a ticker failure is one of the fixed categories, given only without an answer")
         if mode not in SCAN_MODES:
             raise ValidationFailure("a scan is live or a replay")
         rules = self.rules
@@ -181,7 +190,8 @@ class CoinScanner:
                 mode=mode, as_of=as_of, computed_at=computed_at, rules=rules, status=status, error=error,
                 evidence=self._evidence(source, catalog, ticker, runs or set()),
                 optimism_codes=tuple(code for code in OPTIMISM if code in optimism), factors=factors, source=source,
-                cost=cost, catalog=catalog, ticker=ticker_doc or self._ticker_document(ticker, mode),
+                cost=cost, catalog=catalog,
+                ticker=ticker_doc or self._ticker_document(ticker, mode, error=ticker_error),
                 evaluations=tuple(evaluations), ranked=tuple(ranked), shortlist=tuple(chosen))
 
         priced = self._cost(as_of, mode, optimism)
@@ -202,7 +212,8 @@ class CoinScanner:
             return finish("failed", "catalog_unreadable", cost=cost)
         records = [item for item in records if item.usd_quoted]
         catalog = self._catalog_document(observation, as_of)
-        state = self._ticker_state(ticker, records, as_of) if mode == "live" else TickerState(False, "replay")
+        state = (self._ticker_state(ticker, records, as_of, ticker_error) if mode == "live"
+                 else TickerState(False, "replay"))
         settings = ScanSettings(rules=rules, as_of=as_of, mode=mode, source=source, round_trip_rate=round_trip_rate,
                                 cost=cost, catalog=catalog, ticker=state)
         evaluations = [evaluate_pair(self.store, item, settings) for item in records]
@@ -211,7 +222,8 @@ class CoinScanner:
         runs = {run for item in evaluations for run in item.run_ids}
         runs.add(observation.run_id)
         return finish("ok" if ranked else "no_candidates", None, cost=settings.cost, catalog=catalog,
-                      ticker_doc=self._ticker_document(ticker, mode, state), evaluations=evaluations, ranked=ranked,
+                      ticker_doc=self._ticker_document(ticker, mode, state, error=ticker_error),
+                      evaluations=evaluations, ranked=ranked,
                       chosen=chosen, runs=runs)
 
     # --- parts -----------------------------------------------------------------------------------------------------
@@ -240,9 +252,10 @@ class CoinScanner:
                 "observed_after_as_of": observation.observed_at_utc > as_of,
                 "age_hours": round(age, 3)}
 
-    def _ticker_state(self, ticker: TickerSnapshot | None, records: list[PairRecord], as_of: datetime) -> TickerState:
+    def _ticker_state(self, ticker: TickerSnapshot | None, records: list[PairRecord], as_of: datetime,
+                      error: str | None) -> TickerState:
         if ticker is None:
-            return TickerState(False, "no_ticker_answer")
+            return TickerState(False, _no_ticker_reason(error))
         if ticker.received_at > as_of:
             return TickerState(False, "ticker_after_scan_moment", received_at=ticker.received_at,
                                evidence_label=ticker.evidence_label)
@@ -254,12 +267,12 @@ class CoinScanner:
                            evidence_label=ticker.evidence_label)
 
     @staticmethod
-    def _ticker_document(ticker: TickerSnapshot | None, mode: ScanMode, state: TickerState | None = None,
-                         ) -> dict[str, Any]:
+    def _ticker_document(ticker: TickerSnapshot | None, mode: ScanMode, state: TickerState | None = None, *,
+                         error: str | None = None) -> dict[str, Any]:
         if mode == "replay":
             return {"usable": False, "reason": "replay"}
         if ticker is None:
-            return {"usable": False, "reason": "no_ticker_answer"}
+            return {"usable": False, "reason": _no_ticker_reason(error)}
         document = {"usable": bool(state and state.usable), "reason": None if state is None else state.reason,
                     "received_at_utc": utc_iso(ticker.received_at), "evidence_label": ticker.evidence_label,
                     "entries_in_response": ticker.entries_in_response, "entries_read": len(ticker.entries),
@@ -284,4 +297,4 @@ class CoinScanner:
         return "local_archive_file" if source == "kraken_ohlcvt_archive" else "live_public"
 
 
-__all__ = ["OPTIMISM", "CoinScanner", "ScanResult"]
+__all__ = ["OPTIMISM", "TICKER_FAILURES", "CoinScanner", "ScanResult"]
