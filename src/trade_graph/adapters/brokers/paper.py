@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from trade_graph.adapters.brokers.matching import plan_fill
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.contracts.fills import CostProfile, FillPolicy, ProtectiveExit, SimFill, SimOrder
 from trade_graph.contracts.models import (
     AuthorizedOrderIntent,
     BalanceSnapshot,
@@ -22,30 +22,85 @@ from trade_graph.contracts.models import (
     OrderSnapshot,
     SubmitResult,
 )
-from trade_graph.domain.clock import Clock, utc_iso
-from trade_graph.domain.errors import UncertainExternal
+from trade_graph.domain.clock import Clock, parse_utc, utc_iso
+from trade_graph.domain.errors import UncertainExternal, ValidationFailure
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
+from trade_graph.kernel.cost_profiles import KRAKEN_STARTING, load_cost_profiles
+from trade_graph.kernel.fills import PAPER_QUOTE_POLICY, fill_order_on_observation, trigger_exit_on_observation
+
+_DEFAULT_MAKER = Decimal("0.004")
+_DEFAULT_TAKER = Decimal("0.008")
 
 
 class PaperBroker:
+    """Fills come from the shared fill engine (kernel/fills.py, T28) under a dated cost profile.
+
+    The default profile is Kraken's starting spot tier (the D14 rates as a dated record). Explicit
+    ``maker_rate``/``taker_rate`` remain supported and are labelled as explicit configuration.
+    """
+
     def __init__(
         self,
         database: Database,
         clock: Clock,
         *,
-        maker_rate: Decimal = Decimal("0.004"),
-        taker_rate: Decimal = Decimal("0.008"),
-        participation: Decimal = Decimal("1"),
+        maker_rate: Decimal | None = None,
+        taker_rate: Decimal | None = None,
+        cost_profile: CostProfile | None = None,
+        fill_policy: FillPolicy | None = None,
+        participation: Decimal | None = None,
         latency_seconds: int = 0,
     ) -> None:
+        if cost_profile is not None and (maker_rate is not None or taker_rate is not None):
+            raise ValidationFailure("configure either a cost profile or explicit fee rates, not both")
+        if fill_policy is not None and participation is not None:
+            raise ValidationFailure("configure either a fill policy or a participation share, not both")
+        if cost_profile is None:
+            if maker_rate is None and taker_rate is None:
+                cost_profile = load_cost_profiles().get(KRAKEN_STARTING)
+            else:
+                cost_profile = CostProfile.explicit(
+                    maker_rate=_DEFAULT_MAKER if maker_rate is None else maker_rate,
+                    taker_rate=_DEFAULT_TAKER if taker_rate is None else taker_rate,
+                    on=clock.now().date(),
+                )
+        policy = fill_policy or PAPER_QUOTE_POLICY
+        if participation is not None and participation != policy.participation:
+            policy = FillPolicy.model_validate(
+                policy.model_dump() | {"policy_id": "paper-quote-configured", "participation": participation})
+        if policy.entry_slippage_rate != 0:
+            raise ValidationFailure(
+                "paper buy reservations are sized at the quote, so the paper fill policy adds no entry slippage")
         self.database = database
         self.clock = clock
-        self.maker_rate = maker_rate
-        self.taker_rate = taker_rate
-        self.participation = participation
+        self.cost_profile = cost_profile
+        self.fill_policy = policy
         self.latency_seconds = latency_seconds
         self.submit_count = 0
+
+    @property
+    def maker_rate(self) -> Decimal:
+        return self.cost_profile.maker_rate
+
+    @maker_rate.setter
+    def maker_rate(self, value: Decimal) -> None:
+        """A changed fee is a new, explicitly configured profile; fills already made keep theirs."""
+        self.cost_profile = CostProfile.explicit(maker_rate=value, taker_rate=self.taker_rate,
+                                                 on=self.clock.now().date())
+
+    @property
+    def taker_rate(self) -> Decimal:
+        return self.cost_profile.taker_rate
+
+    @taker_rate.setter
+    def taker_rate(self, value: Decimal) -> None:
+        self.cost_profile = CostProfile.explicit(maker_rate=self.maker_rate, taker_rate=value,
+                                                 on=self.clock.now().date())
+
+    @property
+    def participation(self) -> Decimal:
+        return self.fill_policy.participation
 
     @property
     def fee_reserve_rate(self) -> Decimal:
@@ -184,6 +239,43 @@ class PaperBroker:
             status=mapped, filled_quantity=filled, venue_order_id=row["venue_order_id"]
         )
 
+    def _plan(self, client_order_id: str, document: dict, observation: Observation) -> SimFill | None:
+        """One shared-engine evaluation of a stored paper order against one observation."""
+        if observation.symbol != document["symbol"] or Decimal(document["remaining"]) <= 0:
+            return None
+        common = {
+            "symbol": document["symbol"],
+            "eligible_after_utc": parse_utc(document["eligible_after"]),
+            "excluded_event_ref": (
+                f"observation:{document['excluded_observation_id']}"
+                if document.get("excluded_observation_id") else None
+            ),
+        }
+        increment = self._price_increment(document["symbol"])
+        if document["order_type"] == "stop":
+            if document["side"] != "sell":
+                return None
+            exit_ = ProtectiveExit(exit_id=client_order_id, quantity=Decimal(document["remaining"]),
+                                   stop_price=Decimal(document["stop_price"]), **common)
+            return trigger_exit_on_observation(exit_, observation, profile=self.cost_profile,
+                                               policy=self.fill_policy, price_increment=increment)
+        if document["order_type"] not in {"market", "limit"}:
+            return None
+        order = SimOrder(
+            order_id=client_order_id, side=document["side"], kind=document["order_type"],
+            quantity=Decimal(document["quantity"]), remaining=Decimal(document["remaining"]),
+            limit_price=None if document.get("limit_price") is None else Decimal(document["limit_price"]),
+            **common,
+        )
+        return fill_order_on_observation(order, observation, profile=self.cost_profile, policy=self.fill_policy,
+                                         price_increment=increment)
+
+    def _price_increment(self, symbol: str) -> Decimal | None:
+        row = self.database.execute(
+            "SELECT document_json FROM instruments WHERE venue = 'paper' AND symbol = ?", (symbol,),
+        ).fetchone()
+        return None if row is None else InstrumentRules.model_validate_json(row["document_json"]).price_increment
+
     def match(self, observation: Observation) -> list[FillRecord]:
         rows = self.database.execute(
             "SELECT client_order_id, document_json, status FROM broker_orders"
@@ -193,16 +285,9 @@ class PaperBroker:
             if row["status"] not in {"open", "partially_filled"}:
                 continue
             document = json.loads(row["document_json"])
-            planned = plan_fill(
-                document,
-                observation,
-                participation=self.participation,
-                maker_rate=self.maker_rate,
-                taker_rate=self.taker_rate,
-            )
+            planned = self._plan(row["client_order_id"], document, observation)
             if planned is None:
                 continue
-            quantity, price, fee, liquidity, heuristic = planned
             sequence = len(document["emitted"]) + 1
             fill = FillRecord(
                 venue="paper",
@@ -211,21 +296,28 @@ class PaperBroker:
                 intent_id=document["intent_id"],
                 symbol=document["symbol"],
                 side=document["side"],
-                quantity=quantity,
-                price=price,
-                fee_amount=fee,
-                fee_asset=document["symbol"].split("/")[1],
-                liquidity=liquidity,
+                quantity=planned.quantity,
+                price=planned.price,
+                fee_amount=planned.fee,
+                fee_asset=planned.fee_asset,
+                liquidity=planned.liquidity,
                 filled_at_utc=observation.available_at_utc,
-                heuristic=heuristic,
+                heuristic=planned.heuristic,
                 reference_mid=(
                     (observation.bid + observation.ask) / 2
                     if observation.bid is not None and observation.ask is not None
                     else None
                 ),
             )
-            document["remaining"] = canonical_decimal(Decimal(document["remaining"]) - quantity)
+            document["remaining"] = canonical_decimal(Decimal(document["remaining"]) - planned.quantity)
             document["emitted"].append(json.loads(fill.model_dump_json()))
+            # The terms each fill was computed under; a later profile or policy change never rewrites them.
+            document.setdefault("fill_terms", []).append({
+                "trade_id": fill.trade_id, "reason": planned.reason,
+                "reference_price": canonical_decimal(planned.reference_price),
+                "cost_profile_ref": planned.cost_profile_ref, "cost_profile_sha256": planned.cost_profile_sha256,
+                "fill_policy_ref": planned.fill_policy_ref, "fill_policy_sha256": planned.fill_policy_sha256,
+            })
             status = "filled" if Decimal(document["remaining"]) == 0 else "partially_filled"
             with self.database.immediate() as conn:
                 conn.execute(

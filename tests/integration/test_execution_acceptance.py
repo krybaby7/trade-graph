@@ -574,7 +574,9 @@ def test_a13_fresh_quote_with_known_feed_gap_blocks_increase_but_allows_protecti
     assert len(inner.match(_quote(clock, "protective-fill", bid="90", ask="91"))) == 1
     asyncio.run(execution.reconcile())
     assert execution.intent_state(protection) == "FILLED"
-    assert _fills(database, protection)[0].price == Decimal("90")
+    # T28 (D147): the stop fills from the gapped bid, never at its trigger, less the 0.1% taker-exit slippage,
+    # rounded down to the 0.1 tick: 90 * 0.999 = 89.91 -> 89.9.
+    assert _fills(database, protection)[0].price == Decimal("89.9")
     assert execution.owned_quantity(portfolio, "BTC") == 0
     asyncio.run(execution.dispatch())
     assert inner.submit_count == 2
