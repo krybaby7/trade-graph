@@ -9,8 +9,8 @@ The cloud could not reach Kraken's archive or okx.com, so everything here ran on
 samples; the first real three-month reports and a real OKX recording are step L2 on your PC, and nothing here needs
 a decision from you.
 
-Branch: `claude/t29-practice-range`, head: the commit that adds this line; code at `1e5a9a6`. Pull request: (added
-after it is opened).
+Branch: `claude/t29-practice-range`, head: the commit that adds this line; code at `1e5a9a6`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/9.
 
 ## What was built
 
