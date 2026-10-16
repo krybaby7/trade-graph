@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "note": "Dated Perplexity price cards (T36, D124, D150, D151). Records are immutable: a new price is a new card ID. Prices are USD. Search runs in software through the Search API, so the agent card's search rate applies only to Perplexity's own web_search tool, which this installation never enables.",
+  "price_cards": [
+    {
+      "price_card_id": "perplexity-agent-claude-sonnet-5-5-2026-10-12",
+      "provider": "perplexity",
+      "model": "anthropic/claude-sonnet-5-5",
+      "endpoint": "https://api.perplexity.ai/v1/agent",
+      "currency": "USD",
+      "input_per_million": "2",
+      "output_per_million": "10",
+      "search_per_call": "0.0025",
+      "effective_at": "2026-10-12",
+      "verified_at": "2026-10-12",
+      "source_id": "S41",
+      "tier": "standard",
+      "context_band": "standard"
+    },
+    {
+      "price_card_id": "perplexity-search-api-2026-10-16",
+      "provider": "perplexity",
+      "model": "search-api",
+      "endpoint": "https://api.perplexity.ai/search",
+      "currency": "USD",
+      "input_per_million": "0",
+      "output_per_million": "0",
+      "search_per_call": "0.005",
+      "effective_at": "2026-10-16",
+      "verified_at": "2026-10-16",
+      "source_id": "S41",
+      "tier": "standard",
+      "context_band": "none"
+    }
+  ]
+}

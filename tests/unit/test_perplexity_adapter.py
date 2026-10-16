@@ -189,3 +189,21 @@ def test_the_pinned_transport_accepts_only_official_endpoints() -> None:
         HttpxProviderHttp(allowed_urls=("https://api.perplexity.ai/v1/other",))
     with pytest.raises(ValueError, match="outside the owner-pinned"):
         transport.post_json("https://api.openai.com/v1/responses", {}, {})
+
+
+def test_raw_provider_responses_may_carry_fractional_numbers_but_other_bounds_stay_strict() -> None:
+    """The real transport decodes 0.008 as Decimal; refusing it would fail every real Perplexity call."""
+    from trade_graph.adapters.models.providers import OpenAIAdapter
+    from trade_graph.application.gateway import _bounded_json, _parse_provider_result
+
+    result = _parse_provider_result(PerplexityAgentAdapter(), _fixture("agent_final.json"))
+    assert result.ok and json.loads(result.raw_redacted)["reported_total_cost_usd"] == "0.008"
+    openai = _parse_provider_result(OpenAIAdapter(), provider_payload(json.dumps({
+        "id": "resp_1", "model": "gpt-6-luna", "temperature": 1.0, "top_p": 1.0,
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "{\"a\": 1}"}]}],
+        "usage": {"input_tokens": 3, "output_tokens": 1}}).encode()))
+    assert openai.ok and openai.payload == {"a": 1}
+    with pytest.raises(ValueError):
+        _bounded_json({"context": Decimal("1.5")})
+    with pytest.raises(ValueError):
+        _bounded_json({"usage": Decimal("NaN")}, provider_numbers=True)

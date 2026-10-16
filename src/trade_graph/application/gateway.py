@@ -15,6 +15,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
+from trade_graph.adapters.models.perplexity import PerplexityAgentAdapter
 from trade_graph.adapters.models.providers import AnthropicAdapter, OpenAIAdapter, ScriptedAdapter
 from trade_graph.adapters.models.transport import (
     HttpxProviderHttp,
@@ -56,6 +57,7 @@ class ModelGateway:
         self.tools = tools or {}
         self.openai = OpenAIAdapter()
         self.anthropic = AnthropicAdapter()
+        self.perplexity = PerplexityAgentAdapter()
         self.scripted = ScriptedAdapter()
         self.attempts: list[str] = []
 
@@ -73,7 +75,15 @@ class ModelGateway:
         portfolio_id: str | None = None,
         authorize: Callable[[], None] | None = None,
         fx_rate_id: str | None = None,
+        tool_handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
+        observe_attempt: Callable[[str, ModelResult], None] | None = None,
     ) -> ModelResult:
+        """Run one request and its registered tool steps; each step reserves separately.
+
+        ``tool_handlers`` replaces the gateway's registered tools for this call only, so a
+        handler can be bound to one round. ``observe_attempt`` receives each reserved step's
+        reservation ID and settled result, after its receipt or unresolved state is recorded.
+        """
         if invocation_id and (request.max_tool_calls != 0 or not portfolio_id):
             raise ValidationFailure("durable invocation requires scoped tool-free request")
         if self.enabled_providers is not None and request.provider not in self.enabled_providers:
@@ -94,6 +104,7 @@ class ModelGateway:
             and self.transport is None
         ):
             return ModelResult(ok=False, failure="unsupported", message="provider transport is not configured")
+        handlers = self.tools if tool_handlers is None else tool_handlers
         transcript = [dict(item) for item in request.context.get("tool_results") or []]
         result = ModelResult(ok=False, failure="validation", message="provider attempt did not run")
         tools_used = 0
@@ -104,6 +115,7 @@ class ModelGateway:
                 context["tool_results"] = transcript
                 context.pop("http_fixture", None)
                 current = request.model_copy(update={"context": context})
+            reserved: list[str] = []
             result = self._attempt(
                 current,
                 adapter,
@@ -117,19 +129,22 @@ class ModelGateway:
                 portfolio_id=portfolio_id,
                 authorize=authorize,
                 fx_rate_id=fx_rate_id,
+                reservation_sink=reserved,
             )
+            if observe_attempt is not None and reserved:
+                observe_attempt(reserved[0], result)
             if not result.ok or not result.tool_requests:
                 return result
             if step == request.max_tool_calls or tools_used + len(result.tool_requests) > request.max_tool_calls:
                 return _invalid_result(result, "tool continuation exceeded the reserved steps")
             tools_used += len(result.tool_requests)
             for call in result.tool_requests:
-                handler = self.tools.get(call.name)
+                handler = handlers.get(call.name)
                 if handler is None:
                     return _invalid_result(result, f"tool {call.name} is not registered")
-                transcript.append(
-                    {"call_id": call.call_id, "name": call.name, "output": handler(dict(call.arguments))}
-                )
+                # Stateless providers replay each call with its arguments before its output.
+                transcript.append({"call_id": call.call_id, "name": call.name, "arguments": dict(call.arguments),
+                                   "output": handler(dict(call.arguments))})
         return result
 
     def invoke_bounded(
@@ -212,6 +227,7 @@ class ModelGateway:
         portfolio_id: str | None = None,
         authorize: Callable[[], None] | None = None,
         fx_rate_id: str | None = None,
+        reservation_sink: list[str] | None = None,
     ) -> ModelResult:
         card = self.budget.card(price_card_id)
         if request.provider != "scripted" and (card.provider != request.provider or card.model != request.model):
@@ -273,6 +289,8 @@ class ModelGateway:
         if protected_dispatch is not None:
             protected_dispatch(reservation)
         self.attempts.append(reservation)
+        if reservation_sink is not None:
+            reservation_sink.append(reservation)
         try:
             if request.provider == "scripted":
                 result = self.scripted.complete(request)
@@ -369,6 +387,8 @@ class ModelGateway:
             return self.openai
         if provider == "anthropic":
             return self.anthropic
+        if provider == "perplexity":
+            return self.perplexity
         if provider == "scripted":
             return self.scripted
         raise PaidCallsDisabled(provider)
@@ -426,8 +446,13 @@ def _validate_schema(value: Any, schema: Any) -> None:
     Draft202012Validator(schema, registry=_LOCAL_SCHEMA_REGISTRY).validate(value)
 
 
-def _bounded_json(value: Any) -> None:
-    """Bound schemas and data before recursive validation, including raw responses."""
+def _bounded_json(value: Any, *, provider_numbers: bool = False) -> None:
+    """Bound schemas and data before recursive validation, including raw responses.
+
+    ``provider_numbers`` admits finite ``Decimal`` scalars, which is how the protected
+    transport decodes fractional JSON numbers in a raw provider response (for example
+    Perplexity's reported ``usage.cost``). Every other caller keeps the strict scalar set.
+    """
     pending = [(value, 0)]
     nodes = size = 0
     while pending:
@@ -449,6 +474,10 @@ def _bounded_json(value: Any) -> None:
                 raise ValueError("JSON node bound exceeded")
             size += 2 + max(0, len(item) - 1)
             pending.extend((child, depth + 1) for child in item)
+        elif provider_numbers and isinstance(item, Decimal):
+            if not item.is_finite() or len(str(item)) > 64:
+                raise ValueError("invalid or oversized JSON number")
+            size += len(str(item))
         else:
             if (not isinstance(item, (str, int, float, bool, type(None)))
                     or (isinstance(item, float) and not isfinite(item))
@@ -461,7 +490,7 @@ def _bounded_json(value: Any) -> None:
 
 def _parse_provider_result(adapter: InferenceAdapter, payload: dict[str, Any]) -> ModelResult:
     try:
-        _bounded_json(payload)
+        _bounded_json(payload, provider_numbers=True)
         return adapter.parse(payload)
     except (AttributeError, KeyError, OverflowError, TypeError, ValueError, RuntimeError):
         # Parse only billing metadata if the response exceeds bounds or cannot be
