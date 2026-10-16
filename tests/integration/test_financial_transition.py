@@ -13,7 +13,30 @@ from tests.integration.test_protected_financial_runtime import ENTER, HOLD, KEY,
 from trade_graph.application.protected_runtime import ProtectedPaperRuntime
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState
+from trade_graph.kernel import financial_checkpoint
 from trade_graph.kernel.financial_service import ProtectedFinancialService
+
+
+@pytest.fixture
+def unhurried_ledger_verification(monkeypatch):
+    """Give the real Ledger verification helper time to start on a slow or busy machine.
+
+    Production allows the helper 2 seconds within a 5-second scan. These tests are
+    about transition and recovery records, not those limits, and under full-suite
+    load the helper (about 0.3 seconds alone) sometimes took longer. The helper
+    still runs and must still agree with the ledger; test_financial_checkpoint
+    covers the deadline itself.
+    """
+    run_bounded = financial_checkpoint.run_bounded
+
+    def unhurried(command, payload, *, cwd, wall_seconds):
+        return run_bounded(command, payload, cwd=cwd, wall_seconds=max(wall_seconds, 30))
+
+    monkeypatch.setattr(financial_checkpoint, "run_bounded", unhurried)
+    monkeypatch.setattr(financial_checkpoint, "MAXIMUM_SECONDS", 60)
+
+
+pytestmark = pytest.mark.usefixtures("unhurried_ledger_verification")
 
 
 def transition_stack(tmp_path):
