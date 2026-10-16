@@ -6,9 +6,12 @@ from decimal import Decimal
 
 import pytest
 from tests.integration.test_financial_recovery import operator, recovery_stack
+from tests.integration.test_financial_transition import unhurried_ledger_verification  # noqa: F401
 
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState
+
+pytestmark = pytest.mark.usefixtures("unhurried_ledger_verification")
 
 
 def incident_for(financial, portfolio_id):

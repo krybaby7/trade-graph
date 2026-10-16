@@ -58,7 +58,7 @@ Imported results show verifier-confirmed stages, original observation time, actu
 
 ## Where the progress comes from
 
-In a source checkout, the view reads the current `planning/tasks.json` and `planning/progress.json`; edits appear at the next refresh. An installed wheel uses the packaged `progress_catalog.json` snapshot and labels that source. A missing or malformed catalog is shown as unavailable.
+In a source checkout, the view reads the current `planning/tasks.json` and `planning/progress.json`; edits appear at the next refresh. An installed wheel uses the packaged `progress_catalog.json` snapshot and labels that source. A missing or malformed catalog is shown as unavailable. Task states may be `todo`, `in_progress`, `blocked` or `done`, and `updated_at` may be a date or a full UTC timestamp. After any change to the planning files, refresh the snapshot with `uv run python scripts/update_progress_catalog.py`; a test fails until the snapshot matches.
 
 Runtime tasks and events come from the financial runtime database using read snapshots. Test results live in a separate private `progress-runs.sqlite` beside it and do not change the financial journal or task acceptance. They are operational evidence, not a live-readiness certificate. Include the sidecar in private operational backups if you need test history; the existing financial database backup command does not automatically include it.
 

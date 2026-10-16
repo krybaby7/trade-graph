@@ -17,6 +17,15 @@ from trade_graph.domain.clock import FrozenClock
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def planning_counts(root=ROOT):
+    """Count task states straight from the planning files the projection reads."""
+    tasks = json.loads((root / "planning/tasks.json").read_text())["tasks"]
+    states = json.loads((root / "planning/progress.json").read_text())["tasks"]
+    statuses = [states[task["id"]]["status"] for task in tasks]
+    return SimpleNamespace(completed=statuses.count("done"), total=len(tasks),
+                           in_progress=statuses.count("in_progress"), blocked=statuses.count("blocked"))
+
+
 @pytest.fixture
 def runtime(tmp_path):
     clock = FrozenClock(datetime(2026, 1, 2, tzinfo=UTC))
@@ -41,9 +50,15 @@ def checkout(tmp_path, monkeypatch):
 def test_project_counts_and_milestones_preserve_scoped_acceptance(runtime, checkout):
     data = projection.progress(runtime)
     project = data["project"]
-    assert (project["completed"], project["total"], project["in_progress"], project["blocked"]) == (17, 23, 4, 2)
-    assert project["percent"] == 74
+    expected = planning_counts(checkout)
+    # The roadmap has finished tasks and tasks not yet started ("todo"); neither is miscounted.
+    assert 0 < expected.completed < expected.total
+    assert (project["completed"], project["total"], project["in_progress"], project["blocked"]) == (
+        expected.completed, expected.total, expected.in_progress, expected.blocked)
+    assert project["percent"] == round(expected.completed * 100 / expected.total)
     assert project["source"] == "repository"
+    assert project["updated_at"] == json.loads((checkout / "planning/progress.json").read_text())["updated_at"]
+    assert {task["status"] for task in project["tasks"]} <= {"done", "in_progress", "blocked", "todo"}
     milestones = {milestone["id"]: milestone for milestone in data["milestones"]}
     assert milestones["foundation"]["status"] == "completed"
     assert milestones["connected-paper"]["status"] == "in_progress"
@@ -61,8 +76,8 @@ def test_checkout_progress_is_reloaded_for_each_poll(runtime, checkout):
     states["tasks"]["T17"]["status"] = "done"
     path.write_text(json.dumps(states))
     after = projection.progress(runtime)
-    assert before["project"]["completed"] == 17
-    assert after["project"]["completed"] == 18
+    assert before["project"]["completed"] == planning_counts().completed
+    assert after["project"]["completed"] == before["project"]["completed"] + 1
     assert next(m for m in after["milestones"] if m["id"] == "connected-paper")["status"] == "completed"
     assert next(m for m in after["milestones"] if m["id"] == "kraken-checks")["status"] == "in_progress"
 
@@ -71,9 +86,9 @@ def test_installed_catalog_is_dated_snapshot_not_fake_runtime_evidence(runtime, 
     monkeypatch.setattr(projection, "_SOURCE_ROOT", tmp_path / "installed")
     catalog = projection.progress(runtime)["project"]
     assert catalog["source"] == "packaged_snapshot"
-    assert catalog["updated_at"] == "2026-10-06"
-    assert catalog["completed"] == 17
-    assert catalog["total"] == 23
+    assert catalog["updated_at"] == json.loads((ROOT / "planning/progress.json").read_text())["updated_at"]
+    assert catalog["completed"] == planning_counts().completed
+    assert catalog["total"] == planning_counts().total
     assert not any("owner" in task or "branch" in task or "evidence" in task for task in catalog["tasks"])
     assert "authenticated Kraken conformance is pending" in next(
         task["evidence_summary"] for task in catalog["tasks"] if task["id"] == "T19"
@@ -84,17 +99,19 @@ def test_packaged_catalog_matches_current_planning_without_private_metadata():
     catalog = json.loads((ROOT / "src/trade_graph/progress_catalog.json").read_text())
     tasks = json.loads((ROOT / "planning/tasks.json").read_text())["tasks"]
     states = json.loads((ROOT / "planning/progress.json").read_text())
-    assert catalog["updated_at"] == states["updated_at"]
+    refresh = "refresh the snapshot: uv run python scripts/update_progress_catalog.py"
+    assert catalog["updated_at"] == states["updated_at"], refresh
     assert [(t["id"], t["title"], t["dependencies"], t["status"]) for t in catalog["tasks"]] == [
         (t["id"], t["title"], t["deps"], states["tasks"][t["id"]]["status"]) for t in tasks
-    ]
+    ], refresh
     serialized = json.dumps(catalog)
     assert "historical_submission" not in serialized
     assert "/workspace/" not in serialized
     assert "orchestration" not in serialized
 
 
-@pytest.mark.parametrize("fault", ["missing", "malformed", "oversize", "status", "dependency", "duplicate", "date"])
+@pytest.mark.parametrize("fault", ["missing", "malformed", "oversize", "status", "dependency", "duplicate", "date",
+                                   "timestamp", "unknown_status"])
 def test_invalid_checkout_is_unavailable_instead_of_falling_back_to_old_success(runtime, checkout, fault):
     progress_path = checkout / "planning/progress.json"
     tasks_path = checkout / "planning/tasks.json"
@@ -108,9 +125,13 @@ def test_invalid_checkout_is_unavailable_instead_of_falling_back_to_old_success(
         states = json.loads(progress_path.read_text())
         del states["tasks"]["T17"]
         progress_path.write_text(json.dumps(states))
-    elif fault == "date":
+    elif fault in {"date", "timestamp"}:
         states = json.loads(progress_path.read_text())
-        states["updated_at"] = "2026-99-99"
+        states["updated_at"] = "2026-99-99" if fault == "date" else "2026-10-15T25:00:00.000000Z"
+        progress_path.write_text(json.dumps(states))
+    elif fault == "unknown_status":
+        states = json.loads(progress_path.read_text())
+        states["tasks"]["T17"]["status"] = "almost_done"
         progress_path.write_text(json.dumps(states))
     else:
         tasks = json.loads(tasks_path.read_text())
@@ -125,6 +146,17 @@ def test_invalid_checkout_is_unavailable_instead_of_falling_back_to_old_success(
     assert data["project"]["percent"] is None
     assert data["project"]["tasks"] == []
     assert all(m["status"] == "pending" for m in data["milestones"])
+
+
+@pytest.mark.parametrize("updated_at", ["2026-10-06", "2026-10-15T17:30:00.000000Z", "2026-10-15T17:30:00Z"])
+def test_progress_accepts_a_recorded_date_or_full_utc_timestamp(runtime, checkout, updated_at):
+    path = checkout / "planning/progress.json"
+    states = json.loads(path.read_text())
+    states["updated_at"] = updated_at
+    path.write_text(json.dumps(states))
+    project = projection.progress(runtime)["project"]
+    assert project["source"] == "repository"
+    assert project["updated_at"] == updated_at
 
 
 def test_missing_installed_catalog_is_explicitly_unavailable(runtime, tmp_path, monkeypatch):
@@ -213,7 +245,7 @@ def test_local_test_results_do_not_complete_project_or_kraken_milestone_and_proj
     with runtime.database.snapshot():
         data = projection.progress(runtime, runs)
     assert data["test_runs"] == runs
-    assert data["project"]["completed"] == 17
+    assert data["project"]["completed"] == planning_counts().completed
     assert next(m for m in data["milestones"] if m["id"] == "kraken-checks")["status"] == "in_progress"
     assert list(runtime.database.execute("SELECT name FROM sqlite_master ORDER BY name")) == before
     assert runtime.database.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0

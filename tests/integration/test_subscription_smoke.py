@@ -90,7 +90,12 @@ def test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers(sm
     result = run(h, "cycle")
     assert result["status"] == "SUCCEEDED"
     assert [request.role for request in h.cli.requests] == ["research", "research", "trader"]
-    assert all(request.timeout_seconds <= 120 and request.max_output_tokens <= 4096 for request in h.cli.requests)
+    diagnostic, *cycle = h.cli.requests
+    assert diagnostic.timeout_seconds <= 120 and diagnostic.max_output_tokens <= 4096
+    # The cycle runs through the normal protected handlers, which apply the profile's own limits.
+    limits = h.setup.assembly.router.config.subscription
+    assert all(request.timeout_seconds == limits.maximum_seconds
+               and request.max_output_tokens == limits.maximum_output_tokens for request in cycle)
     assert all(h.setup.row(task_id)["status"] == "QUEUED" for task_id in queued.values())
     assert h.setup.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 1
     assert h.setup.db.execute("SELECT COUNT(*) FROM findings").fetchone()[0] == 1

@@ -5,7 +5,11 @@ from dataclasses import asdict
 from datetime import timedelta
 
 import pytest
-from tests.integration.test_financial_transition import facts, transition_stack
+from tests.integration.test_financial_transition import (
+    facts,
+    transition_stack,
+    unhurried_ledger_verification,  # noqa: F401
+)
 from tests.integration.test_protected_financial_runtime import KEY
 
 from trade_graph.adapters.brokers.paper import PaperBroker
@@ -15,6 +19,8 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState
 from trade_graph.kernel.financial_service import ProtectedFinancialService
+
+pytestmark = pytest.mark.usefixtures("unhurried_ledger_verification")
 
 
 def recovery_stack(tmp_path, *, subscriptions=False):
