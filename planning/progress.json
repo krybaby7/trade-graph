@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T17:30:00.000000Z",
-  "status_note": "D114 fix list (T23, T24) and owner follow-ups D130 implemented and tested in source on claude/day-trader-engine-20261012; not deployed. Phase D1 (T25-T27) is built and tested in source (D132-D136) on synthetic and recorded data plus one small live public smoke run; no real Kraken archive has been imported and nothing is deployed. The owner made the Jev news alarm (T44, shadow mode) the next task on 2026-10-15 (D137); T45 follows after T35, T38 and T39.",
+  "updated_at": "2026-10-16T16:30:00.000000Z",
+  "status_note": "Cloud wave 1 merged on claude/day-trader-engine-20261012 on 2026-10-16 (D139, D140-D164): T44 Jev news alarm in shadow mode, T28 shared fill and protective-exit engine with dated fee profiles, T36 Perplexity Agent API adapter with search evidence and receipts, T33 one-shot price alarms, and C1 (the known test failures fixed). Built and tested in source on synthetic and scripted data; no paid, exchange or feed call and nothing deployed. Credentialed smoke tests, real feed samples and fee-page checks are step L2. Wave 2 (T29, T31, T40) can start.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -451,8 +451,15 @@
       ]
     },
     "T28": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W1-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 934d20d (W1-B, pull request #2, package head 8fdb323, code f331ff0): one cautious fill and protective-exit engine in the protected kernel (kernel/fills.py, contracts/fills.py) shared by the paper broker and the coming practice range; the old private matcher is removed. Three dated, sourced, hash-pinned cost profiles in kernel/cost_profiles.json: kraken-spot-starting-tier@1 (0.40%/0.80%), kraken-spot-after-10k-volume@1 (0.22%/0.38%), okx-eea-spot@1 (0.10%/0.20%). Decisions D145-D149.",
+        "Acceptance: golden cases under all three profiles (touch-only bar does not fill a resting buy limit; a gap through a stop fills at the worse open; a bar hitting both exits takes the stop) in tests/unit/test_fill_engine.py; profile pins, append-only revisions and per-fill profile and policy references and hashes in tests/unit/test_cost_profiles.py and tests/integration/test_paper_fill_engine.py (a later profile never rewrites an earlier fill); broker conformance and the T05 guarantees (test_venue_conformance.py, test_execution_acceptance.py, test_paper_service.py, test_pause_profiles.py, test_broker_identity.py) pass after the merge: 88 and 94 tests.",
+        "Behaviour change at installation: a paper stop exit now fills at the gapped bid less 0.10% slippage (D147; test_a13 asserts 89.9 instead of 90). Open for step L2: the fee pages were unreachable from the cloud, so each profile keeps the build-plan figure and says so; re-read them and publish a new revision if a figure differs.",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
     },
     "T29": {
       "status": "todo",
@@ -471,8 +478,15 @@
       "evidence": []
     },
     "T33": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W1-D",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 87a7c75 (W1-D, pull request #5, package head 2d7f48e): alarm contract (contracts/alarms.py) for quote, completed-candle and T27 indicator conditions with one owning department; migration 0029 with SQLite triggers for one fire per arming, re-arm only after a fire and append-only history; AlarmBook, AlarmQueue (the per-department delivery queue W5-A claims one batch per wake) and PriceWatcher, which reads candles only through CandleStore.window and calls no model. Decisions D155-D159; queue contract in docs/PRICE-ALARMS.md.",
+        "Acceptance: deterministic-clock tests show no double fire across restarts and re-arms, no fire before a candle is completed and received, and batched delivery (tests/property/test_price_alarm_properties.py, tests/integration/test_price_alarm_watcher.py, test_price_alarm_book.py, test_alarm_queue.py, test_migration_0029.py); feed loss is recorded and sent as a notice, never read as a quiet market; no field or setting limits alarm count or firing frequency (tests/unit/test_alarm_contract.py). 114 tests with the migration and startup files after the merge.",
+        "The package pushed its evidence after the code merge (6a068f2, handoff only, merged as 39af56b): full suite at 2d7f48e, 6338 passed, 14 failed, 23 skipped, every failure also failing on the untouched base 435db71 in the same container (13 known and the bubblewrap egress test), so no new failure. Waking departments from the queue and calling the watcher from the service are T35 (W5-A).",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
     },
     "T34": {
       "status": "todo",
@@ -483,8 +497,15 @@
       "evidence": []
     },
     "T36": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W1-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 36cc045 (W1-C, pull request #4, package head 105d5cc, code 9efcccc): PerplexityAgentAdapter behind the provider-neutral InferenceAdapter (no SDK), Search API client, software-run web_search tool that stores every result before the model reads it, PerplexityWebResearch rounds with a receipt for every step and search, the owner PerplexitySpendPolicy and PerplexitySpendGuard, the private key-file reader, migration 0028 with six append-only tables, two dated price cards and the opt-in perplexity-smoke command. Decisions D150-D154.",
+        "Acceptance: scripted fixtures cover success, refusal, truncation, timeout, missing usage and malformed search results (tests/unit/test_perplexity_adapter.py, test_perplexity_search_client.py, tests/integration/test_perplexity_research.py); a finding citing a source outside its round's snapshot rejects the whole reply; test_an_owner_limit_pauses_rounds_while_trader_and_records_continue shows a set limit giving paused_at_limit while the Trader's model path and records continue; the credentialed smoke is opt-in (--confirm-paid-call) and labelled real only when the pinned transport ran. 96 package tests; 158 with the migration tests and 302 related tests after the merge.",
+        "Open: one real call with the D125 test key and the official prices (Search API priced high at USD0.005 per request, unconfirmed) at step L2; Research and the Leader switch to Perplexity in T37 and T38; the 2026-10-12 price card goes stale on 2026-11-11. Found, not fixed: a repeated provider request id raises IntegrityError out of BudgetGateway.commit (for the gateway owner).",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
     },
     "T37": {
       "status": "todo",
@@ -515,8 +536,15 @@
       "evidence": []
     },
     "T44": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W1-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as c4bde76 (W1-A, pull request #3, package head 24904b1, code fa882ef): Jev decision contract and adapter (contracts/decisions.py, adapters/decisions/jev.py, pinned jev-1.13.0, aliases refused), five keyless feeds with a bounded RSS/Atom reader, question set news-alarm-questions-v1 and rule news-alarm-rule-v1, receipted Jev checks through BudgetGateway (role news_alarm), migration 0026 with five append-only tables, and the news-alarm-poll and news-alarm-report commands. Jev is off by default and wakes_sent is always 0 (shadow mode). Decisions D140-D144.",
+        "Acceptance: scripted fixtures cover success, HTTP 400, 401, 422, 429 and 529 (also 413, 415 and 5xx), timeout, missing usage, an unexpected answering model and malformed answers (tests/unit/test_jev_adapter.py, tests/integration/test_jev_checks.py); a headline with instructions changes no setting, wake-up, order or tool (tests/security/test_news_alarm_boundary.py); answers are stored as received with their digits and never recomputed (test_news_alarm_shadow.py, test_news_alarm_report.py); property tests show the would-wake rule only adds wake-ups (tests/property/test_news_alarm_rule_properties.py); the CLI report works on labelled synthetic fixtures (test_news_alarm_cli.py). The credentialed Jev smoke is opt-in and separate (step L2). 155 package tests; 315 with migrations and related files after the merge.",
+        "Open for step L2: one real sample of each feed (every feed host was refused from the cloud) and, if the owner adds a key, one opt-in Jev call to confirm the wire names. Before real calls under the protected deployment (W6-D/L3), bind Jev checks to protected budget origins.",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
     },
     "T45": {
       "status": "todo",

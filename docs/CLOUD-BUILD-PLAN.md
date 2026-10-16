@@ -1,6 +1,7 @@
 # Cloud build plan for the day-trader engine
 
-Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27). Every
+Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
+cloud wave 1 is merged (T28, T33, T36, T44 and C1; D140–D164). Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -167,9 +168,9 @@ These rules add to [AGENTS.md](../AGENTS.md), which always applies.
     - your new and related tests
     - `python3 scripts/check_plan.py` and `python3 scripts/test_planning.py`
     - `python3 scripts/check_repository_hygiene.py`
-    - the full suite once, `uv run pytest -p no:cacheprovider -rf` (about 35
-      minutes). Compare with the known failures below. Report any new failure,
-      even if you think it is unrelated.
+    - the full suite once, `uv run pytest -p no:cacheprovider -rf` (about 1 to
+      2 hours in a cloud container). Compare with the known failures below.
+      Report any new failure, even if you think it is unrelated.
 14. Write `planning/handoffs/<package>.md` from the template in
     `planning/handoffs/README.md`. Start it with three plain-English sentences
     for the owner, who is not a programmer or trader.
@@ -189,19 +190,19 @@ These rules add to [AGENTS.md](../AGENTS.md), which always applies.
     private data), build and test everything you can without it, and list the
     rest in the handoff. Do not stop early and do not ask for a key.
 
-**Known failures before W1-E.** These fail on the base branch and are not
-caused by new work: `e2e/test_dashboard_loop`, 4 `test_paper_soak`, 3
-`test_progress_dashboard`, 4 `test_progress_projection`,
-`test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers`,
-and timing cases that fail only under load (`test_plugin_staging` 0.3-second
-cases, `test_financial_recovery`, `test_financial_transition`,
-`test_engineer_isolation`). After W1-E is merged, the suite should be clean
-on a normal Linux host; any failure there then counts.
+**Known failures.** None since W1-E (C1) was merged on 2026-10-16. The wave 1
+integration ran the full suite at `c4bde76` on Python 3.12.13 (from
+`uv python install 3.12`) in a cloud container: 6,664 passed, 0 failed, 23
+skipped. Any failure now counts and must be reported. That run took 105
+minutes in the container (W1-E measured 54); GitHub's test job may run 120.
 
-**Cloud container failures.** In a cloud session some isolation tests also
-fail because of the container itself: bubblewrap (`bwrap`) is not installed,
-and the plugin runtime refuses a symlinked `_sysconfigdata` file (found by
-W1-B, 2026-10-16). These are security checks: never skip, loosen or rewrite
+**Cloud container failures.** In a cloud session some isolation tests can also
+fail because of the container itself. Bubblewrap (`bwrap`) is not installed:
+the tests that really run it skip, as they do on GitHub. With the system
+`/usr/bin/python3.12`, the plugin runtime refuses Debian's symlinked
+`_sysconfigdata` file (found by W1-B, 2026-10-16); the Python from `uv python
+install 3.12` has no such link, and with it the wave 1 integration run had no
+container failure. These are security checks: never skip, loosen or rewrite
 them to pass in the cloud. A failure is "new" only if the untouched base
 branch passes that test in the same container; check by running the failing
 tests on the base commit before reporting.
