@@ -244,7 +244,8 @@ def propose(snapshot):
     "import os\ndef propose(snapshot):\n    os.write(1,b'{\"passed\":true,\"owner_grant\":true}')\n    os._exit(0)\n",
 ])
 def test_resource_capability_and_output_failures_cannot_manufacture_passage(tmp_path, source):
-    policy = ReplayPolicy(boundary=BoundaryPolicy(wall_seconds=Decimal("0.3")))
+    # The default (production) wall clock, so the good candidate below also passes on a slow machine.
+    policy = ReplayPolicy()
     store, validator, manifest_pin, corpus_pin = prepared(tmp_path, policy=policy)
     candidate = stage(store, source, manifest_pin, corpus_pin)
     report = validator.verified_receipt(validator.validate(candidate.manifest.build_digest),
