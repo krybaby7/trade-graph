@@ -20,18 +20,12 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from trade_graph.adapters.models.providers import _wire_schema
+from trade_graph.adapters.models.providers import _wire_schema, lookup_capabilities
 from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelResult, ModelUsage, ToolRequest
 
 AGENT_ENDPOINT = "https://api.perplexity.ai/v1/agent"
 PERPLEXITY_SONNET = "anthropic/claude-sonnet-5-5"
 SEARCH_TOOL_NAME = "web_search"
-
-CAPABILITIES: dict[str, dict[str, bool]] = {
-    # Claude behind Perplexity: the Anthropic schema dialect, no forced tools, default sampling (S19).
-    PERPLEXITY_SONNET: {"structured_output": True, "forced_tool": False, "sampling_temperature": False,
-                        "tool_continuation": True},
-}
 
 # Context keys that steer software, not the model. They never enter the prompt.
 _CONTROL_KEYS = frozenset({"tools", "tool_results", "http_fixture", "max_input_tokens", "scripted_result",
@@ -66,10 +60,9 @@ class PerplexityAgentAdapter:
     endpoint = AGENT_ENDPOINT
 
     def capabilities(self, model: str) -> ModelCapabilities | None:
-        raw = CAPABILITIES.get(model)
-        if raw is None:
-            return None
-        return ModelCapabilities(provider="perplexity", model=model, **raw)
+        """The shared approved registry decides; this adapter adds stateless tool continuation."""
+        caps = lookup_capabilities(self.provider, model)
+        return None if caps is None else caps.model_copy(update={"tool_continuation": True})
 
     def build_body(self, request: ModelRequest) -> dict[str, Any]:
         prompt = {key: value for key, value in request.context.items() if key not in _CONTROL_KEYS}

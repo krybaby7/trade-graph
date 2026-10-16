@@ -17,6 +17,12 @@ CAPABILITIES: dict[str, dict[str, bool]] = {
         "forced_tool": False,
         "sampling_temperature": False,
     },
+    # Claude Sonnet 5.5 through Perplexity's Agent API (T36, D124): Anthropic dialect rules apply.
+    "perplexity:anthropic/claude-sonnet-5-5": {
+        "structured_output": True,
+        "forced_tool": False,
+        "sampling_temperature": False,
+    },
     "scripted:scripted": {"structured_output": True, "forced_tool": False, "sampling_temperature": False},
 }
 

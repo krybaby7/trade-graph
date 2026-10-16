@@ -400,3 +400,18 @@ def test_the_shipped_price_cards_are_the_dated_records() -> None:
     assert prices["verified_at"] == "2026-09-29"
     assert prices["models"]["anthropic:claude-sonnet-5-5"] == {"input_per_million": "2.00",
                                                                "output_per_million": "10.00", "source_id": "S02"}
+
+
+@pytest.mark.parametrize("key", ["tools", "tool_results", "http_fixture", "max_input_tokens", "question"])
+def test_a_callers_context_cannot_steer_software_keys(tmp_path, key) -> None:
+    setup = Setup(tmp_path, [])
+    with pytest.raises(ValueError, match="software control keys"):
+        setup.ask(context={key: "anything"})
+
+
+def test_the_model_router_recognises_the_perplexity_route(tmp_path) -> None:
+    from trade_graph.adapters.models.providers import lookup_capabilities
+
+    caps = lookup_capabilities("perplexity", "anthropic/claude-sonnet-5-5")
+    assert caps is not None and caps.structured_output and not caps.forced_tool
+    assert lookup_capabilities("perplexity", "search-api") is None  # the search card is not a model route
