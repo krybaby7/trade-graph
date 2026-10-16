@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-16T16:30:00.000000Z",
-  "status_note": "Cloud wave 1 merged on claude/day-trader-engine-20261012 on 2026-10-16 (D139, D140-D164): T44 Jev news alarm in shadow mode, T28 shared fill and protective-exit engine with dated fee profiles, T36 Perplexity Agent API adapter with search evidence and receipts, T33 one-shot price alarms, and C1 (the known test failures fixed). Built and tested in source on synthetic and scripted data; no paid, exchange or feed call and nothing deployed. Credentialed smoke tests, real feed samples and fee-page checks are step L2. Wave 2 (T29, T31, T40) can start.",
+  "updated_at": "2026-10-16T22:17:24.000000Z",
+  "status_note": "Cloud wave 2 merged on claude/day-trader-engine-20261012 on 2026-10-16 (D165-D179): T29 practice range with OKX public candles and shared result sums, T31 hourly coin scanner with a shortlist of 10, and T40 HQ AI spending per department with the USD20 testing alert. Built and tested in source on synthetic, scripted and recorded public data; no paid, exchange or network call and nothing deployed. Real practice-range reports, an OKX recording, the first real scan and a Ticker recording are step L2. The full suite runs as GitHub's test job on the candidate commit (claude/night-candidate-wave2); wave 3 (T32) can start once it passes.",
   "tasks": {
     "T00": {
       "status": "done",
@@ -462,16 +462,32 @@
       ]
     },
     "T29": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W2-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 0d5d9f2 (W2-A, pull request #9, package head 904d5c2, code 1e5a9a6): practice range in application/practice_range (replay, store, service, summary) with the bounded strategy grammar contracts/practice_range.py and two example versions in strategies/practice/; candles only through CandleStore.window, point-in-time; fills only through the kernel fill engine (bar-replay@1) under each cost profile; result sums in kernel/trade_metrics.py for the scorecard; OKX public candles as source okx_public_candles (candle database 0002) with candles-okx-import and candles-okx-fetch; state migration 0030; commands practice-range-register, -study, -run, -report, -verify. Decisions D165-D169.",
+        "Acceptance: hand-checked Decimal golden replay (fills 101.31, 106.27, 100.61, 96.90 through a stop gap and 100.31; ending equity 9814.41264; worst drawdown 0.0345463093) in tests/integration/test_practice_range_replay.py and a partial-fill metrics golden case in tests/unit/test_trade_metrics.py; the recorded public Kraken BTC/USD 15-minute fixture replays with its gaps reported; a 90-day study (60 tuning plus 30 confirmation days) under all three profiles; reports persist version, data sources, cost profile and windows and practice-range-verify reproduces them (test_practice_range_service.py); the later window cannot be reused for tuning (store and SQL triggers, test_migration_0030.py); every report carries the evidence label (not a pass mark, profitability claim or live authorization); offline checks in test_practice_range_stays_offline.py. 114 package tests; 139 with the candle store after the merge.",
+        "OKX fixture: okx.com refused the cloud (HTTP 403), so the OKX part of the recorded-fixture acceptance item is met with a labelled synthetic OKX-format fixture, as the build plan's W2-A section prescribes; step L2 records a real OKX fixture and confirms the format, host and limits (S44). Also L2: the first real three-month reports on the imported Kraken history.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job on candidate commit (claude/night-candidate-wave2); result recorded by the night lead after it completes."
+      ]
     },
     "T30": {
       "status": "todo",
       "evidence": []
     },
     "T31": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W2-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as c4a8002 (W2-B, pull request #8, package head a95e872, code 0fbe7a5): dated, versioned scanner rules (contracts/coin_scanner.py), one keyless public Kraken Ticker request per live scan (adapters/market/kraken_ticker.py), per-pair inputs through CandleStore.window and the T27 engine (24-hour volume, NATR swing relative to the W1-B round-trip fee, ROCP trend, ticker spread), the price-peg check for unreviewed coins, rank-sum-v1 ranking and a shortlist of 10, CoinScanStore with the coin_rule contract for T32, state migration 0031, commands scan-coins and coin-shortlist. No model call. Decisions D170-D174.",
+        "Acceptance: the recorded public fixtures of 2026-10-13 (53-pair pair list, 120 hourly candles of BTC, SOL, LINK and USDUC) give the same scan every time, with every exclusion and missing input named (tests/integration/test_coin_scanner_recorded.py); with 120 recorded hours NATR 14 (710 candles) is still warming up, so the recorded scan ranks no pair, and a ranked shortlist is shown deterministic on synthetic candles (test_coin_scanner.py) and by property tests (order independent of input order; a better value never moves a pair down). Replays are always labelled optimistic (delisted_pairs_missing, no_historical_spread). Stablecoin, yield-token, fiat, status, thin-pair, peg and hold-list exclusions in test_coin_scanner.py and test_coin_scanner_rules.py; the record and its triggers in test_coin_scan_store.py and test_migration_0031.py. 75 package tests; 112 with every state-migration test after the merge.",
+        "Open for step L2: the first real scan and one recorded Ticker answer (kraken.com refused the cloud, S45); the swing needs about 30 days of hourly collector candles per pair (L1). Hourly scheduling is W5-A or W6-D. Owner, optional: review any of U, STBL, UNITAS, CAP, DEBIT, RE and ST.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job on candidate commit (claude/night-candidate-wave2); result recorded by the night lead after it completes."
+      ]
     },
     "T32": {
       "status": "todo",
@@ -520,8 +536,16 @@
       "evidence": []
     },
     "T40": {
-      "status": "todo",
-      "evidence": []
+      "status": "done",
+      "owner": "cloud package W2-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as cfa74d1 (W2-C, pull request #7, package head c6e1c22, code 4623b32): AI spending read model (application/ai_spending.py) over budget reservations and receipts, per department, with actual, estimated and unresolved costs apart and synthetic calls apart; additive HQ contract block ai_spending and attention code spending_alert; the Money tab's AI spending panel; Codex allowance use per department over 7 days; owner records for the prepaid credit and alert amounts (state migration 0032); commands ai-spending-report and ai-spending-record (preview unless --confirm). Decisions D175-D179.",
+        "Acceptance: totals and department lines reconcile to receipts and unknown usage is unresolved ('up to' or not known), never zero (tests/integration/test_ai_spending.py, test_hq_spending.py, tests/property/test_ai_spending_properties.py, tests/unit/test_hq_spending_contract.py); practice records change nothing in the block and no practice wording appears (test_practice_gains_never_appear_to_pay_for_ai, test_practice_money_never_enters_the_report); crossing USD20 (Perplexity) or USD5 (Jev) adds a watch card and writes no pause, task or budget record (test_crossing_the_alert_notifies_in_hq_without_pausing_anything). 71 package tests and 10 JS tests; 162 with the HQ projection, JS behaviour and migration tests after the merge, and node --test tests/js/hq_spending.test.mjs 10 passed.",
+        "Open: no real receipt exists yet (first real calls at L2); the owner looks at the panel on a phone and an iPad, light and dark (L2). Found outside the package and not changed: the older T15 'Pays for itself?' box on the Money tab compares practice results with entered real costs; whether its wording should change is an owner or reviewer question.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job on candidate commit (claude/night-candidate-wave2); result recorded by the night lead after it completes."
+      ]
     },
     "T41": {
       "status": "todo",

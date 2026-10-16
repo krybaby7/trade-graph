@@ -81,9 +81,9 @@ The integrator updates this table each time it merges a wave.
 | W1-C | T36 | Perplexity web research connection with receipts | Merged 2026-10-16 (#4); first real call at L2 |
 | W1-D | T33 | Price alarms that fire once | Merged 2026-10-16 (#5) |
 | W1-E | C1 | The automatic checks pass cleanly (no known failures) | Merged 2026-10-16 (#6) |
-| W2-A | T29 | Practice range: replay strategies on history with real fees | Not started |
-| W2-B | T31 | Hourly coin scanner and shortlist of about 10 | Not started |
-| W2-C | T40 | HQ shows AI spending per department, $20 alert | Not started |
+| W2-A | T29 | Practice range: replay strategies on history with real fees | Merged 2026-10-16 (#9); first real reports and an OKX recording at L2 |
+| W2-B | T31 | Hourly coin scanner and shortlist of about 10 | Merged 2026-10-16 (#8); first real scan and a Ticker recording at L2 |
+| W2-C | T40 | HQ shows AI spending per department, $20 alert | Merged 2026-10-16 (#7); first real receipts and a look on phone and iPad at L2 |
 | W3-A | T32 | Your money limits and coin rule enforced by software | Not started |
 | W4-A | T34 | Trader day plans with resting entries and safety exits | Not started |
 | W5-A | T35 | Event engine: wake on alarms, fills, exits and check-ins | Not started |

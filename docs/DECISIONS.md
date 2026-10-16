@@ -1058,3 +1058,269 @@ and does not need contiguous numbers.
 - **D164 (2026-10-16, implementation default for C1):** The subscription smoke
   cycle is checked against the profile's configured limits, following
   `80cdad6`; only the diagnostic call has the smaller fixed cap.
+
+Cloud wave 2 (D165–D179, 2026-10-16). The wave 2 integration copied these
+implementation defaults from `planning/handoffs/W2-A.md` to `W2-C.md`, where
+each package's evidence is kept. The state migrations run 0030 (W2-A), 0031
+(W2-B) and 0032 (W2-C), and Alembic runs 0029 → 0030 → 0031 → 0032: 0031 and
+0032 were written against 0029 and re-linked at the merge. W2-A also adds
+candle-database version 0002, the next free one.
+
+- **D165 (2026-10-16, implementation default for T29): strategy versions are a
+  bounded data grammar.** A practice strategy is a JSON document validated by
+  `PracticeStrategy`: up to 8 T27 menu indicators with menu-bounded settings,
+  up to 8 entry conditions (all must hold) and 8 rule exits comparing a candle
+  field, an indicator output or a fixed level with `above`, `below`,
+  `crosses_above` or `crosses_below` (both sides rounded half-even to 12
+  significant digits, as alarms compare, D136), a market or resting limit buy
+  (price operand less an offset, a life in candles), a mandatory stop (D117),
+  an optional take-profit and holding limit, and an equity fraction of at
+  most 1. Intervals 1, 5 and 15 minutes only (D119). It holds no code and cannot
+  choose a side, borrow or short (D127); unused indicators and unknown fields
+  are refused. A version is registered once in the state database as
+  `strategy_id@version` with the SHA-256 of its canonical document; a change
+  is a new version. The grammar is not yet an R1 Engineer artifact class
+  (`artifact_policy.py` is unchanged); adding it there is later work if
+  Optimisation or the Engineer should propose versions. Reason: D118 and the
+  AGENTS.md rule that agent-made strategies are allowlisted data, while the
+  replay needs rules a machine can apply.
+
+- **D166 (2026-10-16, implementation default for T29): tune earlier, confirm
+  later, never reuse.** A study fixes both windows in whole UTC days before
+  any replay. The store and SQL triggers refuse a study that would tune a
+  family on days any of its studies set aside for confirmation, or confirm on
+  days the family already tuned or confirmed on; a tuning replay stays inside
+  its study's tuning window (sub-windows allowed); a confirmation replays the
+  whole confirmation window, and the first version confirmed there spends it,
+  so another version needs a new study with later, untouched days. Each
+  confirmation report lists the study's tuning runs and versions so selection
+  is visible. D119's "at least three months" is read as 90 replayed days,
+  tuning plus confirming, and every report states whether its study meets it
+  (a label, not a refusal: a report is evidence, D138 item 5).
+
+- **D167 (2026-10-16, implementation default for T29): replay semantics.**
+  Candles are read point-in-time at a fixed data cut-off (the run's time), so
+  a rerun reads the same revisions; decisions use event time only, with the
+  engine's own value at each candle. Per candle: pending market sell at the
+  open, then the protective exit armed before the candle, then a market entry
+  at the open or a resting limit during the candle (a new fill re-arms the
+  exit on all that is held and checks the same candle, stop only); at the
+  close equity is marked, orders whose life ran out are cancelled (lives count
+  candle slots, present or missing; a missing candle fills nothing) and the
+  decision is made; no order at the window's last close. One position at a
+  time; entries sized at the taker fee plus entry slippage so a fill never
+  needs more cash than there is (otherwise refused, never borrowed); stops and
+  targets from the limit price (or the first market fill), rounded against the
+  trader when a tick is given; without instrument rules quantities floor to
+  0.00000001. A position held at the end is valued at the last close less exit
+  slippage and the taker fee and is not counted as a trade. Replays use the
+  newest revision of each cost profile (the fees a strategy would pay now) and
+  fill policy `bar-replay@1`, both named with their hashes. Benchmarks: cash
+  (zero, D127), holding BTC of the same quote currency and source (reported
+  unavailable when there are no such candles, never invented) and holding the
+  coin itself, each bought at the window's first open and sold at its last
+  close at the taker fee. A report's deterministic part is hashed
+  (`result_sha256`); `practice-range-verify` replays it from its own inputs
+  and records whether it was reproduced.
+
+- **D168 (2026-10-16, implementation default for T29): OKX candles.** OKX
+  public candles are their own source, `okx_public_candles` (D132), added by
+  candle-database version 0002, which rebuilds the two tables that name
+  sources as SQLite documents; every row keeps its id and the append-only
+  triggers return. The parser follows OKX's documented `history-candles`
+  format (newest first, nine text fields, `confirm` "0" for the forming
+  candle, dropped unseen) and refuses a whole page on anything unexpected. OKX
+  reports no trade count or vwap, so OKX candles carry `trade_count` 0
+  (unknown) and no vwap. A recorded folder is imported at import time under
+  its manifest's label (`synthetic_fixture` or `recorded_public_fixture`); a
+  live fetch stores `live_public` and pauses 0.25 s between requests (OKX
+  documents 20 requests per 2 seconds); a scripted transport is labelled
+  synthetic. Pairs quoted in USDT or USDC are replayed and reported in that
+  currency, not converted to USD. okx.com was unreachable from the cloud on
+  2026-10-16, so the format, host (`https://www.okx.com`) and limits are this
+  build's reading of the documentation; the only OKX fixture is synthetic and
+  labelled, and L2 records a real one.
+
+- **D169 (2026-10-16, implementation default for T29, contract for T42): one
+  set of result sums.** The sums live in the protected kernel
+  (`kernel/trade_metrics.py`). A trade is a round trip from flat to flat on
+  one symbol with every partial fill and fee; it wins above zero after fees,
+  loses below, and exactly zero is a flat trade that ends a losing streak.
+  Worst drawdown is the largest fall from a running peak of the equity curve
+  as a fraction of that peak (equity marked at each candle's close, the final
+  point the end valuation). Fees paid count fills only (an end valuation's
+  selling fee is inside the ending equity). Sums are exact; ratios and
+  averages are rounded half-even to ten decimal places. Reason: D119's report
+  and the build plan's "the scorecard reuses the practice-range sums".
+
+- **D170 (2026-10-16, implementation default for T31): the inputs.** Candles
+  are the collector's 60-minute series (`kraken_public_ohlc`), read
+  point-in-time through `CandleStore.window` and the T27 engine. Each pair's
+  window ends at its newest stored completed hour, at most 2 hours behind the
+  scan hour (flag `candles_lagging`; further behind is `missing_candles`),
+  like D129's 2-hour rule. Volume is the exact sum of volume × vwap over the
+  last 24 hourly candles (volume × close when a traded candle has no vwap, as
+  in Kraken's archive; the basis is recorded); any missing hour withholds it.
+  Swing is TA-Lib `NATR` 14 on hourly candles, and swing relative to cost is
+  NATR ÷ (round-trip rate × 100) with the maker round trip of the cost profile
+  in force on the scan's day (default `kraken-spot-starting-tier`, 0.80%,
+  W1-B). NATR is the menu's only swing already measured as a share of the
+  price, so the rules refuse another swing indicator rather than divide a
+  price-unit swing in-house. It is the typical hourly move, smaller than
+  D126's daily figure (BTC 2.7%); the ranking only compares coins with each
+  other. Trend is `ROCP` 24 (the 24-hour change). Spread is (ask − bid) ÷ mid
+  from one public, keyless Kraken Ticker request for every pair per live scan;
+  the answer may be at most 300 seconds old and not newer than the scan
+  moment, and a key that could name two pairs gives no quote. Library floats
+  are rounded half-even to 12 significant digits before any comparison (D136).
+  Reading of D118: the scanner's own code sums money, compares library outputs
+  with levels, writes the fee in NATR's unit and ranks; these are the D120
+  ranking rules, not indicator formulas. A pair the store or engine refuses is
+  `evaluation_failed`, and the other pairs carry on. Reason: D120's four
+  measures from menu indicators and the W1-B fees, point-in-time, with no
+  guessed input.
+
+- **D171 (2026-10-16, implementation default for T31): exclusions and the
+  thin-pair thresholds.** Excluded without reading candles: a catalog status
+  other than `online` (D133), the catalog's stablecoin and yield-token marks
+  (D131, D127), fiat currencies (D133), and a hold list of U, STBL, UNITAS,
+  CAP, DEBIT, RE and ST, the names D133 left for the owner's eye (USDE is
+  already marked a stablecoin), held as `held_for_review` until someone
+  reviews them; removing one is a rules revision. Riba (D127): the catalog
+  holds only spot currency pairs (futures, perpetuals and margin are not in it
+  and leverage fields are ignored), and staking, lending and rebasing tokens
+  are the yield marks; no other riba product type exists in Kraken's spot list
+  as parsed. Thin: under USD500,000 traded in 24 hours (D138's USD2,000 per
+  coin needs USD20,000 an hour at the practice range's 10% share of a bar,
+  D148: USD480,000 a day, rounded up) or a spread above 0.50% of the mid (a
+  protective exit then pays 0.25% to cross, below one side's 0.40% maker fee).
+  Any missing input excludes the pair with its reason; nothing is guessed.
+  Reason: D120's "exclude thin pairs", D131 and D127, conservative where a
+  coin is unknown.
+
+- **D172 (2026-10-16, implementation default for T31): the price-peg check.**
+  For every pair whose base asset the pair catalog never reviewed (608 of 677
+  USD coins on 2026-10-13), the scanner reads TA-Lib `HIGHEST_HIGH` 72 and
+  `LOWEST_LOW` 72 on hourly candles. `price_peg` when the low is at least 0.98
+  and the high at most 1.02 USD; `price_pinned` when the high is at most 2%
+  above the low, which also catches a peg to another currency (no exchange
+  rate needed) and a market with no trades; either excludes. Without 72
+  complete hours the check is `peg_check_unavailable`, which excludes too. A
+  coin that passes keeps the flag `not_individually_reviewed` on the
+  shortlist, because a price check is not a review. Reviewed coins, including
+  the gold tokens PAXG and XAUT, are not checked. Reason: a list cannot
+  recognise a stablecoin it has never seen (PAIR-CATALOG.md), and D131
+  excludes stablecoins whatever their name.
+
+- **D173 (2026-10-16, implementation default for T31): ranking and its
+  version.** Method `rank-sum-v1`: each passing pair gets a place per factor
+  (higher is better for volume, swing relative to cost and trend, lower for
+  spread; equal values share a place and the next is skipped), the score is
+  the sum of the four places so the factors count equally, a lower score ranks
+  first, and ties go to more traded volume and then the symbol. The shortlist
+  is the first 10 places and is never padded. The ranking version is
+  `coin-scanner-r<revision>-<date>/<first 12 hex of the SHA-256 of the
+  canonical rules>`, so any change to a threshold, setting, profile, hold or
+  method is a new version. Property tests show the order never depends on the
+  input order and a better value never moves a pair down. Reason: D120 names
+  four equal criteria and no weights; a rank sum needs no scale for volumes
+  against percentages and is easy to explain.
+
+- **D174 (2026-10-16, implementation default for T31): the record, the coin
+  rule, replays and commands.** State migration 0031 adds `coin_scans` (one
+  row per scan, live or replay, with its document and SHA-256),
+  `coin_scan_pairs` (every pair that passed, with its place and values) and
+  `coin_shortlist_entries` (every input and source time). Triggers make all
+  three append-only; a replay row must be optimistic and a live row never is;
+  a failed scan names its reason; places exist only for a scan that ranked
+  something and inside its counts; an entry needs a shortlisted place; a read
+  whose document no longer matches its hash is refused. Failed scans are
+  recorded too. The tables are not added to agent context, the financial
+  checkpoint, the runtime evidence or the review export. `latest()` returns
+  live scans only unless a replay is asked for by name. `coin_rule` (above) is
+  the D138 item 3 contract for W3-A, with a 2-hour freshness default. A replay
+  reads a named source by event time, takes no ticker, ranks without spread
+  and is always labelled optimistic, with the reasons `delisted_pairs_missing`
+  and `no_historical_spread`, plus
+  `catalog_observed_after_the_replayed_moment` and
+  `cost_profile_after_the_replayed_moment` when those apply. A scan's evidence
+  label is the weakest of its candle source, its ticker answer and every
+  collection run behind its numbers. `scan-coins` needs an initialised paper
+  database in a 0700 folder and an existing candle file, refuses the financial
+  database as a candle file (the D133 guard) and creates neither;
+  `coin-shortlist` opens the database read-only. Reason: the T31 deliverable
+  "persisted shortlist with every input value, source time and ranking
+  version", and the D138 coin rule.
+
+- **D175 (2026-10-16, implementation default for T40): three kinds of AI cost,
+  from receipts.** Every paid call is one budget reservation, counted once:
+  *actual* is a `committed` or `reconciled` receipt (priced from the usage the
+  provider reported); *estimated* is a `conservative_charge` (usage never
+  reported, charged at the reserved maximum); *unresolved* is a call with no
+  receipt yet (still open or usage unknown), counted at its held maximum and
+  shown as "up to", never as zero, or as "can't be worked out yet" when even
+  the hold can't be valued. Amounts are USD, the services' own currency:
+  receipts at their USD price, EUR holds and conservative charges divided by
+  the FX rate they were reserved with, so the month total equals what the
+  owner's Perplexity limit counts (D152, D153). Synthetic calls are counted
+  apart and never added. Perplexity calls are those priced on a Perplexity
+  card; Jev checks are role `news_alarm`, purpose `news_alarm:jev` (W1-A). HQ
+  sums every reservation in the state database, which belongs to one
+  installation. In the HQ contract a part with no call of that kind is `null`,
+  never `0`, so "nothing yet" can't read as a zero cost; a cost under half a
+  cent reads "under $0.01". Reason: the acceptance ("totals reconcile to
+  receipts; unknown usage is unresolved, never zero") with one rule shared by
+  totals, lines, credit and month.
+
+- **D176 (2026-10-16, implementation default for T40): the testing period and
+  the alerts.** Perplexity testing runs from the first round recorded under
+  the owner's `unlimited_testing` policy (D125) until the first round under a
+  `monthly_limit` policy; the testing total and per-department lines cover
+  that period; afterwards HQ shows this UTC month against the limit instead of
+  the alert (reaching it pauses Research and Leader news rounds only, D138
+  item 4). Jev testing is every real Jev check. The alert is at USD20 for
+  Perplexity (D131) and USD5 for Jev (D138 item 10) unless the owner recorded
+  another amount. It has *passed* when known spending (actual plus estimated)
+  reaches the amount, and *may have passed* when unresolved calls at their
+  maximum could take it there; either adds one "Keep an eye on" (`watch`) card
+  per service to Needs you, linked to Costs and included in the next review
+  prompt. It stays while testing lasts, offers no button and pauses nothing
+  (D116, D131). Deviation from W1-A's CLI report (D141), which counts
+  committed spending only: HQ adds the "may have passed" state so unresolved
+  calls are never treated as free; the CLI report is unchanged.
+
+- **D177 (2026-10-16, implementation default for T40): the prepaid credit and
+  the alert amounts are owner records.** Migration 0032 adds one append-only
+  table. `trade-graph ai-spending-record` records the balance the owner read
+  on the provider's own account page (with the time it was read) or another
+  testing alert amount; it previews by default and writes only with
+  `--confirm`; the newest record of each kind counts, older ones stay. HQ
+  shows the spending since the reading and "about $X left" (unresolved calls
+  at their maximum), as information only: nothing reads these rows to admit,
+  refuse or pause a call, and a credit reading is not a bill (real costs stay
+  in receipts and the owner's expense records). The Jev alert amount HQ uses
+  is this record (default USD5), separate from
+  `NewsAlarmSettings.testing_alert_usd` in the owner's private news alarm
+  settings, which W1-A's CLI report reads (also USD5 by default); the owner
+  changes both if they want another amount.
+
+- **D178 (2026-10-16, implementation default for T40): Codex allowance use per
+  department.** For the last 7 days, each department's non-synthetic ChatGPT
+  subscription turns that were sent (not `BLOCKED`, not `not_incurred`) and
+  its share of the team's reported use (input, cache and output counts of
+  `subscription_invocations.usage_json`). A turn whose use wasn't reported
+  counts as a turn with unknown use and is left out of the shares, which HQ
+  says. The allowance gauge itself is never split by department, because the
+  owner's own ChatGPT use shares it.
+
+- **D179 (2026-10-16, implementation default for T40): HQ contract and
+  reads.** `ai_spending` is an additive key of `trade-graph.hq.v1` that may be
+  omitted but is never null; HQ leaves it out, rather than inventing figures,
+  when the records can't be read. New attention code `spending_alert` (watch)
+  and four glossary keys; no new route and no new authority. The report is
+  cached for 60 seconds behind a fingerprint of reservations (count of rows
+  and newest `updated_at`), receipts, Codex turns, Perplexity rounds and owner
+  records, so a new receipt or state change shows on the next poll.
+  Explanations that follow from the figures (open calls, estimates, test
+  calls, the shared allowance) are static page copy; every figure and
+  data-dependent sentence comes from the server.

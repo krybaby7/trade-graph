@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-16T16:30:00.000000Z",
+  "updated_at": "2026-10-16T22:17:24.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -387,7 +387,7 @@
     {
       "id": "T29",
       "title": "Replay strategies in the practice range and report results",
-      "status": "todo",
+      "status": "done",
       "description": "Replay strategies in the practice range and report results",
       "phase": "D2",
       "dependencies": [
@@ -396,7 +396,7 @@
         "T27",
         "T28"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T30",
@@ -412,7 +412,7 @@
     {
       "id": "T31",
       "title": "Rank Kraken USD pairs hourly and shortlist focus candidates",
-      "status": "todo",
+      "status": "done",
       "description": "Rank Kraken USD pairs hourly and shortlist focus candidates",
       "phase": "D3",
       "dependencies": [
@@ -420,7 +420,7 @@
         "T27",
         "T28"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T32",
@@ -532,14 +532,14 @@
     {
       "id": "T40",
       "title": "Show AI allowance and spending per department in HQ",
-      "status": "todo",
+      "status": "done",
       "description": "Show AI allowance and spending per department in HQ",
       "phase": "D6",
       "dependencies": [
         "T15",
         "T36"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T41",
