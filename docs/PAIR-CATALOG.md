@@ -82,8 +82,9 @@ Judgement calls the owner may revise:
 A list cannot notice a stablecoin or yield token it does not know. On the full response recorded on
 2026-10-13, 677 pairs were USD-quoted and the table named 69 of their coins (44 pairs marked), so 608 coins,
 and 566 of the 591 pairs eligible for collection, are unreviewed.
-The scanner (T31) will add a **price-peg check** on observed prices (a coin that sits at one dollar, or at
-another currency's value, for days is flagged whatever its name). It is not built in this slice.
+The scanner (T31) adds a **price-peg check** on observed prices (a coin that sits at one dollar, or at
+another currency's value, for days is flagged whatever its name). It is not part of this slice; see
+[COIN-SCANNER.md](COIN-SCANNER.md) (D172).
 
 ## The catalog report
 
