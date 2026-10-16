@@ -188,7 +188,7 @@ class CoinScanner:
                 optimism.append("no_historical_spread")
             return ScanResult(
                 mode=mode, as_of=as_of, computed_at=computed_at, rules=rules, status=status, error=error,
-                evidence=self._evidence(source, catalog, ticker, runs or set()),
+                evidence=self._evidence(source, ticker, runs or set()),
                 optimism_codes=tuple(code for code in OPTIMISM if code in optimism), factors=factors, source=source,
                 cost=cost, catalog=catalog,
                 ticker=ticker_doc or self._ticker_document(ticker, mode, error=ticker_error),
@@ -223,8 +223,7 @@ class CoinScanner:
         runs.add(observation.run_id)
         return finish("ok" if ranked else "no_candidates", None, cost=settings.cost, catalog=catalog,
                       ticker_doc=self._ticker_document(ticker, mode, state, error=ticker_error),
-                      evaluations=evaluations, ranked=ranked,
-                      chosen=chosen, runs=runs)
+                      evaluations=evaluations, ranked=ranked, chosen=chosen, runs=runs)
 
     # --- parts -----------------------------------------------------------------------------------------------------
 
@@ -282,8 +281,8 @@ class CoinScanner:
             document["matched_pairs"] = len(state.quotes)
         return document
 
-    def _evidence(self, source: str, catalog: Mapping[str, Any] | None, ticker: TickerSnapshot | None,
-                  runs: set[int]) -> str:
+    def _evidence(self, source: str, ticker: TickerSnapshot | None, runs: set[int]) -> str:
+        """The weakest label among the candle source, the ticker answer and every run behind a number."""
         labels = set()
         if source == "synthetic":
             labels.add("synthetic_fixture")
