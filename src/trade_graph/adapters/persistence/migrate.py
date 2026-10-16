@@ -6,6 +6,7 @@ import sqlite3
 
 from trade_graph.adapters.persistence.activation_schema import STATEMENTS as ACTIVATION_STATEMENTS
 from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as BUDGET_ORIGIN_STATEMENTS
+from trade_graph.adapters.persistence.coin_scan_schema import COIN_SCAN_STATEMENTS
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
 from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEMENTS as FINANCIAL_CHECKPOINT_STATEMENTS
@@ -466,6 +467,8 @@ STATEMENTS.append(("0026", NEWS_ALARM_STATEMENTS))
 # 0027 was reserved for cloud wave 1 package W1-B, which needed no migration (docs/CLOUD-BUILD-PLAN.md).
 STATEMENTS.append(("0028", WEB_RESEARCH_STATEMENTS))
 STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
+# 0030 is reserved for cloud wave 2 package W2-A and 0032 for W2-C (docs/CLOUD-BUILD-PLAN.md); W2-B is 0031.
+STATEMENTS.append(("0031", COIN_SCAN_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

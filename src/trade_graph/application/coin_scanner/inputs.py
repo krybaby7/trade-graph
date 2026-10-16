@@ -48,6 +48,8 @@ _EXACT = Context(prec=400, Emax=MAX_EMAX, Emin=MIN_EMIN,
 _TWELVE = Context(prec=12, rounding=ROUND_HALF_EVEN, Emax=MAX_EMAX, Emin=MIN_EMIN,
                   traps=[InvalidOperation, DecimalOverflow, DivisionByZero])
 _PEG_REASON_REVIEWED = "base asset reviewed in the pair catalog"
+# A gapped indicator lists this many of its missing close times; the count is always complete.
+MISSING_TIMES_KEPT = 10
 _REPLAY_SPREAD = {"ranked": False, "reason": "no historical bid and ask in a replay"}
 
 
@@ -127,10 +129,12 @@ def _indicator(store: CandleStore, choice: IndicatorChoice, symbol: str, setting
 
 
 def _indicator_document(result: IndicatorResult) -> dict[str, Any]:
-    """The engine's provenance, with the one value as exact decimal text instead of the float list."""
+    """The engine's provenance, with the one value as exact decimal text instead of the float list. The library
+    versions are the same for every indicator of a scan, so the scan document carries them once."""
     document = result.to_document()
-    document.pop("values", None)
-    document.pop("close_times_utc", None)
+    for repeated in ("values", "close_times_utc", "library"):
+        document.pop(repeated, None)
+    document["missing_close_times_utc"] = document["missing_close_times_utc"][:MISSING_TIMES_KEPT]
     document["value"] = _text(rounded_decimal(result.latest())) if result.is_ready else None
     return document
 

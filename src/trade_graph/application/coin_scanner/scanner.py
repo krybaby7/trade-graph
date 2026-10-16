@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from trade_graph.adapters.market.kraken_ticker import TickerSnapshot, quotes_by_symbol
@@ -183,9 +184,10 @@ class CoinScanner:
                 cost=cost, catalog=catalog, ticker=ticker_doc or self._ticker_document(ticker, mode),
                 evaluations=tuple(evaluations), ranked=tuple(ranked), shortlist=tuple(chosen))
 
-        cost = self._cost(as_of, mode, optimism)
-        if cost is None:
+        priced = self._cost(as_of, mode, optimism)
+        if priced is None:
             return finish("failed", "no_cost_profile_in_force")
+        cost, round_trip_rate = priced
         observation = self.store.latest_catalog(as_of=as_of)
         if observation is None and mode == "replay":
             observation = self.store.latest_catalog(as_of=computed_at)
@@ -201,10 +203,8 @@ class CoinScanner:
         records = [item for item in records if item.usd_quoted]
         catalog = self._catalog_document(observation, as_of)
         state = self._ticker_state(ticker, records, as_of) if mode == "live" else TickerState(False, "replay")
-        settings = ScanSettings(rules=rules, as_of=as_of, mode=mode, source=source,
-                                round_trip_rate=cost["round_trip_rate_decimal"],
-                                cost={key: value for key, value in cost.items() if key != "round_trip_rate_decimal"},
-                                catalog=catalog, ticker=state)
+        settings = ScanSettings(rules=rules, as_of=as_of, mode=mode, source=source, round_trip_rate=round_trip_rate,
+                                cost=cost, catalog=catalog, ticker=state)
         evaluations = [evaluate_pair(self.store, item, settings) for item in records]
         ranked = rank([item.candidate for item in evaluations if item.candidate is not None], factors=factors)
         chosen = shortlist(ranked, rules.shortlist_size) if ranked else ()
@@ -216,7 +216,8 @@ class CoinScanner:
 
     # --- parts -----------------------------------------------------------------------------------------------------
 
-    def _cost(self, as_of: datetime, mode: ScanMode, optimism: list[str]) -> dict[str, Any] | None:
+    def _cost(self, as_of: datetime, mode: ScanMode, optimism: list[str]) -> tuple[dict[str, Any], Decimal] | None:
+        """The fee revision in force on the scan's day and its round-trip rate (W1-B's dated profiles, D146)."""
         rules = self.rules
         try:
             profile = self.cost_profiles.effective(rules.cost_profile_id, as_of.date())
@@ -229,7 +230,7 @@ class CoinScanner:
         return {"ref": profile.ref, "content_sha256": profile.content_sha256, "liquidity": rules.cost_liquidity,
                 "maker_rate": canonical_decimal(profile.maker_rate),
                 "taker_rate": canonical_decimal(profile.taker_rate), "round_trip_rate": canonical_decimal(rate),
-                "effective_from": profile.effective_from.isoformat(), "round_trip_rate_decimal": rate}
+                "effective_from": profile.effective_from.isoformat()}, rate
 
     @staticmethod
     def _catalog_document(observation: CatalogObservation, as_of: datetime) -> dict[str, Any]:
