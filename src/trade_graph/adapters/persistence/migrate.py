@@ -18,6 +18,7 @@ from trade_graph.adapters.persistence.native_incident_schema import STATEMENTS a
 from trade_graph.adapters.persistence.owner_checkin_schema import OWNER_CHECKIN_STATEMENTS
 from trade_graph.adapters.persistence.owner_expense_schema import STATEMENTS as OWNER_EXPENSE_STATEMENTS
 from trade_graph.adapters.persistence.pilot_schema import STATEMENTS as PILOT_STATEMENTS
+from trade_graph.adapters.persistence.price_alarm_schema import STATEMENTS as PRICE_ALARM_STATEMENTS
 from trade_graph.adapters.persistence.price_history_schema import STATEMENTS as PRICE_HISTORY_STATEMENTS
 from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS as PROTECTED_RUNTIME_STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
@@ -459,6 +460,8 @@ STATEMENTS.append(("0022", FINANCIAL_TRANSITION_STATEMENTS))
 STATEMENTS.append(("0023", FINANCIAL_RECOVERY_STATEMENTS))
 STATEMENTS.append(("0024", OWNER_EXPENSE_STATEMENTS))
 STATEMENTS.append(("0025", OWNER_CHECKIN_STATEMENTS))
+# 0026-0028 are reserved for the other wave-1 packages (docs/CLOUD-BUILD-PLAN.md, "Reserved numbers").
+STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
