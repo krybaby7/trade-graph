@@ -170,7 +170,10 @@ def overview(runtime, *, reporting_end: str | None = None) -> dict:
     resource = resources.observation(runtime)
     op_reasons.extend(resource["warnings"])
     op_status = "operating" if not op_reasons else "paused" if pause != "RUNNING" else "attention"
-    data.update(as_of=now, health=operations, recovery_history=economic["recovery_history"], activity=active,
+    # The journal page and API clients flag degraded operation from these two fields.
+    data.update(as_of=now, health=operations, degraded=operations["degraded"],
+                degraded_reasons=operations["degraded_reasons"],
+                recovery_history=economic["recovery_history"], activity=active,
                 owner_expenses=economic["owner_expenses"], reporting_period=period,
                 external_observations={"resources": resource},
                 operational_health={"status": op_status, "reasons": op_reasons, "service": service,

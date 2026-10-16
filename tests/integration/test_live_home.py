@@ -41,6 +41,26 @@ def test_live_home_has_distinct_health_and_economic_indicators(tmp_path):
     assert data["economic_result"]["known_other_expense"] == "1.25"
 
 
+def test_journal_and_overview_flag_degraded_operations(tmp_path):
+    client, database, portfolio, token, *_ = _client(tmp_path)
+    headers = {"Authorization": f"Bearer {token}"}
+    healthy = client.get("/api/v1/overview", headers=headers).json()
+    assert healthy["degraded"] is False and healthy["degraded_reasons"] == []
+    assert "Degraded operations" not in client.get("/journal", headers=headers).text
+    database.execute(
+        """INSERT INTO order_intents
+        (intent_id, portfolio_id, client_order_id, state, symbol, payload_json, created_at, updated_at)
+        VALUES ('unknown-intent', ?, 'unknown-client', 'UNKNOWN', 'BTC/USD',
+                '{"client_order_id":"unknown-client","symbol":"BTC/USD"}',
+                '2026-01-01T00:00:00.000000Z', '2026-01-01T00:00:00.000000Z')""",
+        (portfolio,),
+    )
+    degraded = client.get("/api/v1/overview", headers=headers).json()
+    assert degraded["degraded"] is True and "unknown orders" in degraded["degraded_reasons"]
+    assert degraded["degraded_reasons"] == degraded["health"]["degraded_reasons"]
+    assert "Degraded operations" in client.get("/journal", headers=headers).text
+
+
 def test_home_is_hq_and_links_to_the_journal(tmp_path):
     client, _, _, token, *_ = _client(tmp_path)
     response = client.get("/", headers={"Authorization": f"Bearer {token}"})
