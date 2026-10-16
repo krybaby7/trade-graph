@@ -134,6 +134,8 @@ supports them; attaching them to entries is T34 (day plans).
 
 ## For the practice range (T29) and day plans (T34)
 
+The practice range is built: [PRACTICE-RANGE.md](PRACTICE-RANGE.md).
+
 - Replays call `fill_order_on_candle` and `trigger_exit_on_candle` with a profile from the book and
   `BAR_REPLAY_POLICY` (or a stated stricter policy to vary pessimism), one completed candle at a time from
   the candle store.
