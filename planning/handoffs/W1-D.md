@@ -54,8 +54,8 @@ clock)`:
 - `claim(department, wake_id)` → `DeliveryBatch`: every pending item of the department, oldest first, becomes that
   wake's batch. Items arriving during the wake stay pending and come together at the next wake. Same `wake_id` →
   same batch. One open claim per department (`open_claim(department)` finds it after a crash).
-- `acknowledge(wake_id)`: delivered. `release(wake_id)`: back to pending in original order. Both idempotent. A wake
-  id is used once.
+- `acknowledge(wake_id)`: delivered. `release(wake_id)`: back to pending in original order (returns the items it
+  put back). Both idempotent. A wake id is used once.
 - W5-A decides whether a feed notice wakes a department, records the wake itself, and wires the department tools
   (`AlarmBook.create`, `rearm`, `cancel`, `alarms`) and the watcher calls (`observe_quotes(feed.poll())` in the feed
   thread, `tick()` after candle saves and on a short timer).
@@ -78,7 +78,9 @@ clock)`:
   crossing needs two consecutive candles. Candle alarms use the collected intervals 1, 5, 15 and 60 minutes. Level
   alarms on On-Balance Volume are refused (its level depends on where history starts, D136), and so are levels
   outside an output's declared range. One tick evaluates at most 5,000 candles per alarm and continues next tick;
-  this bounds the work of a call and never skips a candle.
+  a whole 5,000-slot step without any candle is stepped over (reported) once newer candles exist, so an outage that
+  can never be backfilled does not freeze the alarm. Stored alarms are read back without re-checking today's menu,
+  so a later menu change makes one alarm report an error instead of stopping the watcher.
 - **D157 (2026-10-16, implementation default for T33):** Quote alarms use quote and trade observations received
   after arming, on `mid` (default, (bid + ask) / 2), `bid`, `ask` or `last`; a missing price is not guessed. A
   crossing alarm saves the side of its level whenever it changes, so a crossing across a restart or a feed gap
@@ -88,8 +90,9 @@ clock)`:
 - **D158 (2026-10-16, implementation default for T33):** A feed that an armed alarm depends on is lost after 120
   seconds without a quote (the paper feed polls every 10 seconds) or when no candle has arrived for the slot due
   10 minutes ago. Loss and return are each recorded once and sent as a notice to every owning department (a return
-  also to every department told about the loss); after a restart a lost quote feed stays lost until an update
-  arrives; a candle series the store refuses to read counts as lost. An alarm whose evaluation fails keeps its
+  also to every department told about the loss); a department that arms on a feed while it is lost gets the same
+  loss notice; after a restart a lost quote feed stays lost until a fresh update arrives (a backlog of old quotes
+  is no recovery); a candle series the store refuses to read counts as lost. An alarm whose evaluation fails keeps its
   cursor, carries the failure as its reason, is reported in the tick, and does not stop the other alarms. These are
   health thresholds, not caps.
 - **D159 (2026-10-16, implementation default for T33, contract for T35):** Fired alarms and feed notices go to a

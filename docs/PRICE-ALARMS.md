@@ -96,9 +96,10 @@ completed while the watcher was down are still seen and the first one that satis
 fires. The watcher waits at a candle that has not arrived yet. It steps over a missing candle, recording "no
 candle closing at ...", only once a later candle is present; a candle that arrives after a later one was
 evaluated is not evaluated again (alarms watch the live edge; the practice range replays history). A crossing
-compares two consecutive candles, so a crossing over a missing candle is not judged. One tick evaluates at most
-5,000 candles per alarm (`CATCH_UP_SLOTS`); the rest wait for the next tick. That bounds the work of one call and
-never skips a candle.
+compares two consecutive candles, so a crossing over a missing candle is not judged. One read covers at most
+5,000 candles (`CATCH_UP_SLOTS`) and one tick evaluates at most that many per alarm; the rest wait for the next
+tick. A whole step of 5,000 slots with no candle is stepped over (and said so) once newer candles exist, so a long
+outage that can never be backfilled does not freeze the alarm; while nothing newer exists, the alarm waits.
 
 **Quotes.** Quote and trade observations are used; bars are left to the candle store. A missing price (a quote
 without an ask, for a `mid` or `ask` alarm) is not guessed. A quote received before the alarm was armed, or in the
@@ -116,9 +117,11 @@ an alarm already holds is ignored.
 | one candle series | no candle closing at or after the slot that should have arrived `candle_grace` ago | 10 minutes |
 
 A loss is recorded once as a `price_feed_events` row and every department with armed alarms on that feed gets a
-`feed_lost` item in its queue, listing the alarms that cannot see their prices. The return is recorded the same
-way (`feed_restored`, also sent to every department told about the loss). Ticks while a feed stays lost add
-nothing. After a restart a lost quote feed stays lost until an update actually arrives. A candle series that the
+`feed_lost` item in its queue, listing the alarms that cannot see their prices. A department that arms an alarm on
+a feed while it is lost gets the same notice (same loss event) at the next tick; nobody is told twice. The return
+is recorded the same way (`feed_restored`, also sent to every department told about the loss). After a restart a
+lost quote feed stays lost until an update actually arrives, and only a fresh update (received within
+`quote_stale_after` of now) counts as its return, not a backlog of old quotes. A candle series that the
 store refuses to read counts as lost, with the error in the notice. Every tick also reports `feeds` (ok or lost
 per series) and `blind_alarms`. These thresholds are health rules, not limits on alarms.
 
@@ -127,7 +130,9 @@ Candle alarms become useful once W6-D keeps the candle store current inside the 
 
 **One bad alarm does not blind the others.** If evaluating one alarm fails (for example the store or the
 library refuses), its cursor stays put, the failure is written on the alarm and returned in the tick's `errors`,
-and the other alarms are still evaluated. The same candle is tried again next tick.
+and the other alarms are still evaluated. The same candle is tried again next tick. Stored alarms are read back
+structurally, without re-checking them against today's indicator menu, so a later menu change (a retired entry,
+a tightened bound) makes one alarm report an error instead of making every alarm unreadable.
 
 ## The delivery queue (contract for W5-A, T35)
 
@@ -141,7 +146,7 @@ dispatcher (W5-A) consumes it through `AlarmQueue(database, clock)`:
 | `claim(department, wake_id)` | every pending item of the department becomes this wake's batch (`DeliveryBatch`), oldest first. The same `wake_id` returns the same batch, even if it was empty. Refused while the department has another open claim. |
 | `open_claim(department)` | the department's claimed but not yet closed batch, for recovery after a crash |
 | `acknowledge(wake_id)` | the department received the batch: its items are `delivered`. Repeating it changes nothing. |
-| `release(wake_id)` | the wake ended before the department saw the batch: its items go back to `pending`, in their original order, and join the next wake. Repeating it changes nothing. |
+| `release(wake_id)` | the wake ended before the department saw the batch: its items go back to `pending`, in their original order, and join the next wake. Returns the items it put back; repeating it changes nothing and returns none. |
 | `batch(wake_id)` | read a batch |
 
 Rules the dispatcher can rely on:
@@ -206,7 +211,7 @@ the department, never an instruction; the `note` is the department's own earlier
 |---|---|---|
 | `price_alarms` | one row per alarm: owner, condition JSON, references, contract version | never updated or deleted |
 | `price_alarm_events` | `armed`, `fired`, `cancelled` per generation | append-only; one fire per generation; order enforced |
-| `price_alarm_watch` | current status, candle cursor, quote baseline, last reason | updated; status must match the events; never deleted |
+| `price_alarm_watch` | current status, candle cursor, quote baseline, last reason | updated; status and generation must match the latest arming in the events; never deleted |
 | `alarm_deliveries` | the queue | content immutable; status moves as above; never deleted |
 | `alarm_wake_claims` | one row per claiming wake | closes once; one open claim per department; never deleted |
 | `price_feed_events` | lost and restored transitions per feed | append-only; must alternate, starting with lost |

@@ -163,3 +163,14 @@ def test_the_contract_imports_no_library_adapter_or_model_code() -> None:
     imported |= {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
     for name in imported:
         assert not name.startswith(("trade_graph.adapters", "trade_graph.application", "talib", "numpy")), name
+
+
+def test_a_stored_condition_is_read_without_rechecking_todays_menu() -> None:
+    """A condition saved under an older menu stays readable; new requests are still checked in full."""
+    saved = {"kind": "indicator", "symbol": "BTC/USD", "interval_minutes": 15, "indicator": "RETIRED",
+             "parameters": {"timeperiod": 14}, "output": "value", "relation": "above", "level": "5"}
+    with pytest.raises(ValidationError, match="not on the indicator menu"):
+        parse_condition(saved)
+    assert parse_condition(saved, stored=True).indicator == "RETIRED"
+    with pytest.raises(ValidationError):  # the shape is still checked
+        parse_condition({**saved, "level": 5.0}, stored=True)

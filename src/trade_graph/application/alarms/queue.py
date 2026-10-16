@@ -133,19 +133,26 @@ class AlarmQueue:
             return self._batch(connection, self._claim_row(connection, wake_id))
 
     def release(self, wake_id: str) -> DeliveryBatch:
-        """The wake ended before the department saw its batch: the items return to pending, in their order."""
+        """The wake ended before the department saw its batch: the items return to pending, in their order.
+
+        The first release returns the items it put back (for the dispatcher's log); a repeated one returns none.
+        """
         with self.database.immediate() as connection:
             row = self._claim_row(connection, wake_id)
             if row["status"] == "acknowledged":
                 raise StaleState(f"wake {wake_id} was acknowledged; its items were delivered")
-            if row["status"] == "claimed":
-                connection.execute(
-                    "UPDATE alarm_deliveries SET status = 'pending', wake_id = NULL WHERE wake_id = ? "
-                    "AND status = 'claimed'", (wake_id,))
-                connection.execute(
-                    "UPDATE alarm_wake_claims SET status = 'released', closed_at = ? WHERE wake_id = ?",
-                    (self._now(), wake_id))
-            return self._batch(connection, self._claim_row(connection, wake_id))
+            if row["status"] != "claimed":
+                return self._batch(connection, row)  # released before: its items are back in the queue
+            returned = self._batch(connection, row).items
+            connection.execute(
+                "UPDATE alarm_deliveries SET status = 'pending', wake_id = NULL WHERE wake_id = ? "
+                "AND status = 'claimed'", (wake_id,))
+            connection.execute(
+                "UPDATE alarm_wake_claims SET status = 'released', closed_at = ? WHERE wake_id = ?",
+                (self._now(), wake_id))
+            closed = self._claim_row(connection, wake_id)
+            return DeliveryBatch(wake_id=wake_id, department=closed["department"], status="released",
+                                 claimed_at=closed["claimed_at"], items=returned)
 
     def open_claim(self, department: str) -> DeliveryBatch | None:
         """The department's claimed, not yet acknowledged or released wake, if any (for recovery after a crash)."""

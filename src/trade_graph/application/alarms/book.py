@@ -29,7 +29,6 @@ from trade_graph.contracts.alarms import (
     AlarmDelivery,
     AlarmRecord,
     AlarmRequest,
-    parse_condition,
 )
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import AuthorityDenied, DuplicateRecord, NotFound, StaleState, ValidationFailure
@@ -69,13 +68,15 @@ def series_of(record: AlarmRecord) -> FeedSeries:
 
 
 def _record(row: sqlite3.Row) -> AlarmRecord:
-    return AlarmRecord(
-        alarm_id=row["alarm_id"], department=row["department"],
-        condition=parse_condition(json.loads(row["condition_json"])),
-        portfolio_id=row["portfolio_id"], day_plan_ref=row["day_plan_ref"], task_id=row["task_id"],
-        request_id=row["request_id"], note=row["note"], created_at=row["created_at"], status=row["status"],
-        generation=row["generation"], armed_at=row["armed_at"], fired_at=row["fired_at"],
-        cancelled_at=row["cancelled_at"], evaluated_through=row["evaluated_through"], last_reason=row["last_reason"])
+    """A stored alarm, read structurally: its condition is not re-checked against today's indicator menu."""
+    return AlarmRecord.model_validate({
+        "alarm_id": row["alarm_id"], "department": row["department"],
+        "condition": json.loads(row["condition_json"]), "portfolio_id": row["portfolio_id"],
+        "day_plan_ref": row["day_plan_ref"], "task_id": row["task_id"], "request_id": row["request_id"],
+        "note": row["note"], "created_at": row["created_at"], "status": row["status"],
+        "generation": row["generation"], "armed_at": row["armed_at"], "fired_at": row["fired_at"],
+        "cancelled_at": row["cancelled_at"], "evaluated_through": row["evaluated_through"],
+        "last_reason": row["last_reason"]}, context={"stored": True})
 
 
 class AlarmBook:
@@ -265,31 +266,40 @@ class AlarmBook:
                                detail: Mapping[str, Any]) -> list[AlarmDelivery]:
         """Record that a feed was lost or restored and tell every department whose alarms depend on it.
 
-        Idempotent: recording the state the feed is already in does nothing (a restart does not repeat a notice).
-        A restored notice also goes to every department that was told about the loss.
+        Idempotent: recording the state the feed is already in repeats no notice (nor does a restart). While a feed
+        stays lost, recording "lost" again tells only departments that armed an alarm on it since the loss, under
+        the same loss event. A restored notice also goes to every department that was told about the loss.
         """
         now = self._now()
         with self.database.immediate() as connection:
             last = connection.execute(
-                "SELECT event_id, status FROM price_feed_events WHERE series_key = ? ORDER BY sequence DESC LIMIT 1",
-                (series.key,)).fetchone()
+                """SELECT event_id, status, document_json FROM price_feed_events WHERE series_key = ?
+                   ORDER BY sequence DESC LIMIT 1""", (series.key,)).fetchone()
             if (last["status"] if last is not None else "restored") == status:
-                return []
-            event_id = str(uuid.uuid4())
-            document = {**series.document(), "status": status, "detected_at": now, **dict(detail)}
-            connection.execute(
-                """INSERT INTO price_feed_events (event_id, series_key, feed, symbol, interval_minutes, source, status,
-                   detected_at, document_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (event_id, series.key, series.feed, series.symbol, series.interval_minutes, series.source, status,
-                 now, canonical_json(document)))
+                if status == "restored" or last is None:
+                    return []
+                # Still lost: a department that armed an alarm on this feed since the loss is told about it too.
+                event_id, document = last["event_id"], json.loads(last["document_json"])
+            else:
+                event_id = str(uuid.uuid4())
+                document = {**series.document(), "status": status, "detected_at": now, **dict(detail)}
+                connection.execute(
+                    """INSERT INTO price_feed_events (event_id, series_key, feed, symbol, interval_minutes, source,
+                       status, detected_at, document_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (event_id, series.key, series.feed, series.symbol, series.interval_minutes, series.source,
+                     status, now, canonical_json(document)))
+                if status == "restored" and last is not None:
+                    told = connection.execute("SELECT department FROM alarm_deliveries WHERE dedup_key LIKE ?",
+                                              (f"feed:{last['event_id']}:%",)).fetchall()
+                else:
+                    told = []
             affected: dict[str, list[str]] = {}
             for row in connection.execute(f"{_SELECT} WHERE w.status = 'armed' AND a.basis = ? AND a.symbol = ? "
                                           "AND a.interval_minutes IS ? AND a.source IS ? ORDER BY a.sequence",
                                           (series.feed, series.symbol, series.interval_minutes, series.source)):
                 affected.setdefault(row["department"], []).append(row["alarm_id"])
-            if status == "restored" and last is not None:
-                for row in connection.execute("SELECT department FROM alarm_deliveries WHERE dedup_key LIKE ?",
-                                              (f"feed:{last['event_id']}:%",)):
+            if document["status"] == "restored":
+                for row in told:
                     affected.setdefault(row["department"], [])
             notices = []
             for department in sorted(affected):

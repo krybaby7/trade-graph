@@ -138,6 +138,10 @@ def test_the_watch_state_must_follow_the_event_log(upgraded) -> None:
     upgraded.execute("UPDATE price_alarm_watch SET status='spent', fired_at=? WHERE alarm_id='a1'", (LATER,))
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
         upgraded.execute("DELETE FROM price_alarm_watch")
+    upgraded.execute(_EVENT, ("a1-armed-2", "a1", 2, "armed", LATER))
+    with pytest.raises(sqlite3.IntegrityError, match="follow the alarm events"):  # an older arming is not current
+        upgraded.execute("UPDATE price_alarm_watch SET updated_at=? WHERE alarm_id='a1'", (LATER,))
+    upgraded.execute("UPDATE price_alarm_watch SET status='armed', generation=2 WHERE alarm_id='a1'")
 
 
 def test_a_delivery_moves_pending_claimed_delivered_and_never_back_from_delivered(upgraded) -> None:

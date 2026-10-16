@@ -79,8 +79,9 @@ def test_a_released_wake_returns_its_items_in_their_original_order(book, queue, 
     queue.claim("trader", "wake-1")
     second = _fire(book, clock, "65100")
     released = queue.release("wake-1")
-    assert released.status == "released" and released.items == ()
-    assert queue.release("wake-1") == released
+    assert released.status == "released" and [item.alarm_id for item in released.items] == [first]
+    again = queue.release("wake-1")  # repeating it changes nothing; the items are back in the queue
+    assert again.status == "released" and again.items == ()
     with pytest.raises(StaleState, match="released"):
         queue.acknowledge("wake-1")
     with pytest.raises(StaleState, match="released"):

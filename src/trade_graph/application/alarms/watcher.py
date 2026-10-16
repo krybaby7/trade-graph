@@ -157,7 +157,8 @@ class PriceWatcher:
             previous_quote = self._last_quote.get(symbol)
             if previous_quote is None or received > previous_quote:
                 self._last_quote[symbol] = received
-            if self.book.feed_status(FeedSeries("quote", symbol)) == "lost":
+            fresh = now - received <= self.policy.quote_stale_after  # a backlog of old quotes is no recovery
+            if fresh and self.book.feed_status(FeedSeries("quote", symbol)) == "lost":
                 self.book.record_feed_transition(FeedSeries("quote", symbol), "restored",
                                                  {"first_update_at": utc_iso(received)})
             fired: list[AlarmDelivery] = []
@@ -264,12 +265,26 @@ class PriceWatcher:
         newest = align_close_time(now, condition.interval_minutes)
         if first > newest:
             return [], 0
-        last = min(newest, first + step * (CATCH_UP_SLOTS - 1))
-        window = self.store.window(condition.symbol, condition.interval_minutes, condition.source,
-                                   end_close_time=last, count=(last - first) // step + 1, as_of=now)
-        present = [index for index, slot in enumerate(window.slots) if slot.stored is not None]
-        if not present:
-            return [], 0  # nothing has arrived yet; feed health says whether that is late
+        later_exists: bool | None = None
+        while True:
+            last = min(newest, first + step * (CATCH_UP_SLOTS - 1))
+            window = self.store.window(condition.symbol, condition.interval_minutes, condition.source,
+                                       end_close_time=last, count=(last - first) // step + 1, as_of=now)
+            present = [index for index, slot in enumerate(window.slots) if slot.stored is not None]
+            if present:
+                break
+            if last == newest:
+                return [], 0  # nothing has arrived yet; feed health says whether that is late
+            if later_exists is None:
+                later_exists = self._candles_after(condition, last, newest, now)
+            if not later_exists:
+                return [], 0  # wait: the hole may still be filled while nothing newer exists
+            # A whole catch-up step with no candle, and newer candles exist: step over it, saying so.
+            if not self.book.advance(alarm.alarm_id, alarm.generation, evaluated_through=utc_iso(last),
+                                     last_reason=f"no candle closing from {utc_iso(first)} to {utc_iso(last)}; "
+                                                 "later ones exist"):
+                return [], 0
+            first = last + step
         evaluated = 0
         for slot in window.slots[:present[-1] + 1]:
             close = slot.close_time_utc
@@ -287,6 +302,16 @@ class PriceWatcher:
                                      last_reason=outcome.reason):
                 break  # cancelled or re-armed meanwhile
         return [], evaluated
+
+    def _candles_after(self, condition: CandlePriceCondition | IndicatorCondition, last: datetime, newest: datetime,
+                       now: datetime) -> bool:
+        """Is any candle visible after ``last``? Looks at the newest catch-up step only: if the series is current
+        there, the hole before it is real; if it is not, the feed is lost (reported) and the alarm waits."""
+        step = timedelta(minutes=condition.interval_minutes)
+        start = max(last + step, newest - step * (CATCH_UP_SLOTS - 1))
+        recent = self.store.window(condition.symbol, condition.interval_minutes, condition.source,
+                                   end_close_time=newest, count=(newest - start) // step + 1, as_of=now)
+        return any(slot.stored is not None for slot in recent.slots)
 
     def _evaluate(self, condition: CandlePriceCondition | IndicatorCondition, slot: CandleSlot,
                   now: datetime) -> _Outcome:
@@ -364,8 +389,10 @@ class PriceWatcher:
             feeds[key] = "ok" if alive else "lost"
             if not alive:
                 blind.extend(alarm_ids)
-            if alive == (recorded == "lost"):  # a change: lost now and not recorded, or back after a recorded loss
-                notices.extend(self.book.record_feed_transition(series, "restored" if alive else "lost", detail))
+            if not alive:  # recorded once; repeated only for departments that armed on it since the loss
+                notices.extend(self.book.record_feed_transition(series, "lost", detail))
+            elif recorded == "lost":
+                notices.extend(self.book.record_feed_transition(series, "restored", detail))
         return feeds, notices, blind
 
     def _quote_alive(self, series: FeedSeries, now: datetime, recorded: str | None) -> tuple[bool | None, dict]:

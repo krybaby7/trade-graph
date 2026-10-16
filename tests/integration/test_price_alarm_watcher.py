@@ -134,11 +134,16 @@ def test_quotes_from_the_future_are_refused_and_stale_ones_do_not_move_a_baselin
     rig.book.create(quote_request("65000", "crosses_below"))
     with pytest.raises(ValidationFailure, match="future"):
         rig.watcher.observe_quote(quote("BTC/USD", clock.now() + timedelta(seconds=1), bid="1", ask="1"))
-    rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="65100", ask="65100"))
-    clock.advance(10)
-    older = quote("BTC/USD", clock.now() - timedelta(seconds=30), bid="64000", ask="64000")
+    clock.advance(20)
+    rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="65100", ask="65100"))  # held: above, at +20 s
+    alarm = rig.book.armed()[0]
+    held = rig.book.baseline(alarm.alarm_id, 1)
+    older = quote("BTC/USD", clock.now() - timedelta(seconds=10), bid="64000", ask="64000")  # after arming
     assert rig.watcher.observe_quote(older) == []
-    assert rig.fires() == 0  # a reading older than the one the alarm already saw is not a crossing
+    assert rig.fires() == 0  # a reading older than the one the alarm already holds is not a crossing
+    assert rig.book.baseline(alarm.alarm_id, 1) == held
+    clock.advance(1)
+    assert len(rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="64000", ask="64000"))) == 1
 
 
 # --- completed candles ----------------------------------------------------------------------------------------
@@ -400,3 +405,71 @@ def test_one_alarm_that_cannot_be_evaluated_does_not_blind_the_others(rig, clock
     assert record.status == "armed" and record.evaluated_through is None  # the cursor did not move
     assert "candle_selection_invalid" in record.last_reason
     assert report.feeds["candle:BAD/USD:15:synthetic"] == "lost"  # a series that cannot be read is not quiet
+
+
+def test_a_hole_longer_than_one_catch_up_step_is_stepped_over_once_candles_return(rig, clock, monkeypatch) -> None:
+    monkeypatch.setattr(watcher_module, "CATCH_UP_SLOTS", 3)
+    save(rig.store, [candle(_at(12, 0), "100")])
+    alarm = rig.book.create(candle_request("105", "above"))
+    _to(clock, _at(13, 40))
+    assert rig.watcher.tick().fired == ()
+    assert rig.book.get(alarm.alarm_id).evaluated_through is None  # nothing later exists yet: wait
+    save(rig.store, [candle(_at(13, 45), "110")])  # 12:15 to 13:30 never arrive (two empty catch-up steps)
+    _to(clock, _at(13, 46))
+    fired = rig.watcher.tick().fired
+    assert [item.document["observed"]["close_time_utc"] for item in fired] == [utc_iso(_at(13, 45))]
+    assert "no candle" in rig.book.get(alarm.alarm_id).last_reason
+
+
+def test_a_department_that_arms_on_a_feed_already_lost_is_told_too(rig, clock) -> None:
+    rig.book.create(quote_request("70000", "above", department="trader"))
+    clock.advance(150)
+    rig.watcher.tick()
+    assert [item.kind for item in rig.queue.pending("trader")] == ["feed_lost"]
+    late = rig.book.create(quote_request("71000", "above", department="research"))
+    clock.advance(5)
+    notices = rig.watcher.tick().feed_notices
+    assert [(item.department, item.kind) for item in notices] == [("research", "feed_lost")]
+    assert notices[0].document["armed_alarm_ids"] == [late.alarm_id]
+    assert notices[0].document["feed_event_id"] == rig.queue.pending("trader")[0].document["feed_event_id"]
+    assert len(rig.queue.pending("trader")) == 1  # the Trader is not told twice
+    clock.advance(5)
+    assert rig.watcher.tick().feed_notices == ()
+    rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="65000", ask="65000"))
+    assert rig.queue.waiting() == {"research": 2, "trader": 2}
+
+
+def test_a_backlog_quote_older_than_the_stale_limit_does_not_restore_a_lost_feed(rig, clock) -> None:
+    rig.book.create(quote_request("70000", "above"))
+    clock.advance(300)
+    rig.watcher.tick()
+    rig.watcher.observe_quote(quote("BTC/USD", clock.now() - timedelta(seconds=200), bid="65000", ask="65000"))
+    assert [item.kind for item in rig.queue.pending("trader")] == ["feed_lost"]
+    assert rig.watcher.tick().feeds == {"quote:BTC/USD": "lost"}
+    rig.watcher.observe_quote(quote("BTC/USD", clock.now(), bid="65000", ask="65000"))
+    assert [item.kind for item in rig.queue.pending("trader")] == ["feed_lost", "feed_restored"]
+
+
+def test_an_alarm_whose_stored_condition_the_menu_no_longer_accepts_is_reported_not_fatal(rig, clock) -> None:
+    quote_alarm = rig.book.create(quote_request("70000", "above"))
+    retired = "retired-indicator-alarm"
+    condition = ('{"indicator":"RETIRED","interval_minutes":15,"kind":"indicator","level":"5","output":"value",'
+                 '"parameters":{"timeperiod":14},"relation":"above","source":"synthetic","symbol":"SYN/USD"}')
+    with rig.state.immediate() as connection:  # a row written under an older menu that has since changed
+        connection.execute(
+            """INSERT INTO price_alarms (alarm_id, department, basis, kind, symbol, interval_minutes, source,
+               condition_json, contract_version, created_at)
+               VALUES (?, 'trader', 'candle', 'indicator', 'SYN/USD', 15, 'synthetic', ?, 'price-alarm-v1', ?)""",
+            (retired, condition, utc_iso(clock.now())))
+        connection.execute("""INSERT INTO price_alarm_events (event_id, alarm_id, generation, action, at,
+                              document_json) VALUES ('retired-armed', ?, 1, 'armed', ?, '{}')""",
+                           (retired, utc_iso(clock.now())))
+        connection.execute("""INSERT INTO price_alarm_watch (alarm_id, status, generation, armed_at, updated_at)
+                              VALUES (?, 'armed', 1, ?, ?)""", (retired, utc_iso(clock.now()), utc_iso(clock.now())))
+    assert {record.alarm_id for record in rig.book.armed()} == {quote_alarm.alarm_id, retired}
+    save(rig.store, [candle(_at(12, 15), "100")])
+    _to(clock, _at(12, 16))
+    report = rig.watcher.tick()
+    assert [alarm_id for alarm_id, _ in report.errors] == [retired]
+    assert "not on the indicator menu" in rig.book.get(retired).last_reason
+    assert report.feeds["quote:BTC/USD"] == "lost"  # feed health still runs for everything else

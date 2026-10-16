@@ -21,7 +21,16 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from trade_graph.contracts.candles import COLLECTED_INTERVALS, CandleSource
 from trade_graph.contracts.indicators import get_indicator
@@ -63,6 +72,10 @@ def _level(value: Any) -> Decimal:
     if len(parsed.as_tuple().digits) > MAX_LEVEL_DIGITS:
         raise ValueError(f"the alarm level may have at most {MAX_LEVEL_DIGITS} digits")
     return parsed
+
+
+def _stored(info: ValidationInfo) -> bool:
+    return isinstance(info.context, dict) and info.context.get("stored") is True
 
 
 class _Frozen(BaseModel):
@@ -147,9 +160,9 @@ class IndicatorCondition(_CandleCondition):
 
     @model_validator(mode="before")
     @classmethod
-    def _resolve(cls, data: Any) -> Any:
+    def _resolve(cls, data: Any, info: ValidationInfo) -> Any:
         """Fill the menu defaults and the output name so the stored condition says exactly what is computed."""
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or _stored(info):
             return data
         name = data.get("indicator")
         try:
@@ -170,7 +183,9 @@ class IndicatorCondition(_CandleCondition):
         return {**data, "parameters": resolved, "output": output}
 
     @model_validator(mode="after")
-    def _inside_the_range(self) -> IndicatorCondition:
+    def _inside_the_range(self, info: ValidationInfo) -> IndicatorCondition:
+        if _stored(info):
+            return self
         spec = get_indicator(self.indicator)
         declared = next(item for item in spec.outputs if item.name == self.output)
         lowest = None if declared.lowest is None else Decimal(str(declared.lowest))
@@ -186,9 +201,15 @@ AlarmCondition = Annotated[QuotePriceCondition | CandlePriceCondition | Indicato
 _CONDITION = TypeAdapter(AlarmCondition)
 
 
-def parse_condition(data: Any) -> QuotePriceCondition | CandlePriceCondition | IndicatorCondition:
-    """A condition from plain JSON (a dict); raises pydantic's ``ValidationError`` when it is not valid."""
-    return _CONDITION.validate_python(data)
+def parse_condition(data: Any, *,
+                    stored: bool = False) -> QuotePriceCondition | CandlePriceCondition | IndicatorCondition:
+    """A condition from plain JSON (a dict); raises pydantic's ``ValidationError`` when it is not valid.
+
+    ``stored=True`` reads a condition that was accepted when it was saved: its shape is still checked, but it is not
+    re-checked against today's indicator menu, so a later menu change cannot make the alarm unreadable. The watcher
+    then reports such an alarm as one it cannot evaluate instead of failing for every alarm.
+    """
+    return _CONDITION.validate_python(data, context={"stored": True} if stored else None)
 
 
 def _clean_text(value: str | None) -> str | None:

@@ -111,6 +111,7 @@ STATEMENTS: Final[list[str]] = [
                 WHERE alarm_id = NEW.alarm_id AND action = 'cancelled'))
             OR (NEW.status = 'armed' AND EXISTS (SELECT 1 FROM price_alarm_events
                 WHERE alarm_id = NEW.alarm_id AND generation = NEW.generation AND action = 'fired'))
+            OR NEW.generation <> (SELECT MAX(generation) FROM price_alarm_events WHERE alarm_id = NEW.alarm_id)
         BEGIN SELECT RAISE(ABORT, 'the watch state must follow the alarm events'); END""" for when in ("insert",
                                                                                                         "update")],
     f"""CREATE TABLE alarm_wake_claims (
