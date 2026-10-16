@@ -9,7 +9,8 @@ installed or changed in the running system, so there is nothing for you to decid
 
 Branch: `claude/determined-dirac-i1eyfa` (this session's own branch, reset to
 `origin/claude/day-trader-engine-20261012` as the package prompt allows instead of `claude/t33-price-alarms`),
-head `HEAD_PLACEHOLDER`. Pull request: PR_PLACEHOLDER.
+head: the commit that adds this evidence, on top of code commit `2d7f48e` (the code the full suite ran on).
+Pull request: https://github.com/krybaby7/trade-graph/pull/5 (opened from the owner's local session).
 
 ## What was built
 
@@ -103,7 +104,55 @@ clock)`:
 
 ## Evidence
 
-EVIDENCE_PLACEHOLDER
+All runs on Python 3.12.13 (`uv sync --frozen --group dev --python 3.12`), in this cloud container, at code commit
+`2d7f48e`. No network call, key, paid call or exchange call in any test.
+
+- Tests written first, and what they showed:
+  - `tests/unit/test_alarm_contract.py`, `tests/integration/test_price_alarm_book.py`,
+    `tests/integration/test_alarm_queue.py`: failed at collection (`ModuleNotFoundError` / `ImportError`, the modules
+    did not exist) and pass now.
+  - `tests/integration/test_price_alarm_watcher.py`: written before the watcher; with the watcher module removed it
+    fails at collection (`ImportError: cannot import name 'watcher'`). On the first run of the watcher two of its
+    tests failed because they sent only `last` prices to `mid` alarms (a test bug, fixed).
+  - `tests/integration/test_migration_0029.py`: written with the schema module before either was run; its first run
+    found one trigger bug (a content change on a claimed delivery was reported as a status error), fixed.
+  - Error isolation (`test_one_alarm_that_cannot_be_evaluated_does_not_blind_the_others`) failed with
+    `CandleSelectionError` before the fix. After an independent read-only review, six more tests were added first and
+    failed (long candle hole, late arming on a lost feed, backlog quote, stale stored condition, `release` return,
+    watch trigger), then the fixes made them pass; the stale-quote test was strengthened to reach its check.
+  - `tests/property/test_price_alarm_properties.py` (Hypothesis, derandomized, 80 examples each plus explicit edge
+    examples) was written after the code and checked by mutation: a strict-crossing mutation, a replay-mode
+    (not point-in-time) candle read and a forgotten quote baseline after restart each make it fail.
+- `uv run ruff check src tests`: all checks passed.
+- New tests: `uv run pytest -p no:cacheprovider tests/unit/test_alarm_contract.py tests/integration/test_migration_0029.py
+  tests/integration/test_price_alarm_book.py tests/integration/test_alarm_queue.py
+  tests/integration/test_price_alarm_watcher.py tests/property/test_price_alarm_properties.py`: **62 passed**.
+- Related existing tests (0025 migration and owner check-ins/expenses whose assertions changed, the indicator engine
+  and alarm comparison the watcher uses, the import boundary): `tests/integration/test_migration_0025.py
+  test_owner_checkins.py test_owner_expenses.py test_owner_expense_upgrade.py test_indicator_engine.py
+  tests/unit/test_indicator_alarm_compare.py test_import_boundary.py`: **244 passed**.
+- `python3 scripts/check_plan.py`: plan valid (46 tasks, acyclic). `python3 scripts/test_planning.py`: 11 tests OK.
+  `python3 scripts/check_repository_hygiene.py`: passed, no private runtime files or credentials.
+- Full suite, `uv run pytest -p no:cacheprovider -rf` at `2d7f48e`: **6,375 tests: 6,338 passed, 23 skipped,
+  14 failed**, about 85 minutes of test time. One single run was stopped at this container's 2-hour background limit
+  at about 60%, so the suite was run once more as seven contiguous slices of the collected file list (every file
+  exactly once, JUnit report per slice); a container restart interrupted one slice, which was re-run in full.
+  Every failure was re-run on the untouched base `435db71` in a separate worktree and fails there identically:
+  - known list: `tests/e2e/test_dashboard_loop.py::test_dashboard_reconciles_full_loop_and_navigates_retained_evidence`;
+    4 `tests/integration/test_paper_soak.py` (`test_cli_observer_failure_after_real_worker_effects_retains_interrupted_evidence`,
+    `test_cli_existing_report_refusal_is_sanitized_and_precedes_model_work`,
+    `test_cli_actual_feed_failure_degrades_completed_soak_even_without_role_calls[True]` and `[False]`);
+    3 `tests/integration/test_progress_dashboard.py`; 4 `tests/integration/test_progress_projection.py`;
+    `tests/integration/test_subscription_smoke.py::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers`;
+  - container only: `tests/security/test_subscription_egress_boundary.py::test_fixed_provider_proxy_is_the_only_child_egress_setting`
+    (`ValueError: Linux bubblewrap is unavailable; isolation fails closed`; also fails on the base here).
+  - **No new failure.** The load-sensitive timing cases on the known list (`test_plugin_staging`,
+    `test_financial_recovery`, `test_financial_transition`, `test_engineer_isolation`) passed in this run.
+- Real or synthetic: everything is synthetic. Candles are built in the tests (`tests/alarm_support.py`) or come from
+  the existing integer-arithmetic indicator series (`tests/indicator_series.py`); quotes are scripted
+  `Observation`s; clocks are frozen. No recorded public data was needed, and no paid, model, network or exchange
+  call was made. A mock is not a real feed test: the watcher has not yet watched a live Kraken feed (that needs
+  W5-A/W6-D wiring).
 
 ## Schema and dependencies
 
