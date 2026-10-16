@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "description": "Dated spot fee profiles for the paper broker and the practice range (T28, D126, D146). Rates are per side and charged in the quote asset. Revisions are append-only: a changed fee is a new revision with its own date, never an edit of a published one. Each revision is pinned by content hash in src/trade_graph/kernel/cost_profiles.py.",
+  "profiles": [
+    {
+      "profile_id": "kraken-spot-starting-tier",
+      "revision": 1,
+      "venue": "kraken",
+      "market": "spot",
+      "title": "Kraken spot, starting tier",
+      "tier": "Lowest public spot tier: 30-day trading volume up to USD10,000",
+      "maker_rate": "0.004",
+      "taker_rate": "0.008",
+      "fee_asset": "quote",
+      "effective_from": "2026-09-29",
+      "recorded_on": "2026-10-16",
+      "basis": "published_schedule",
+      "sources": [
+        {
+          "url": "https://www.kraken.com/features/fee-schedule",
+          "title": "Kraken fee schedule (source S08)",
+          "figure_date": "2026-09-29",
+          "checked_on": "2026-10-16",
+          "check_result": "unreachable_from_build_environment",
+          "note": "Figure from the 2026-09-29 official review recorded in docs/07-COSTS.md, D14 and D126 (0.40% maker, 0.80% taker per side). The cloud build session could not reach kraken.com on 2026-10-16 (the network policy refused the connection), so the build-plan figure is kept; re-check at step L2. The owner's actual account tier, read through Kraken's trade-volume endpoint (S12), outranks this public figure."
+        }
+      ],
+      "decisions": ["D14", "D119", "D126", "D146"],
+      "note": "The paper broker's default fees. Same rates as the earlier fixed conservative tier (D14), now as a dated record."
+    },
+    {
+      "profile_id": "kraken-spot-after-10k-volume",
+      "revision": 1,
+      "venue": "kraken",
+      "market": "spot",
+      "title": "Kraken spot, after USD10,000 of 30-day volume",
+      "tier": "The public spot tier above USD10,000 of 30-day trading volume",
+      "maker_rate": "0.0022",
+      "taker_rate": "0.0038",
+      "fee_asset": "quote",
+      "effective_from": "2026-10-12",
+      "recorded_on": "2026-10-16",
+      "basis": "published_schedule",
+      "sources": [
+        {
+          "url": "https://www.kraken.com/features/fee-schedule",
+          "title": "Kraken fee schedule (source S08)",
+          "figure_date": "2026-10-12",
+          "checked_on": "2026-10-16",
+          "check_result": "unreachable_from_build_environment",
+          "note": "Figure from the 2026-10-12 venue session that D126 records, corrected against official fee pages (0.22% maker, 0.38% taker per side; 0.44% and 0.76% per round trip). The cloud build session could not reach kraken.com on 2026-10-16 (the network policy refused the connection), so the build-plan figure is kept; re-check at step L2."
+        }
+      ],
+      "decisions": ["D119", "D126", "D146"],
+      "note": "What the same strategy would cost once the account's 30-day volume passes USD10,000. Not a claim that the paper account has that volume."
+    },
+    {
+      "profile_id": "okx-eea-spot",
+      "revision": 1,
+      "venue": "okx",
+      "market": "spot",
+      "title": "OKX Europe spot",
+      "tier": "Regular spot tier for an account with OKX's European (EEA) entity",
+      "maker_rate": "0.001",
+      "taker_rate": "0.002",
+      "fee_asset": "quote",
+      "effective_from": "2026-09-25",
+      "recorded_on": "2026-10-16",
+      "basis": "published_schedule",
+      "sources": [
+        {
+          "url": "https://www.okx.com/fees",
+          "title": "OKX fee schedule; figure from OKX's official notice of 2026-09-25 for OKX Europe",
+          "figure_date": "2026-09-25",
+          "checked_on": "2026-10-16",
+          "check_result": "unreachable_from_build_environment",
+          "note": "Figure from OKX's official notice of 2026-09-25 as recorded in D126 (0.10% maker, 0.20% taker per side). The notice's own address was not recorded in this repository. The cloud build session could not reach okx.com on 2026-10-16 (the network policy refused the connection), so the build-plan figure is kept; re-check the EEA fee page at step L2."
+        }
+      ],
+      "decisions": ["D126", "D146"],
+      "note": "A cost comparison only: there is no OKX connection (D126). Kraken prices stand in for the main coins; smaller coins need OKX's own public prices (T29)."
+    }
+  ]
+}
