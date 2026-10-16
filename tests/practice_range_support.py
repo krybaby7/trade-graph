@@ -14,12 +14,17 @@ from pathlib import Path
 from trade_graph.adapters.persistence.market_data import MarketDataDatabase
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.contracts.candles import Candle
+from trade_graph.contracts.models import InstrumentRules
 from trade_graph.contracts.practice_range import PracticeStrategy
 
 DAY = date(2026, 7, 1)
 WINDOW_START = datetime(2026, 7, 1, tzinfo=UTC)
 STEP = timedelta(minutes=15)
 RECEIVED = datetime(2026, 10, 1, tzinfo=UTC)  # every synthetic candle is received at import, long after it closed
+# Tick 0.01 and whole-unit lots keep the golden arithmetic short enough to check by hand.
+GOLDEN_RULES = InstrumentRules(venue="kraken", symbol="SYN/USD", base_asset="SYN", quote_asset="USD",
+                               price_increment=Decimal("0.01"), quantity_increment=Decimal("1"),
+                               min_quantity=Decimal("1"), min_notional=Decimal("10"), synthetic=True)
 
 
 def bar(symbol: str, index: int, o: str, h: str, low: str, c: str, volume: str = "1000", *,

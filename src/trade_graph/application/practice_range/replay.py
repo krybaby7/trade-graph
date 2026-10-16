@@ -599,6 +599,7 @@ def _hold(request: ReplayRequest, candles: list, *, lot: Decimal, name: str
     return benchmark, {
         "status": "ok", "symbol": first.candle.symbol, "source": first.candle.source,
         "first_open_utc": utc_iso(first.candle.open_time_utc), "last_close_utc": utc_iso(last.candle.close_time_utc),
+        "run_ids": sorted({first.run_id, last.run_id}),
         "input_sha256": _candle_digest([(item.candle.close_time_utc, item.revision, item.run_id,
                                          item.candle.content_hash) for item in (first, last)]),
     }

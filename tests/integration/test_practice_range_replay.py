@@ -13,6 +13,7 @@ from decimal import Decimal
 
 import pytest
 from tests.practice_range_support import (
+    GOLDEN_RULES,
     WINDOW_START,
     bar,
     cross_strategy,
@@ -24,7 +25,6 @@ from tests.practice_range_support import (
 )
 
 from trade_graph.application.practice_range.replay import ReplayRequest, replay
-from trade_graph.contracts.models import InstrumentRules
 from trade_graph.contracts.practice_range import PracticeStrategy, ReplayWindow
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.kernel.cost_profiles import KRAKEN_STARTING, OKX_EEA, load_cost_profiles
@@ -33,9 +33,7 @@ from trade_graph.kernel.fills import BAR_REPLAY_POLICY
 D = Decimal
 DAY_WINDOW = ReplayWindow(start=date(2026, 7, 1), end=date(2026, 7, 2))
 AS_OF = datetime(2026, 10, 2, tzinfo=UTC)
-RULES = InstrumentRules(venue="kraken", symbol="SYN/USD", base_asset="SYN", quote_asset="USD",
-                        price_increment=D("0.01"), quantity_increment=D("1"), min_quantity=D("1"),
-                        min_notional=D("10"), synthetic=True)
+RULES = GOLDEN_RULES
 
 
 def _request(strategy: PracticeStrategy | None = None, *, profile_id: str = KRAKEN_STARTING, **changes
