@@ -139,8 +139,8 @@ def test_a_request_names_one_owning_department_and_optional_references() -> None
 
 def test_there_is_no_count_or_frequency_setting_in_the_contract() -> None:
     """D116: the one-shot rule is the only limit. No field may cap how many alarms exist or how often they fire."""
-    fields = set(AlarmRequest.model_fields) | {
-        name for model in (QuotePriceCondition, CandlePriceCondition, IndicatorCondition) for name in model.model_fields}
+    conditions = (QuotePriceCondition, CandlePriceCondition, IndicatorCondition)
+    fields = set(AlarmRequest.model_fields) | {name for model in conditions for name in model.model_fields}
     for word in ("max", "limit", "cooldown", "throttle", "per_day", "quota", "budget", "repeat"):
         assert not [field for field in fields if word in field], word
 
