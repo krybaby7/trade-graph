@@ -649,7 +649,7 @@ class Observation(ContractModel):
 
 
 class ModelCapabilities(ContractModel):
-    provider: Literal["openai", "anthropic", "scripted"]
+    provider: Literal["openai", "anthropic", "perplexity", "scripted"]
     model: str
     structured_output: bool
     forced_tool: bool
@@ -688,7 +688,7 @@ class ModelRequest(ContractModel):
     root_task_id: str
     run_id: str
     system_version_id: str
-    provider: Literal["openai", "anthropic", "scripted"]
+    provider: Literal["openai", "anthropic", "perplexity", "scripted"]
     model: str
     instructions: str
     context: dict[str, Any]

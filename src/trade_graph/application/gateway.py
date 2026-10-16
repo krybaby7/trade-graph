@@ -32,7 +32,7 @@ from trade_graph.domain.protocols import InferenceAdapter
 
 @dataclass(frozen=True)
 class ProviderFallback:
-    provider: Literal["openai", "anthropic", "scripted"]
+    provider: Literal["openai", "anthropic", "perplexity", "scripted"]
     model: str
     price_card_id: str
 

@@ -11,6 +11,14 @@ from time import monotonic
 from typing import Any, Literal, Protocol
 
 MAXIMUM_PROVIDER_BYTES = 1_048_576
+# Fixed official endpoints a pinned transport may reach. Perplexity's Agent API and its
+# Search API are the two Perplexity endpoints (T36); each still needs an owner pin to be used.
+OFFICIAL_PROVIDER_ENDPOINTS = frozenset({
+    "https://api.openai.com/v1/responses",
+    "https://api.anthropic.com/v1/messages",
+    "https://api.perplexity.ai/v1/agent",
+    "https://api.perplexity.ai/search",
+})
 
 
 def provider_request_bytes(body: dict[str, Any]) -> bytes:
@@ -108,10 +116,9 @@ class HttpxProviderHttp:
         if type(trust_env) is not bool or proxy is not None and type(proxy) is not str:
             raise ValueError("explicit trusted provider proxy/environment policy required")
         if allowed_urls is not None and (
-            type(allowed_urls) is not tuple or not 1 <= len(allowed_urls) <= 2
+            type(allowed_urls) is not tuple or not 1 <= len(allowed_urls) <= len(OFFICIAL_PROVIDER_ENDPOINTS)
             or len(set(allowed_urls)) != len(allowed_urls)
-            or any(url not in {"https://api.openai.com/v1/responses", "https://api.anthropic.com/v1/messages"}
-                   for url in allowed_urls)
+            or any(url not in OFFICIAL_PROVIDER_ENDPOINTS for url in allowed_urls)
         ):
             raise ValueError("fixed official provider endpoints required")
         self.proxy, self.trust_env, self.allowed_urls = proxy, trust_env, allowed_urls
