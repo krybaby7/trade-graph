@@ -73,7 +73,8 @@ def test_0030_is_registered_once_after_0029_with_exactly_this_schema() -> None:
 def test_0030_upgrades_an_earlier_database_once_without_rewriting_rows(tmp_path) -> None:
     connection = _database_before_0030(tmp_path / "upgrade.sqlite")
     before = connection.execute("SELECT * FROM portfolios").fetchall()
-    assert apply_migrations(connection, LATER) == [VERSION]
+    pending = _versions()[_versions().index(VERSION):]  # 0030 and any version registered after it
+    assert apply_migrations(connection, LATER) == pending
     assert connection.execute("SELECT * FROM portfolios").fetchall() == before
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert set(TABLES) <= tables
@@ -82,16 +83,18 @@ def test_0030_upgrades_an_earlier_database_once_without_rewriting_rows(tmp_path)
     connection.close()
 
 
-def test_alembic_revision_follows_0029_and_refuses_downgrade() -> None:
+def test_alembic_revision_follows_the_previous_version_and_refuses_downgrade() -> None:
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == [STATEMENTS[-1][0]] == [VERSION]
+    previous = _versions()[_versions().index(VERSION) - 1]
+    assert scripts.get_heads() == [STATEMENTS[-1][0]]  # one linear chain, headed by the newest registered version
+    assert scripts.get_revision(VERSION).down_revision == previous
     path = ROOT / "migrations" / "versions" / "0030_practice_range.py"
     spec = importlib.util.spec_from_file_location("migration_0030", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert (module.revision, module.down_revision) == ("0030", "0029")
+    assert (module.revision, module.down_revision) == (VERSION, previous)
     with pytest.raises(RuntimeError):
         module.downgrade()
 
