@@ -58,11 +58,40 @@ departments wrote themselves; HQ never rewrites them. "Load earlier" goes furthe
 may stop short of 3 days and the next page continues from there, so nothing is skipped.
 
 **Money**: the scoreboard (practice money, what changed it, what is held), whether the run "pays for itself",
-"Is my money at risk?", the AI allowance gauge and the market weather (price and 20-hour / 50-hour averages).
-Practice money and real costs are always shown apart and never added together. Anything not known yet says
-"not known yet"; it is never shown as zero.
+"Is my money at risk?", the AI allowance gauge, **AI spending** (below) and the market weather (price and
+20-hour / 50-hour averages). Practice money and real costs are always shown apart and never added together.
+Anything not known yet says "not known yet"; it is never shown as zero.
 
 **Decide**: the buttons. See below.
+
+## AI spending (the Money tab)
+
+The **AI spending** panel shows what paid AI has really cost, in US dollars, from the receipts the system keeps
+for every call (T40, decisions D175–D179):
+
+- **Perplexity web research** (Research and the Leader) and the **Jev news alarm**, each per department. Every
+  call counts once: **from receipts** (the provider reported its use), **estimated** (its use was never reported,
+  so it was charged at the most it could cost) or **not known yet** (shown as "up to" the most it could cost,
+  never as free). Test calls with made-up answers are counted apart and never added.
+- The **testing total**, next to the **prepaid credit** you last recorded and what has been spent since. The
+  credit is information only: HQ never stops anything at that amount; the provider itself stops calls when its
+  credit runs out.
+- The **testing alert**: at USD20 for Perplexity (D131) and USD5 for Jev (D138). Once testing spending passes it,
+  "Needs you" shows a "Keep an eye on" card. It pauses nothing. If calls not known yet could take the total past
+  the alert, the card says it "may have passed". Once you set a Perplexity monthly limit, the panel shows this
+  month's spending against the limit instead (reaching it pauses Research and Leader news rounds only).
+- **AI allowance by department**: each department's turns on your ChatGPT subscription in the last 7 days and its
+  share of the team's reported use. The allowance itself is shared with your own use, so HQ never splits the
+  gauge by department.
+
+Practice money never appears here and never pays for AI.
+
+Two owner commands go with it (run them on your PC, or ask the local session to):
+
+- `trade-graph ai-spending-report [--format text]` prints the same figures. It only reads the database.
+- `trade-graph ai-spending-record --service perplexity --prepaid-credit 25 --checked-at 2026-10-17T09:00:00Z`
+  records the balance you read on your Perplexity account page; `--testing-alert 30` records another alert
+  amount. Both preview first and write only with `--confirm`. The newest record counts; older ones stay as history.
 
 ## Decisions (the Decide tab)
 
@@ -132,6 +161,13 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   JSON island and all text is inserted as text.
 - **Model text** appears only as a short labelled quote (at most 280 characters) of what was saved; never a
   paraphrase and never a chain of thought.
+- **AI spending** (T40, D175–D179) comes from `budget_reservations` and `usage_receipts` (Perplexity: price card
+  provider `perplexity`; Jev: role `news_alarm`, purpose `news_alarm:jev`), the owner policy each Perplexity round
+  recorded (`web_research_runs.policy_json`), `subscription_invocations` for Codex turns and the owner's records
+  (migration `0032`, append-only). It is read through `application/ai_spending.py`, cached for 60 seconds behind a
+  fingerprint of those tables (`api/hq_spending.py`) and sent as the additive `ai_spending` key. A part with no call
+  is `null`, never `0`; it reads no practice-money table. The block is left out, not invented, if the records
+  can't be read.
 - **Owner check-ins** (migration `0025`, D108) are owner-only and append-only, are not in the review export, the
   financial checkpoint, the activity feed or any agent context, and never bump the owner revision. A process sharing
   the SQLite file is not stopped by a module boundary; that residual risk is accepted for non-financial notes.

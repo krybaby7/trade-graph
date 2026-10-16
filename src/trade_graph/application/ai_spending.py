@@ -20,8 +20,7 @@ here admits, refuses or pauses a call (D116, D125, D131).
 from __future__ import annotations
 
 import json
-import sqlite3
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -44,16 +43,17 @@ KNOWN_RECEIPTS = ("committed", "reconciled")
 _RECEIPT_RANK = {"reconciled": 0, "committed": 1, "conservative_charge": 2, "uncertain": 3}
 _USAGE_FIELDS = ("uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "billed_output_tokens")
 
-_MATCH = """((b.role = ? AND b.purpose = ?) OR json_extract(p.document_json, '$.provider') = 'perplexity')"""
-_RESERVATIONS = f"""SELECT b.reservation_id, b.role, b.purpose, b.state, b.amount, b.currency, b.fx_rate_value,
-        b.synthetic, b.created_at, json_extract(p.document_json, '$.provider') AS provider,
-        json_extract(p.document_json, '$.currency') AS card_currency
-    FROM budget_reservations b LEFT JOIN price_cards p ON p.price_card_id = b.price_card_id
-    WHERE {_MATCH} AND b.created_at <= ? ORDER BY b.created_at, b.rowid"""
-_RECEIPTS = f"""SELECT r.reservation_id, r.status, r.native_cost, r.native_currency, r.created_at
-    FROM usage_receipts r JOIN budget_reservations b ON b.reservation_id = r.reservation_id
-    LEFT JOIN price_cards p ON p.price_card_id = b.price_card_id
-    WHERE {_MATCH} AND r.created_at <= ?"""
+# One row per call (and, rarely, per extra receipt of the same call; the most settled receipt wins). Perplexity
+# calls are those priced on a Perplexity card; Jev checks carry their own role and purpose (T44).
+_CALLS = """SELECT b.reservation_id, b.role, b.purpose, b.price_card_id, b.state, b.amount, b.currency,
+        b.fx_rate_value, b.synthetic, b.created_at, r.status AS receipt_status, r.native_cost, r.native_currency,
+        r.created_at AS receipt_at
+    FROM budget_reservations b
+    LEFT JOIN usage_receipts r ON r.reservation_id = b.reservation_id AND r.created_at <= ?
+    WHERE b.created_at <= ? AND ((b.role = ? AND b.purpose = ?) OR b.price_card_id IN ({cards}))
+    ORDER BY b.rowid"""
+_CARDS = """SELECT price_card_id, json_extract(document_json, '$.provider') AS provider,
+    json_extract(document_json, '$.currency') AS currency FROM price_cards"""
 _CODEX = """SELECT role, state, cost_status, usage_json FROM subscription_invocations
     WHERE synthetic = 0 AND created_at > ? AND created_at <= ?"""
 
@@ -88,15 +88,6 @@ class Tally:
     def total(self) -> Decimal | None:
         """Known spending plus unresolved calls at their maximum (what the owner limit counts)."""
         return None if self.unresolved is None else self.known + self.unresolved
-
-    def plus(self, kind: str, amount: Decimal | None) -> Tally:
-        if kind == "actual":
-            return replace(self, calls=self.calls + 1, actual=self.actual + amount, actual_calls=self.actual_calls + 1)
-        if kind == "estimated":
-            return replace(self, calls=self.calls + 1, estimated=self.estimated + amount,
-                           estimated_calls=self.estimated_calls + 1)
-        held = None if self.unresolved is None or amount is None else self.unresolved + amount
-        return replace(self, calls=self.calls + 1, unresolved=held, unresolved_calls=self.unresolved_calls + 1)
 
     def __add__(self, other: Tally) -> Tally:
         held = None if self.unresolved is None or other.unresolved is None else self.unresolved + other.unresolved
@@ -229,59 +220,127 @@ class AiSpendingReport:
 # --- Read model -----------------------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _Call:
-    service: str
-    line: str
-    synthetic: bool
-    created_at: str
-    kind: str
-    amount: Decimal | None
-    settled_at: str | None
+class _Acc:
+    """A mutable running tally for one pass over the calls (``Tally`` is the frozen result)."""
+
+    __slots__ = ("calls", "actual", "estimated", "unresolved", "unresolved_calls", "actual_calls", "estimated_calls")
+
+    def __init__(self) -> None:
+        self.calls = self.unresolved_calls = self.actual_calls = self.estimated_calls = 0
+        self.actual = self.estimated = ZERO
+        self.unresolved: Decimal | None = ZERO
+
+    def add(self, kind: str, amount: Decimal | None) -> None:
+        self.calls += 1
+        if kind == "actual":
+            self.actual += amount
+            self.actual_calls += 1
+        elif kind == "estimated":
+            self.estimated += amount
+            self.estimated_calls += 1
+        else:
+            self.unresolved = None if self.unresolved is None or amount is None else self.unresolved + amount
+            self.unresolved_calls += 1
+
+    def tally(self) -> Tally:
+        return Tally(calls=self.calls, actual=self.actual, estimated=self.estimated, unresolved=self.unresolved,
+                     unresolved_calls=self.unresolved_calls, actual_calls=self.actual_calls,
+                     estimated_calls=self.estimated_calls)
+
+
+class _Scope:
+    """One service's accumulators: the testing period per line, since the credit reading, this month, tests."""
+
+    def __init__(self, start: str | None, end: str | None, credit_from: str | None, month: str | None) -> None:
+        self.start, self.end, self.credit_from, self.month_prefix = start, end, credit_from, month
+        self.lines: dict[str, _Acc] = {}
+        self.credit = _Acc() if credit_from is not None else None
+        self.month = _Acc() if month is not None else None
+        self.known: list[tuple[str, Decimal]] = []  # (settled at, amount) of known testing calls
+        self.real_calls = self.synthetic_calls = 0
+        self.synthetic_known = ZERO
+
+    def add(self, line: str, synthetic: bool, created_at: str, kind: str, amount: Decimal | None,
+            settled_at: str | None) -> None:
+        if synthetic:
+            self.synthetic_calls += 1
+            if kind != "unresolved" and amount is not None:
+                self.synthetic_known += amount
+            return
+        self.real_calls += 1
+        if (self.start is None or created_at >= self.start) and (self.end is None or created_at < self.end):
+            accumulator = self.lines.get(line)
+            if accumulator is None:
+                accumulator = self.lines[line] = _Acc()
+            accumulator.add(kind, amount)
+            if kind != "unresolved":
+                self.known.append((settled_at or created_at, amount))
+        if self.credit is not None and created_at >= self.credit_from:
+            self.credit.add(kind, amount)
+        if self.month is not None and created_at[:7] == self.month_prefix:
+            self.month.add(kind, amount)
 
 
 def spending_report(database, now: datetime) -> AiSpendingReport:
     """One report as of ``now``; records stamped later are not counted yet."""
     now_iso = utc_iso(now)
-    calls = _calls(database, now_iso)
     owner = _owner_records(database, now_iso)
-    perplexity_policy = _perplexity_policy(database, now_iso)
+    status, start, end, limit = _perplexity_policy(database, now_iso)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    perplexity = _service("perplexity", calls, owner, perplexity_policy, month_start)
-    jev_status = "testing" if any(call.service == "jev" and not call.synthetic for call in calls) else "off"
-    jev = _service("jev", calls, owner, (jev_status, None, None, None), month_start)
+    credit_from = {service: _iso(owner[(service, "prepaid_credit")][1]) if (service, "prepaid_credit") in owner
+                   else None for service in SERVICES}
+    scopes = {"perplexity": _Scope(_iso(start), _iso(end), credit_from["perplexity"],
+                                   utc_iso(month_start)[:7] if limit is not None else None),
+              "jev": _Scope(None, None, credit_from["jev"], None)}
+    for service, *call in _calls(database, now_iso):
+        scopes[service].add(*call)
+    perplexity = _service("perplexity", scopes["perplexity"], owner, (status, start, end, limit), month_start)
+    jev_status = "testing" if scopes["jev"].real_calls else "off"
+    jev = _service("jev", scopes["jev"], owner, (jev_status, None, None, None), month_start)
     return AiSpendingReport(as_of=now, perplexity=perplexity, jev=jev, codex=_codex(database, now))
 
 
-def _calls(database, now_iso: str) -> list[_Call]:
-    params = (JEV_ROLE, JEV_PURPOSE, now_iso)
-    receipts: dict[str, sqlite3.Row] = {}
-    for row in database.execute(_RECEIPTS, params).fetchall():
-        current = receipts.get(row["reservation_id"])
-        if current is None or _RECEIPT_RANK.get(row["status"], 9) < _RECEIPT_RANK.get(current["status"], 9):
-            receipts[row["reservation_id"]] = row
-    calls = []
-    for row in database.execute(_RESERVATIONS, params).fetchall():
-        jev = row["role"] == JEV_ROLE and row["purpose"] == JEV_PURPOSE
-        service = "jev" if jev else "perplexity"
-        line = JEV_ROLE if jev else row["role"] if row["role"] in DEPARTMENTS else "other"
-        kind, amount, settled_at = _settle(row, receipts.get(row["reservation_id"]))
-        calls.append(_Call(service, line, bool(row["synthetic"]), row["created_at"], kind, amount, settled_at))
-    return calls
+def _calls(database, now_iso: str):
+    """Each call once: ``(service, line, synthetic, created_at, kind, usd_amount, settled_at)``."""
+    cards = {row["price_card_id"]: (row["provider"], row["currency"]) for row in database.execute(_CARDS).fetchall()}
+    perplexity_cards = [card for card, (provider, _) in cards.items() if provider == "perplexity"]
+    usd_cards = {card for card, (_, currency) in cards.items() if currency == "USD"}
+    sql = _CALLS.format(cards=",".join("?" for _ in perplexity_cards) or "NULL")
+    rows = database.execute(sql, (now_iso, now_iso, JEV_ROLE, JEV_PURPOSE, *perplexity_cards))
+    rates: dict[Any, Decimal | None] = {}  # the few distinct FX values, parsed once
+    pending = None
+    for row in rows:
+        row = tuple(row)
+        if pending is not None and pending[0] == row[0]:
+            if _RECEIPT_RANK.get(row[10], 9) < _RECEIPT_RANK.get(pending[10], 9):
+                pending = row
+            continue
+        if pending is not None:
+            yield _call(pending, usd_cards, rates)
+        pending = row
+    if pending is not None:
+        yield _call(pending, usd_cards, rates)
 
 
-def _settle(row, receipt) -> tuple[str, Decimal | None, str | None]:
-    """The kind of one call and its USD amount (see the module docstring)."""
-    fx = _decimal(row["fx_rate_value"])
-    fx = fx if fx is not None and fx > 0 else None
-    usd_card = row["card_currency"] == "USD"
-    if receipt is not None:
-        amount = _usd(receipt["native_cost"], receipt["native_currency"], fx, usd_card)
-        if receipt["status"] in KNOWN_RECEIPTS and amount is not None:
-            return "actual", amount, receipt["created_at"]
-        if receipt["status"] == "conservative_charge" and amount is not None:
-            return "estimated", amount, receipt["created_at"]
-    return "unresolved", _usd(row["amount"], row["currency"], fx, usd_card), None
+def _call(row: tuple, usd_cards: set, rates: dict) -> tuple:
+    (_, role, purpose, card, _, held, held_currency, fx_text, synthetic, created_at, status, cost, cost_currency,
+     receipt_at) = row
+    jev = role == JEV_ROLE and purpose == JEV_PURPOSE
+    line = JEV_ROLE if jev else role if role in DEPARTMENTS else "other"
+    if fx_text not in rates:
+        fx = _decimal(fx_text)
+        rates[fx_text] = fx if fx is not None and fx > 0 else None
+    fx, usd_card = rates[fx_text], card in usd_cards
+    kind, amount, settled_at = "unresolved", None, None
+    if status is not None:
+        value = _usd(cost, cost_currency, fx, usd_card)
+        if value is not None and status in KNOWN_RECEIPTS:
+            kind, amount, settled_at = "actual", value, receipt_at
+        elif value is not None and status == "conservative_charge":
+            kind, amount, settled_at = "estimated", value, receipt_at
+    if kind == "unresolved":
+        amount = _usd(held, held_currency, fx, usd_card)
+    return "jev" if jev else "perplexity", line, bool(synthetic), created_at, kind, amount, settled_at
 
 
 def _usd(amount, currency, fx: Decimal | None, usd_card: bool) -> Decimal | None:
@@ -295,56 +354,37 @@ def _usd(amount, currency, fx: Decimal | None, usd_card: bool) -> Decimal | None
     return None
 
 
-def _service(service: str, calls: list[_Call], owner: dict, policy: tuple, month_start: datetime) -> ServiceSpend:
+def _service(service: str, scope: _Scope, owner: dict, policy: tuple, month_start: datetime) -> ServiceSpend:
     status, testing_start, testing_end, monthly_limit = policy
-    start_iso, end_iso = _iso(testing_start), _iso(testing_end)
-    real = [call for call in calls if call.service == service and not call.synthetic]
-    synthetic = [call for call in calls if call.service == service and call.synthetic]
-    testing = [call for call in real if (start_iso is None or call.created_at >= start_iso)
-               and (end_iso is None or call.created_at < end_iso)]
-    lines: dict[str, Tally] = {}
-    for call in testing:
-        lines[call.line] = lines.get(call.line, Tally()).plus(call.kind, call.amount)
-    departments = {line: lines[line] for line in (*DEPARTMENTS, "other", JEV_ROLE) if line in lines}
+    departments = {line: scope.lines[line].tally() for line in (*DEPARTMENTS, "other", JEV_ROLE)
+                   if line in scope.lines}
     total = sum(departments.values(), Tally())
     alert_usd, alert_source = owner.get((service, "testing_alert"), (DEFAULT_ALERT_USD[service], None))
     alert_source = "default" if alert_source is None else "owner"
     alert_state = alert_since = None
     if status != "monthly_limit":
-        alert_state, alert_since = _alert(testing, total, alert_usd)
+        alert_state, alert_since = _alert(scope.known, total, alert_usd)
     credit = None
-    if (service, "prepaid_credit") in owner:
+    if scope.credit is not None:
         amount, observed_at = owner[(service, "prepaid_credit")]
-        observed_iso = utc_iso(observed_at)
-        credit = Credit(amount, observed_at, _tally(call for call in real if call.created_at >= observed_iso))
-    month = None
-    if monthly_limit is not None:
-        prefix = utc_iso(month_start)[:7]
-        month = _tally(call for call in real if call.created_at[:7] == prefix)
-    known_synthetic = sum((call.amount for call in synthetic if call.kind != "unresolved" and call.amount), ZERO)
+        credit = Credit(amount, observed_at, scope.credit.tally())
+    month = scope.month.tally() if scope.month is not None else None
     return ServiceSpend(
         service=service, status=status, testing_start=testing_start, testing_end=testing_end,
-        departments=departments, testing=total, synthetic_calls=len(synthetic), synthetic_known=known_synthetic,
-        alert_usd=alert_usd, alert_source=alert_source, alert_state=alert_state, alert_since=alert_since,
-        credit=credit, monthly_limit_usd=monthly_limit, month_start=month_start if month else None, month=month)
+        departments=departments, testing=total, synthetic_calls=scope.synthetic_calls,
+        synthetic_known=scope.synthetic_known, alert_usd=alert_usd, alert_source=alert_source,
+        alert_state=alert_state, alert_since=alert_since, credit=credit, monthly_limit_usd=monthly_limit,
+        month_start=month_start if month is not None else None, month=month)
 
 
-def _tally(calls) -> Tally:
-    result = Tally()
-    for call in calls:
-        result = result.plus(call.kind, call.amount)
-    return result
-
-
-def _alert(testing: list[_Call], total: Tally, threshold: Decimal) -> tuple[str, datetime | None]:
+def _alert(known: list[tuple[str, Decimal]], total: Tally, threshold: Decimal) -> tuple[str, datetime | None]:
     """Passed on known spending; "may have passed" when unresolved calls at their maximum would pass it."""
     if total.known >= threshold:
         running = ZERO
-        for call in sorted((call for call in testing if call.kind != "unresolved"),
-                           key=lambda call: (call.settled_at or call.created_at)):
-            running += call.amount
+        for settled_at, amount in sorted(known, key=lambda item: item[0]):
+            running += amount
             if running >= threshold:
-                return "passed", _parse(call.settled_at or call.created_at)
+                return "passed", _parse(settled_at)
         return "passed", None
     if total.unresolved_calls and (total.unresolved is None or total.known + total.unresolved >= threshold):
         return "maybe_passed", None
@@ -461,7 +501,7 @@ def _decimal(value) -> Decimal | None:
     if value is None or isinstance(value, (bool, float)):
         return None
     try:
-        number = Decimal(str(value))
+        number = Decimal(value if isinstance(value, str) else str(value))
     except (InvalidOperation, ValueError):
         return None
     return number if number.is_finite() else None
