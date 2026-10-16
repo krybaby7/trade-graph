@@ -171,7 +171,8 @@ STATEMENTS: Final[list[str]] = [
                   OR (OLD.status = 'pending' AND NEW.status = 'claimed')
                   OR (OLD.status = 'claimed' AND NEW.status = 'pending')
                   OR (OLD.status = 'claimed' AND NEW.status = 'delivered' AND NEW.wake_id IS OLD.wake_id))
-        BEGIN SELECT RAISE(ABORT, 'a delivery status moves pending -> claimed -> delivered, or back to pending'); END""",
+        BEGIN SELECT RAISE(ABORT, 'a delivery status moves pending -> claimed -> delivered, or back to pending');
+        END""",
     """CREATE TABLE price_feed_events (
         sequence          INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id          TEXT NOT NULL UNIQUE,

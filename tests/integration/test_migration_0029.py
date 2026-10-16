@@ -93,7 +93,8 @@ def test_0029_upgrades_an_earlier_database_once_without_rewriting_rows(tmp_path)
 def test_alarm_definitions_and_event_history_are_append_only(upgraded) -> None:
     _armed(upgraded)
     for statement in ("UPDATE price_alarms SET symbol='ETH/USD'", "DELETE FROM price_alarms",
-                      "UPDATE price_alarm_events SET at='2026-10-17T00:00:00.000000Z'", "DELETE FROM price_alarm_events"):
+                      "UPDATE price_alarm_events SET at='2026-10-17T00:00:00.000000Z'",
+                      "DELETE FROM price_alarm_events"):
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             upgraded.execute(statement)
 
