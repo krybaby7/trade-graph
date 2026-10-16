@@ -11,7 +11,8 @@ new routine step (refreshing the progress snapshot after updating the plan).
 
 Branch: `claude/youthful-hawking-hbzl8v` (this session's own branch, used
 instead of `claude/c1-green-checks` as the session prompt allows), based on
-`435db71`. Pull request: see the session's final message.
+`435db71`; code head `f46ff23`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/6.
 
 ## What was built
 
