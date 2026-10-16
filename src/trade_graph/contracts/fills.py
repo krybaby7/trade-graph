@@ -150,7 +150,11 @@ class CostProfile(_Record):
     @classmethod
     def explicit(cls, *, maker_rate: Decimal, taker_rate: Decimal, venue: str = "paper",
                  on: date | None = None) -> CostProfile:
-        """Rates passed in configuration rather than read from a schedule; labelled so, never mistaken for one."""
+        """Rates passed in configuration rather than read from a schedule; labelled so, never mistaken for one.
+
+        ``on`` is the day the rates were configured (the caller's clock); without it a fixed placeholder day
+        keeps the record, and so its hash, deterministic.
+        """
         maker, taker = parse_decimal(maker_rate), parse_decimal(taker_rate)
         day = on or date(2026, 1, 1)
         return cls(

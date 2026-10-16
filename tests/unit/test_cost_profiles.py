@@ -185,3 +185,12 @@ def test_profile_contract_refuses_floats_rebates_and_unsourced_published_profile
     assert explicit.ref.startswith("explicit-paper-")
     with pytest.raises(ValidationError):
         CostProfile.model_validate(record | {"basis": "explicit_configuration"})  # explicit rates cite no source
+
+
+def test_the_fill_engine_document_lists_every_published_profile_with_its_rates() -> None:
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[2] / "docs" / "FILL-ENGINE.md").read_text(encoding="utf-8")
+    for profile in load_cost_profiles().profiles:
+        maker, taker = (f"{rate * 100:.2f}%" for rate in (profile.maker_rate, profile.taker_rate))
+        assert f"| `{profile.ref}` | {maker} / {taker} |" in text, profile.ref
