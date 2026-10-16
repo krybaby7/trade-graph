@@ -9,7 +9,8 @@ by it; practice money never appears in this panel and never pays for AI. Nothing
 `trade-graph ai-spending-record` so HQ shows the testing total next to it.
 
 Branch: `claude/t40-hq-spending`, based on `origin/claude/day-trader-engine-20261012` at `fc0a4d9`; head: the
-commit that adds this handoff's pull request link (code head `HEAD_CODE`). Pull request: PR_LINK.
+commit that adds this handoff's pull request link (code head `4623b32`; the handoff itself was first committed in `968c099`). Pull request:
+https://github.com/krybaby7/trade-graph/pull/7 (not merged).
 
 ## What was built
 
