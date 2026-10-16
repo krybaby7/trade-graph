@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+from contextlib import closing
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 from tests.integration.test_runtime_models import RuntimeFlow
 
+from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.paper_soak import expense_observations, run_funded_soak, soak_preflight
 from trade_graph.cli import main
 from trade_graph.contracts.models import Observation
@@ -27,6 +29,11 @@ class FixtureFeed:
         return [Observation(observation_id="fixture-public", venue="paper", symbol="BTC/USD",
                             event_time_utc=self.flow.clock.now(), available_at_utc=self.flow.clock.now(),
                             bid="99", ask="100", volume="1", kind="quote", source="synthetic-soak-fixture")]
+
+
+def reopened(flow):
+    """The CLI closes the runtime database when it exits; read the durable records afresh."""
+    return closing(Database(flow.db.path))
 
 
 def runtime(flow):
@@ -233,8 +240,8 @@ def test_cli_observer_failure_after_real_worker_effects_retains_interrupted_evid
     output = capsys.readouterr()
     assert json.loads(output.out) == result
     assert "private observer exception detail" not in destination.read_text() + output.out + output.err
-    with flow.db.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] > 0
+    with reopened(flow) as database:
+        assert database.execute("SELECT COUNT(*) FROM usage_receipts").fetchone()[0] > 0
 
 
 def test_cli_existing_report_refusal_is_sanitized_and_precedes_model_work(tmp_path, monkeypatch, capsys):
@@ -254,8 +261,8 @@ def test_cli_existing_report_refusal_is_sanitized_and_precedes_model_work(tmp_pa
     assert "Traceback" not in output.err and output.out == ""
     assert destination.read_text() == "prior evidence must remain intact"
     assert flow.transport.calls == []
-    with flow.db.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
+    with reopened(flow) as database:
+        assert database.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("dispatch_roles", [True, False])
@@ -293,8 +300,8 @@ def test_cli_actual_feed_failure_degrades_completed_soak_even_without_role_calls
     output = capsys.readouterr()
     assert json.loads(output.out) == result
     assert "private public-feed failure detail" not in destination.read_text() + output.out + output.err
-    with flow.db.connect() as connection:
-        receipts = connection.execute("SELECT reporting_cost FROM usage_receipts").fetchall()
+    with reopened(flow) as database:
+        receipts = database.execute("SELECT reporting_cost FROM usage_receipts").fetchall()
     assert Decimal(result["expenses"]["known_actual_accrued"]) == sum(
         (Decimal(receipt[0]) for receipt in receipts), Decimal("0"))
     if dispatch_roles:
