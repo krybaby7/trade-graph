@@ -45,6 +45,12 @@ the running system without your approval.
 You can also ask the Claude session on your PC to "start wave 1 in the cloud",
 and it will launch the sessions for you.
 
+**Overnight, or while you are away:** one session, the night lead, can run
+several waves one after another by itself, building, merging and testing
+each wave before it starts the next. Paste the night-shift prompt from Part 2
+and name the waves. In the morning, read `planning/handoffs/NIGHT-<date>.md`
+on GitHub, or open the session. Your PC does not need to stay on.
+
 **This repository is public.** Never paste a key, password or account detail
 into a cloud session.
 
@@ -100,7 +106,7 @@ The integrator updates this table each time it merges a wave.
 | Now | Switch on the price schedule on your PC, or tell the local Claude session it may | Windows blocked the agent. Without it, gaps appear in recent prices. |
 | Now | Check that Perplexity auto top-up is off | The prepaid credit is the outer limit while testing has no budget (D125). |
 | Optional | Get a Jev key at console.typesafe.ai only, then ask the local session to store it | The news alarm makes real checks only with a key. It is built and tested without one. |
-| Each wave | Start the wave's sessions, then the integrator | Cloud sessions don't start themselves. |
+| Each wave | Start the wave's sessions, then the integrator, or one night lead for several waves | Cloud sessions don't start themselves. |
 | Step L3 | Approve installing the new engine and the policy update with your D138 settings | Agents cannot change protected owner settings. |
 | About 2 weeks after L3 | Set the Perplexity monthly limit at about 1.5 × what HQ shows (D138) | Testing runs without a limit until then. |
 | End of testing | Revoke the Perplexity test key | D125. |
@@ -281,6 +287,86 @@ on branch claude/day-trader-engine-20261012.
    (`gh api repos/krybaby7/trade-graph/issues/<number>/comments -f body="..."`).
 6. End with three plain-English sentences for the owner: what merged, what
    didn't, and whether the next wave can start.
+
+### Night shift: several waves in one unattended session
+
+Use this when the owner wants waves to run one after another while away, for
+example overnight. One cloud session, the **night lead**, runs the listed waves
+in order. Each wave starts only after the previous one is merged and pushed.
+The owner is not there: never stop to ask anything. Every owner decision the
+packages need is already made (D138); record anything else as an open
+question in the morning report.
+
+For each wave, in order:
+
+1. Update: `git fetch origin`, then
+   `git checkout -B claude/day-trader-engine-20261012 origin/claude/day-trader-engine-20261012`.
+   Check in `planning/progress.json` that every dependency of the wave's tasks
+   is `done`. If one is not, stop (see "Stopping").
+2. Build each package of the wave in its own git worktree on its own branch
+   (`git worktree add ../<branch> -b <branch> origin/claude/day-trader-engine-20261012`,
+   with the branch name from "Reserved numbers"). Give each package to a
+   subagent with the package id, its worktree path and the instruction to
+   follow "Rules for every cloud session" and its package section. Packages
+   of the same wave may run at the same time. If subagents are not available,
+   build the packages yourself, one after another.
+3. Night-shift difference from rule 13: a package runs its new and related
+   tests, ruff, and the planning and hygiene checks, but **not** the full
+   suite. The wave's integration runs the full suite once, for all of them.
+4. Each package writes its handoff, pushes its branch and opens its pull
+   request through the REST API (rule 15).
+5. Integrate the wave as in "Integration (INT)", including the status board,
+   the handoffs folded into the shared files, and the full suite once (see
+   "Long commands"). Push the integration branch. Only then start the next
+   wave.
+
+**Long commands.** The full suite takes 1 to 2 hours. Use either way, and
+report which:
+- Push the merged, not yet pushed integration result to a candidate branch,
+  `claude/night-candidate-wave<N>`, and wait for GitHub's "Test runtime" check
+  on that commit (about 65 minutes). Read it with
+  `gh api repos/krybaby7/trade-graph/commits/<sha>/check-runs`, checking about
+  every 10 minutes. A failed, cancelled or timed-out check counts as failed;
+  read its log (`gh api repos/krybaby7/trade-graph/actions/jobs/<job id>/logs`)
+  before deciding. On success, push the same commit to the integration branch.
+- Or run it in the container in the background, with output to a log file,
+  and wait for it to finish. If one run is cut off by a time limit, run it in
+  slices (by test folder) and add the results up.
+Do not end your turn while a long command runs; nobody will start you again.
+
+**Stopping.** Stop the night shift, and start no further wave, when:
+- the wave's full suite has a new failure that is not an integration mistake
+  you can fix;
+- a package cannot meet its acceptance without something only the owner can
+  provide, and the plan does not say to build around it;
+- a push is refused.
+Leave the integration branch at the last good, fully tested wave. Push the
+finished package branches and keep their pull requests open. Then write the
+morning report.
+
+**Morning report.** Write `planning/handoffs/NIGHT-<date>.md`, commit it on the
+integration branch and push. It starts with three to six plain-English
+sentences for the owner: which waves merged, what the owner can now do or
+see, what failed or stopped, and anything that needs a decision. Then, per
+package: branch, pull request, merge commit and test results, and the full
+suite result per wave with how it was run. Then what comes next. End the
+session with the same plain-English summary.
+
+Prompt (replace the wave numbers):
+
+```text
+You are the night lead for Trade Graph (github.com/krybaby7/trade-graph).
+Run the night shift for waves 2, 3 and 4, following "Night shift" in
+docs/CLOUD-BUILD-PLAN.md on branch claude/day-trader-engine-20261012.
+The owner is asleep: never stop to ask anything.
+
+1. git fetch origin
+2. git checkout -B claude/day-trader-engine-20261012 origin/claude/day-trader-engine-20261012
+3. Read AGENTS.md and docs/CLOUD-BUILD-PLAN.md: "Rules for every cloud
+   session", "Integration (INT)", "Night shift" and the sections of your
+   waves' packages. Then run the waves in order and finish with the morning
+   report.
+```
 
 ### Reserved numbers
 
