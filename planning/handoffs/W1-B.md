@@ -10,7 +10,8 @@ keep the figures from the build plan and say so; the local session should re-che
 step L2, and nothing here needs a decision from you.
 
 Branch: `claude/nice-thompson-j88ec4` (this session's assigned branch, used instead of
-`claude/t28-fill-engine`), head `HEAD_COMMIT`. Pull request: PR_LINK.
+`claude/t28-fill-engine`), head: the commit that adds this handoff; code at `f331ff0`. Pull request: not
+opened yet, because this session's GitHub access was refused (see the last section).
 
 ## What was built
 - `src/trade_graph/contracts/fills.py`: Pydantic contracts. `CostProfile` (a dated, sourced fee tier with
@@ -101,7 +102,25 @@ Branch: `claude/nice-thompson-j88ec4` (this session's assigned branch, used inst
 - `python3 scripts/check_plan.py`, `python3 scripts/test_planning.py`,
   `python3 scripts/check_repository_hygiene.py`: plan valid (46 tasks, acyclic); 11 planning tests OK;
   hygiene passed.
-- Full suite: running at the time of this commit; the result is added when it finishes.
+- Full suite: `uv run pytest -p no:cacheprovider -rf` at `c5f784c` (same code as `f331ff0` plus this
+  handoff) on Python 3.12.3 (`uv sync --frozen --group dev --python /usr/bin/python3.12`), 15 min: 6212
+  passed, 67 failed, 23 skipped, 65 errors. The same files run on the untouched base `435db71` in a separate
+  worktree with the same environment give exactly the same 67 failures and 65 errors, so this package adds
+  no new failure. Of them:
+  - 13 are on the known list: `e2e/test_dashboard_loop` (1), `test_paper_soak` (4), `test_progress_dashboard`
+    (3), `test_progress_projection` (4), `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers` (1).
+  - 53 failures in `test_plugin_runtime_shadow` (20), `test_plugin_engineering` (19), `test_plugin_rollout`
+    (14) and all 65 errors (setup of `test_application_preparation` 26, `test_application_projection` 26,
+    `test_application_engineering` 13) are this cloud container, not code: the plugin runtime hashes the
+    interpreter without following links (`adapters/engineering/plugin_runtime.py:72-89`), and this Ubuntu
+    Python 3.12 ships `/usr/lib/python3.12/_sysconfigdata__linux_x86_64-linux-gnu.py` as a symlink
+    (`OSError: [Errno 40] Too many levels of symbolic links`).
+  - 1, `tests/security/test_subscription_egress_boundary.py::test_fixed_provider_proxy_is_the_only_child_egress_setting`,
+    needs Linux bubblewrap, which this container lacks (`ValueError: Linux bubblewrap is unavailable;
+    isolation fails closed`).
+  An earlier run on the container's default Python 3.13.16 (at `f331ff0`, 13.5 min: 6209 passed, 70 failed,
+  65 errors) failed the same tests plus 3 `test_offline_acceptance` cases that refuse anything but the
+  repository's Python 3.12 environment; the 3.12 run above is the one that counts.
 - Real or synthetic: every test uses synthetic candles and quotes. No recorded or live market data was needed.
   No paid call, exchange call, real order or deployment was made. The two fee-page checks were attempted
   (WebFetch and curl through the cloud proxy) and refused by the network policy (DNS failure / HTTP 403).
@@ -125,4 +144,12 @@ Branch: `claude/nice-thompson-j88ec4` (this session's assigned branch, used inst
   below the price, where this does not arise. Worth revisiting in T34.
 - Practice-range loop, reports and persistence of `cost_profile_ref`/`fill_policy_ref` with each report: T29
   (W2-A). See "For the practice range" in `docs/FILL-ENGINE.md`.
+- For W1-E and the integrator: cloud sessions need `uv sync --frozen --group dev --python /usr/bin/python3.12`
+  (plain `uv sync` picks the container's Python 3.13), and the plugin-runtime and bubblewrap failures above
+  will appear in every cloud full-suite run until the plugin runtime accepts a distribution's symlinked
+  `_sysconfigdata` file or the cloud image changes. Not fixed here (outside T28).
+- Push and pull request: this session's GitHub access was refused (HTTP 403 on `git push` and on the GitHub
+  connector, "Claude doesn't have GitHub access to krybaby7/trade-graph"). The owner reconnects GitHub at
+  claude.ai/connect-github (and installs the Claude GitHub App on the repository if it is missing); then the
+  branch is pushed and the pull request opened.
 - Coin scanner round-trip cost: `CostProfile.round_trip_rate("maker"|"taker")` gives it (T31, W2-B).
