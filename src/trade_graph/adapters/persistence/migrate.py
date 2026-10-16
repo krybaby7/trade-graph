@@ -15,6 +15,7 @@ from trade_graph.adapters.persistence.native_fee_reservation_schema import (
     STATEMENTS as NATIVE_FEE_RESERVATION_STATEMENTS,
 )
 from trade_graph.adapters.persistence.native_incident_schema import STATEMENTS as NATIVE_INCIDENT_STATEMENTS
+from trade_graph.adapters.persistence.news_alarm_schema import NEWS_ALARM_STATEMENTS
 from trade_graph.adapters.persistence.owner_checkin_schema import OWNER_CHECKIN_STATEMENTS
 from trade_graph.adapters.persistence.owner_expense_schema import STATEMENTS as OWNER_EXPENSE_STATEMENTS
 from trade_graph.adapters.persistence.pilot_schema import STATEMENTS as PILOT_STATEMENTS
@@ -461,7 +462,8 @@ STATEMENTS.append(("0022", FINANCIAL_TRANSITION_STATEMENTS))
 STATEMENTS.append(("0023", FINANCIAL_RECOVERY_STATEMENTS))
 STATEMENTS.append(("0024", OWNER_EXPENSE_STATEMENTS))
 STATEMENTS.append(("0025", OWNER_CHECKIN_STATEMENTS))
-# 0026 and 0027 are reserved for cloud wave 1 packages W1-A and W1-B (docs/CLOUD-BUILD-PLAN.md).
+STATEMENTS.append(("0026", NEWS_ALARM_STATEMENTS))
+# 0027 was reserved for cloud wave 1 package W1-B, which needed no migration (docs/CLOUD-BUILD-PLAN.md).
 STATEMENTS.append(("0028", WEB_RESEARCH_STATEMENTS))
 STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
 

@@ -3,9 +3,8 @@
 from alembic import op
 
 revision = "0028"
-# Cloud wave 1 reserves 0026 (W1-A) and 0027 (W1-B); the integrator re-chains this
-# revision after whichever of them merges first (docs/CLOUD-BUILD-PLAN.md, rule 11).
-down_revision = "0025"
+# Wave 1 integration linked this to 0026 (W1-A); W1-B left its reserved 0027 unused.
+down_revision = "0026"
 branch_labels = None
 depends_on = None
 
