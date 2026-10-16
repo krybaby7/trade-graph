@@ -7,7 +7,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full suite (about 6,300 tests) took 54 minutes in a cloud session on 2026-10-16 and runs about
+    # a third slower on hosted runners. At 45 minutes every run from 2026-10-09 on was cancelled before
+    # reporting a result.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
