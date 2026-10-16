@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE. Written by hand on 2026-10-16 in the RSS 2.0 format that blog engines publish.
+     It was not recorded from blog.kraken.com (the cloud build network refused the host).
+     EXMPL and TSTC are invented coins; every item is invented test data; recording the real feed is step L2. -->
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Kraken Blog (synthetic)</title>
+    <link>https://blog.kraken.com</link>
+    <description>Synthetic test channel</description>
+    <lastBuildDate>Fri, 16 Oct 2026 11:50:00 +0000</lastBuildDate>
+    <item>
+      <title>Kraken will delist EXMPL/USD on 30 October (synthetic)</title>
+      <link>https://blog.kraken.com/product/asset-listings/synthetic-exmpl-delisting</link>
+      <dc:creator><![CDATA[Synthetic author]]></dc:creator>
+      <pubDate>Fri, 16 Oct 2026 11:30:00 +0000</pubDate>
+      <category><![CDATA[Asset listings]]></category>
+      <guid isPermaLink="false">https://blog.kraken.com/?p=900001</guid>
+      <description><![CDATA[Synthetic test item.]]></description>
+    </item>
+    <item>
+      <title>New listing: TSTC is available for trading (synthetic)</title>
+      <link>https://blog.kraken.com/product/asset-listings/synthetic-tstc-listing</link>
+      <dc:creator><![CDATA[Synthetic author]]></dc:creator>
+      <pubDate>Fri, 16 Oct 2026 11:50:00 +0000</pubDate>
+      <category><![CDATA[Asset listings]]></category>
+      <guid isPermaLink="false">https://blog.kraken.com/?p=900002</guid>
+      <description><![CDATA[Synthetic test item.]]></description>
+    </item>
+  </channel>
+</rss>
