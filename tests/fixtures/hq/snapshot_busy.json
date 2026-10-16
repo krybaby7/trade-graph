@@ -2108,6 +2108,392 @@
       }
     ]
   },
+  "ai_spending": {
+    "as_of": "2026-10-10T08:14:30.120Z",
+    "services": [
+      {
+        "service": "perplexity",
+        "name": "Perplexity web research",
+        "status": "testing",
+        "period_start": "2026-10-08T08:14:30.120Z",
+        "period_end": null,
+        "lines": [
+          {
+            "id": "leader",
+            "name": "Leader",
+            "amounts": {
+              "calls": 2,
+              "actual": {
+                "amount": "0.0336",
+                "currency": "USD",
+                "display": "$0.03"
+              },
+              "estimated": {
+                "amount": "0.02346",
+                "currency": "USD",
+                "display": "$0.02"
+              },
+              "unresolved": null,
+              "unresolved_calls": 0,
+              "total": {
+                "amount": "0.05706",
+                "currency": "USD",
+                "display": "$0.06"
+              }
+            }
+          },
+          {
+            "id": "research",
+            "name": "Research",
+            "amounts": {
+              "calls": 12,
+              "actual": {
+                "amount": "0.153",
+                "currency": "USD",
+                "display": "$0.15"
+              },
+              "estimated": null,
+              "unresolved": {
+                "amount": "0.02346",
+                "currency": "USD",
+                "display": "$0.02"
+              },
+              "unresolved_calls": 1,
+              "total": {
+                "amount": "0.17646",
+                "currency": "USD",
+                "display": "$0.18"
+              }
+            }
+          }
+        ],
+        "total": {
+          "calls": 14,
+          "actual": {
+            "amount": "0.1866",
+            "currency": "USD",
+            "display": "$0.19"
+          },
+          "estimated": {
+            "amount": "0.02346",
+            "currency": "USD",
+            "display": "$0.02"
+          },
+          "unresolved": {
+            "amount": "0.02346",
+            "currency": "USD",
+            "display": "$0.02"
+          },
+          "unresolved_calls": 1,
+          "total": {
+            "amount": "0.23352",
+            "currency": "USD",
+            "display": "$0.23"
+          }
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "Testing total so far: "
+          },
+          {
+            "t": "money",
+            "amount": "0.21006",
+            "currency": "USD",
+            "display": "$0.21"
+          },
+          {
+            "t": "text",
+            "v": " from receipts, plus up to "
+          },
+          {
+            "t": "money",
+            "amount": "0.02346",
+            "currency": "USD",
+            "display": "$0.02"
+          },
+          {
+            "t": "text",
+            "v": " not known yet. No spending limit while testing."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "20",
+            "currency": "USD",
+            "display": "$20.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "20",
+              "currency": "USD",
+              "display": "$20.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": {
+            "amount": "25",
+            "currency": "USD",
+            "display": "$25.00"
+          },
+          "observed_at": "2026-10-09T08:14:30.120Z",
+          "since": {
+            "calls": 3,
+            "actual": {
+              "amount": "0.025",
+              "currency": "USD",
+              "display": "$0.02"
+            },
+            "estimated": {
+              "amount": "0.02346",
+              "currency": "USD",
+              "display": "$0.02"
+            },
+            "unresolved": {
+              "amount": "0.02346",
+              "currency": "USD",
+              "display": "$0.02"
+            },
+            "unresolved_calls": 1,
+            "total": {
+              "amount": "0.07192",
+              "currency": "USD",
+              "display": "$0.07"
+            }
+          },
+          "left": {
+            "amount": "24.92808",
+            "currency": "USD",
+            "display": "$24.93"
+          },
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: "
+            },
+            {
+              "t": "money",
+              "amount": "25",
+              "currency": "USD",
+              "display": "$25.00"
+            },
+            {
+              "t": "text",
+              "v": " when you checked it on "
+            },
+            {
+              "t": "time",
+              "at": "2026-10-09T08:14:30.120Z",
+              "style": "date"
+            },
+            {
+              "t": "text",
+              "v": ". Since then "
+            },
+            {
+              "t": "money",
+              "amount": "0.04846",
+              "currency": "USD",
+              "display": "$0.05"
+            },
+            {
+              "t": "text",
+              "v": ", plus up to "
+            },
+            {
+              "t": "money",
+              "amount": "0.02346",
+              "currency": "USD",
+              "display": "$0.02"
+            },
+            {
+              "t": "text",
+              "v": " not known yet, so about "
+            },
+            {
+              "t": "money",
+              "amount": "24.92808",
+              "currency": "USD",
+              "display": "$24.93"
+            },
+            {
+              "t": "text",
+              "v": " is left. Information only: HQ never stops anything at this amount; Perplexity stops calls itself when the credit runs out."
+            }
+          ]
+        },
+        "monthly_limit": null
+      },
+      {
+        "service": "jev",
+        "name": "Jev news alarm",
+        "status": "testing",
+        "period_start": null,
+        "period_end": null,
+        "lines": [
+          {
+            "id": "news_alarm",
+            "name": "News alarm",
+            "amounts": {
+              "calls": 41,
+              "actual": {
+                "amount": "0.00658476",
+                "currency": "USD",
+                "display": "$0.01"
+              },
+              "estimated": null,
+              "unresolved": {
+                "amount": "0.00274176",
+                "currency": "USD",
+                "display": "$0.00"
+              },
+              "unresolved_calls": 1,
+              "total": {
+                "amount": "0.00932652",
+                "currency": "USD",
+                "display": "$0.01"
+              }
+            }
+          }
+        ],
+        "total": {
+          "calls": 41,
+          "actual": {
+            "amount": "0.00658476",
+            "currency": "USD",
+            "display": "$0.01"
+          },
+          "estimated": null,
+          "unresolved": {
+            "amount": "0.00274176",
+            "currency": "USD",
+            "display": "$0.00"
+          },
+          "unresolved_calls": 1,
+          "total": {
+            "amount": "0.00932652",
+            "currency": "USD",
+            "display": "$0.01"
+          }
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "Testing total so far: "
+          },
+          {
+            "t": "money",
+            "amount": "0.00658476",
+            "currency": "USD",
+            "display": "$0.01"
+          },
+          {
+            "t": "text",
+            "v": " from receipts, plus under $0.01 not known yet."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "5",
+            "currency": "USD",
+            "display": "$5.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "5",
+              "currency": "USD",
+              "display": "$5.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": null,
+          "observed_at": null,
+          "since": null,
+          "left": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: not recorded here. Your TypeSafe account page shows it."
+            }
+          ]
+        },
+        "monthly_limit": null
+      }
+    ],
+    "codex": {
+      "period_start": "2026-10-03T08:14:30.120Z",
+      "period_end": "2026-10-10T08:14:30.120Z",
+      "turns": 9,
+      "unreported_turns": 1,
+      "lines": [
+        {
+          "id": "research",
+          "name": "Research",
+          "turns": 1,
+          "unreported_turns": 0,
+          "share_percent": 15.0
+        },
+        {
+          "id": "trader",
+          "name": "Trader",
+          "turns": 7,
+          "unreported_turns": 1,
+          "share_percent": 65.6
+        },
+        {
+          "id": "learning",
+          "name": "Learning",
+          "turns": 1,
+          "unreported_turns": 0,
+          "share_percent": 19.4
+        }
+      ],
+      "text": [
+        {
+          "t": "text",
+          "v": "Last 7 days: 9 turns on your ChatGPT subscription."
+        }
+      ]
+    },
+    "paper_note": [
+      {
+        "t": "text",
+        "v": "Practice money never pays for AI. These are real costs from receipts, paid from your provider credit and kept apart from practice results."
+      }
+    ],
+    "link": {
+      "href": "/costs",
+      "label": "Costs"
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",

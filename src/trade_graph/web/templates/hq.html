@@ -143,6 +143,16 @@
       <div class="hq-panel-head"><h2 id="hq-h-allowance" class="hq-panel-title">AI allowance</h2></div>
       <div data-hq="allowance"></div>
     </article>
+    {#- T40: real AI costs from receipts. First paint: each service's headline; hq-render.js adds the rest. -#}
+    {% set spending = snap.get('ai_spending') if snap.get('ai_spending') is mapping else {} %}
+    {% set services = spending.get('services') if spending.get('services') is sequence and spending.get('services') is not string else [] %}
+    <article class="hq-panel hq-spending" aria-labelledby="hq-h-spending">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-spending" class="hq-panel-title">AI spending</h2>
+        {{ help('spending', 'AI spending') }}
+      </div>
+      <div data-hq="spending">{% for item in services if item is mapping %}<p class="hq-spend-headline"><strong>{{ item.get('name', '') }}</strong>: {{ segs(item.get('headline')) }}</p>{% endfor %}</div>
+    </article>
     <article class="hq-panel hq-market-panel" aria-labelledby="hq-h-market">
       <div class="hq-panel-head"><h2 id="hq-h-market" class="hq-panel-title">Market weather</h2></div>
       <div data-hq="market"></div>

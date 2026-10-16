@@ -694,6 +694,158 @@
       }
     ]
   },
+  "ai_spending": {
+    "as_of": "2026-10-05T17:20:00.000Z",
+    "services": [
+      {
+        "service": "perplexity",
+        "name": "Perplexity web research",
+        "status": "off",
+        "period_start": null,
+        "period_end": null,
+        "lines": [],
+        "total": {
+          "calls": 0,
+          "actual": null,
+          "estimated": null,
+          "unresolved": null,
+          "unresolved_calls": 0,
+          "total": null
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "No Perplexity research has run yet."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "20",
+            "currency": "USD",
+            "display": "$20.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "20",
+              "currency": "USD",
+              "display": "$20.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": null,
+          "observed_at": null,
+          "since": null,
+          "left": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: not recorded here. Your Perplexity account page shows it."
+            }
+          ]
+        },
+        "monthly_limit": null
+      },
+      {
+        "service": "jev",
+        "name": "Jev news alarm",
+        "status": "off",
+        "period_start": null,
+        "period_end": null,
+        "lines": [],
+        "total": {
+          "calls": 0,
+          "actual": null,
+          "estimated": null,
+          "unresolved": null,
+          "unresolved_calls": 0,
+          "total": null
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "No Jev checks yet. They start once you install a Jev key."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "5",
+            "currency": "USD",
+            "display": "$5.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "5",
+              "currency": "USD",
+              "display": "$5.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": null,
+          "observed_at": null,
+          "since": null,
+          "left": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: not recorded here. Your TypeSafe account page shows it."
+            }
+          ]
+        },
+        "monthly_limit": null
+      }
+    ],
+    "codex": {
+      "period_start": "2026-09-28T17:20:00.000Z",
+      "period_end": "2026-10-05T17:20:00.000Z",
+      "turns": 0,
+      "unreported_turns": 0,
+      "lines": [],
+      "text": [
+        {
+          "t": "text",
+          "v": "No turns on your ChatGPT subscription in the last 7 days."
+        }
+      ]
+    },
+    "paper_note": [
+      {
+        "t": "text",
+        "v": "Practice money never pays for AI. These are real costs from receipts, paid from your provider credit and kept apart from practice results."
+      }
+    ],
+    "link": {
+      "href": "/costs",
+      "label": "Costs"
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",

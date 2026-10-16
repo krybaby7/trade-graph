@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -63,17 +63,26 @@ _CODEX = """SELECT role, state, cost_status, usage_json FROM subscription_invoca
 
 @dataclass(frozen=True)
 class Tally:
-    """Real spending in USD; ``unresolved`` is the held maximum, ``None`` only when it cannot be valued."""
+    """Real spending in USD; ``unresolved`` is the held maximum, ``None`` only when it cannot be valued.
+
+    The counts say which kinds exist, so "no such call" (nothing to show) is never confused with a zero cost.
+    """
 
     calls: int = 0
     actual: Decimal = ZERO
     estimated: Decimal = ZERO
     unresolved: Decimal | None = ZERO
     unresolved_calls: int = 0
+    actual_calls: int = 0
+    estimated_calls: int = 0
 
     @property
     def known(self) -> Decimal:
         return self.actual + self.estimated
+
+    @property
+    def known_calls(self) -> int:
+        return self.actual_calls + self.estimated_calls
 
     @property
     def total(self) -> Decimal | None:
@@ -82,20 +91,25 @@ class Tally:
 
     def plus(self, kind: str, amount: Decimal | None) -> Tally:
         if kind == "actual":
-            return Tally(self.calls + 1, self.actual + amount, self.estimated, self.unresolved, self.unresolved_calls)
+            return replace(self, calls=self.calls + 1, actual=self.actual + amount, actual_calls=self.actual_calls + 1)
         if kind == "estimated":
-            return Tally(self.calls + 1, self.actual, self.estimated + amount, self.unresolved, self.unresolved_calls)
+            return replace(self, calls=self.calls + 1, estimated=self.estimated + amount,
+                           estimated_calls=self.estimated_calls + 1)
         held = None if self.unresolved is None or amount is None else self.unresolved + amount
-        return Tally(self.calls + 1, self.actual, self.estimated, held, self.unresolved_calls + 1)
+        return replace(self, calls=self.calls + 1, unresolved=held, unresolved_calls=self.unresolved_calls + 1)
 
     def __add__(self, other: Tally) -> Tally:
         held = None if self.unresolved is None or other.unresolved is None else self.unresolved + other.unresolved
-        return Tally(self.calls + other.calls, self.actual + other.actual, self.estimated + other.estimated, held,
-                     self.unresolved_calls + other.unresolved_calls)
+        return Tally(calls=self.calls + other.calls, actual=self.actual + other.actual,
+                     estimated=self.estimated + other.estimated, unresolved=held,
+                     unresolved_calls=self.unresolved_calls + other.unresolved_calls,
+                     actual_calls=self.actual_calls + other.actual_calls,
+                     estimated_calls=self.estimated_calls + other.estimated_calls)
 
     def document(self) -> dict[str, Any]:
-        return {"calls": self.calls, "actual_usd": _text(self.actual), "estimated_usd": _text(self.estimated),
-                "unresolved_usd": _text(self.unresolved), "unresolved_calls": self.unresolved_calls,
+        return {"calls": self.calls, "actual_calls": self.actual_calls, "actual_usd": _text(self.actual),
+                "estimated_calls": self.estimated_calls, "estimated_usd": _text(self.estimated),
+                "unresolved_calls": self.unresolved_calls, "unresolved_usd": _text(self.unresolved),
                 "total_usd": _text(self.total)}
 
 

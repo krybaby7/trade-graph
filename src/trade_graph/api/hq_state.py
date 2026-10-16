@@ -972,7 +972,8 @@ def _card(code: str, title: list, *, why=None, consequence=None, how=None, decis
             "in_next_prompt": sev != "info" and code != "checkin_due", "since": _iso(since)}
 
 
-def attention(p: Projection, checkins: list[dict]) -> list:
+def attention(p: Projection, checkins: list[dict], extra: list[dict] | tuple = ()) -> list:
+    """Needs you. ``extra`` adds cards projected elsewhere (the AI spending alerts, ``hq_spending``)."""
     items = []
     act = p.can_act
     owner_link = "/owner" if p.owner else None
@@ -1082,6 +1083,7 @@ def attention(p: Projection, checkins: list[dict]) -> list:
     trial = _trial_card(p)
     if trial:
         items.append(trial)
+    items.extend(extra)
     for item in items:
         # "since" is when the situation began; a future moment (a note's expiry, a check-in up to 15 min ahead)
         # is not one (U3).

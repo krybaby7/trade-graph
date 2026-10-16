@@ -1921,6 +1921,239 @@
       }
     ]
   },
+  "ai_spending": {
+    "as_of": "2026-10-09T13:59:10.506Z",
+    "services": [
+      {
+        "service": "perplexity",
+        "name": "Perplexity web research",
+        "status": "testing",
+        "period_start": "2026-10-07T13:59:10.506Z",
+        "period_end": null,
+        "lines": [
+          {
+            "id": "leader",
+            "name": "Leader",
+            "amounts": {
+              "calls": 1,
+              "actual": {
+                "amount": "0.0336",
+                "currency": "USD",
+                "display": "$0.03"
+              },
+              "estimated": null,
+              "unresolved": null,
+              "unresolved_calls": 0,
+              "total": {
+                "amount": "0.0336",
+                "currency": "USD",
+                "display": "$0.03"
+              }
+            }
+          },
+          {
+            "id": "research",
+            "name": "Research",
+            "amounts": {
+              "calls": 10,
+              "actual": {
+                "amount": "0.128",
+                "currency": "USD",
+                "display": "$0.13"
+              },
+              "estimated": null,
+              "unresolved": null,
+              "unresolved_calls": 0,
+              "total": {
+                "amount": "0.128",
+                "currency": "USD",
+                "display": "$0.13"
+              }
+            }
+          }
+        ],
+        "total": {
+          "calls": 11,
+          "actual": {
+            "amount": "0.1616",
+            "currency": "USD",
+            "display": "$0.16"
+          },
+          "estimated": null,
+          "unresolved": null,
+          "unresolved_calls": 0,
+          "total": {
+            "amount": "0.1616",
+            "currency": "USD",
+            "display": "$0.16"
+          }
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "Testing total so far: "
+          },
+          {
+            "t": "money",
+            "amount": "0.1616",
+            "currency": "USD",
+            "display": "$0.16"
+          },
+          {
+            "t": "text",
+            "v": " from receipts. No spending limit while testing."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "20",
+            "currency": "USD",
+            "display": "$20.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "20",
+              "currency": "USD",
+              "display": "$20.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": null,
+          "observed_at": null,
+          "since": null,
+          "left": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: not recorded here. Your Perplexity account page shows it."
+            }
+          ]
+        },
+        "monthly_limit": null
+      },
+      {
+        "service": "jev",
+        "name": "Jev news alarm",
+        "status": "off",
+        "period_start": null,
+        "period_end": null,
+        "lines": [],
+        "total": {
+          "calls": 0,
+          "actual": null,
+          "estimated": null,
+          "unresolved": null,
+          "unresolved_calls": 0,
+          "total": null
+        },
+        "synthetic_calls": 0,
+        "headline": [
+          {
+            "t": "text",
+            "v": "No Jev checks yet. They start once you install a Jev key."
+          }
+        ],
+        "alert": {
+          "threshold": {
+            "amount": "5",
+            "currency": "USD",
+            "display": "$5.00"
+          },
+          "source": "default",
+          "state": "below",
+          "since": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "HQ alerts you here at "
+            },
+            {
+              "t": "money",
+              "amount": "5",
+              "currency": "USD",
+              "display": "$5.00"
+            },
+            {
+              "t": "text",
+              "v": ". It's an alert only: nothing pauses."
+            }
+          ]
+        },
+        "credit": {
+          "recorded": null,
+          "observed_at": null,
+          "since": null,
+          "left": null,
+          "text": [
+            {
+              "t": "text",
+              "v": "Prepaid credit: not recorded here. Your TypeSafe account page shows it."
+            }
+          ]
+        },
+        "monthly_limit": null
+      }
+    ],
+    "codex": {
+      "period_start": "2026-10-02T13:59:10.506Z",
+      "period_end": "2026-10-09T13:59:10.506Z",
+      "turns": 8,
+      "unreported_turns": 0,
+      "lines": [
+        {
+          "id": "research",
+          "name": "Research",
+          "turns": 1,
+          "unreported_turns": 0,
+          "share_percent": 15.0
+        },
+        {
+          "id": "trader",
+          "name": "Trader",
+          "turns": 6,
+          "unreported_turns": 0,
+          "share_percent": 65.6
+        },
+        {
+          "id": "learning",
+          "name": "Learning",
+          "turns": 1,
+          "unreported_turns": 0,
+          "share_percent": 19.4
+        }
+      ],
+      "text": [
+        {
+          "t": "text",
+          "v": "Last 7 days: 8 turns on your ChatGPT subscription."
+        }
+      ]
+    },
+    "paper_note": [
+      {
+        "t": "text",
+        "v": "These are real costs from receipts. Account gains are never counted against them here."
+      }
+    ],
+    "link": {
+      "href": "/costs",
+      "label": "Costs"
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",
