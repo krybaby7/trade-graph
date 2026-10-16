@@ -483,3 +483,69 @@ def _iso(value: datetime | None) -> str | None:
 
 def _text(value: Decimal | None) -> str | None:
     return None if value is None else canonical_decimal(value)
+
+
+# --- Plain text (the owner's report command) --------------------------------------------------------------
+
+_NAMES = {"perplexity": "Perplexity web research", "jev": "Jev news alarm"}
+_STATUS = {"off": "not started", "testing": "testing", "monthly_limit": "monthly limit"}
+
+
+def _usd_text(value: Decimal | None) -> str:
+    return "not known" if value is None else f"USD {canonical_decimal(value)}"
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}" if count == 1 else f"{count} {word}s"
+
+
+def _tally_text(tally: Tally) -> str:
+    parts = [_plural(tally.calls, "call")]
+    if tally.actual_calls:
+        parts.append(f"from receipts {_usd_text(tally.actual)}")
+    if tally.estimated_calls:
+        charged = _plural(tally.estimated_calls, "call")
+        parts.append(f"estimated {_usd_text(tally.estimated)} ({charged} charged at the most)")
+    if tally.unresolved_calls:
+        held = _plural(tally.unresolved_calls, "call")
+        parts.append(f"not known yet: up to {_usd_text(tally.unresolved)} ({held}, not free)")
+    return ", ".join(parts)
+
+
+def format_report_text(report: AiSpendingReport) -> str:
+    lines = [f"AI spending as of {utc_iso(report.as_of)}, in USD from receipts. Practice money is never counted.",
+             "Alerts and the prepaid credit are information only: nothing here pauses or limits a call."]
+    for item in report.services():
+        period = ""
+        if item.testing_start is not None:
+            period = f" since {utc_iso(item.testing_start)}"
+            if item.testing_end is not None:
+                period += f" until {utc_iso(item.testing_end)}"
+        lines += ["", f"{_NAMES[item.service]}: {_STATUS[item.status]}{period}",
+                  f"  Testing total: {_tally_text(item.testing)}"]
+        for name, tally in item.departments.items():
+            lines.append(f"  {name}: {_tally_text(tally)}")
+        if item.alert_state is not None:
+            source = "your amount" if item.alert_source == "owner" else "default"
+            lines.append(f"  Testing alert at {_usd_text(item.alert_usd)} ({source}): "
+                         f"{item.alert_state.replace('_', ' ')}")
+        if item.month is not None:
+            lines.append(f"  This month: {_tally_text(item.month)}; monthly limit {_usd_text(item.monthly_limit_usd)}"
+                         " (reaching it pauses Research and Leader news rounds only)")
+        if item.credit is None:
+            lines.append("  Prepaid credit: not recorded")
+        else:
+            credit = item.credit
+            lines.append(f"  Prepaid credit: {_usd_text(credit.amount)} checked {utc_iso(credit.observed_at)};"
+                         f" since then {_tally_text(credit.since)}; left about {_usd_text(credit.left)}")
+        if item.synthetic_calls:
+            lines.append(f"  Test calls with made-up answers (not counted): {item.synthetic_calls}")
+    codex = report.codex
+    turns = _plural(codex.turns, "turn")
+    lines += ["", f"ChatGPT subscription (Codex), {utc_iso(codex.start)} to {utc_iso(codex.end)}: {turns},"
+              f" {codex.unreported_turns} without reported use (shared with your own use)"]
+    for role, item in codex.departments.items():
+        share = codex.share(role)
+        shown = "use not reported" if share is None else f"{share.quantize(Decimal('0.1'))}% of the reported use"
+        lines.append(f"  {role}: {_plural(item.turns, 'turn')}, {shown}")
+    return "\n".join(lines)
