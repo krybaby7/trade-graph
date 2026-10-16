@@ -704,3 +704,59 @@ None prevents offline development. Mark credentialed verification pending when c
   - *Expected cost* at one check every 5 minutes: about USD0.05 a day (288
     checks × about 4,000 input tokens × USD0.042 per million). The receipts
     show the real figure.
+
+- **D138 (2026-10-16, owner decision):** The owner accepted the recommendation
+  for every decision in the build plan's "Decisions that need you" (numbers
+  1–10). The provisional settings of D130 and the pending defaults of D137 are
+  now decided. All values apply to the virtual USD10,000 paper account; none
+  is a real-money allocation.
+  1. *Daily loss limit:* 3% of the day-start value, fees included. At the limit,
+     new entries stop and resting entries cancel until the next day start;
+     protective exits and reconciliation continue. No forced sell-off.
+  2. *Maximum per coin:* 20% of the account; 80% in total. Resting entries count
+     as if filled (T32).
+  3. *Paper coin list:* the rule. Any Kraken USD spot pair that passes the
+     scanner's liquidity and exclusion checks at that moment, without
+     stablecoins or yield-paying tokens (D131) or riba products (D127).
+  4. *Perplexity budget:* no money limit during testing, with the USD20 HQ alert
+     (D131). After about two weeks of testing seen in HQ (T40), a monthly limit
+     of about 1.5 times the observed monthly cost; reaching it pauses Research
+     and Leader news rounds only.
+  5. *Practice-range pass mark:* none. A practice-range report must exist for a
+     strategy version before it enters a day plan (T34); the Trader reads it and
+     decides. This is not a confidence threshold.
+  6. *Trading-day start:* 00:00 UTC, matching Kraken's daily candles. The day
+     start, day end and the daily loss limit reset run then.
+  7. *Scored test (T43):* at least four weeks and at least 30 completed trades,
+     whichever takes longer. "Keep going" means profit after fees beats both
+     holding cash and holding BTC over the same days, with AI spending shown
+     beside it. A good result is not permission for live trading.
+  8. *AI allowance floor:* keep 40% for the first week of the event engine,
+     then review the wake counts in HQ (T39).
+  9. *Stock price source:* decided only when crypto results justify stocks;
+     T30 stays LATER.
+  10. *News alarm (D137 defaults confirmed):* free public feeds that need no
+      key (Kraken's status page and announcements plus a few major crypto news
+      outlets, exact list checked when T44 is built); a software check every 5
+      minutes; pinned `jev-1.13.0`; an alarm wakes the Leader, and the Trader
+      when the headline concerns a held coin; testing calls carry receipts and
+      an HQ alert at USD5, which pauses nothing.
+  Applying these to the running installation still needs an owner policy
+  revision at deployment, because agents cannot edit protected owner policy.
+  Until then T32 and T43 keep refusing to install orders or start without
+  owner-recorded values; tests use synthetic values.
+
+- **D139 (2026-10-16, owner request; process):** The remaining day-trader work
+  is built by cloud coding sessions, following
+  [CLOUD-BUILD-PLAN.md](CLOUD-BUILD-PLAN.md). The branch
+  `claude/day-trader-engine-20261012` is pushed to GitHub as the integration
+  base. Each cloud session takes one work package, branches from the base,
+  opens a pull request into it and writes its status to
+  `planning/handoffs/<package>.md` instead of editing `planning/progress.json`
+  or `IMPLEMENTATION-STATUS.md`; one integration session merges in dependency
+  order and folds the handoffs into those files. Decision numbers and
+  migration versions are reserved per package so parallel sessions do not
+  collide. Cloud sessions have no private data, keys, WSL or Windows access:
+  real-data runs, credentialed smoke tests, image builds, deployment and the
+  scored paper run stay on the owner's PC, and nothing is deployed without the
+  owner's approval.

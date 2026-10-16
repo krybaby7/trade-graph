@@ -4,8 +4,11 @@ Status: plan, 2026-10-12. Phase D0 (T23, T24) is built and tested in source
 on 2026-10-13 (D129) but not deployed. Phase D1 (T25–T27) is built and tested
 in source on 2026-10-15 (D132–D136), also not deployed, with one small public
 Kraken smoke run; no real Kraken archive has been imported yet. On 2026-10-15
-you made the Jev news alarm (T44, phase DN) the next task (D137). Nothing in
-the running system has changed.
+you made the Jev news alarm (T44, phase DN) the next task (D137). On
+2026-10-16 you accepted every recommendation below (D138), and the remaining
+tasks are built by cloud sessions following
+[the cloud build plan](CLOUD-BUILD-PLAN.md) (D139). Nothing in the running
+system has changed.
 
 This plan turns decisions D114–D128 and D137 into build steps. The reasons
 are in [the day-trader engine record](DAY-TRADER-ENGINE.md) and
@@ -335,8 +338,10 @@ These are settings for the virtual USD10,000 account. They are not advice
 about real money. A real allocation is a separate decision.
 
 On 2026-10-13 you accepted the recommendations for decisions 1–4 as
-provisional settings (D130). A later bankroll-management session will revisit
-them before T32 makes them binding.
+provisional settings (D130). **On 2026-10-16 you accepted the recommendation
+for every decision below, 1–10 (D138).** Each "Recommendation" is now the
+decided setting. They reach the running installation through an owner policy
+revision at deployment.
 
 ### 1. Daily loss limit (provisional: 3%, D130)
 
