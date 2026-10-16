@@ -65,6 +65,7 @@ class ProviderHttpResponseError(RuntimeError):
 
     def __init__(self, status_code: int, usage_payload: dict[str, Any]) -> None:
         super().__init__(f"provider HTTP {status_code}")
+        self.status_code = status_code
         self.usage_payload = usage_payload
         self.failure: Literal["credentials", "rate_limit", "timeout_uncertain", "temporary", "validation"]
         if status_code in {401, 403}:
