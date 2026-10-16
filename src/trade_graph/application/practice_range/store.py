@@ -19,6 +19,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -291,4 +292,41 @@ class PracticeRangeStore:
                                    verified_at=row["verified_at"]) for row in rows]
 
 
-__all__ = ["PracticeRangeStore", "RegisteredStrategy", "RunRecord", "VerificationRecord"]
+class ReadOnlyReports:
+    """Stored reports read from a state database opened read-only: nothing is created, upgraded or written."""
+
+    def __init__(self, path: Path | str) -> None:
+        target = Path(path)
+        if not target.is_file() or target.stat().st_size == 0:
+            raise NotFound(f"no state database at {path}")
+        self._connection = sqlite3.connect(f"{target.resolve().as_uri()}?mode=ro", uri=True)
+        self._connection.row_factory = sqlite3.Row
+        found = self._connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'practice_range_runs'").fetchone()
+        self.available = found is not None
+
+    def runs(self, *, study_id: str | None = None, strategy_ref: str | None = None) -> list[RunRecord]:
+        if not self.available:
+            return []
+        clauses, params = [], []
+        for column, value in (("study_id", study_id), ("strategy_ref", strategy_ref)):
+            if value is not None:
+                clauses.append(f"{column} = ?")
+                params.append(value)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._connection.execute(f"SELECT * FROM practice_range_runs{where} ORDER BY sequence",
+                                        tuple(params)).fetchall()
+        return [PracticeRangeStore._run(row) for row in rows]
+
+    def run(self, run_id: str) -> RunRecord:
+        row = None if not self.available else self._connection.execute(
+            "SELECT * FROM practice_range_runs WHERE run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise NotFound(f"no practice-range report {run_id}")
+        return PracticeRangeStore._run(row)
+
+    def close(self) -> None:
+        self._connection.close()
+
+
+__all__ = ["PracticeRangeStore", "ReadOnlyReports", "RegisteredStrategy", "RunRecord", "VerificationRecord"]
