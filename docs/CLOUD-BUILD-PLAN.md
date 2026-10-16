@@ -69,11 +69,11 @@ The integrator updates this table each time it merges a wave.
 
 | Package | Task | What you get | Status |
 |---|---|---|---|
-| W1-A | T44 | Jev reads headlines and logs whom it would have woken | Not started |
-| W1-B | T28 | Cautious fill and safety-exit engine with Kraken and OKX fee profiles | Not started |
-| W1-C | T36 | Perplexity web research connection with receipts | Not started |
-| W1-D | T33 | Price alarms that fire once | Not started |
-| W1-E | C1 | The automatic checks pass cleanly (no known failures) | Not started |
+| W1-A | T44 | Jev reads headlines and logs whom it would have woken | Merged 2026-10-16 (#3); real feeds and Jev checked at L2 |
+| W1-B | T28 | Cautious fill and safety-exit engine with Kraken and OKX fee profiles | Merged 2026-10-16 (#2); fee pages re-read at L2 |
+| W1-C | T36 | Perplexity web research connection with receipts | Merged 2026-10-16 (#4); first real call at L2 |
+| W1-D | T33 | Price alarms that fire once | Merged 2026-10-16 (#5) |
+| W1-E | C1 | The automatic checks pass cleanly (no known failures) | Merged 2026-10-16 (#6) |
 | W2-A | T29 | Practice range: replay strategies on history with real fees | Not started |
 | W2-B | T31 | Hourly coin scanner and shortlist of about 10 | Not started |
 | W2-C | T40 | HQ shows AI spending per department, $20 alert | Not started |
@@ -116,8 +116,10 @@ These rules add to [AGENTS.md](../AGENTS.md), which always applies.
    `git checkout -B <your branch> origin/claude/day-trader-engine-20261012`.
    Your branch is `claude/<task>-<slug>` as named in your package, or the
    `claude/` branch your session already has.
-2. Install: `pip install uv` if it is missing, then
-   `uv sync --frozen --group dev`. Python 3.12.
+2. Install: `pip install uv` if it is missing, then `uv python install 3.12`
+   and `uv sync --frozen --group dev --python 3.12`. The cloud container's
+   default Python is 3.13, and plain `uv sync` would pick it; the system
+   `/usr/bin/python3.12` is not a substitute (see "Cloud container failures").
 3. Read AGENTS.md, this section, your package below, your task in
    `planning/tasks.json` with its `specs`, and the decisions it names in
    `docs/DECISIONS.md`. D114–D139 explain the day-trader design. D116 (no caps

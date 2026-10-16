@@ -760,3 +760,301 @@ None prevents offline development. Mark credentialed verification pending when c
   real-data runs, credentialed smoke tests, image builds, deployment and the
   scored paper run stay on the owner's PC, and nothing is deployed without the
   owner's approval.
+
+Cloud wave 1 (D140–D164, 2026-10-16). The wave 1 integration copied these
+implementation defaults from `planning/handoffs/W1-A.md` to `W1-E.md`, where
+each package's evidence is kept. W1-B needed no state migration, so its
+reserved 0027 stays unused: the state migrations run 0026 (W1-A), 0028 (W1-C)
+and 0029 (W1-D), and Alembic runs 0025 → 0026 → 0028 → 0029. The gap is not
+renumbered, because the migration runner applies the listed versions in order
+and does not need contiguous numbers.
+
+- **D140 (2026-10-16, implementation default for T44): Jev's own decision
+  contract and wire reading.** Jev is not a model-provider adapter: it has its
+  own contract (state and typed questions in, probabilities out) in
+  `contracts/decisions.py`, with no SDK and no network import. The version is
+  pinned to `jev-1.13.0`; any name that is not `jev-<major>.<minor>.<patch>` is
+  refused before sending, so `jev-latest` and `jev-preview` can never be used.
+  TypeSafe's documentation host did not resolve from the cloud on 2026-10-16,
+  so the wire names beyond S40 (`question`, `options`, `levels`,
+  `probabilities`, `confidence`, `id`) and the `Authorization: Bearer` header
+  are this build's reading of the published API, kept in one adapter module;
+  the first credentialed call (L2) confirms them. Replies are read strictly:
+  the answers must name exactly the questions asked and exactly their options,
+  every probability a number from 0 to 1, each answer's probabilities summing
+  to between 0.99 and 1.01; `confidence` is optional and checked when present.
+  Anything else is `malformed_answers`: kept as received, receipted, and given
+  no verdict. The key is read only from
+  `~/.local/share/trade-graph-owner/typesafe/typesafe.key` (folder private to
+  its owner, file 0600, one link, no symlink, 16–4096 printable characters) and
+  is sent only in the header.
+
+- **D141 (2026-10-16, implementation default for T44): receipts.** Every call
+  reserves through the existing `BudgetGateway` under role `news_alarm`,
+  purpose `news_alarm:jev`, holding the largest request Jev accepts (64,000
+  input tokens, S40) plus 1,024 output tokens (free on the dated card), with
+  the owner's FX rate and buffer (defaults 1 and 1.02, as
+  `RuntimeModelConfig`). The reservation and the attempt row commit together
+  before the call. A reply is receipted only when both token counts are
+  reported and the answering model is the priced one; an HTTP error is
+  receipted from the usage its body reports. Missing usage, a reply from
+  another model (its price is unknown), a timeout, a refused reply or an
+  interrupted call stays `UNCERTAIN` at the full hold. A retry is a new
+  reservation (`attempt_kind` `retry`). A money limit with no room sends
+  nothing and is logged as `budget_refused`, which is not an attempt. Scripted
+  transports are always synthetic and the runner refuses a binding that labels
+  them otherwise. A receipt is allocated once, 100%, to the latest paper
+  portfolio. Real calls also refuse a price card verified more than 30 days
+  ago, as the model router does. The USD5 testing alert is reported from real
+  committed spending only and pauses nothing.
+
+- **D142 (2026-10-16, implementation default for T44): feeds and polling.** The
+  five feeds in `RECOMMENDED_FEEDS` (Kraken status page Atom, Kraken blog RSS,
+  CoinDesk, Cointelegraph and Decrypt RSS), all free, keyless and https. One
+  plain GET per feed per poll with the previous ETag and Last-Modified, no
+  redirects, a 2 MB bound, a descriptive User-Agent and no cookie or
+  credential; DTDs and entity declarations are refused outright instead of
+  adding an XML dependency. Repeats are detected by canonical link (lower-case
+  scheme and host, no fragment, no `utm_` parameters). Titles lose control and
+  text-direction characters (so a printed headline reads as stored) and links
+  holding them are refused; the item's hash is taken from the element as
+  received. Recommended interval 5 minutes (`--polls N` repeats at that
+  interval; scheduling it is an installation step). Only headlines published
+  within the last hour (receipt time when the feed gives none or a future one)
+  go to Jev; older ones are stored and reported as not checked. Retryable
+  failures (rate limit, overloaded, server error, timeout, credentials) are
+  asked again on later polls up to 3 attempts per headline; a credentials
+  failure or a budget refusal ends that poll's Jev checks. The cloud network
+  refused every feed host, so the fixtures are synthetic and labelled; one real
+  recording per feed is step L2.
+
+- **D143 (2026-10-16, implementation default for T44): question set and
+  would-wake rule.** Three fixed questions: `concerns` (choice of watched
+  coins, `kraken`, `none`), `event_type` (hack or exploit, delisting, listing,
+  exchange outage or maintenance, regulatory action, other) and
+  `holder_wants_to_know` (yes/no, within the hour). The headline is only in the
+  `state`, as quoted data. Watched coins: held coins, the active mandate's
+  coins, the owner's `extra_watch_coins` and focus coins once T37 exists, at
+  most 253 (a Jev choice holds 255 options). The rule: the subject is the most
+  probable `concerns` option, ties all count and a coin tied with `none`
+  counts; it would wake when the subject is not `none` and P(yes) is at least
+  the alarm threshold (default 0.5, owner setting); it wakes the Leader, and
+  the Trader too when a subject is a held coin or Kraken itself while anything
+  is held. The event type is logged for T45's note and is not part of the rule.
+  It is an alarm setting, not a confidence gate, and property tests show it can
+  only add wake-ups.
+
+- **D144 (2026-10-16, implementation default for T44): storage and commands.**
+  Migration 0026 (W1-A's reserved version) adds five append-only tables to the
+  state database; triggers refuse every update and delete, and money stays in
+  the budget tables. The commands are discovered through `market_data_cli`, so
+  `cli.py` is unchanged. `news-alarm-poll` needs an initialised paper database
+  in a 0700 folder; with Jev switched on and no readable key it stops before
+  reading anything; scripted replies and real calls cannot be mixed.
+  `news-alarm-report` opens the database read-only, never creates or upgrades
+  it, and never recomputes an answer or a verdict. News tables are not added to
+  agent context, the financial checkpoint or the review export; how the Leader
+  reads headlines is T38/T45.
+
+- **D145 (2026-10-16, implementation default for T28):** One fill engine in the
+  protected kernel (`kernel/fills.py`) serves the paper broker and the practice
+  range. Entries: no event that began before the order (`eligible_after_utc`,
+  `excluded_event_ref`) can fill it, so the bar a decision used never does. On
+  candles a resting limit fills only when trades print beyond it (`low < limit`
+  for a buy), at its limit (never a better gap price), as a maker; a limit at
+  or through its placement price is marketable and fills as a taker at the next
+  open plus slippage, never beyond its limit; market orders fill at the next
+  open plus slippage. On quotes a resting limit fills when the opposite best
+  price reaches it (a crossed book, not a touch; the T05 behaviour is kept) and
+  market orders take the displayed size at the touch. Fills inside a bar are
+  stamped at its close, fills at the open at its open. Reason: D119's "a touch
+  is not a fill" and the T28 golden cases, without changing the T05 quote
+  guarantees.
+
+- **D146 (2026-10-16, implementation default for T28):** Cost profiles are
+  dated, sourced, append-only data records in `kernel/cost_profiles.json`, each
+  revision pinned by the SHA-256 of its canonical content in protected kernel
+  source (`PUBLISHED_PINS`), because the protected package hash covers only the
+  Python files and `runtime_artifacts.json`. A fee change is a new revision
+  with a later `effective_from`; every fill records the profile reference and
+  hash, so a profile change never rewrites an earlier result. The three
+  profiles keep the build-plan figures (D126) because kraken.com and okx.com
+  were unreachable from the cloud on 2026-10-16 (the network policy refused the
+  connections); each source records `check_result:
+  unreachable_from_build_environment`. The paper broker's default profile is
+  `kraken-spot-starting-tier@1`, the same rates as D14. Rates passed in
+  configuration are `explicit_configuration` profiles with no source.
+
+- **D147 (2026-10-16, implementation default for T28):** Protective exits are a
+  stop-loss and an optional take-profit on one long spot position, one
+  cancelling the other, both filled as triggered taker sells of the whole
+  quantity with slippage (build plan "Notes for implementers"). On candles the
+  stop triggers when the low reaches it and fills from `min(open, stop)` (a gap
+  gives the worse open); the take-profit needs a trade beyond it and fills from
+  its own level, never a better gap open; a bar reaching both takes the stop;
+  in the bar the position was entered only the stop can trigger. On quotes the
+  stop triggers at `bid <= stop` and fills from the bid, the take-profit needs
+  `bid > target`; no bid, no fill. Default exit slippage is 0.10% on both
+  paths; slipped prices round to the price increment against the trader.
+  Consequence: a paper stop gapped to a bid of 90 on a 0.1 tick now fills at
+  89.9 instead of 90.
+
+- **D148 (2026-10-16, implementation default for T28):** Fill policies are
+  hashed records separate from fees. `bar-replay@1`: a fill takes at most 10%
+  of the bar's volume (no fill in a bar without volume), 0.10% taker entry
+  slippage and 0.10% exit slippage. `paper-quote@1`: the T05 shares (100% of
+  displayed size or quote volume, 50% of the order when no volume is known), no
+  entry slippage (real quotes already include the spread and buy reservations
+  are sized at the quote, so the paper broker refuses entry slippage) and 0.10%
+  exit slippage. The practice range may vary pessimism with a stricter,
+  separately named policy.
+
+- **D149 (2026-10-16, implementation default for T28):** The paper broker
+  records each fill's terms in its own order document (`fill_terms`) rather
+  than changing `FillRecord` or adding a migration, so ledger identities and
+  old databases are untouched. Submitted take-profit and one-cancels-the-other
+  orders in the paper broker are left to T34, which attaches exits to entries;
+  the engine already supports them.
+
+- **D150 (2026-10-16, implementation default for T36):** Search runs in
+  software as the registered `web_search` function tool, on Perplexity's Search
+  API. Perplexity's own `web_search` and `fetch_url` tools are never enabled
+  (the adapter refuses them, and any reported use leaves the usage unresolved),
+  because the model could otherwise read pages the software never stored
+  (D124). Each result is stored before the model reads it; a finding must cite
+  a `source_ref` stored for its own round, or the whole reply is rejected and
+  nothing from it is kept. Endpoints follow Perplexity's published
+  documentation as summarised on 2026-10-16: Agent API
+  `https://api.perplexity.ai/v1/agent`, Search API
+  `https://api.perplexity.ai/search`; L2 confirms them.
+
+- **D151 (2026-10-16, implementation default for T36; deviation from the plan's
+  "USD0.0025 per search"):** Two dated cards. The Agent API card keeps D124's
+  published 2026-10-12 prices (USD2 / USD10 per million tokens; its USD0.0025
+  search rate applies only to Perplexity's own `web_search` tool, which stays
+  off; `fetch_url` USD0.0005 is recorded in the planning entry). Software-run
+  searches use the Search API, a different product, priced at USD0.005 per
+  request: the highest figure found (search-engine summaries of Perplexity's
+  pricing page and third-party pages, USD5 per 1,000; a Fast Search tier at
+  USD1 per 1,000 was also reported). The cloud session could not open
+  docs.perplexity.ai, so this is unconfirmed; pricing high means a receipt can
+  overstate but not understate. L2 re-reads the official page; a different
+  price becomes a new card ID. The cost of choosing evidence capture over
+  Perplexity's built-in search is about USD0.0025 more per search if D124's
+  tool price is current.
+
+- **D152 (2026-10-16, implementation default for T36):** Unknown usage is
+  unresolved, never free. A reply whose usage is missing is still used (it is
+  valid evidence) but the round reports `billing: unresolved` and the
+  reservation stays held at its maximum. An answered search (results or a
+  malformed body) is one billed request and gets a receipt; a timed-out or
+  refused search stays unresolved. Unresolved calls count at their reserved
+  maximum against the owner limit. There is no automatic retry in T36: a retry
+  is a new round with its own reservations.
+
+- **D153 (2026-10-16, implementation default for T36):** The owner spend policy
+  has no default; without it nothing is reserved or sent. `unlimited_testing`
+  is accepted only as D125. `monthly_limit` is in USD per deployment and UTC
+  month. Reaching it (or the deployment allowance) gives the round the status
+  `paused_at_limit`, which is not a system pause: the Trader, protection and
+  records continue. Size bounds on a round (searches, tokens) are a reservation
+  envelope for one call, not a cap on activity (D116).
+
+- **D154 (2026-10-16, implementation default for T36):** The key is read only
+  from the owner's private file (owner-only 600 or 400, one link, a regular
+  file outside any Git checkout, in a folder others cannot write; see
+  `application/private_key_file.py`), held as a masked `SecretStr`, sent only as the `Authorization` header, and never stored,
+  logged or placed in model context. The credentialed smoke is opt-in
+  (`--confirm-paid-call`), uses a separate smoke database, and labels its
+  report `real` only when the pinned network transport ran; a scripted run is
+  `synthetic` and never counts as a paid-provider test.
+
+- **D155 (2026-10-16, implementation default for T33):** Alarms live in the
+  state database (migration 0029) as non-financial tables. An alarm has one
+  owning department (trader, research, leader, learning or optimisation), one
+  condition (`quote_price`, `candle_price` or `indicator`), the indicator
+  engine's four relations and an exact Decimal level, plus optional portfolio,
+  day-plan and task references and a note of at most 280 characters. It fires
+  at most once per arming, enforced by a unique constraint, so restarts and
+  repeated ticks cannot fire twice. Only the owning department re-arms (after a
+  fire) or cancels; a re-arm keeps the condition, and a new level means a new
+  alarm. No field or setting limits how many alarms exist or how often they
+  fire (D116). Reason: the task's one-shot rule as a store guarantee, with full
+  history kept.
+
+- **D156 (2026-10-16, implementation default for T33):** Candle and indicator
+  alarms read candles only through `CandleStore.window`, point-in-time as of
+  the clock, and evaluate every completed candle that closed strictly after
+  arming (or after the cursor) in order, so candles completed during downtime
+  are not missed. The watcher waits at a candle that has not been received and
+  steps over a missing one, saying so, only once a later candle is present; a
+  candle that arrives later than its successor is not evaluated (alarms watch
+  the live edge). A crossing needs two consecutive candles. Candle alarms use
+  the collected intervals 1, 5, 15 and 60 minutes. Level alarms on On-Balance
+  Volume are refused (its level depends on where history starts, D136), and so
+  are levels outside an output's declared range. One tick evaluates at most
+  5,000 candles per alarm and continues next tick; a whole 5,000-slot step
+  without any candle is stepped over (reported) once newer candles exist, so an
+  outage that can never be backfilled does not freeze the alarm. Stored alarms
+  are read back without re-checking today's menu, so a later menu change makes
+  one alarm report an error instead of stopping the watcher.
+
+- **D157 (2026-10-16, implementation default for T33):** Quote alarms use quote
+  and trade observations received after arming, on `mid` (default, (bid + ask)
+  / 2), `bid`, `ask` or `last`; a missing price is not guessed. A crossing
+  alarm saves the side of its level whenever it changes, so a crossing across a
+  restart or a feed gap still fires, and the fire reports the previous reading
+  on the other side and the seconds since the watcher's previous quote of that
+  symbol. A quote stamped in the future is refused; one older than the alarm's
+  held reading is ignored.
+
+- **D158 (2026-10-16, implementation default for T33):** A feed that an armed
+  alarm depends on is lost after 120 seconds without a quote (the paper feed
+  polls every 10 seconds) or when no candle has arrived for the slot due 10
+  minutes ago. Loss and return are each recorded once and sent as a notice to
+  every owning department (a return also to every department told about the
+  loss); a department that arms on a feed while it is lost gets the same loss
+  notice; after a restart a lost quote feed stays lost until a fresh update
+  arrives (a backlog of old quotes is no recovery); a candle series the store
+  refuses to read counts as lost. An alarm whose evaluation fails keeps its
+  cursor, carries the failure as its reason, is reported in the tick, and does
+  not stop the other alarms. These are health thresholds, not caps.
+
+- **D159 (2026-10-16, implementation default for T33, contract for T35):**
+  Fired alarms and feed notices go to a persisted per-department queue that the
+  wake dispatcher claims one batch per wake (`claim`, `acknowledge`, `release`,
+  one open claim per department, single-use wake ids). Items that arrive while
+  a department is awake stay pending and are delivered together at its next
+  wake. Nothing is dropped or merged, and nothing limits items or wakes.
+  Whether a feed notice wakes a department is W5-A's decision.
+
+- **D160 (2026-10-16, implementation default for C1):** Mission Control accepts
+  the planning statuses `todo`, `in_progress`, `blocked` and `done` (plus the
+  older `pending` and `not_started`) and an `updated_at` that is a date or a
+  full UTC timestamp. The packaged snapshot is generated, not hand-edited: run
+  `uv run python scripts/update_progress_catalog.py` after every change to the
+  planning files, and
+  `test_packaged_catalog_matches_current_planning_without_private_metadata`
+  fails until it is run. Tests derive task counts from the planning files.
+  Three hand-written evidence notes in the old snapshot (T17, T19, T21) were
+  never shown, because the page uses the notes in `progress.py`; the
+  regenerated snapshot carries the shown ones.
+
+- **D161 (2026-10-16, implementation default for C1):** The overview again
+  carries `degraded` and `degraded_reasons` copied from the health check, as
+  before 2026-10-09. Acceptance case A34 requires visible degraded states.
+
+- **D162 (2026-10-16, test policy for C1):** A test whose subject is not a time
+  limit gives real child processes at least the production wall clock (or more,
+  for the Ledger helper), so a slow or busy machine cannot turn it red. Each
+  limit keeps its own deterministic test: the 0.3 s checker sleep case, the
+  plugin parent-deadline case and `MAXIMUM_SECONDS = 0` in
+  `test_financial_checkpoint`. No production limit was changed.
+
+- **D163 (2026-10-16, implementation default for C1):** The GitHub test job may
+  run 120 minutes. Revisit if the suite is made faster (see "Suite speed" in
+  `planning/handoffs/W1-E.md`).
+
+- **D164 (2026-10-16, implementation default for C1):** The subscription smoke
+  cycle is checked against the profile's configured limits, following
+  `80cdad6`; only the diagnostic call has the smaller fixed cap.
