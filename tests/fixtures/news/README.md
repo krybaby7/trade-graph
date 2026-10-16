@@ -31,8 +31,9 @@ Every title ends in "(synthetic)". The coins and events are invented and say not
 ## jev-scripted-answers.json
 
 Scripted Jev replies keyed by headline link, for tests and for the fixture report
-(`trade-graph news-alarm-poll --fixture-feeds tests/fixtures/news --scripted-jev
-tests/fixtures/news/jev-scripted-answers.json`). The numbers are invented. A reply that leaves an option out
-answers it 0. The reply shape (`answers` → question name → `probabilities` and optional `confidence`, plus
+(`trade-graph news-alarm-poll --config tests/fixtures/news/settings.synthetic.json --fixture-feeds
+tests/fixtures/news --scripted-jev tests/fixtures/news/jev-scripted-answers.json`). The numbers are invented.
+A reply that leaves an option out answers it 0. `settings.synthetic.json` adds the invented coin `EXMPL` to the
+watch list, because the scripted replies name it; otherwise it is the recommended default. The reply shape (`answers` → question name → `probabilities` and optional `confidence`, plus
 `model` and `usage`) follows the facts recorded in source S40; the exact field names are confirmed only by the
 first credentialed call (step L2). A scripted reply is never reported as a real Jev or paid test.
