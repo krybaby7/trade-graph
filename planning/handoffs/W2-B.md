@@ -12,7 +12,7 @@ step L2 on your PC; nothing needs a decision from you, unless you want one of th
 allowed.
 
 Branch: `claude/t31-coin-scanner`, head: the commit that adds this line; code at `0fbe7a5`. Pull request:
-PR_LINK_PENDING.
+https://github.com/krybaby7/trade-graph/pull/8.
 
 ## What was built
 
