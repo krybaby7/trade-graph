@@ -11,8 +11,8 @@ your test key and shows its receipt; while testing there is no spending limit,
 and a monthly limit you set later pauses only this research, never the Trader.
 
 Branch: `claude/blissful-cray-21g9y3` (this session's branch; the plan names
-`claude/t36-perplexity`), head `HEAD_COMMIT`, based on
-`claude/day-trader-engine-20261012` at `435db71`. Pull request: PULL_REQUEST.
+`claude/t36-perplexity`), code head `9efcccc` (this handoff is the last commit), based on
+`claude/day-trader-engine-20261012` at `435db71`. Pull request: not opened yet, because this session's GitHub access refused every write (403 on `git push` and on branch creation through the API); all commits are on the local branch, waiting for access.
 
 ## What was built
 
@@ -149,11 +149,33 @@ Branch: `claude/blissful-cray-21g9y3` (this session's branch; the plan names
 - Related existing tests: provider transport, cost acceptance, expense
   controls, usage FX provenance, funded profile, contracts, protocols, import
   boundary, owner expenses and upgrade: 319 passed.
-- `uv run ruff check src tests`: RUFF_RESULT
+- `uv run ruff check src tests`: All checks passed.
 - `python3 scripts/check_plan.py`: "Plan valid: 46 tasks". `python3
   scripts/test_planning.py`: 11 tests OK. `python3
   scripts/check_repository_hygiene.py`: passed.
-- Full suite: FULL_SUITE_RESULT
+- Full suite, Python 3.12.3 (`uv sync --frozen --group dev --python
+  /usr/bin/python3.12`), `uv run pytest -p no:cacheprovider -rf` at `ae2ca83`,
+  28 min: 6254 passed, 67 failed, 23 skipped, 65 errors. Every failure and
+  error is in 12 files; running those 12 files on the base `435db71` gives the
+  identical 132 test IDs (diffed), so this package adds no failure. They are:
+  - the known list: `e2e/test_dashboard_loop` (1), `test_paper_soak` (4),
+    `test_progress_dashboard` (3), `test_progress_projection` (4) and
+    `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers`
+    (1);
+  - this container only: `test_plugin_engineering` (19), `test_plugin_rollout`
+    (14) and `test_plugin_runtime_shadow` (20) failures and 65 setup errors in
+    `test_application_engineering`, `test_application_preparation` and
+    `test_application_projection`, all `OSError: [Errno 40] Too many levels of
+    symbolic links` on `/usr/lib/python3.12/_sysconfigdata__linux_x86_64-linux-gnu.py`
+    (the sandbox opens the interpreter's files without following links, and
+    the system Python here is a Debian package with that file as a symlink);
+    `test_subscription_egress_boundary` (1): bubblewrap is not installed, and
+    isolation correctly fails closed.
+  - The timing cases did not fail in this run.
+- An earlier full run used the container's default Python 3.13 by mistake
+  (`uv sync` chose it; the project targets 3.12): 6245 passed, 70 failed, 65
+  errors at `d482ac9`, the same files plus 3 `test_offline_acceptance` cases
+  that require Python 3.12. It is not the reported result.
 - Real or synthetic: everything Perplexity-shaped is synthetic (hand-written
   fixtures in the documented shapes, made-up keys, a scripted transport). No
   Perplexity, model-provider, exchange or other paid call was made. The only
@@ -217,5 +239,11 @@ Branch: `claude/blissful-cray-21g9y3` (this session's branch; the plan names
 - `planning/model-prices.json` is one line, so any other package adding a
   price entry will conflict textually; **integrator** keeps every entry.
 - Push and pull request: this session's GitHub access refused writes (403 on
-  `git push` and on branch creation through the API). See the pull request
-  line above for what happened.
+  `git push` and on branch creation through the API). **Owner**: reconnect
+  GitHub at claude.ai and make sure the Claude GitHub App is installed on the
+  repository; then the branch can be pushed and the pull request opened.
+- Cloud environment notes for **W1-E / integrator**: the default `python3` in
+  the cloud container is 3.13, so `uv sync --frozen --group dev` builds a 3.13
+  environment unless `--python 3.12` is given; with the system 3.12 the plugin
+  sandbox tests fail on the Debian stdlib symlink and the subscription
+  boundary test needs bubblewrap. Neither is caused by this package.
