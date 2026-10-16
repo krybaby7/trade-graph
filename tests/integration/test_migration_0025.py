@@ -41,19 +41,21 @@ def _retained(connection: sqlite3.Connection) -> tuple:
             connection.execute("SELECT version, applied_at FROM schema_migrations ORDER BY version").fetchall())
 
 
-def test_0025_is_the_newest_registered_migration():
-    assert STATEMENTS[-1] == ("0025", OWNER_CHECKIN_STATEMENTS)
-    assert [version for version, _ in STATEMENTS].count("0025") == 1
+def test_0025_is_registered_once_right_after_0024():
+    versions = [version for version, _ in STATEMENTS]
+    assert versions.count("0025") == 1
+    assert versions[versions.index("0025") - 1] == "0024"
+    assert dict(STATEMENTS)["0025"] == OWNER_CHECKIN_STATEMENTS
 
 
 def test_0025_upgrades_a_0024_database_once_without_rewriting_rows(tmp_path):
     connection = _database_at_0024(tmp_path / "upgrade.sqlite")
     assert connection.execute("SELECT name FROM sqlite_master WHERE name='owner_checkins'").fetchone() is None
     before = _retained(connection)
-    assert apply_migrations(connection, LATER) == ["0025"]
+    assert apply_migrations(connection, LATER)[0] == "0025"
     portfolios, bills, versions = _retained(connection)
     assert (portfolios, bills) == before[:2]
-    assert versions == [*before[2], ("0025", LATER)]
+    assert versions[: len(before[2]) + 1] == [*before[2], ("0025", LATER)]
     assert connection.execute("SELECT COUNT(*) FROM owner_checkins").fetchone()[0] == 0
     assert apply_migrations(connection, LATER) == []
     assert _retained(connection) == (portfolios, bills, versions)
@@ -80,7 +82,7 @@ def test_alembic_revision_follows_0024_and_refuses_downgrade():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0025"]
+    assert scripts.get_heads() == [STATEMENTS[-1][0]]
     assert scripts.get_revision("0025").down_revision == "0024"
     spec = importlib.util.spec_from_file_location("migration_0025", ROOT / "migrations" / "versions" /
                                                   "0025_owner_checkins.py")
