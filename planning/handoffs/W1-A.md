@@ -10,12 +10,9 @@ decision now; if you want real Jev checks, get a key at console.typesafe.ai only
 it, and switch Jev on in the news alarm settings file.
 
 Branch: `claude/confident-curie-fkuvcj` (this session's own branch, reset onto the integration branch as the
-plan allows; the plan's name for it is `claude/t44-jev-shadow`), head `fa882ef` for the code and docs (this handoff is the commit after it). Pull request: not opened yet.
-GitHub refused this session's push with HTTP 403 ("Claude doesn't have GitHub access to krybaby7/trade-graph
-for your organization"), and the GitHub connector was refused too (403 "Resource not accessible by
-integration"). The commits are on the local branch; once access is fixed, push the branch and open the pull
-request into `claude/day-trader-engine-20261012` titled `W1-A T44: Watch headlines with Jev in shadow mode and
-log would-be news alarms`, with the owner summary above as its description.
+plan allows; the plan's name for it is `claude/t44-jev-shadow`), head `fa882ef` for the code and docs (this handoff is the commit after it). Pull request:
+https://github.com/krybaby7/trade-graph/pull/3 into `claude/day-trader-engine-20261012` (not merged). The first
+pushes were refused with HTTP 403 until the owner gave Claude's GitHub app access to the repository.
 
 ## What was built
 
@@ -184,10 +181,6 @@ log would-be news alarms`, with the owner summary above as its description.
 
 ## Not done, open or for someone else
 
-- Owner or integrator first: this session could not push (HTTP 403 for git and for the GitHub connector), so
-  the branch is not on GitHub and there is no pull request yet. Reconnect GitHub at
-  https://claude.ai/connect-github (and install the Claude GitHub App on the repository there if needed), then
-  push `claude/confident-curie-fkuvcj` and open the pull request described at the top.
 - Integrator: copy D140–D144 into `docs/DECISIONS.md`; add a sources entry for the five feed addresses
   (checked 2026-10-16, refused from the cloud) and note the S40 wire reading in `docs/90-SOURCES.md`; keep
   the `typesafe:jev-1.13.0` price record next to W1-C's Perplexity record; mark T44 `done` if the acceptance
