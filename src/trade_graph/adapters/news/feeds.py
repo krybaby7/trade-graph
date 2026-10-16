@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import socket
+import unicodedata
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 RSS1 = "{http://purl.org/rss/1.0/}"
 DC_DATE = "{http://purl.org/dc/elements/1.1/}date"
 _DECLARATION = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)
+# Direction overrides and isolates can make a printed title read differently from what is stored.
+_DIRECTION = frozenset("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 FetchOutcome = Literal["fetched", "not_modified", "http_error", "transport_error", "refused"]
 
@@ -70,11 +73,24 @@ class FeedFetcher(Protocol):
     def fetch(self, feed: FeedSource, *, etag: str | None, last_modified: str | None) -> FetchResult: ...
 
 
+def _hidden(character: str) -> bool:
+    return unicodedata.category(character) == "Cc" or character in _DIRECTION
+
+
+def clean_text(text: str) -> str:
+    """Whitespace collapsed; control and direction-override characters removed (they are not news)."""
+    return " ".join("".join(character for character in text
+                            if character.isspace() or not _hidden(character)).split())
+
+
 def canonical_link(url: str) -> str:
     """The link used to detect repeats: lower-case scheme and host, no fragment, no ``utm_`` parameters."""
     if not isinstance(url, str):
         raise ValueError("a link is text")
-    parts = urlsplit(url.strip())
+    url = url.strip()
+    if any(character.isspace() or _hidden(character) for character in url):
+        raise ValueError("a headline link cannot hold spaces or control characters")
+    parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
         raise ValueError("a headline link must be a plain web address")
@@ -141,7 +157,7 @@ def parse_feed(raw: bytes, format: Literal["rss", "atom"] | str = "rss") -> Pars
         else:
             title, link = element.findtext("title") or element.findtext(f"{RSS1}title"), _rss_link(element)
             published = element.findtext("pubDate") or element.findtext(DC_DATE)
-        title = " ".join((title or "").split())
+        title = clean_text(title or "")
         try:
             link = canonical_link(link) if link else None
         except ValueError:

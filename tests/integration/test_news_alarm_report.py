@@ -107,6 +107,9 @@ def test_the_text_report_is_plain_english_and_says_nobody_was_woken(tmp_path):
     assert "Kraken will delist EXMPL/USD on 30 October (synthetic)" in text
     assert "synthetic" in text.lower() and "USD" in text
     assert "Not checked: published before the check window" in text
+    assert "News alarm report (shadow mode), 2026-10-15 12:00 UTC to 2026-10-16 12:01 UTC" in text
+    assert "Kraken blog, published 2026-10-16 11:30 UTC, received 2026-10-16 12:00 UTC" in text
+    assert "T11:30" not in text
 
 
 def test_an_empty_window_reports_zero_without_failing(tmp_path):

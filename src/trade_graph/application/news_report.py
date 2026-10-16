@@ -186,6 +186,10 @@ def _top(answers: dict[str, Any] | None, name: str) -> tuple[str, str] | None:
     return option, str(probabilities[option])
 
 
+def _time(value: str | None) -> str:
+    return parse_utc(value).strftime("%Y-%m-%d %H:%M UTC") if value else "unknown time"
+
+
 def _who(roles: list[str]) -> str:
     if roles == ["leader", "trader"]:
         return "the Leader and the Trader"
@@ -195,7 +199,8 @@ def _who(roles: list[str]) -> str:
 def format_report_text(report: dict[str, Any]) -> str:
     summary, spend, latency = report["summary"], report["spend"], report["latency_ms"]
     roles = summary["would_wake_by_role"]
-    lines = [f"News alarm report (shadow mode), {report['window']['since']} to {report['window']['until']}",
+    lines = [f"News alarm report (shadow mode), {_time(report['window']['since'])} to "
+             f"{_time(report['window']['until'])}",
              "Shadow mode: nobody was woken.",
              f"{summary['headlines']} headlines, {summary['checked']} checked by Jev, {summary['would_wake']} would "
              f"have woken someone (Leader {roles['leader']}, Trader {roles['trader']}).",
@@ -211,7 +216,9 @@ def format_report_text(report: dict[str, Any]) -> str:
                      f"{latency['checks']} checks.")
     for item in report["headlines"]:
         label = "" if item["evidence"] == "live_public" else f"[{item['evidence'].replace('_', ' ')}] "
-        lines += ["", f"{label}{item['published_at'] or item['received_at']}  {item['publisher']}",
+        when = (f"published {_time(item['published_at'])}, received {_time(item['received_at'])}"
+                if item["published_at"] else f"received {_time(item['received_at'])}")
+        lines += ["", f"{label}{item['publisher']}, {when}",
                   f"  {item['title']}", f"  {item['link']}"]
         for check in item["checks"]:
             if check["status"] == "answered":

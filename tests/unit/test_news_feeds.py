@@ -94,6 +94,17 @@ def test_oversized_feeds_are_refused_and_bad_items_are_counted_not_stored():
         ("kept title", "https://example.com/ok", None)]
 
 
+def test_control_and_direction_characters_never_reach_a_stored_title_or_link():
+    raw = ("<rss><channel><item><title>Alert\u009b2J \u202eevil\u202c title</title>"
+           "<link>https://example.com/ok</link></item>"
+           "<item><title>bad link</title><link>https://example.com/a\u0085b</link></item>"
+           "<item><title>hidden link</title><link>https://example.com/\u202egpj.exe</link></item>"
+           "</channel></rss>").encode()
+    parsed = parse_feed(raw, "rss")
+    assert [item.title for item in parsed.items] == ["Alert2J evil title"]
+    assert parsed.rejected == 2
+
+
 def test_the_fixture_fetcher_labels_every_body_synthetic():
     fetcher = FixtureFeedFetcher(FIXTURES)
     result = fetcher.fetch(FEEDS["kraken-blog"], etag=None, last_modified=None)
