@@ -10,8 +10,8 @@ keep the figures from the build plan and say so; the local session should re-che
 step L2, and nothing here needs a decision from you.
 
 Branch: `claude/nice-thompson-j88ec4` (this session's assigned branch, used instead of
-`claude/t28-fill-engine`), head: the commit that adds this handoff; code at `f331ff0`. Pull request: not
-opened yet, because this session's GitHub access was refused (see the last section).
+`claude/t28-fill-engine`), head: the commit that adds this line; code at `f331ff0`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/2.
 
 ## What was built
 - `src/trade_graph/contracts/fills.py`: Pydantic contracts. `CostProfile` (a dated, sourced fee tier with
@@ -148,8 +148,6 @@ opened yet, because this session's GitHub access was refused (see the last secti
   (plain `uv sync` picks the container's Python 3.13), and the plugin-runtime and bubblewrap failures above
   will appear in every cloud full-suite run until the plugin runtime accepts a distribution's symlinked
   `_sysconfigdata` file or the cloud image changes. Not fixed here (outside T28).
-- Push and pull request: this session's GitHub access was refused (HTTP 403 on `git push` and on the GitHub
-  connector, "Claude doesn't have GitHub access to krybaby7/trade-graph"). The owner reconnects GitHub at
-  claude.ai/connect-github (and installs the Claude GitHub App on the repository if it is missing); then the
-  branch is pushed and the pull request opened.
+- Push and pull request: GitHub access was first refused (HTTP 403); after the owner added the repository
+  to Claude's GitHub app the branch was pushed and pull request #2 opened. Nothing else was needed.
 - Coin scanner round-trip cost: `CostProfile.round_trip_rate("maker"|"taker")` gives it (T31, W2-B).
