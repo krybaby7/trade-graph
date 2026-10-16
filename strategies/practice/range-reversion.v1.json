@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "strategy_id": "range-reversion",
+  "version": 1,
+  "title": "Range reversion on 15-minute candles",
+  "hypothesis": "A close below the lower Bollinger Band with an oversold RSI can revert toward the middle band.",
+  "interval_minutes": 15,
+  "indicators": {
+    "bands": {"indicator": "BBANDS", "parameters": {"timeperiod": 80}},
+    "strength": {"indicator": "RSI", "parameters": {"timeperiod": 14}}
+  },
+  "entry": {
+    "all_of": [
+      {"left": {"candle": "close"}, "relation": "below", "right": {"indicator": "bands", "output": "lower"}},
+      {"left": {"indicator": "strength"}, "relation": "below", "right": {"level": "30"}}
+    ],
+    "order": {"kind": "limit", "price": {"candle": "close"}, "offset_fraction": "0", "expires_after_bars": 2}
+  },
+  "exit": {
+    "stop_loss_fraction": "0.03",
+    "take_profit_fraction": "0.025",
+    "any_of": [
+      {"left": {"candle": "close"}, "relation": "crosses_above", "right": {"indicator": "bands", "output": "middle"}}
+    ],
+    "max_holding_bars": 96
+  },
+  "sizing": {"equity_fraction": "0.2"},
+  "note": "An executable 15-minute reading of the range-reversion template (strategies/templates). Unproven: a starting point for the practice range, not advice."
+}
