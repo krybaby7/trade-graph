@@ -126,6 +126,10 @@ def test_missing_files_are_refused_and_never_created(installation, tmp_path, cap
         main(["coin-shortlist", "--database", str(absent)])
     assert not absent.exists()
     capsys.readouterr()
+    with pytest.raises(SystemExit):  # the financial database is never read as a candle file
+        main(["scan-coins", "--database", str(installation["database"]), "--market-database",
+              str(installation["database"]), "--fixture-ticker", str(installation["ticker"])])
+    assert "financial database" in capsys.readouterr().err
 
 
 def test_a_replay_time_must_be_utc(installation, capsys) -> None:

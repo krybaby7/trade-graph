@@ -301,12 +301,14 @@ def _evaluate_candles(store: CandleStore, record: PairRecord, settings: ScanSett
         inputs["spread"] = dict(_REPLAY_SPREAD)
     inputs["cost"] = dict(settings.cost)
 
+    # Every collection run behind a number, so the scan can be labelled by its least real input.
+    used = {*runs, *(use.run_id for result in (swing_result, trend_result) for use in result.candles_used)}
     candidate = None
     if not reasons:
         candidate = Candidate(symbol=symbol, volume_usd_24h=volume, swing_to_cost=swing_to_cost, spread=spread,
                               trend=trend)
     return PairEvaluation(symbol, tuple(sorted(set(reasons))), tuple(sorted(flags)), MappingProxyType(inputs),
-                          candidate, runs)
+                          candidate, tuple(sorted(used)))
 
 
 __all__ = ["PairEvaluation", "ScanSettings", "TickerState", "catalog_reasons", "evaluate_pair"]

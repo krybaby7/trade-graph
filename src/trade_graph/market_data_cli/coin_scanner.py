@@ -90,13 +90,6 @@ def _state_database(path: str, parser: argparse.ArgumentParser) -> Path:
     return target
 
 
-def _market_database(path: str, parser: argparse.ArgumentParser) -> Path:
-    target = Path(path)
-    if target.is_symlink() or not target.is_file() or target.stat().st_size == 0:
-        parser.error(f"no candle store at {path}; collect or import candles first")
-    return target
-
-
 def _moment(value: str | None, parser: argparse.ArgumentParser) -> datetime:
     if value is None:
         parser.error("a replay needs --as-of, the UTC moment to scan")
@@ -117,7 +110,7 @@ def _next_scan_time(now: datetime, minute: int) -> datetime:
 
 def _scan(args, parser) -> int:
     from trade_graph.adapters.persistence.db import Database
-    from trade_graph.market_data_cli._common import open_store
+    from trade_graph.market_data_cli._guard import open_store_or_exit, require_existing_market_database
 
     if args.replay and args.fixture_ticker:
         parser.error("a replay has no historical bid and ask; --fixture-ticker is for live scans only")
@@ -127,11 +120,12 @@ def _scan(args, parser) -> int:
         parser.error("--at-minute must be from 0 to 59")
     start = _moment(args.as_of, parser) if args.replay else None
     state_path = _state_database(args.database, parser)
-    market_path = _market_database(args.market_database, parser)
+    # The candle file is only read: never the financial database, never created here (the D133 guard).
+    require_existing_market_database(args.market_database, parser)
     clock, sleep = build_clock(), build_sleep()
     market = database = None
     try:
-        market, candles = open_store(market_path)
+        market, candles = open_store_or_exit(args.market_database, parser)
         database = Database(state_path)
         for number in range(args.scans):
             if args.replay:
