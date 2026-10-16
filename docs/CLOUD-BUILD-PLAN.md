@@ -355,13 +355,15 @@ Leave the integration branch at the last good, fully tested wave. Push the
 finished package branches and keep their pull requests open. Then write the
 morning report.
 
-**Morning report.** Write `planning/handoffs/NIGHT-<date>.md`, commit it on the
-integration branch and push. It starts with three to six plain-English
-sentences for the owner: which waves merged, what the owner can now do or
-see, what failed or stopped, and anything that needs a decision. Then, per
-package: branch, pull request, merge commit and test results, and the full
-suite result per wave with how it was run. Then what comes next. End the
-session with the same plain-English summary.
+**Morning report.** Keep `planning/handoffs/NIGHT-<date>.md` (the date the
+shift started) on the integration branch. Create it after the first wave and
+update it after every wave, committing and pushing each time, so the owner
+can read progress while the shift is still running. It starts with three to
+six plain-English sentences for the owner: which waves merged, what the owner
+can now do or see, what failed or stopped, what is running now, and anything
+that needs a decision. Then, per package: branch, pull request, merge commit
+and test results, and the full suite result per wave with how it was run.
+Then what comes next. End the session with the same plain-English summary.
 
 Prompt (replace the wave numbers):
 
