@@ -16,8 +16,10 @@ from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 CANDLE_INTERVALS = (1, 5, 15, 30, 60, 240, 720, 1440)
 COLLECTED_INTERVALS = (1, 5, 15, 60)
-CANDLE_SOURCES = ("kraken_public_ohlc", "kraken_ohlcvt_archive", "kraken_public_trades", "synthetic")
-CandleSource = Literal["kraken_public_ohlc", "kraken_ohlcvt_archive", "kraken_public_trades", "synthetic"]
+CANDLE_SOURCES = ("kraken_public_ohlc", "kraken_ohlcvt_archive", "kraken_public_trades", "synthetic",
+                  "okx_public_candles")
+CandleSource = Literal["kraken_public_ohlc", "kraken_ohlcvt_archive", "kraken_public_trades", "synthetic",
+                       "okx_public_candles"]
 ReadMode = Literal["point_in_time", "replay"]
 AvailabilityBasis = Literal["receipt_time", "event_time_only"]
 RUN_KINDS = ("public_collect", "archive_import", "trades_backfill", "catalog")
@@ -30,6 +32,7 @@ _SOURCE_REFS = {
     "kraken_ohlcvt_archive": "kraken:ohlcvt-archive",
     "kraken_public_trades": "kraken:/0/public/Trades",
     "synthetic": "synthetic",
+    "okx_public_candles": "okx:/api/v5/market/history-candles",
 }
 
 

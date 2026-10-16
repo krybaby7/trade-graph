@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from trade_graph.adapters.persistence.market_data import MarketDataDatabase
+from trade_graph.adapters.persistence.market_data_schema import MARKET_DATA_MIGRATIONS
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.contracts.candles import Candle
 from trade_graph.domain.errors import ValidationFailure
@@ -49,7 +50,7 @@ def test_database_is_private_and_reopening_is_idempotent(tmp_path) -> None:
     assert os.stat(path.parent).st_mode & 0o077 == 0
     second = MarketDataDatabase(path)
     versions = [row[0] for row in second.execute("SELECT version FROM market_data_migrations ORDER BY version")]
-    assert versions == ["0001"]
+    assert versions == [version for version, _ in MARKET_DATA_MIGRATIONS]  # each applied once, in order
     second.close()
 
 

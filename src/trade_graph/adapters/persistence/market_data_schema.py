@@ -76,4 +76,41 @@ VERSION_0001 = [
     *_append_only("pair_catalog_observations"),
 ]
 
-MARKET_DATA_MIGRATIONS: list[tuple[str, list[str]]] = [("0001", VERSION_0001)]
+# 0002 (T29): OKX's public candles are their own source (``okx_public_candles``, D168). SQLite cannot widen a CHECK
+# constraint in place, so the two tables that name sources are rebuilt the way SQLite documents: create the new
+# table, copy every row with its own id, drop the old one, rename, recreate its append-only triggers. The runner
+# applies a rebuild with foreign keys off and checks every foreign key before it commits (``REBUILD_VERSIONS``).
+_SOURCES_0002 = _SOURCES + ", 'okx_public_candles'"
+
+VERSION_0002 = [
+    f"""CREATE TABLE candle_series_0002 (
+        series_id INTEGER PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ({_SOURCES_0002})),
+        interval_minutes INTEGER NOT NULL CHECK (interval_minutes IN ({_INTERVALS})),
+        source_pair TEXT NOT NULL,
+        UNIQUE (symbol, source, interval_minutes)
+    )""",
+    "INSERT INTO candle_series_0002 (series_id, symbol, source, interval_minutes, source_pair) "
+    "SELECT series_id, symbol, source, interval_minutes, source_pair FROM candle_series ORDER BY series_id",
+    "DROP TABLE candle_series",
+    "ALTER TABLE candle_series_0002 RENAME TO candle_series",
+    *_append_only("candle_series"),
+    f"""CREATE TABLE candle_runs_0002 (
+        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ({_KINDS})),
+        source TEXT NOT NULL CHECK (source IN ({_SOURCES_0002})),
+        evidence_label TEXT NOT NULL CHECK (evidence_label IN ({_LABELS})),
+        started_at INTEGER NOT NULL,
+        parameters_json TEXT NOT NULL
+    )""",
+    "INSERT INTO candle_runs_0002 (run_id, kind, source, evidence_label, started_at, parameters_json) "
+    "SELECT run_id, kind, source, evidence_label, started_at, parameters_json FROM candle_runs ORDER BY run_id",
+    "DROP TABLE candle_runs",
+    "ALTER TABLE candle_runs_0002 RENAME TO candle_runs",
+    *_append_only("candle_runs"),
+]
+
+MARKET_DATA_MIGRATIONS: list[tuple[str, list[str]]] = [("0001", VERSION_0001), ("0002", VERSION_0002)]
+# Versions that rebuild a table: applied with foreign keys off, then every foreign key is checked before commit.
+REBUILD_VERSIONS = frozenset({"0002"})

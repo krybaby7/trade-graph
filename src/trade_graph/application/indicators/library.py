@@ -39,6 +39,8 @@ SNAPSHOT_DIGITS = 12
 _SNAPSHOT_CONTEXT = Context(prec=SNAPSHOT_DIGITS, rounding=ROUND_HALF_EVEN, Emin=MIN_EMIN, Emax=MAX_EMAX)
 # Process-wide TA-Lib settings that would silently change recursive indicators if anything set them.
 _UNSTABLE_PERIODS = ("ADX", "ATR", "DX", "EMA", "MINUS_DI", "MINUS_DM", "NATR", "PLUS_DI", "PLUS_DM", "RSI")
+# A missing slot in ``float_columns``: never passed to the library, only a placeholder that keeps positions aligned.
+_MISSING = float("nan")
 
 
 class IndicatorComputationError(TradeGraphError):
@@ -88,6 +90,31 @@ def compute_raw(spec_name: str, params: Mapping[str, object],
     columns = {field: _float_column(field, arrays[field]) for field in spec.requires}
     if len({column.shape for column in columns.values()}) != 1:
         raise ValidationFailure("the candle columns must all have the same length")
+    return compute_prepared(spec_name, resolved, columns)
+
+
+def float_columns(candles: Sequence[Candle | None]) -> dict[str, NDArray[np.float64]]:
+    """Float64 candle columns converted once, under the same checks as ``compute_raw``; a missing slot is NaN.
+
+    For replays that compute one value per candle over many overlapping spans (``rolling.py``). A span that holds
+    a NaN must never be passed to ``compute_prepared``: the caller withholds it, as the engine does for a gap.
+    """
+    if len(candles) > MAX_ROWS:
+        raise ValidationFailure(f"at most {MAX_ROWS} rows may be converted at once")
+    present = [candle for candle in candles if candle is not None]
+    columns: dict[str, NDArray[np.float64]] = {}
+    for field in _CANDLE_FIELDS:
+        converted = iter(_float_column(field, tuple(getattr(candle, field) for candle in present)))
+        columns[field] = np.fromiter((_MISSING if candle is None else next(converted) for candle in candles),
+                                     dtype=np.float64, count=len(candles))
+    return columns
+
+
+def compute_prepared(spec_name: str, params: Mapping[str, object],
+                     columns: Mapping[str, NDArray[np.float64]]) -> dict[str, NDArray[np.float64]]:
+    """Run one menu entry over float64 columns already converted by ``float_columns`` (or ``compute_raw``)."""
+    spec = get_indicator(spec_name)
+    resolved = spec.resolve_parameters(params)
     _require_library_defaults()
     function = getattr(talib, spec.talib_function, None)
     if function is None:
@@ -151,6 +178,6 @@ def _require_library_defaults() -> None:
 
 
 __all__ = [
-    "MAX_ROWS", "SNAPSHOT_DIGITS", "IndicatorComputationError", "columns_from_candles", "compute_raw",
-    "library_versions", "lookback", "rounded_decimal", "rounded_significant",
+    "MAX_ROWS", "SNAPSHOT_DIGITS", "IndicatorComputationError", "columns_from_candles", "compute_prepared",
+    "compute_raw", "float_columns", "library_versions", "lookback", "rounded_decimal", "rounded_significant",
 ]
