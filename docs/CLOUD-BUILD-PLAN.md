@@ -305,20 +305,31 @@ For each wave, in order:
    is `done`. If one is not, stop (see "Stopping").
 2. Build each package of the wave in its own git worktree on its own branch
    (`git worktree add ../<branch> -b <branch> origin/claude/day-trader-engine-20261012`,
-   with the branch name from "Reserved numbers"). Give each package to a
-   subagent with the package id, its worktree path and the instruction to
-   follow "Rules for every cloud session" and its package section. Packages
-   of the same wave may run at the same time. If subagents are not available,
-   build the packages yourself, one after another.
+   with the branch name from "Reserved numbers"). Give each package to its
+   own subagent, which starts with a fresh context window: pass the package
+   id, its worktree path and the instruction to follow "Rules for every cloud
+   session" and its package section. Packages of the same wave may run at the
+   same time.
 3. Night-shift difference from rule 13: a package runs its new and related
    tests, ruff, and the planning and hygiene checks, but **not** the full
    suite. The wave's integration runs the full suite once, for all of them.
 4. Each package writes its handoff, pushes its branch and opens its pull
    request through the REST API (rule 15).
-5. Integrate the wave as in "Integration (INT)", including the status board,
-   the handoffs folded into the shared files, and the full suite once (see
-   "Long commands"). Push the integration branch. Only then start the next
-   wave.
+5. Give the wave's integration to one more fresh subagent: the wave number,
+   the list of package branches and pull requests, and the instruction to
+   follow "Integration (INT)", including the status board, the handoffs
+   folded into the shared files and the full suite once (see "Long
+   commands"). It pushes the integration branch and returns its plain-English
+   summary, the merge commits and the full-suite result.
+6. Check the result yourself before the next wave: `git fetch origin`, the
+   integration branch head contains every merge commit, and
+   `planning/progress.json` there marks the wave's tasks `done`. Only then
+   start the next wave.
+
+Keep your own context small: you plan, start subagents, check their results
+and write the morning report; the subagents do the building and merging. If
+subagents are not available, do the work yourself in order and say so in the
+morning report.
 
 **Long commands.** The full suite takes 1 to 2 hours. Use either way, and
 report which:
