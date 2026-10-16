@@ -144,7 +144,7 @@ WindowLabel = Literal["weekly", "5-hour", "other"]
 AttentionCode = Literal["team_off", "team_silent", "safety_stop", "model_unavailable", "timetable_failing",
                         "turn_stuck", "checkin_due", "orders_unclear", "routine_failing", "repeat_problems",
                         "notes_expire_early", "prices_old", "allowance_near", "command_interrupted", "resources",
-                        "owner_paused", "costs_unconfirmed", "trial_rollback_likely"]
+                        "owner_paused", "costs_unconfirmed", "trial_rollback_likely", "spending_alert"]
 ATTENTION_CODES: Final = get_args(AttentionCode)
 Severity = Literal["act", "watch", "info"]
 SEVERITY_ORDER: Final = ("act", "watch", "info")
@@ -157,6 +157,8 @@ ATTENTION_SEVERITY: Final[Mapping[str, str]] = {
     "notes_expire_early": "watch", "prices_old": "watch", "allowance_near": "watch",
     "command_interrupted": "watch", "resources": "watch",
     "owner_paused": "info", "costs_unconfirmed": "info", "trial_rollback_likely": "info",
+    # T40 (D176): the owner's testing spending alert. An alert only: it pauses nothing.
+    "spending_alert": "watch",
 }
 
 LastOutcome = Literal["done", "problem", "skipped", "stuck", "decided"]
@@ -190,7 +192,8 @@ GlossaryKey = Literal["practice_money", "real_trading_off", "protect_only", "saf
                       "turn", "timetable", "research_note", "wait", "double_check", "unclear_order", "estimate",
                       "euro_rate", "currency_effect", "team_effect", "pays_for_itself", "bill_share",
                       "bills_complete", "history_gap", "avg_20h", "avg_50h", "trial", "rules", "sign_of_life",
-                      "review_checkin", "review_prompt"]
+                      "review_checkin", "review_prompt", "estimated_cost", "unresolved_cost", "testing_alert",
+                      "prepaid_credit"]
 GLOSSARY_KEYS: Final = get_args(GlossaryKey)
 
 # --- Owner check-ins (spec §B.10) ----------------------------------------------------------
@@ -928,6 +931,182 @@ class MarketItem(_Contract):
     text: NonEmptyText
 
 
+# --- AI spending (T40, D175-D179) ------------------------------------------------------------------
+# Additive and omittable (``HQSnapshot.ai_spending``): an older server leaves it out. Amounts are USD from
+# receipts. ``unresolved`` is the held maximum of calls whose usage isn't known yet: never zero while such calls
+# exist, and ``null`` only when even the hold can't be valued. Practice money never appears in this block.
+
+SpendingService = Literal["perplexity", "jev"]
+SPENDING_SERVICES: Final = get_args(SpendingService)
+SpendingStatus = Literal["off", "testing", "monthly_limit"]
+SpendingAlertState = Literal["below", "maybe_passed", "passed"]
+SpendingLineId = Literal["leader", "research", "trader", "learning", "optimisation", "engineer", "news_alarm",
+                         "other"]
+CodexLineId = Literal["leader", "research", "trader", "learning", "optimisation", "engineer", "other"]
+SPENDING_LINES_MAX: Final = 8
+
+
+def _amount(money: Money | None) -> Decimal:
+    return Decimal(money.amount) if money is not None else Decimal("0")
+
+
+class SpendAmounts(_Contract):
+    """One period's calls. A part is null when no call is of that kind ("nothing to show", never a zero cost)."""
+
+    calls: NonNegative
+    actual: Money | None  # receipts priced from the usage the provider reported
+    estimated: Money | None  # conservative charges: usage never reported, charged at the reserved maximum
+    unresolved: Money | None  # calls not known yet, at their held maximum; null with calls: can't be valued
+    unresolved_calls: NonNegative
+    total: Money | None  # the parts added up; null without calls or when a hold can't be valued
+
+    @model_validator(mode="after")
+    def _sums(self):
+        values = [money for money in (self.actual, self.estimated, self.unresolved, self.total) if money is not None]
+        if any(money.currency != "USD" or Decimal(money.amount) < 0 for money in values):
+            raise ValueError("AI spending amounts are non-negative USD")
+        if self.unresolved_calls > self.calls:
+            raise ValueError("unresolved calls are some of the calls")
+        if self.unresolved_calls == 0 and self.unresolved is not None:
+            raise ValueError("nothing is held when no call is unresolved")
+        if self.calls > self.unresolved_calls and self.actual is None and self.estimated is None:
+            raise ValueError("settled calls have an amount")
+        if self.calls == 0 and (self.actual, self.estimated) != (None, None):
+            raise ValueError("no calls, no amounts")
+        unknown_hold = self.unresolved_calls > 0 and self.unresolved is None
+        if (self.total is None) != (self.calls == 0 or unknown_hold):
+            raise ValueError("the total is null exactly without calls or when a hold can't be valued")
+        if self.total is not None and Decimal(self.total.amount) != (
+                _amount(self.actual) + _amount(self.estimated) + _amount(self.unresolved)):
+            raise ValueError("the total is actual + estimated + unresolved")
+        return self
+
+
+class SpendingLine(_Contract):
+    id: SpendingLineId
+    name: Name
+    amounts: SpendAmounts
+
+
+class SpendingAlert(_Contract):
+    threshold: Money
+    source: Literal["default", "owner"]
+    state: SpendingAlertState
+    since: ISO | None  # when the known testing total reached the threshold
+    text: NonEmptyText
+
+    @model_validator(mode="after")
+    def _since(self):
+        if self.since is not None and self.state != "passed":
+            raise ValueError("only a passed alert has a since")
+        return self
+
+
+class PrepaidCredit(_Contract):
+    recorded: Money | None  # null: the owner hasn't recorded a reading (unknown, never zero)
+    observed_at: ISO | None
+    since: SpendAmounts | None  # spending recorded since the reading
+    left: Money | None  # recorded - since.total; information only
+    text: NonEmptyText
+
+    @model_validator(mode="after")
+    def _recorded(self):
+        if self.recorded is None and (self.observed_at, self.since, self.left) != (None, None, None):
+            raise ValueError("without a recorded credit there is nothing since it")
+        if self.recorded is not None and (self.observed_at is None or self.since is None):
+            raise ValueError("a recorded credit has its reading time and the spending since")
+        return self
+
+
+class MonthlyLimit(_Contract):
+    limit: Money
+    month_start: ISO
+    month: SpendAmounts
+    text: NonEmptyText
+
+
+class ServiceSpending(_Contract):
+    service: SpendingService
+    name: Name
+    status: SpendingStatus
+    period_start: ISO | None
+    period_end: ISO | None
+    lines: Annotated[list[SpendingLine], Field(max_length=SPENDING_LINES_MAX)]
+    total: SpendAmounts  # the testing period; the sum of the lines
+    synthetic_calls: NonNegative  # test calls with made-up answers, never counted
+    headline: NonEmptyText
+    alert: SpendingAlert | None  # null once a monthly limit replaced testing
+    credit: PrepaidCredit
+    monthly_limit: MonthlyLimit | None
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        ids = [line.id for line in self.lines]
+        if len(set(ids)) != len(ids):
+            raise ValueError("one line per department")
+        if (self.service == "jev" and ids not in ([], ["news_alarm"])) or (
+                self.service != "jev" and "news_alarm" in ids):
+            raise ValueError("Jev has only the news alarm line; Perplexity never has it")
+        for name in ("calls", "unresolved_calls"):
+            if sum(getattr(line.amounts, name) for line in self.lines) != getattr(self.total, name):
+                raise ValueError(f"lines add up to the total ({name})")
+        for name in ("actual", "estimated", "unresolved"):
+            parts = [getattr(line.amounts, name) for line in self.lines]
+            if name == "unresolved" and any(line.amounts.unresolved_calls and part is None
+                                            for line, part in zip(self.lines, parts, strict=True)):
+                if self.total.unresolved is not None:
+                    raise ValueError("an unknown line hold makes the total hold unknown")
+                continue
+            if (getattr(self.total, name) is None) != all(part is None for part in parts) or \
+                    sum((_amount(part) for part in parts), Decimal("0")) != _amount(getattr(self.total, name)):
+                raise ValueError(f"lines add up to the total ({name})")
+        if (self.status == "monthly_limit") != (self.monthly_limit is not None):
+            raise ValueError("a monthly limit is shown exactly in monthly-limit mode")
+        if (self.alert is None) != (self.status == "monthly_limit"):
+            raise ValueError("the testing alert is shown until a monthly limit replaces testing")
+        return self
+
+
+class CodexLine(_Contract):
+    id: CodexLineId
+    name: Name
+    turns: NonNegative
+    unreported_turns: NonNegative
+    share_percent: Percent | None  # of the team's reported use; null when the team reported none
+
+
+class CodexUse(_Contract):
+    period_start: ISO
+    period_end: ISO
+    turns: NonNegative
+    unreported_turns: NonNegative
+    lines: Annotated[list[CodexLine], Field(max_length=7)]
+    text: NonEmptyText
+
+    @model_validator(mode="after")
+    def _sums(self):
+        if sum(line.turns for line in self.lines) != self.turns or \
+                sum(line.unreported_turns for line in self.lines) != self.unreported_turns:
+            raise ValueError("Codex lines add up to the team's turns")
+        if any(line.unreported_turns > line.turns for line in self.lines):
+            raise ValueError("unreported turns are some of a department's turns")
+        return self
+
+
+class AiSpending(_Contract):
+    as_of: ISO
+    services: list[ServiceSpending]
+    codex: CodexUse
+    paper_note: NonEmptyText
+    link: Link
+
+    @model_validator(mode="after")
+    def _services(self):
+        if [item.service for item in self.services] != list(SPENDING_SERVICES):
+            raise ValueError("services lists Perplexity, then Jev")
+        return self
+
+
 # --- Decisions, check-ins, prompt facts, notices, links ------------------------------------
 
 
@@ -1092,6 +1271,7 @@ class Links(_Contract):
 class HQSnapshot(_Contract):
     """``GET /api/v1/hq`` response and the page's JSON island."""
 
+    _omit_not_null = frozenset({"ai_spending"})
     schema_: Literal["trade-graph.hq.v1"] = Field(alias="schema")
     as_of: ISO
     poll_seconds: Literal[30]
@@ -1107,6 +1287,7 @@ class HQSnapshot(_Contract):
     story: Story
     money: MoneyBlock
     market: list[MarketItem]
+    ai_spending: AiSpending | None = None  # T40; additive, may be omitted, never null
     decisions: list[DecisionCard]
     checkins: Checkins | None  # null unless owner
     prompt_facts: PromptFacts

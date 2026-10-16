@@ -2,7 +2,7 @@
 
 ``snapshot()`` builds one ``trade-graph.hq.v1`` document (``api/hq_contract.py``)
 inside a single database snapshot. It reads only bounded records (``hq_facts``) and
-the 60-second money cache (``hq_money``); it never calls the activity, live or
+the 60-second money and AI spending caches (``hq_money``, ``hq_spending``); it never calls the activity, live or
 health projections, the service controller, or a provider (spec §B.9).
 
 Wiring (WP4, ``api/app.py``)::
@@ -24,7 +24,7 @@ from typing import Annotated
 
 from fastapi import HTTPException, Query, Request
 
-from trade_graph.api import controls, hq_calendar, hq_facts, hq_money, hq_state, hq_story, live
+from trade_graph.api import controls, hq_calendar, hq_facts, hq_money, hq_spending, hq_state, hq_story, live
 from trade_graph.api.auth import csrf_for_token
 from trade_graph.api.hq_contract import (
     CALENDAR_DAYS_DEFAULT,
@@ -82,7 +82,8 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
         now = runtime.clock.now()
         p, checkins = _projection(runtime, viewer, now, calendar_days)
         items = checkins["items"] if checkins["available"] else []
-        attention = hq_state.attention(p, items)
+        spending = hq_spending.report(runtime, now)
+        attention = hq_state.attention(p, items, hq_spending.attention(spending))
         checkin_block = hq_state.checkins_block(p)
         barriers = []
         if p.can_act and p.profile != "RUNNING":
@@ -92,7 +93,7 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
                                checkins=items)
         since, _ = hq_state.prompt_since(p)
         counts = hq_facts.period_counts(runtime.database, runtime.portfolio_id, since, now)
-        return {
+        result = {
             "schema": SCHEMA, "as_of": p.as_of, "poll_seconds": POLL_SECONDS, "mode": p.mode,
             "account": hq_state.account(p), "viewer": hq_state.viewer(p),
             "now": hq_state.now_block(p, attention), "team": hq_state.team(p), "attention": attention,
@@ -103,6 +104,9 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
             "prompt_facts": hq_state.prompt_facts(p, attention, story["items"], money, counts),
             "notices": hq_state.notices(p), "links": hq_state.links(p),
         }
+        if spending is not None:  # T40: additive; left out (never invented) when the records can't be read
+            result["ai_spending"] = hq_spending.block(spending, paper=p.paper)
+        return result
 
 
 def story_page(runtime, viewer: Viewer, *, before: str, limit: int = STORY_MAX_ITEMS) -> dict:

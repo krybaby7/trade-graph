@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from trade_graph.adapters.persistence.activation_schema import STATEMENTS as ACTIVATION_STATEMENTS
+from trade_graph.adapters.persistence.ai_spending_schema import migration as ai_spending_migration
 from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as BUDGET_ORIGIN_STATEMENTS
 from trade_graph.adapters.persistence.coin_scan_schema import COIN_SCAN_STATEMENTS
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
@@ -470,6 +471,7 @@ STATEMENTS.append(("0028", WEB_RESEARCH_STATEMENTS))
 STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
 STATEMENTS.append(("0030", PRACTICE_RANGE_STATEMENTS))
 STATEMENTS.append(("0031", COIN_SCAN_STATEMENTS))
+STATEMENTS.append(ai_spending_migration())  # 0032, W2-C (T40)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

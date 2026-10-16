@@ -497,6 +497,41 @@ body.hq-page .hq-at-90 { left: 90%; }
 body.hq-page .hq-at-95 { left: 95%; }
 body.hq-page .hq-at-100 { left: 100%; }
 
+/* --- AI spending (T40) ----------------------------------------------------------------------------- */
+/* Lists that wrap instead of tables, so a phone never scrolls sideways; colours are the theme tokens. */
+
+body.hq-page .hq-spend { min-width: 0; margin: 0 0 1rem; }
+body.hq-page .hq-spend + .hq-spend { padding-top: 0.85rem; border-top: 1px solid var(--border); }
+body.hq-page .hq-spend-headline { margin: 0 0 0.45rem; font-weight: 600; overflow-wrap: anywhere; }
+body.hq-page .hq-spend-alert {
+  display: flex; align-items: flex-start; gap: 0.4rem; margin: 0 0 0.5rem; padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border); border-radius: var(--hq-radius-small); background: var(--surface-soft);
+  color: var(--muted); font-size: 0.9375rem;
+}
+body.hq-page .hq-spend-alert .hq-icon { flex: none; margin-top: 0.2rem; color: var(--accent); }
+body.hq-page .hq-spend-alert[data-state="passed"], body.hq-page .hq-spend-alert[data-state="maybe_passed"] {
+  border-color: var(--warning); background: var(--warning-soft); color: var(--text); font-weight: 600;
+}
+body.hq-page .hq-spend-alert[data-state="passed"] .hq-icon,
+body.hq-page .hq-spend-alert[data-state="maybe_passed"] .hq-icon { color: var(--warning); }
+body.hq-page .hq-spend-credit, body.hq-page .hq-spend-limit { margin: 0 0 0.5rem; font-size: 0.9375rem; overflow-wrap: anywhere; }
+body.hq-page .hq-spend-lines { display: grid; gap: 0.4rem; margin: 0.5rem 0; padding: 0; list-style: none; }
+body.hq-page .hq-spend-line {
+  min-width: 0; padding: 0.5rem 0.7rem; border: 1px solid var(--border); border-radius: var(--hq-radius-small);
+  background: var(--surface-soft);
+}
+body.hq-page .hq-spend-name { margin: 0 0 0.2rem; font-weight: 700; }
+body.hq-page .hq-spend-line > .hq-muted { margin: 0; font-size: 0.9375rem; }
+body.hq-page .hq-spend-amounts { display: flex; flex-wrap: wrap; gap: 0.15rem 1rem; margin: 0; }
+body.hq-page .hq-spend-amount { display: flex; flex-wrap: wrap; gap: 0 0.35rem; min-width: 0; }
+body.hq-page .hq-spend-amount dt { color: var(--muted); font-size: 0.9375rem; }
+body.hq-page .hq-spend-amount dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 650; }
+body.hq-page .hq-spend > .hq-muted { margin: 0.3rem 0 0; font-size: 0.9375rem; }
+body.hq-page .hq-spend-note {
+  margin: 0.25rem 0 0.4rem; padding: 0.6rem 0.8rem; border-left: 4px solid var(--success);
+  border-radius: var(--hq-radius-small); background: var(--surface-soft); font-weight: 650;
+}
+
 /* --- Market weather -------------------------------------------------------------------------------- */
 
 body.hq-page .hq-market-grid { display: grid; gap: 0.6rem; }

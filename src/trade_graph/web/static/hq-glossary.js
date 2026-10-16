@@ -62,6 +62,15 @@
       why: "Keeps you in the loop.", example: "", href: ""},
     review_prompt: {term: "Review prompt", meaning: "Ready-made text to paste into your review chat.",
       why: "Asks the right questions without changing anything.", example: "", href: ""},
+    estimated_cost: {term: "Estimated (a cost)", meaning: "A call charged at the most it could cost, because its use was never reported.",
+      why: "It may have cost less; it is never counted as free.", example: "", href: "/costs"},
+    unresolved_cost: {term: "Not known yet (a cost)", meaning: "A call whose use hasn't been reported yet, counted at the most it could cost.",
+      why: "Unknown is never shown as zero.", example: "Up to $0.02 (1 call).", href: "/costs"},
+    testing_alert: {term: "Testing alert", meaning: "The amount at which HQ tells you how much AI testing has cost so far.",
+      why: "It's an alert only: nothing pauses.", example: "Perplexity: $20.", href: "/costs"},
+    prepaid_credit: {term: "Prepaid credit", meaning: "Money you loaded on an AI provider's account in advance.",
+      why: "HQ shows spending since you last checked it; the provider's own page has the exact balance.", example: "",
+      href: "/costs"},
   });
 
   // Room id → why the room matters (§D.12). Job lines come from the server.
@@ -91,10 +100,12 @@
     story: {title: "Story", text: "Everything here comes from saved records. 'In their words' quotes are short summaries the departments wrote."},
     money: {title: "Money", text: "Practice money and real costs are kept apart. Unknown is never shown as zero."},
     decide: {title: "Decide", text: "Every button shows what will happen first and asks you to confirm. HQ never acts on its own."},
+    spending: {title: "AI spending", text: "Real costs of paid AI from receipts, kept apart from practice money. Costs not known yet are never shown as zero. Alerts never pause anything."},
   });
   const SECTION_HELP_LIVE = Object.freeze({
     ...SECTION_HELP,
     money: {title: "Money", text: "Account money and real costs are kept apart. Unknown is never shown as zero."},
+    spending: {title: "AI spending", text: "Real costs of paid AI from receipts. Account gains are never counted against them. Costs not known yet are never shown as zero. Alerts never pause anything."},
   });
 
   const isLive = () => HQ.snapshot()?.mode === "live";

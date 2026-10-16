@@ -1292,6 +1292,127 @@
     },
   });
 
+  // --- AI spending (T40): real costs from receipts per department, the testing alert and the prepaid credit ---
+  // Every figure and sentence comes from the server (contract ai_spending). A part that is null has no call of
+  // that kind and is left out; an unresolved hold that can't be valued says so. Nothing here is ever "$0.00"
+  // for a cost that isn't known, and a cost under half a cent reads "under $0.01".
+
+  const underACent = value => Number(value?.amount) > 0 && Number(value?.amount) < 0.005;
+  function spendMoney(value) {
+    if (!value || typeof value.display !== "string") return null;
+    return underACent(value) ? el("span", "hq-money", "under $0.01") : money(value);
+  }
+  function spendAmounts(amounts) {
+    const box = el("dl", "hq-spend-amounts");
+    const add = (label, ...value) => {
+      const item = el("div", "hq-spend-amount");
+      const name = el("dt", "");
+      name.append(label);
+      const data = el("dd", "");
+      data.append(...value);
+      item.append(name, data);
+      box.append(item);
+    };
+    if (amounts.actual) add("From receipts", spendMoney(amounts.actual));
+    if (amounts.estimated) add(term("estimated_cost", "Estimated"), spendMoney(amounts.estimated));
+    const open = HQ.count(amounts.unresolved_calls) || 0;
+    if (open > 0) {
+      const held = spendMoney(amounts.unresolved);
+      if (held) add(term("unresolved_cost", "Not known yet"), ...(underACent(amounts.unresolved) ? [] : ["up to "]), held,
+        ` (${plural(open, "call")})`);
+      else add(term("unresolved_cost", "Not known yet"), `${plural(open, "call")}, cost can't be worked out yet`);
+    }
+    add("Calls", el("span", "hq-num", str(HQ.count(amounts.calls) ?? "Not known")));
+    return box;
+  }
+  function spendService(service) {
+    const box = el("section", "hq-spend");
+    box.dataset.service = str(service.service);
+    box.dataset.status = str(service.status);
+    box.append(el("h3", "hq-subhead", str(service.name)));
+    if (hasText(service.headline)) box.append(textEl("p", "hq-spend-headline", service.headline));
+    const alert = obj(service.alert);
+    if (hasText(alert.text)) {
+      const note = el("p", "hq-spend-alert");
+      note.dataset.state = str(alert.state);
+      note.append(icon(alert.state === "below" ? "sev-info" : "sev-watch", "hq-icon hq-icon-small"), " ");
+      renderText(note, alert.text);
+      box.append(note);
+    }
+    if (hasText(service.monthly_limit?.text)) box.append(textEl("p", "hq-spend-limit", service.monthly_limit.text));
+    if (hasText(service.credit?.text)) box.append(textEl("p", "hq-spend-credit", service.credit.text));
+    const lines = list(service.lines);
+    if (lines.length) {
+      const rows = el("ul", "hq-spend-lines");
+      for (const line of lines) {
+        const row = el("li", "hq-spend-line");
+        row.dataset.line = str(line.id);
+        row.append(el("p", "hq-spend-name", str(line.name)), spendAmounts(obj(line.amounts)));
+        rows.append(row);
+      }
+      box.append(rows);
+    }
+    // Explanations follow from the figures themselves, so the server sends no copy for them.
+    const total = obj(service.total);
+    const month = obj(service.monthly_limit?.month);
+    if ((HQ.count(total.unresolved_calls) || 0) > 0 || (HQ.count(month.unresolved_calls) || 0) > 0) {
+      box.append(el("p", "hq-muted", "Calls whose use isn't known yet count at the most they could cost, never as free."));
+    }
+    if (total.estimated) {
+      box.append(el("p", "hq-muted", "Estimated costs are calls charged at the most they could cost, because their use was never reported."));
+    }
+    const tests = HQ.count(service.synthetic_calls) || 0;
+    if (tests > 0) {
+      box.append(el("p", "hq-muted", tests === 1 ? "1 test call with made-up answers isn't counted." :
+        `${tests} test calls with made-up answers aren't counted.`));
+    }
+    return box;
+  }
+  function codexUse(codex) {
+    const box = el("section", "hq-spend hq-codex");
+    box.append(el("h3", "hq-subhead", "AI allowance by department"));
+    if (hasText(codex.text)) box.append(textEl("p", "hq-spend-headline", codex.text));
+    const lines = list(codex.lines);
+    if (lines.length) {
+      const rows = el("ul", "hq-spend-lines");
+      for (const line of lines) {
+        const row = el("li", "hq-spend-line");
+        row.dataset.line = str(line.id);
+        const turns = HQ.count(line.turns) ?? 0;
+        const share = percentText(line.share_percent);
+        const words = [plural(turns, "turn"), share ? `${share} of the team's reported use` : "use not reported"];
+        const unreported = HQ.count(line.unreported_turns) || 0;
+        if (unreported > 0 && share) words.push(`${unreported} not reported`);
+        row.append(el("p", "hq-spend-name", str(line.name)), el("p", "hq-muted", words.join(" · ")));
+        rows.append(row);
+      }
+      box.append(rows);
+    }
+    box.append(el("p", "hq-muted", "The allowance is shared with your own ChatGPT use, so each share is of the team's reported use, not of the allowance."));
+    const unreported = HQ.count(codex.unreported_turns) || 0;
+    if (unreported > 0) {
+      box.append(el("p", "hq-muted", unreported === 1 ? "1 turn didn't report its use; shares count only what was reported." :
+        `${unreported} turns didn't report their use; shares count only what was reported.`));
+    }
+    return box;
+  }
+
+  HQ.view("spending", {
+    deps: snapshot => [snapshot.ai_spending ?? null],
+    render(root, snapshot) {
+      const block = snapshot.ai_spending;
+      if (!block || typeof block !== "object") {
+        root.append(el("p", "hq-muted", "AI spending isn't available from the server right now. The Costs page has every recorded cost."));
+        return;
+      }
+      for (const service of list(block.services)) if (service && typeof service === "object") root.append(spendService(service));
+      root.append(codexUse(obj(block.codex)));
+      if (hasText(block.paper_note)) root.append(textEl("p", "hq-spend-note", block.paper_note));
+      const more = obj(block.link);
+      if (more.href) root.append(link(more.href, `${str(more.label)} ›`, "hq-more-link"));
+    },
+  });
+
   const TREND = Object.freeze({below: "↘", above: "↗", level: "→", not_enough_history: "·"});
   const COIN = Object.freeze({"BTC/USD": "Bitcoin", "ETH/USD": "Ether"});
   HQ.view("market", {

@@ -14,7 +14,7 @@ export const STATIC = process.env.HQ_STATIC_DIR || path.join(ROOT, "src", "trade
 export const FIXTURES = process.env.HQ_FIXTURES_DIR || path.join(ROOT, "tests", "fixtures", "hq");
 export const SCRIPTS = ["hq-core.js", "hq-glossary.js", "hq-render.js", "hq-prompts.js", "hq-decide.js", "hq-checkins.js"];
 export const VIEWS = ["welcome", "notices", "now", "attention", "upnext", "map", "calendar", "checkins", "story", "money",
-  "allowance", "market", "decide", "review", "bills", "prompt", "help"];
+  "allowance", "spending", "market", "decide", "review", "bills", "prompt", "help"];
 
 export function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(FIXTURES, `snapshot_${name}.json`), "utf8"));
@@ -363,7 +363,7 @@ function buildPage(doc) {
     if (root.querySelector(`[data-hq="${name}"]`)) continue;
     const panel = el("article", {class: "hq-panel"}, el("div", {"data-hq": name, ...(name === "checkins" ? {"data-hq-hide-empty": ""} : {})}));
     root.querySelector(name === "calendar" || name === "checkins" ? "#calendar" : name === "story" ? "#story" :
-      ["money", "allowance", "market"].includes(name) ? "#money" : ["decide", "review", "bills", "prompt", "help"].includes(name) ? "#decide" : "#hq")
+      ["money", "allowance", "spending", "market"].includes(name) ? "#money" : ["decide", "review", "bills", "prompt", "help"].includes(name) ? "#decide" : "#hq")
       .append(panel);
   }
   const dialog = el("dialog", {class: "hq-sheet", "data-hq-sheet": ""}, el("div", {class: "hq-sheet-content", "data-hq-sheet-content": ""}));

@@ -1208,6 +1208,61 @@ ALLOWANCE_LEFT: Final = {
 ALLOWANCE_REFILLS: Final = "Refills "
 ALLOWANCE_LINE: Final = "New AI work stops at {line}% (it needs more than that)."
 
+# --- AI spending (T40, D175-D179) ------------------------------------------------------------
+# Real costs of paid AI from receipts, in USD. Unknown is "not known yet", never zero. Alerts pause nothing.
+
+SPENDING: Final = {
+    "service": {"perplexity": "Perplexity web research", "jev": "Jev news alarm"},
+    "service_short": {"perplexity": "Perplexity", "jev": "Jev news alarm"},
+    "provider_page": {"perplexity": "Perplexity", "jev": "TypeSafe"},
+    "line": {"news_alarm": "News alarm", "other": "Other"},
+    "off": {"perplexity": "No Perplexity research has run yet.",
+            "jev": "No Jev checks yet. They start once you install a Jev key."},
+    "total": "Testing total so far: ",
+    "total_ended": ("Testing ran until ", ": "),
+    "from_receipts": " from receipts",
+    "nothing": "nothing",
+    "plus": ", plus ",
+    "up_to": "up to ",
+    "under_a_cent": "under $0.01",
+    "not_known_yet": " not known yet",
+    "plus_unknown": ", plus calls whose cost can't be worked out yet",
+    "no_limit": " No spending limit while testing.",
+    "alert_below": ("HQ alerts you here at ", ". It's an alert only: nothing pauses."),
+    "alert_maybe": ("Testing spending may have passed your ", " alert: ", " known", " not known yet. Nothing was "
+                    "paused."),
+    "alert_maybe_unknown": ("Testing spending may have passed your ", " alert: ", " known, plus calls whose cost "
+                            "can't be worked out yet. Nothing was paused."),
+    "alert_passed": ("Testing spending passed your ", " alert: ", " so far. Nothing was paused."),
+    "credit_none": "Prepaid credit: not recorded here. Your {provider} account page shows it.",
+    "credit_head": ("Prepaid credit: ", " when you checked it on ", ". Since then "),
+    "credit_left": (", so about ", " is left."),
+    "credit_used": ", so the recorded credit looks used up. Check your account page.",
+    "credit_unknown": ", plus calls whose cost can't be worked out yet.",
+    "credit_info": (" Information only: HQ never stops anything at this amount; {provider} stops calls itself when "
+                    "the credit runs out."),
+    "monthly": ("This month so far: ", " of your ", " monthly limit (calls not known yet count at the most they "
+                "could cost). Reaching it pauses Research and Leader news rounds only; the Trader and protection "
+                "continue."),
+    "paper_note": ("Practice money never pays for AI. These are real costs from receipts, paid from your provider "
+                   "credit and kept apart from practice results."),
+    "paper_note_live": "These are real costs from receipts. Account gains are never counted against them here.",
+    "codex": ("Last 7 days: {n} turn on your ChatGPT subscription.", "Last 7 days: {n} turns on your ChatGPT "
+              "subscription."),
+    "codex_none": "No turns on your ChatGPT subscription in the last 7 days.",
+    "attention_passed": ("{service} testing spending passed your ", " alert"),
+    "attention_maybe": ("{service} testing spending may have passed your ", " alert"),
+    "attention_why": " so far during testing, from receipts.",
+    "attention_why_open": (" known so far during testing", " not known yet."),
+    "attention_why_unknown": " known so far during testing, plus calls whose cost can't be worked out yet.",
+    "attention_consequence": "Nothing is paused: it's an alert only.",
+    "attention_how": {
+        "perplexity": ("When you're ready, set a monthly limit of about 1.5 times the monthly cost HQ shows. "
+                       "Until then testing has no limit."),
+        "jev": "Nothing to do unless you want to switch Jev checks off.",
+    },
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {
@@ -1222,6 +1277,8 @@ SECTION_HELP: Final = {
               "departments wrote."),
     "money": "Practice money and real costs are kept apart. Unknown is never shown as zero.",
     "decide": "Every button shows what will happen first and asks you to confirm. HQ never acts on its own.",
+    "spending": ("Real costs of paid AI from receipts, kept apart from practice money. Costs not known yet are "
+                 "never shown as zero. Alerts never pause anything."),
 }
 NO_RECORDED_ACTIVITY: Final = "No recorded activity"
 
