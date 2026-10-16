@@ -12,7 +12,7 @@ and a monthly limit you set later pauses only this research, never the Trader.
 
 Branch: `claude/blissful-cray-21g9y3` (this session's branch; the plan names
 `claude/t36-perplexity`), code head `9efcccc` (this handoff is the last commit), based on
-`claude/day-trader-engine-20261012` at `435db71`. Pull request: not opened yet, because this session's GitHub access refused every write (403 on `git push` and on branch creation through the API); all commits are on the local branch, waiting for access.
+`claude/day-trader-engine-20261012` at `435db71`. Pull request: https://github.com/krybaby7/trade-graph/pull/4 (opened after the owner fixed GitHub write access; earlier pushes were refused with 403).
 
 ## What was built
 
@@ -238,10 +238,6 @@ Branch: `claude/blissful-cray-21g9y3` (this session's branch; the plan names
   in any installation yet).
 - `planning/model-prices.json` is one line, so any other package adding a
   price entry will conflict textually; **integrator** keeps every entry.
-- Push and pull request: this session's GitHub access refused writes (403 on
-  `git push` and on branch creation through the API). **Owner**: reconnect
-  GitHub at claude.ai and make sure the Claude GitHub App is installed on the
-  repository; then the branch can be pushed and the pull request opened.
 - Cloud environment notes for **W1-E / integrator**: the default `python3` in
   the cloud container is 3.13, so `uv sync --frozen --group dev` builds a 3.13
   environment unless `--python 3.12` is given; with the system 3.12 the plugin
