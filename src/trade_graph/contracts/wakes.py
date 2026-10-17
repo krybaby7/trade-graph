@@ -64,6 +64,9 @@ DAY_BOUND_KINDS: frozenset[str] = frozenset({"day_start", "focus_step", "day_pla
 RIDE_ALONG_KINDS: frozenset[str] = frozenset({"feed_restored"})
 # Kinds software sources outside the engine may submit (``EventEngine.notify``).
 SOFTWARE_KINDS: frozenset[str] = frozenset({"news_alarm"})
+# A wake made only of these keeps the department's check-in in force when its answer names none (T45, D228): a news
+# alarm only adds wake-ups and never moves a department's own next look.
+CHECK_IN_KEEPING_KINDS: frozenset[str] = frozenset({"news_alarm"}) | RIDE_ALONG_KINDS
 
 WakePurpose = Literal["focus", "day_plan", "day_end_review", "event", "check_in", "task"]
 WAKE_PURPOSES: tuple[WakePurpose, ...] = ("focus", "day_plan", "day_end_review", "event", "check_in", "task")
@@ -538,6 +541,7 @@ def is_obsolete(purpose: str, trading_day_end: datetime, now: datetime) -> bool:
 
 
 __all__ = [
+    "CHECK_IN_KEEPING_KINDS",
     "CYCLE_STEPS", "DAY_BOUND_KINDS", "DEPARTMENTS", "MAX_DAY_PLANS", "MAX_FOCUS_COINS", "MAX_WAKE_REQUESTS",
     "RIDE_ALONG_KINDS", "SOFTWARE_KINDS", "TRIGGER_KINDS", "TRIGGER_STATUSES", "WAKE_CONTRACT_VERSION",
     "WAKE_PURPOSES", "WAKE_STATUSES", "ActivePlan", "AllowanceReading", "AllowanceWindow", "AppliedPlan", "CheckIn",

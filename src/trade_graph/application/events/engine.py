@@ -41,9 +41,11 @@ from trade_graph.application.events.cycle import DayCycle
 from trade_graph.application.events.sources import TriggerSources
 from trade_graph.application.events.store import OpenWake, StoredTrigger, WakeStore, new_id
 from trade_graph.application.focus_scope import focus_scope_refusals
+from trade_graph.application.news_wakes import NewsWakeRouter
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.contracts.alarms import REFERENCE_PATTERN
 from trade_graph.contracts.wakes import (
+    CHECK_IN_KEEPING_KINDS,
     DAY_BOUND_KINDS,
     DEPARTMENTS,
     SOFTWARE_KINDS,
@@ -111,7 +113,7 @@ class EventEngine:
                  queue: AlarmQueue | None = None, scan_store: CoinScanStore | None = None,
                  task_settings: Callable[[str, str], TaskSettings] | None = None,
                  execution_lock: threading.RLock | None = None, day_plans: DayPlans | None = None,
-                 daily_cycle: bool = True) -> None:
+                 daily_cycle: bool = True, news_wakes: bool = True) -> None:
         wanted = set(departments)
         unknown = wanted - set(DEPARTMENTS)
         if unknown:
@@ -132,6 +134,9 @@ class EventEngine:
         self.day_plans = day_plans or DayPlans(execution)
         self.scan_store = scan_store or CoinScanStore(self.database, self.clock)
         self.sources = TriggerSources(self)
+        # T45: news alarms (T44's would-wake verdicts) are routed as a trigger source; the owner's switch decides
+        # whether a route only records whom it would wake (shadow, shipped) or adds a news_alarm trigger (live).
+        self.news = NewsWakeRouter(self.database, self.clock, execution) if news_wakes else None
         self.cycle_runner = DayCycle(self, scan=scan) if daily_cycle else None
         self._lock = threading.RLock()
 
@@ -181,6 +186,8 @@ class EventEngine:
                 guarded("watcher", self.watcher.tick)
             closed = guarded("close", self._close_finished) or 0
             triggers = guarded("collect", lambda: self.sources.collect(portfolios)) or 0
+            if self.news is not None:  # its own part: a news failure never holds back another trigger or wake
+                triggers += guarded("news", lambda: self.news.collect(self, portfolios)) or 0
             if dispatch and self.cycle_runner is not None:
                 triggers += guarded("cycle", lambda: self.cycle_runner.run(portfolios)) or 0
             if dispatch:
@@ -271,8 +278,10 @@ class EventEngine:
             if self._alarm_batch(wake):
                 self.queue.acknowledge(wake.wake_id)
             self.store.deliver(wake.wake_id)
-            # An outside task that says nothing about wakes leaves the department's chosen check-in as it is.
-            check_in = self._check_in(wake, outcome) if raw is not None or wake.origin == "engine" else None
+            # An outside task that says nothing about wakes leaves the department's chosen check-in as it is, and so
+            # does a wake made only by news alarms whose answer names no time (T45, D228: a news alarm only adds
+            # wake-ups; it never moves a department's own next look).
+            check_in = None if self._keeps_check_in(wake, outcome, raw) else self._check_in(wake, outcome)
             focus_id, focus_refused = self._focus(wake, outcome, obsolete)
             requested = self._requests(wake, outcome, notes)
             plans = outcome.day_plans
@@ -307,6 +316,13 @@ class EventEngine:
             self._steps_after(wake, done=False, record=None, reason=str(reason)[:500])
 
     # --- applying an answer ---------------------------------------------------------------------------------------
+
+    @staticmethod
+    def _keeps_check_in(wake: OpenWake, outcome: WakeOutcome, raw: Any) -> bool:
+        if wake.origin != "engine":
+            return raw is None
+        reasons = set(wake.context.get("reasons") or ())
+        return outcome.check_in is None and bool(reasons) and reasons <= CHECK_IN_KEEPING_KINDS
 
     def _check_in(self, wake: OpenWake, outcome: WakeOutcome) -> str:
         request = outcome.check_in
