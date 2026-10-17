@@ -207,6 +207,11 @@ def collect_candles(store: CandleStore, clock: Clock, transport: TextTransport, 
     return report
 
 
+def latest_recorded_time(store: CandleStore, source: CandleSource) -> datetime | None:
+    """The latest start or finish time of any recorded run of this source (the clock-regression guard reads it)."""
+    return _latest_recorded_time(store, source)
+
+
 def _latest_recorded_time(store: CandleStore, source: CandleSource) -> datetime | None:
     """The latest start or finish time of any recorded run of this source. The run table has a few rows per day."""
     rows = store.database.query(
