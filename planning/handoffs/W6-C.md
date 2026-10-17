@@ -10,8 +10,8 @@ L3. Nothing needs a decision from you now; after L3, please look at the Calendar
 and after the first week use the wake counts at the top of the Wake log to decide on the 40% allowance floor (D138
 item 8).
 
-Branch: `claude/t39-hq-wake-log`, head: the commit that adds this line; code at `f322dde`. Pull request: (added after
-it is opened).
+Branch: `claude/t39-hq-wake-log`, head: the commit that adds this line; code at `f322dde`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/15 (not merged).
 
 ## What was built
 
