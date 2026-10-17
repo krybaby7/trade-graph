@@ -10,7 +10,7 @@ one question for later (whether the confirmation fix should also apply with real
 live pilot, and everything was tested only with made-up prices, without any key, paid service or exchange.
 
 Branch: `claude/c4-trader-exit-tools`, head: the commit that adds this line; code at `f69a085`. Pull request:
-__PR__.
+https://github.com/krybaby7/trade-graph/pull/22.
 
 ## What was built
 
