@@ -9,8 +9,8 @@ bill, and phones no longer download the chart library again on every page load. 
 after the install (step L3) please open the Money tab once on your phone and iPad, because it was checked only in a
 test browser with made-up numbers.
 
-Branch: `claude/c5-hq-loss-plans-scorecard`, head: the commit that adds this line; code at `c8df666`. Pull request:
-to be added once it is opened.
+Branch: `claude/c5-hq-loss-plans-scorecard`, head: the commit that adds this line (the handoff itself first committed in `6a6c0ad`); code at `c8df666`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/20 (not merged).
 
 ## What was built
 
