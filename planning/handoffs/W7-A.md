@@ -9,7 +9,7 @@ shadow log holds real headlines with real Jev answers (step 17 of the install ch
 tested only with invented headlines and scripted Jev answers; to get real evidence the 5-minute news poll still has
 to run next to your installation with your Jev key, which needs a reviewed network route at L3.
 
-Branch: `claude/t45-news-wakes`, head: the commit that adds this line; code at `b7d3782` (the final runs below are at that commit). Pull request: <PR>.
+Branch: `claude/t45-news-wakes`, head: the commit that adds this line; code at `b7d3782` (the final runs below are at that commit). Pull request: https://github.com/krybaby7/trade-graph/pull/19 (not merged).
 
 ## What was built
 
