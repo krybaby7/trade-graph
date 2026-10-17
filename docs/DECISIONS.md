@@ -1532,3 +1532,295 @@ evidence is kept. State migration 0034 (W4-A) follows 0033, and Alembic runs
   range today) nothing changes. Reason: the reproduced `decimal.Inexact` after
   26 volume-less quotes, venues fill whole lots, and resting day-plan entries
   make volume-less crossings common.
+
+Cloud wave 5 (D190–D204, 2026-10-17). The wave 5 integration copied these
+implementation defaults from `planning/handoffs/W5-A.md` (D190–D194), `W5-B.md`
+(D195–D199) and `W5-C.md` (D200–D204), where each package's evidence is kept.
+State migration 0035 (W5-A) follows 0034, and Alembic runs 0034 → 0035 with one
+head; W5-B's 0036 and W5-C's 0037 are unused.
+
+- **D190 (2026-10-17, implementation default for T35): triggers, wakes and
+  coalescing.** Every reason to wake a department is a trigger recorded once
+  per source event (`source_ref` unique: a fill, an alarm delivery, a check-in,
+  a day step, a request). A department of a portfolio has at most one open wake
+  (SQL); dispatch gives a department with a fresh pending trigger one wake with
+  all its pending triggers, and triggers arriving meanwhile wait for the next
+  wake (D116 batching). A wake that ends without the department seeing its
+  batch (failed turn, obsolete) puts its alarm batch back in T33's queue and
+  its triggers back as `carried`: they join the next wake but do not start one
+  by themselves, so a failing turn is not retried in a loop; the day-step
+  triggers of a failed wake expire with the step recorded as failed. A lost
+  feed (`feed_lost`) wakes the owner of the dependent alarms; its return
+  (`feed_restored`) rides with the next wake (W1-D left this to W5-A). Each
+  wake is its own root task with the allocation, attempt bound and version pin
+  of a scheduled task, so the T05 delegation bounds apply inside a wake and
+  never to the number of wakes; nothing limits triggers or wakes. Department
+  root tasks made outside the engine (Secretary routing, owner requests) are
+  recorded as `task` wakes so the wake log is complete; they are not coalesced,
+  their trigger is delivered whatever their outcome, and they change a check-in
+  only when their answer names one. Reason: T35's acceptance "coalescing may
+  batch wakes but never drops them", D116, W1-D's queue contract.
+
+- **D191 (2026-10-17, implementation default for T35): check-ins and the daily
+  cycle.** A department's answer names its next check-in (`at_utc`) or none,
+  which means the next day start (D123); the newest check-in is in force, a
+  past time is due at once, and nothing limits how soon. At the owner's
+  trading-day start (00:00 UTC, D138 item 6; the money-limit day start when
+  recorded) each portfolio's day runs once, each step recorded once:
+  `day_start` (the Leader, Optimisation and Learning get a `day_start` trigger
+  unless their check-in is a named time today or later); `scan` (one live scan
+  by the configured `CoinScanStep`, else the newest recorded live scan,
+  labelled; a failed scan is recorded and the day goes on); `focus` (Research
+  is woken with the shortlist); `day_plan` (the Trader is woken once the focus
+  step finished, whatever its result); at the day end `day_end_review`
+  (Learning, late after downtime, only for days whose start ran). Unfinished
+  steps of an ended day are recorded as failed; a missed day is not replayed.
+  Without a department its step is `skipped`. The hourly scan inside the
+  service stays with W6-D (C2), which owns the in-service price collector; T35
+  needs only the day start's scan. Reason: the T35 deliverables, D115, D123,
+  D138 item 6.
+
+- **D192 (2026-10-17, implementation default for T35): department answers and
+  the Trader's day-plan turn.** A department answers under `wake_outcome` in
+  its handler output (`WakeOutcome`); the engine applies it after the task's
+  result is saved, so a crash re-applies it idempotently. Day plans come only
+  from the Trader and are installed one per coin with
+  `DayPlans.install(request_id="wake:<wake_id>:<symbol>")` under the service's
+  execution lock; a refusal is recorded (error code, reason, T34's
+  `day_plan_refused`) and nothing else is retried. Focus coins come only from
+  Research and must be on the shortlist of the day's scan when one exists
+  (D120: Research picks from the about-10 candidates); a selection with a coin
+  outside it is refused as a whole and recorded; no coins is a valid answer. A
+  focus revision outside the day-start step wakes the Trader. Wake requests
+  (any department, never to itself) carry a note that is data and grants
+  nothing; the Leader still never places or approves a trade. `TraderWakeReply`
+  and `ResearchFocusReply` are the provider-strict forms. Reason: AGENTS.md
+  (persist before effects, real Trader discretion, research is data), D121,
+  D138 item 5.
+
+- **D193 (2026-10-17, implementation default for T35): restart, obsolete wakes
+  and the allowance floor.** Triggers are written with their source cursor or
+  reference in one transaction; a wake with its task and claims in another; a
+  crash leaves nothing or everything, and a queued wake runs once after a
+  restart. A wake whose trading day ended before it ran is obsolete (a day-end
+  review never is): a queued task nobody started is cancelled by the next step,
+  a claimed one is skipped before any snapshot or paid attempt, and a turn that
+  ends after its trading day installs no plan (recorded `obsolete`); its events
+  are carried to the next wake. Wakes are recorded with the allowance reading
+  (`available`, `paused` or `unknown`; unknown is never plenty) whether or not
+  AI may run; under the floor (D98, D138 item 8) their tasks wait while
+  management, protection and protective exits go on. The contract and the
+  engine are protected paths. Reason: T35's acceptance ("restart neither loses
+  nor repeats a wake; obsolete wakes never become trades"; "the
+  subscription-allowance floor still pauses new AI while management
+  continues").
+
+- **D194 (2026-10-17, implementation default for T35): the records and the
+  switch.** State migration 0035 holds the engine's records as non-financial
+  orchestration tables (fills, intents and the ledger stay the books); its
+  CHECK lists are frozen in the migration and a test keeps them equal to the
+  contract, so a new trigger kind needs a new migration (`news_alarm` is
+  already in for W7-A). The engine is opt-in in `PaperService` (`event_engine=
+  EngineOptions(...)`); without it the service keeps its fixed schedules, so
+  existing installations and tests are unchanged. The installed subscription
+  service does not switch it on in this package, because the provider-backed
+  departments do not yet read `task["input"]["wake"]` or answer `wake_outcome`;
+  that needs the protected subscription context allowlist and the owner's
+  profile, so it is left to the next package and step L3. Reason: rule 7 (no
+  silent behaviour change of the running system), AGENTS.md (protected owner
+  configuration).
+
+- **D195 (2026-10-17, implementation default for T41): one pinned, vendored
+  release, loaded only when a chart is shown.** Lightweight Charts 5.2.1, the
+  standalone production build, is kept under
+  `web/static/vendor/lightweight-charts/` with its licence and notice (named
+  `.txt`, because the protected image accepts only known suffixes; `.txt` was
+  added there) and `VENDOR.json`; `scripts/vendor_lightweight_charts.py` is the
+  only way it changes and checks it offline. The page fetches it from HQ's own
+  origin with a pinned Subresource Integrity value the first time the Price
+  charts panel is on screen (an `IntersectionObserver`; on a phone, when the
+  Money tab opens), never on page load, because HQ sends `Cache-Control:
+  no-store` and a 198 KB script on every page load would cost phones for
+  nothing. No outside script or data request at runtime (the browser check saw
+  none). Reason: the T41 deliverable "pinned, vendored ... served from HQ's own
+  origin under the existing content security policy", and the policy stays
+  `script-src 'self'`.
+
+- **D196 (2026-10-17, implementation default for T41): the attribution is HQ's
+  own line, the library's logo is off.** The library's `attributionLogo`
+  injects a `<style>` element, which HQ's `style-src 'self'` refuses, and its
+  link carries `utm_source=<HQ's host and path>`, which would tell TradingView
+  the owner's private address. So it is off (`attributionLogo: false`), which
+  the library's own documentation allows when the link requirement is met
+  otherwise. Under every chart box the panel shows: "Charts drawn with
+  TradingView Lightweight Charts™ (Apache License 2.0). TradingView Lightweight
+  Charts™ · Copyright (c) 2025 TradingView, Inc." (the NOTICE text; upstream
+  types a Cyrillic "с" in "(с)", shown as a Latin "c"), a plain
+  `https://www.tradingview.com/` link (`rel="noopener noreferrer"`, no tracking
+  parameters) and links to the vendored licence and notice. The script draws no
+  chart when that line is missing. This link is the only outside address on the
+  page; `tests/test_hq_static.py` now allows exactly it. Reason: the T41
+  acceptance "the attribution link and licence notice are visible wherever a
+  chart is shown" and the README's licence section (S46).
+
+- **D197 (2026-10-17, implementation default for T41): what a chart shows, all
+  from saved records.** A separate endpoint, `GET /api/v1/hq/chart`, so the HQ
+  snapshot (65.9–76.1 KB of its 80 KB, W2-C) does not grow; the page asks only
+  while the panel is on screen and refreshes every minute. Coins: today's
+  day-plan coins, held coins (the ledger's open lots), coins with an armed
+  alarm (this portfolio or none), the newest live scan's shortlist if that scan
+  is under 24 hours old and ranked something (a newer failed scan means no
+  shortlist), then BTC/USD and ETH/USD; a coin not on the list is not charted.
+  Candles: the last 300 slots of the collector's source (`kraken_public_ohlc`,
+  what the Trader's indicators and alarms read) through `CandleStore.window`,
+  point in time as of now; a missing slot stays an empty gap; the chart ends at
+  the newest received candle when it is at most two slots behind (the collector
+  stores a candle seconds after it closes), otherwise at now, so a stopped feed
+  shows its empty slots. Indicators ("indicator outputs" in the acceptance):
+  the T27 engine's numbers (`compute_indicator`, 300 points) over the same
+  candles for the coin's day-plan indicators on this candle size and the
+  indicators its armed indicator alarms watch; a gap or a young coin withholds
+  the whole indicator, as for the Trader, and the legend says why; indicators
+  chosen for another size are named. Nothing is computed in the browser or by a
+  third party; `hq_chart.py` has no formula (checked with
+  `tests/indicator_guard.py`). Lines: armed alarms (quote and candle levels on
+  the prices; an indicator alarm on the prices for averages and bands, on its
+  own indicator's panel otherwise, or in words when that panel is not drawn);
+  open orders: day-plan resting entries (limit, with the planned stop and
+  target in words), safety exits (stop and take-profit), other open orders; an
+  order in `UNKNOWN`, `SUBMITTING` or `CANCEL_PENDING` is drawn and labelled
+  "being checked". Marks: the coin's fills and alarm fires inside the window
+  (the newest 200; the legend says when there were more). Alarm notes (model
+  text) are not shown. Prices, quantities and levels are exact decimal text;
+  indicator values are rounded to eight significant digits for drawing; only
+  the canvas turns text into numbers. Reading writes nothing (tested on both
+  databases). Older state databases without the alarm, day-plan or scan tables
+  still chart.
+
+- **D198 (2026-10-17, implementation default for T41): how the chart looks.** A
+  "Price charts" panel in the Money tab after Market weather (no new tab), with
+  a coin picker that says why each coin is listed and four candle-size buttons.
+  Candles are hollow when the price rose and filled when it fell (a shape, not
+  colour alone); colours come from the theme's tokens (`--success`, `--danger`,
+  `--accent`, `--warning`, `--muted`, `--text`), so light and dark follow the
+  Theme toggle and the system setting (the chart redraws on a change). Averages
+  and bands draw on the prices without labels (the legend names them; labels
+  crowded a phone), other indicators in their own panels below, the price panel
+  three times their height. Line styles: alarms dashed amber, resting buys
+  solid blue, stops dashed red, targets dashed green, other orders dotted; the
+  legend repeats each line in words with its style. The price scale stretches
+  to include resting buys, exits and other orders within a tenth of the newest
+  close, so the money at stake is on screen; alarm lines show once the price
+  nears them (all are in the legend). Times are in the viewer's time zone; a
+  readout under the chart shows the hovered or newest candle's exact saved
+  prices. The page keeps scrolling over the chart (no wheel or vertical-swipe
+  capture); drag sideways to look back, pinch or drag the time axis to zoom. No
+  inline style anywhere: heights come from CSS by the number of panels.
+
+- **D199 (2026-10-17, implementation default for T41): HQ only reads the candle
+  file.** The dashboard opens the file given by `--market-database` (default
+  `runtime/market_data.sqlite`) read-only on the first chart and again on later
+  charts after a refusal, so a file the collector creates later is picked up
+  without a restart. It refuses a missing file (never creates one), a file or
+  folder that is not private (the store's own 600/700 rule), a symlink, a file
+  that is not a candle file and one that still needs a candle-file upgrade
+  (never upgrades it); the chart then says why in plain words and still lists
+  the alarm and order levels. A live dashboard has no charts. Reason: AGENTS.md
+  (reads start nothing), D110 (cheap reads, no locks), and the candle store's
+  privacy rules (docs/CANDLE-STORE.md).
+
+- **D200 (2026-10-17, implementation default for T42): the period and the
+  valuation.** A scorecard covers `(start, end]` of one paper portfolio, read
+  from records stamped up to `end`. The default start is the opening deposit,
+  or the first BTC price in the account currency recorded after it (so holding
+  BTC is valued from the first moment); the default end is now (the command
+  refuses a future end). A deposit or withdrawal inside the period, or an
+  operating cost paid from the paper cash (an embedded expense), makes it
+  unscorable with the reason (a paper reset opens a new account,
+  10-PAPER-CAPITAL.md). Only cash in the account currency (the opening
+  deposit's, USD) and coins whose marks are in it are counted; anything else is
+  refused rather than converted at a guessed rate. The account is valued from
+  the ledger's own journal postings (`cash`, `cash:*`, `inventory`) and its
+  marks (the ledger's choice: the newest observed, the first recorded of equal
+  times): at the start as the ledger values it; coins already held then are
+  carried in as bought at the start price with no fee (`carried-in:<coin>`);
+  the equity curve has a point after every posting and at every new price of a
+  coin held; at the end each coin still held is valued as if sold at its mark
+  with the taker fee of the fee profile, the same terms holding BTC gets, and
+  that is the curve's last point (as D169 does for the practice range). The
+  running books must equal the ledger's own replay (`Ledger.books` valued at
+  the same prices) at both ends, or nothing is scored. A price older than 15
+  minutes (as D182 reads marks) or marked stale at the start or end makes the
+  scorecard `provisional` with each reason; a held coin with no price at all
+  makes it unscorable; moments when a held coin had no price yet are left out
+  of the curve and named. Reason: T42 "from the paper ledger ... over the same
+  period", AGENTS.md (unknown is not zero; the ledger is the books) and a fair
+  comparison with holding BTC.
+
+- **D201 (2026-10-17, implementation default for T42): ledger fills in the
+  shared sums.** The scorecard uses W2-A's `summarize`, `round_trips`,
+  `worst_drawdown`, `worst_losing_streak` and `hold_benchmark` unchanged
+  (D169). The only addition is `TradeFill.from_fill_record`: a fee in the quote
+  currency is the fee; a fee in the coin changes what is held exactly as the
+  books post it (a buy holds `quantity - fee`, a sell gives up `quantity +
+  fee`), is valued at the fill price and moves the principal with it, so `sold
+  - bought - fees` is the cash the trade made; a fee in a third asset is valued
+  at its identified rate and refused without one; a net rebate lowers a buy's
+  principal or raises a sell's, because fees paid are never negative. Fills are
+  ordered by fill time and ledger sequence; a late fill recorded inside the
+  period counts from the start. Reason: W2-A's handoff ("convert fills with
+  fees in another asset to quote-currency TradeFills before summing") and the
+  instruction to extend the sums, not fork them.
+
+- **D202 (2026-10-17, implementation default for T42): the comparisons and EUR
+  reporting.** Holding cash earns nothing (D127), so beating cash means a
+  result above zero after fees. Holding BTC spends the starting equity on BTC
+  at the ledger's newest BTC price in the account currency at or before the
+  start, with the taker fee, floored to the paper instrument's lot
+  (`instruments`, venue `paper`; 0.00000001 without one, as D167), and sells at
+  the newest price at or before the end with the fee. The fee profile is
+  `kraken-spot-starting-tier` (the paper broker's default, D146), the revision
+  in force on the start day, or the one named with `--cost-profile`; its
+  reference and hash are in the document. Without a BTC price at either end the
+  comparison is unavailable with the reason, never invented; an old or stale
+  BTC price makes the scorecard provisional. EUR reporting uses the reference
+  rate the books use (`Ledger.fx_rate`): the starting equity at the start rate,
+  everything else at the end rate; holding the starting dollars as cash is the
+  EUR baseline, so the dollar's own move is shown as the currency effect and
+  the result against holding dollars is the USD result at the end rate (A43).
+  Without a rate the EUR figures are unavailable; a stale rate is labelled.
+  Reason: T42 "versus holding cash and holding BTC over the same period ... USD
+  native units with EUR reporting", D138 item 7 and A43.
+
+- **D203 (2026-10-17, implementation default for T42): AI spending beside the
+  result.** The AI spending of a period is every budget reservation created
+  inside `(start, end]`, with receipts recorded up to `end`, counted once with
+  W2-C's rules (D175): actual, estimated (conservative charge) or unresolved
+  (no receipt by the end, counted at its held maximum, never zero, or "can't be
+  valued"), in USD, per department, test calls counted apart and never added.
+  Unlike HQ's testing view it covers every paid price card (Perplexity, Jev and
+  any other, as `other`), so nothing paid is left out, and the whole
+  installation, because AI budgets belong to the installation, not to one paper
+  account (10-PAPER-CAPITAL.md). Codex subscription turns are counted per
+  department, not priced. The figure is shown beside the result in USD and at
+  the end rate in EUR, and is never subtracted from or paid by the simulated
+  paper result (`paper_result_pays_for_ai: false`). Reason: T42 "AI spend from
+  receipts, including unresolved usage, shown beside trading results" and T40's
+  "paper gains never pay for AI".
+
+- **D204 (2026-10-17, implementation default for T42): gates, the owner's test
+  rule and the record.** Every scorecard, in JSON and text, carries
+  `GATES_STATEMENT` ("Working software, economic evidence and permission to
+  trade real money are three separate gates ...") and a `gates` block that
+  judges none of them (`judged_here: false`, `authorized: false`). It reads
+  D138 item 7 from its figures: `long_enough` (at least 28 days and at least 30
+  completed trades), `beats_cash`, `beats_btc`, and `keep_going` only when long
+  enough and BTC is available, labelled as information, not a pass mark or
+  permission. The scorecard is computed on demand and hashed
+  (`scorecard_sha256` over its canonical document; reruns reproduce it), so no
+  state migration was needed and the reserved 0037 stays unused. It is a
+  protected path. It is not shown in HQ in this package: W5-B changes the same
+  HQ files at the same time, and T43's final report is the first consumer;
+  showing it in HQ is later work (mind the 80 KB payload budget). Reason: the
+  T42 acceptance, AGENTS.md (acceptance gates not agent-editable) and keeping
+  the wave's packages apart.

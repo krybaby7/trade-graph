@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-17T06:29:28.000000Z",
+  "updated_at": "2026-10-17T09:17:34.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -466,7 +466,7 @@
     {
       "id": "T35",
       "title": "Wake departments on events and their own chosen check-ins",
-      "status": "todo",
+      "status": "done",
       "description": "Wake departments on events and their own chosen check-ins",
       "phase": "D4",
       "dependencies": [
@@ -475,7 +475,7 @@
         "T33",
         "T34"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T36",
@@ -544,7 +544,7 @@
     {
       "id": "T41",
       "title": "Chart candles, indicators, alarms and orders with Lightweight Charts",
-      "status": "todo",
+      "status": "done",
       "description": "Chart candles, indicators, alarms and orders with Lightweight Charts",
       "phase": "D6",
       "dependencies": [
@@ -553,12 +553,12 @@
         "T33",
         "T34"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T42",
       "title": "Compute the day-trader scorecard",
-      "status": "todo",
+      "status": "done",
       "description": "Compute the day-trader scorecard",
       "phase": "D7",
       "dependencies": [
@@ -567,7 +567,7 @@
         "T34",
         "T36"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T43",

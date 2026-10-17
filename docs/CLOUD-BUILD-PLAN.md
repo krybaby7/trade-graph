@@ -86,9 +86,9 @@ The integrator updates this table each time it merges a wave.
 | W2-C | T40 | HQ shows AI spending per department, $20 alert | Merged 2026-10-16 (#7); first real receipts and a look on phone and iPad at L2 |
 | W3-A | T32 | Your money limits and coin rule enforced by software | Merged 2026-10-17 (#10); you record the limits at L3 (`trade-graph money-limits --confirm`) |
 | W4-A | T34 | Trader day plans with resting entries and safety exits | Merged 2026-10-17 (#11); plans stay off until you record the limits at L3 (`trade-graph money-limits --confirm`) |
-| W5-A | T35 | Event engine: wake on alarms, fills, exits and check-ins | Not started |
-| W5-B | T41 | Price charts in HQ | Not started |
-| W5-C | T42 | Scorecard: result after fees vs. cash and Bitcoin | Not started |
+| W5-A | T35 | Event engine: wake on alarms, fills, exits and check-ins | Merged 2026-10-17 (#14); off in your installed service until the AI Trader answers wakes (W6-D) and you install at L3 |
+| W5-B | T41 | Price charts in HQ | Merged 2026-10-17 (#12); you look at the charts on your phone and iPad at L2 or L3 |
+| W5-C | T42 | Scorecard: result after fees vs. cash and Bitcoin | Merged 2026-10-17 (#13); first real scorecard after L3 (`trade-graph scorecard --format text`) |
 | W6-A | T37 | Research picks daily focus coins on Perplexity | Not started |
 | W6-B | T38 | Leader news rounds and wake notes | Not started |
 | W6-C | T39 | HQ wake log and next check-ins | Not started |
