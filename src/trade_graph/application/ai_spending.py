@@ -52,6 +52,14 @@ _CALLS = """SELECT b.reservation_id, b.role, b.purpose, b.price_card_id, b.state
     LEFT JOIN usage_receipts r ON r.reservation_id = b.reservation_id AND r.created_at <= ?
     WHERE b.created_at <= ? AND ((b.role = ? AND b.purpose = ?) OR b.price_card_id IN ({cards}))
     ORDER BY b.rowid"""
+# Every paid call made in a period (the paper scorecard, T42): any price card, so nothing paid is left out.
+_PERIOD_CALLS = """SELECT b.reservation_id, b.role, b.purpose, b.price_card_id, b.state, b.amount, b.currency,
+        b.fx_rate_value, b.synthetic, b.created_at, r.status AS receipt_status, r.native_cost, r.native_currency,
+        r.created_at AS receipt_at
+    FROM budget_reservations b
+    LEFT JOIN usage_receipts r ON r.reservation_id = b.reservation_id AND r.created_at <= ?
+    WHERE b.created_at > ? AND b.created_at <= ?
+    ORDER BY b.rowid"""
 _CARDS = """SELECT price_card_id, json_extract(document_json, '$.provider') AS provider,
     json_extract(document_json, '$.currency') AS currency FROM price_cards"""
 _CODEX = """SELECT role, state, cost_status, usage_json FROM subscription_invocations
@@ -300,14 +308,82 @@ def spending_report(database, now: datetime) -> AiSpendingReport:
     return AiSpendingReport(as_of=now, perplexity=perplexity, jev=jev, codex=_codex(database, now))
 
 
+# --- One period (the paper scorecard, T42) ------------------------------------------------------------------
+
+PERIOD_SERVICES = ("perplexity", "jev", "other")
+
+
+@dataclass(frozen=True)
+class PeriodSpending:
+    """Every paid AI call made in ``(start, end]``, as known at ``end``, in USD from receipts (D175, D203).
+
+    ``other`` holds paid calls on any price card that is neither Perplexity's nor Jev's, so nothing paid is left
+    out. Test calls are counted apart and never added. Codex subscription turns are counted, not priced: the
+    allowance has no per-call price and is shared with the owner's own use. Nothing here reads practice money.
+    """
+
+    start: datetime
+    end: datetime
+    services: dict[str, Tally]
+    departments: dict[str, dict[str, Tally]]
+    synthetic_calls: int
+    codex: CodexUse
+
+    @property
+    def total(self) -> Tally:
+        return sum((self.services[name] for name in PERIOD_SERVICES), Tally())
+
+    def document(self) -> dict[str, Any]:
+        return {"start": utc_iso(self.start), "end": utc_iso(self.end), "currency": "USD",
+                "paper_money_used": False, "total": self.total.document(),
+                "services": {name: {"total": self.services[name].document(),
+                                    "departments": {line: tally.document()
+                                                    for line, tally in self.departments[name].items()}}
+                             for name in PERIOD_SERVICES},
+                "synthetic_calls": self.synthetic_calls, "codex": self.codex.document()}
+
+
+def period_spending(database, start: datetime, end: datetime) -> PeriodSpending:
+    """The AI spending of one period: calls reserved after ``start`` and up to ``end``, receipts up to ``end``."""
+    if end <= start:
+        raise ValueError("a spending period ends after it starts")
+    start_iso, end_iso = utc_iso(start), utc_iso(end)
+    perplexity_cards, usd_cards = _card_index(database)
+    lines: dict[str, dict[str, _Acc]] = {name: {} for name in PERIOD_SERVICES}
+    synthetic = 0
+    rates: dict[Any, Decimal | None] = {}
+    for row in _settled(database.execute(_PERIOD_CALLS, (end_iso, start_iso, end_iso))):
+        service, line, is_synthetic, _, kind, amount, _ = _call(row, usd_cards, rates, perplexity_cards)
+        if is_synthetic:
+            synthetic += 1
+            continue
+        lines[service].setdefault(line, _Acc()).add(kind, amount)
+    order = (*DEPARTMENTS, "other", JEV_ROLE)
+    departments = {name: {line: lines[name][line].tally() for line in order if line in lines[name]}
+                   for name in PERIOD_SERVICES}
+    services = {name: sum(departments[name].values(), Tally()) for name in PERIOD_SERVICES}
+    return PeriodSpending(start=start, end=end, services=services, departments=departments,
+                          synthetic_calls=synthetic, codex=_codex_between(database, start, end))
+
+
 def _calls(database, now_iso: str):
     """Each call once: ``(service, line, synthetic, created_at, kind, usd_amount, settled_at)``."""
-    cards = {row["price_card_id"]: (row["provider"], row["currency"]) for row in database.execute(_CARDS).fetchall()}
-    perplexity_cards = [card for card, (provider, _) in cards.items() if provider == "perplexity"]
-    usd_cards = {card for card, (_, currency) in cards.items() if currency == "USD"}
+    perplexity_cards, usd_cards = _card_index(database)
     sql = _CALLS.format(cards=",".join("?" for _ in perplexity_cards) or "NULL")
     rows = database.execute(sql, (now_iso, now_iso, JEV_ROLE, JEV_PURPOSE, *perplexity_cards))
     rates: dict[Any, Decimal | None] = {}  # the few distinct FX values, parsed once
+    for row in _settled(rows):
+        yield _call(row, usd_cards, rates)
+
+
+def _card_index(database) -> tuple[set, set]:
+    cards = {row["price_card_id"]: (row["provider"], row["currency"]) for row in database.execute(_CARDS).fetchall()}
+    return ({card for card, (provider, _) in cards.items() if provider == "perplexity"},
+            {card for card, (_, currency) in cards.items() if currency == "USD"})
+
+
+def _settled(rows):
+    """One row per reservation (rows come ordered by reservation): the most settled receipt wins."""
     pending = None
     for row in rows:
         row = tuple(row)
@@ -316,16 +392,22 @@ def _calls(database, now_iso: str):
                 pending = row
             continue
         if pending is not None:
-            yield _call(pending, usd_cards, rates)
+            yield pending
         pending = row
     if pending is not None:
-        yield _call(pending, usd_cards, rates)
+        yield pending
 
 
-def _call(row: tuple, usd_cards: set, rates: dict) -> tuple:
+def _call(row: tuple, usd_cards: set, rates: dict, perplexity_cards: set | None = None) -> tuple:
+    """``(service, line, synthetic, created_at, kind, usd_amount, settled_at)`` for one call.
+
+    Without ``perplexity_cards`` every call that is not a Jev check is Perplexity's (the HQ query selects only
+    those); with it, a call on any other card is ``other`` (the scorecard's period counts every paid call).
+    """
     (_, role, purpose, card, _, held, held_currency, fx_text, synthetic, created_at, status, cost, cost_currency,
      receipt_at) = row
     jev = role == JEV_ROLE and purpose == JEV_PURPOSE
+    service = "jev" if jev else "perplexity" if perplexity_cards is None or card in perplexity_cards else "other"
     line = JEV_ROLE if jev else role if role in DEPARTMENTS else "other"
     if fx_text not in rates:
         fx = _decimal(fx_text)
@@ -340,7 +422,7 @@ def _call(row: tuple, usd_cards: set, rates: dict) -> tuple:
             kind, amount, settled_at = "estimated", value, receipt_at
     if kind == "unresolved":
         amount = _usd(held, held_currency, fx, usd_card)
-    return "jev" if jev else "perplexity", line, bool(synthetic), created_at, kind, amount, settled_at
+    return service, line, bool(synthetic), created_at, kind, amount, settled_at
 
 
 def _usd(amount, currency, fx: Decimal | None, usd_card: bool) -> Decimal | None:
@@ -435,9 +517,12 @@ def _owner_records(database, now_iso: str) -> dict[tuple[str, str], tuple[Decima
 
 
 def _codex(database, now: datetime) -> CodexUse:
-    start = now - CODEX_WINDOW
+    return _codex_between(database, now - CODEX_WINDOW, now)
+
+
+def _codex_between(database, start: datetime, end: datetime) -> CodexUse:
     counts: dict[str, list[int]] = {}
-    for row in database.execute(_CODEX, (utc_iso(start), utc_iso(now))).fetchall():
+    for row in database.execute(_CODEX, (utc_iso(start), utc_iso(end))).fetchall():
         if row["state"] == "BLOCKED" or row["cost_status"] == "not_incurred":
             continue  # never sent: no allowance used
         role = row["role"] if row["role"] in DEPARTMENTS else "other"
@@ -449,7 +534,7 @@ def _codex(database, now: datetime) -> CodexUse:
         else:
             item[2] += used
     departments = {role: CodexDepartment(*counts[role]) for role in (*DEPARTMENTS, "other") if role in counts}
-    return CodexUse(start=start, end=now, departments=departments)
+    return CodexUse(start=start, end=end, departments=departments)
 
 
 def _reported_use(raw) -> int | None:
