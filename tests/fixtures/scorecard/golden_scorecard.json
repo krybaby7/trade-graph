@@ -1,0 +1,294 @@
+{
+  "ai_spending": {
+    "codex": {
+      "departments": {},
+      "end": "2026-11-03T00:00:00.000000Z",
+      "start": "2026-11-02T00:00:00.000000Z",
+      "turns": 0,
+      "unreported_turns": 0
+    },
+    "currency": "USD",
+    "end": "2026-11-03T00:00:00.000000Z",
+    "note": "AI spending is real money, from receipts, for the whole installation (AI budgets belong to the installation, not to one paper account); costs not known yet are shown as unknown, never as zero. The paper result is simulated and never pays for it.",
+    "paper_money_used": false,
+    "scope": "installation",
+    "services": {
+      "jev": {
+        "departments": {
+          "news_alarm": {
+            "actual_calls": 1,
+            "actual_usd": "0.000042",
+            "calls": 1,
+            "estimated_calls": 0,
+            "estimated_usd": "0",
+            "total_usd": "0.000042",
+            "unresolved_calls": 0,
+            "unresolved_usd": "0"
+          }
+        },
+        "total": {
+          "actual_calls": 1,
+          "actual_usd": "0.000042",
+          "calls": 1,
+          "estimated_calls": 0,
+          "estimated_usd": "0",
+          "total_usd": "0.000042",
+          "unresolved_calls": 0,
+          "unresolved_usd": "0"
+        }
+      },
+      "other": {
+        "departments": {},
+        "total": {
+          "actual_calls": 0,
+          "actual_usd": "0",
+          "calls": 0,
+          "estimated_calls": 0,
+          "estimated_usd": "0",
+          "total_usd": "0",
+          "unresolved_calls": 0,
+          "unresolved_usd": "0"
+        }
+      },
+      "perplexity": {
+        "departments": {
+          "leader": {
+            "actual_calls": 0,
+            "actual_usd": "0",
+            "calls": 1,
+            "estimated_calls": 1,
+            "estimated_usd": "0.02346",
+            "total_usd": "0.02346",
+            "unresolved_calls": 0,
+            "unresolved_usd": "0"
+          },
+          "research": {
+            "actual_calls": 2,
+            "actual_usd": "0.009",
+            "calls": 3,
+            "estimated_calls": 0,
+            "estimated_usd": "0",
+            "total_usd": "0.03246",
+            "unresolved_calls": 1,
+            "unresolved_usd": "0.02346"
+          }
+        },
+        "total": {
+          "actual_calls": 2,
+          "actual_usd": "0.009",
+          "calls": 4,
+          "estimated_calls": 1,
+          "estimated_usd": "0.02346",
+          "total_usd": "0.05592",
+          "unresolved_calls": 1,
+          "unresolved_usd": "0.02346"
+        }
+      }
+    },
+    "start": "2026-11-02T00:00:00.000000Z",
+    "synthetic_calls": 1,
+    "total": {
+      "actual_calls": 3,
+      "actual_usd": "0.009042",
+      "calls": 5,
+      "estimated_calls": 1,
+      "estimated_usd": "0.02346",
+      "total_usd": "0.055962",
+      "unresolved_calls": 1,
+      "unresolved_usd": "0.02346"
+    }
+  },
+  "benchmarks": {
+    "cash": {
+      "beaten": true,
+      "note": "Cash earns no interest (D127), so beating cash means a result above zero after fees.",
+      "result": "0",
+      "versus": "210.14"
+    },
+    "hold_btc": {
+      "available": true,
+      "beaten": true,
+      "cost_profile_ref": "kraken-spot-starting-tier@1",
+      "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+      "end_mark_at": "2026-11-03T00:00:00.000000Z",
+      "lot_size": "0.00000001",
+      "price_source": "the paper ledger's marks",
+      "reason": null,
+      "start_mark_at": "2026-11-02T00:00:00.000000Z",
+      "symbol": "BTC/USD",
+      "taker_rate": "0.008",
+      "versus": "40.82783616"
+    }
+  },
+  "currency": "USD",
+  "eur_reporting": {
+    "ai_spending_total": "0.05148504",
+    "available": true,
+    "currency": "EUR",
+    "currency_effect": "200",
+    "ending_equity": "9393.3288",
+    "hold_btc_result": "155.7671907328",
+    "note": "Starting equity at the start rate; everything else at the end rate. The currency effect is what holding the starting dollars as cash did in EUR, so it is not counted as trading.",
+    "rate_end": "0.92",
+    "rate_start": "0.9",
+    "reason": null,
+    "result": "393.3288",
+    "stale": false,
+    "starting_equity": "9000",
+    "versus_cash": "193.3288",
+    "versus_hold_btc": "37.5616092672"
+  },
+  "experiment_id": "paper-scorecard-synthetic",
+  "gates": {
+    "economic_evidence": {
+      "judged_here": false,
+      "this_scorecard": "paper evidence for one period; a good result is not proof of profit"
+    },
+    "real_money": {
+      "authorized": false,
+      "who": "only the owner, separately, through the live enablement checklist"
+    },
+    "statement": "Working software, economic evidence and permission to trade real money are three separate gates. This scorecard is evidence about simulated paper trading over one period: it does not show that the software works, a good result does not prove that the Trader is profitable, and nothing here allows trading real money or spending a real budget.",
+    "working_software": {
+      "judged_here": false,
+      "where": "the automatic tests and the installation checks"
+    }
+  },
+  "metrics": {
+    "average_loss": "-66.6",
+    "average_win": "220.64",
+    "benchmarks": {
+      "hold_btc": {
+        "bought_at_utc": "2026-11-02T00:00:00.000000Z",
+        "buy_fee": "79.3650768",
+        "buy_price": "60000",
+        "capital": "10000",
+        "cash_left": "0.0003232",
+        "ending_value": "10169.31216384",
+        "fee_rate": "0.008",
+        "quantity": "0.16534391",
+        "result": "169.31216384",
+        "sell_fee": "82.01057936",
+        "sell_price": "62000",
+        "sold_at_utc": "2026-11-03T00:00:00.000000Z",
+        "symbol": "BTC/USD",
+        "versus": "40.82783616"
+      }
+    },
+    "currency": "USD",
+    "ending_equity": "10210.14",
+    "fees_paid": "102.06",
+    "flat_trades": 0,
+    "losses": 1,
+    "metrics_version": "trade-metrics-v1",
+    "open_positions": [
+      {
+        "bought": "1525",
+        "fees": "6.1",
+        "fill_refs": [
+          "paper:paper:synthetic-7"
+        ],
+        "opened_at_utc": "2026-11-02T10:00:00.000000Z",
+        "quantity": "0.5",
+        "sold": "0",
+        "symbol": "ETH/USD"
+      }
+    ],
+    "result": "210.14",
+    "result_fraction": "0.021014",
+    "round_trips": [
+      {
+        "bought": "6000",
+        "closed_at_utc": "2026-11-02T03:10:00.000000Z",
+        "fees": "74.36",
+        "fill_refs": [
+          "paper:paper:synthetic-1",
+          "paper:paper:synthetic-2",
+          "paper:paper:synthetic-3",
+          "paper:paper:synthetic-4"
+        ],
+        "opened_at_utc": "2026-11-02T01:00:00.000000Z",
+        "outcome": "win",
+        "quantity": "2",
+        "result": "220.64",
+        "sold": "6295",
+        "symbol": "ETH/USD"
+      },
+      {
+        "bought": "1830",
+        "closed_at_utc": "2026-11-02T08:00:00.000000Z",
+        "fees": "21.6",
+        "fill_refs": [
+          "paper:paper:synthetic-5",
+          "paper:paper:synthetic-6"
+        ],
+        "opened_at_utc": "2026-11-02T05:00:00.000000Z",
+        "outcome": "loss",
+        "quantity": "0.03",
+        "result": "-66.6",
+        "sold": "1785",
+        "symbol": "BTC/USD"
+      }
+    ],
+    "starting_equity": "10000",
+    "total_lost": "-66.6",
+    "total_won": "220.64",
+    "trades": 2,
+    "versus_cash": {
+      "cash_result": "0",
+      "note": "Cash earns no interest (D127).",
+      "versus": "210.14"
+    },
+    "win_rate": "0.5",
+    "wins": 1,
+    "worst_drawdown": {
+      "amount": "165.26",
+      "fraction": "0.0161415092",
+      "peak_at_utc": "2026-11-02T03:05:00.000000Z",
+      "peak_equity": "10238.2",
+      "trough_at_utc": "2026-11-02T12:00:00.000000Z",
+      "trough_equity": "10072.94"
+    },
+    "worst_losing_streak": 1
+  },
+  "metrics_version": "trade-metrics-v1",
+  "mode": "paper",
+  "owner_test_reading": {
+    "beats_btc": true,
+    "beats_cash": true,
+    "days": "1",
+    "keep_going": null,
+    "long_enough": false,
+    "minimum_days": 28,
+    "minimum_trades": 30,
+    "note": "Your rule for the scored paper test (D138 item 7), read from these figures. It is not a pass mark for the Trader, not proof of profit and not permission for real money.",
+    "rule": "D138 item 7",
+    "trades": 2
+  },
+  "paper_result_pays_for_ai": false,
+  "period": {
+    "days": "1",
+    "end": "2026-11-03T00:00:00.000000Z",
+    "start": "2026-11-02T00:00:00.000000Z",
+    "start_basis": "opening_deposit"
+  },
+  "portfolio_id": "paper-scorecard-synthetic",
+  "provisional_reasons": [],
+  "report": "paper-scorecard",
+  "scorecard_sha256": "00550b93a5b6688830d34b98ceb8cccfe26e0fa1088556fc5d97241665ef08c8",
+  "scorecard_version": "paper-scorecard-v1",
+  "simulated": true,
+  "status": "complete",
+  "valuation": {
+    "basis": "the ledger's postings and marks; coins held at the start carried in at the start price; coins held at the end valued as sold at their mark with the taker fee",
+    "carried_in": [],
+    "ending_equity": "10210.14",
+    "ending_equity_marked": "10222.94",
+    "equity_points": 15,
+    "exit_fee_rate": "0.008",
+    "exit_fees_on_open_positions": "12.8",
+    "mark_max_age_minutes": 15,
+    "starting_equity": "10000",
+    "unvalued_points": 0
+  }
+}

@@ -62,6 +62,8 @@ PROTECTED_PATH_PREFIXES = (
     # T35 event engine: the obsolete-wake guard, the allowance-floor behaviour and day-plan installation.
     "src/trade_graph/contracts/wakes.py",
     "src/trade_graph/application/events/",
+    # T42 scorecard: how the paper result is valued and compared is a scoring definition, like the kernel sums.
+    "src/trade_graph/application/scorecard.py",
 )
 
 

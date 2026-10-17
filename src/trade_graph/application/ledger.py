@@ -409,6 +409,11 @@ class Ledger:
             at=at,
         )
 
+    def fx_rate(self, base: str, quote: str, at: str) -> tuple[Decimal | None, bool]:
+        """The rate the books would use to show ``base`` in ``quote`` at ``at``: ``(rate, stale)``, ``(None, True)``
+        when no rate was available then. Read only (the paper scorecard's EUR reporting, T42)."""
+        return _convert(Decimal("1"), base, quote, self._rates(at), at)
+
     def native_value(self, amount: Decimal, currency: str, native: str) -> Decimal:
         at = self.now()
         value, stale = convert_native(amount, currency, native, self._rates(at), at)

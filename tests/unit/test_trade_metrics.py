@@ -11,6 +11,7 @@ from decimal import Decimal
 import pytest
 
 from trade_graph.contracts.fills import SimFill
+from trade_graph.contracts.models import FillFeeRecord, FillRecord
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.kernel.trade_metrics import (
     EquityPoint,
@@ -171,3 +172,74 @@ def test_a_sim_fill_becomes_a_trade_fill_with_its_principal_and_quote_fee() -> N
     assert (converted.quantity, converted.quote_amount, converted.fee) == (D("2"), D("201"), D("0.804"))
     with pytest.raises(ValidationFailure, match="quote"):
         TradeFill.from_sim_fill(fill.model_copy(update={"fee_asset": "ABC"}), fill_ref="o1:1")
+
+
+# --- Ledger fills for the paper scorecard (T42, D201) -------------------------------------------------------
+
+
+def _record(side: str, quantity: str, price: str, *, fee: str = "0", fee_asset: str = "USD", symbol: str = "BTC/USD",
+            **updates) -> FillRecord:
+    body = dict(venue="paper", account_id="paper", trade_id=f"t-{side}-{quantity}", intent_id=None, symbol=symbol,
+                side=side, quantity=quantity, price=price, fee_amount=fee, fee_asset=fee_asset, liquidity="maker",
+                filled_at_utc=T0)
+    body.update(updates)
+    return FillRecord(**body)
+
+
+def _leg(asset: str, amount: str, ref: str, **updates) -> FillFeeRecord:
+    return FillFeeRecord(asset=asset, amount=amount, source_ref=ref, effective_at_utc=T0, **updates)
+
+
+def _convert(record: FillRecord) -> TradeFill:
+    return TradeFill.from_fill_record(record, fill_ref="paper:paper:x", base_asset="BTC", quote_asset="USD")
+
+
+def test_a_ledger_fill_with_a_quote_fee_keeps_its_principal_and_fee() -> None:
+    # Buy 2 at 100.5: principal 201, fee 0.804 USD (0.4%).
+    converted = _convert(_record("buy", "2", "100.5", fee="0.804"))
+    assert (converted.side, converted.quantity, converted.quote_amount, converted.fee) == (
+        "buy", D("2"), D("201"), D("0.804"))
+    assert converted.fill_ref == "paper:paper:x" and converted.at == T0 and converted.symbol == "BTC/USD"
+    # A venue principal that is not quantity x price (quote_cost) is the principal the books posted.
+    assert _convert(_record("buy", "0.3", "100", quote_cost="30.01")).quote_amount == D("30.01")
+
+
+def test_a_fee_in_the_coin_changes_what_is_held_and_is_valued_at_the_fill_price() -> None:
+    # Buy 1 at 100 with a 0.01 coin fee: 0.99 is held; the fee is worth 0.01 x 100 = 1, so the principal of what
+    # is held is 100 - 1 = 99 and bought + fee is still the 100 paid.
+    bought = _convert(_record("buy", "1", "100", fee="0.01", fee_asset="BTC"))
+    assert (bought.quantity, bought.quote_amount, bought.fee) == (D("0.99"), D("99"), D("1"))
+    # Sell 0.98 at 110 with a 0.01 coin fee: 0.99 leaves the books; the fee is worth 1.1, so the principal is
+    # 0.98 x 110 + 1.1 = 108.9 and sold - fee is the 107.8 received.
+    sold = _convert(_record("sell", "0.98", "110", fee="0.01", fee_asset="BTC"))
+    assert (sold.quantity, sold.quote_amount, sold.fee) == (D("0.99"), D("108.9"), D("1.1"))
+    # One round trip from flat to flat: 108.9 - 99 - (1 + 1.1) = 7.8, exactly the cash made (107.8 - 100).
+    trips, still_open = round_trips([bought, sold])
+    assert [trip.result for trip in trips] == [D("7.8")] and still_open == ()
+
+
+def test_fee_vectors_add_every_leg_and_value_a_third_asset_at_its_identified_rate() -> None:
+    # Legs: 0.5 USD, 2 KFEE at the identified 0.01 USD each (0.02) and 0.001 BTC at the fill price 100 (0.1).
+    record = _record("buy", "1", "100", quote_cost="100", fee_components=(
+        _leg("USD", "0.5", "usd"), _leg("KFEE", "2", "kfee", identified_rate="0.01", rate_source_ref="kfee-rate"),
+        _leg("BTC", "0.001", "btc")))
+    converted = _convert(record)
+    assert (converted.quantity, converted.quote_amount, converted.fee) == (D("0.999"), D("99.9"), D("0.62"))
+    # A legacy fee in a third asset is valued at its identified rate too: 3 KFEE x 0.02 = 0.06.
+    legacy = _convert(_record("sell", "1", "100", fee="3", fee_asset="KFEE", fee_identified_rate="0.02"))
+    assert (legacy.quantity, legacy.quote_amount, legacy.fee) == (D("1"), D("100"), D("0.06"))
+
+
+def test_a_net_rebate_moves_the_principal_because_fees_paid_are_never_negative() -> None:
+    # A buy of 1 at 100 with a 0.2 USD rebate paid 99.8: bought 99.8, fee 0. A sell received 100.2: sold 100.2.
+    buy = _convert(_record("buy", "1", "100", quote_cost="100", fee_components=(_leg("USD", "-0.2", "rebate"),)))
+    sell = _convert(_record("sell", "1", "100", quote_cost="100", fee_components=(_leg("USD", "-0.2", "rebate"),)))
+    assert (buy.quote_amount, buy.fee) == (D("99.8"), D("0"))
+    assert (sell.quote_amount, sell.fee) == (D("100.2"), D("0"))
+
+
+def test_a_ledger_fill_that_cannot_be_put_in_the_quote_currency_is_refused() -> None:
+    with pytest.raises(ValidationFailure, match="identified rate"):
+        _convert(_record("buy", "1", "100", fee="3", fee_asset="KFEE"))
+    with pytest.raises(ValidationFailure, match="symbol"):
+        _convert(_record("buy", "1", "100", fee="0.4", symbol="ETH/USD"))
