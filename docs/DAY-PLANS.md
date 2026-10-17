@@ -194,7 +194,8 @@ The Trader answers with `position_actions` (`PositionAction`, at most one per co
 - **Restarts.** A crash leaves the action running; the management step's sweep protects the position meanwhile at
   the terms in force. Applying the same request again (the event engine re-applies a saved answer) finishes it from
   the records: a sell that was persisted is sent, never placed twice. A newer action for the coin, or an obsolete
-  wake, ends an unfinished one as `failed` with its old exits back. One action per coin runs at a time (SQL).
+  wake, ends an unfinished one as `failed`: a sell it persisted but never sent is abandoned (an obsolete wake never
+  becomes a trade) and its old exits come back. One action per coin runs at a time (SQL).
 - **Order with plans.** The event engine applies the Trader's position actions before its day plans of the same
   answer (`request_id` `wake:<wake_id>:action:<symbol>`), so a close never cancels the entries of a plan written
   in the same turn. Only the Trader acts on positions.

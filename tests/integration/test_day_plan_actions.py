@@ -516,3 +516,28 @@ def test_selling_never_exceeds_what_is_held(tmp_path) -> None:
     (sell,) = market_sells(account)
     assert D(sell["quantity"]) <= account.held("SOL")
     assert all(order["side"] == "sell" for order in broker_orders(account, side="sell"))
+
+
+def test_an_unfinished_close_whose_sell_was_never_sent_never_sells_once_it_is_abandoned(tmp_path, monkeypatch) -> None:
+    account = day_plan_account(tmp_path)
+    filled(account)
+    actions = DayPlanActions(account.execution)
+    dispatch = account.execution.dispatch
+
+    async def stop_on_targeted_send(**options):
+        if options.get("intent_ids"):
+            raise RuntimeError("synthetic: the process stopped here")
+        return await dispatch(**options)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(account.execution, "dispatch", stop_on_targeted_send)
+        with pytest.raises(RuntimeError, match="stopped here"):
+            act(account, position_action("close"), actions=actions)
+    sell_id = actions.for_request(account.portfolio, "action-1").steps[-1]["document"]["intent_id"]
+    assert account.state(sell_id) == "SUBMISSION_PENDING"
+    record = asyncio.run(actions.abandon(account.portfolio, "action-1",
+                                         reason="the trading day ended before it finished"))
+    assert record.status == "failed" and account.state(sell_id) == "REJECTED"  # abandoned, never sent
+    account.dispatch()  # the service's next dispatch has nothing of it to send
+    assert market_sells(account) == [] and live_exits(account) == [(D("97"), D("104"), D("5"))]
+    assert account.held("SOL") == D("5")

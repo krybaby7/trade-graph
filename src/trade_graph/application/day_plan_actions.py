@@ -18,7 +18,8 @@ stops the sequence (the unanswered exit still covers its coins, unknown is not c
 cancelled is put back with its own terms; a sell or new exit that software or the broker refuses puts the old exits
 back the same way. A crash leaves the action running: the management step's sweep protects the position meanwhile
 (at the terms in force), and applying the same request again finishes it from the records, never selling twice.
-A newer action for the coin, or an action the event engine finds obsolete, ends an unfinished one as failed.
+A newer action for the coin, or an action the event engine finds obsolete, ends an unfinished one as failed: a sell
+it persisted but never sent is abandoned, and its old exits are put back.
 
 Paper only, like day plans: a live venue needs native protective orders first (T19). This module is protected
 execution control (``kernel/authority.py``): agents cannot edit it.
@@ -342,6 +343,14 @@ class DayPlanActions:
 
     async def _finish(self, action_id: str, kind: str, *, reason: str | None = None, code: str | None = None,
                       document: dict[str, Any] | None = None, restore: bool = False) -> None:
+        if kind != "done":
+            # A sell this action persisted but never sent goes nowhere once the action ends without being done (an
+            # obsolete wake never becomes a trade; a newer action decides afresh). One already sent is in flight.
+            unsent = [step["document"]["intent_id"] for step in self._record(action_id, created=False).steps
+                      if step["kind"] == "sell_placed"
+                      and self.execution.intent_state(step["document"]["intent_id"]) == "SUBMISSION_PENDING"]
+            if unsent:
+                await self.execution.cancel_intents(unsent, reason="trader_action_ended")
         if restore and kind != "done":
             await self._restore(action_id)
         detail = dict(document or {})
