@@ -82,7 +82,9 @@ D250-D254). Looking at them never starts, sends, cancels or changes anything.
   recorded and the Trader's day plans stay off.
 - **Today's day plans**: each coin's plan for today: every waiting buy (with its stop and target), what it bought,
   the safety exit software put on every filled part and what that sold, and the plan's events (put in place,
-  replaced, a buy cancelled and why). A filled part with no safety exit right now is marked and says so. An older
+  replaced, a buy cancelled and why). When the Trader closes a position or moves its safety exit (W8-B), the sale
+  is listed under its buy ("The Trader's close: sell 5 SOL at the market price: sold.") and the buys and safety
+  exits it cancelled say so. A filled part with no safety exit right now is marked and says so. An older
   plan whose safety exit still protects coins stays listed as "Earlier day". Plans software refused today are listed
   under "Refused today" in plain words. The Trader's reasons are short quotes in their words. The panel reads its
   records only while it is on screen.
@@ -303,8 +305,10 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   with HQ's 30-second poll. The projection (`api/hq_plans.py`) reads `day_plans`, `day_plan_entries`,
   `day_plan_exits`, `day_plan_events`, `order_intents`, `fills`, today's `day_plan_refused` activity records and the
   newest owner policy with plain SQL in one read snapshot; it imports no execution, broker, engine or provider.
-  Which plans: each coin's newest plan whose trading day has not ended, then older plans that still have an order
-  open. What is not protected is `DayPlanProtection.coverage`'s arithmetic. Lists are page bounds (8 plans, 16
+  With migration 0044 it also reads W8-B's `day_plan_action_orders` (each buy's part of a Trader's close sell) and
+  the `cancelling` steps of `day_plan_actions` (wave 8 integration). Which plans: each coin's newest plan whose
+  trading day has not ended, then older plans that still have an order open (a close sell still out counts). What
+  is not protected is `DayPlanProtection.coverage`'s arithmetic, including a close's sell (D246). Lists are page bounds (8 plans, 16
   buys, 4 safety exits and 4 fills per order, 8 events per plan, 10 refusals), never limits on plans; every list
   says how many more there are. A busy synthetic day is about 70 KB, within the endpoint's own 80 KB budget.
 - **Caching** (W8-C, D253): every HQ response stays `Cache-Control: no-store` except the pinned, vendored chart

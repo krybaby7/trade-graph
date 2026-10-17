@@ -1619,7 +1619,16 @@ PLANS: Final = {
                      "partly_filled": "partly filled: {filled} of {quantity}", "filled": "filled",
                      "cancelled": "cancelled", "rejected": "refused", "being_checked": "its status is being checked"},
     "cancel_reason": {"pause": " because a pause was on", "expired": " at the end of its time",
-                      "replaced": " because the plan was replaced by a newer plan"},
+                      "replaced": " because the plan was replaced by a newer plan",
+                      "trader_close": " because the Trader closed the position"},
+    # The Trader's position actions (W8-B, D245-D246), joined into this panel by the wave 8 integration.
+    "action_cancel": {"close": " at the Trader's request to close the position",
+                      "move_exit": " at the Trader's request to move the safety exit"},
+    "close_sell": "The Trader's close: sell {quantity} {base} at the market price",
+    "close_shared": " (one sale of {total} {base} for several buys)",
+    "close_status": {"sending": ": being sent", "waiting": ": sent, waiting to be filled",
+                     "partly_filled": ": partly sold", "filled": ": sold", "cancelled": ": cancelled",
+                     "rejected": ": refused", "being_checked": ": its status is being checked"},
     "cancelled_after": " after {filled} {base} filled",
     "unprotected": (" {quantity} {base} bought here has no safety exit right now: software puts one on at its next "
                     "step, unless your cancel-all setting is on."),

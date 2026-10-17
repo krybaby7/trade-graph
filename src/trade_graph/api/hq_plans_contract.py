@@ -6,9 +6,9 @@ log are, D197 and D215). It holds, for the paper portfolio:
 
 - ``plans``: each coin's newest day plan of today (W4-A, T34) and any older plan that still has an order open (a
   safety exit still protecting coins), newest first: its waiting buys (resting limit entries), what each filled, the
-  safety exits software attached to every filled part and what they sold, how much of a filled part has no safety
-  exit right now, the plan's events (put in place, replaced, a buy cancelled and why, a safety exit that couldn't be
-  placed yet) and the Trader's rationale and invalidation as labelled quotes;
+  safety exits software attached to every filled part and what they sold (with a Trader's close sell, W8-B), how
+  much of a filled part has no safety exit right now, the plan's events (put in place, replaced, a buy cancelled and
+  why, a safety exit that couldn't be placed yet) and the Trader's rationale and invalidation as labelled quotes;
 - ``refusals``: today's plans software refused (``day_plan_refused``), with the reason in plain words.
 
 The wording uses the HQ snapshot's ``Text`` segments (``api/hq_contract.py``), so times read in the viewer's own time
@@ -61,7 +61,8 @@ def _number(value: str) -> Decimal:
 
 
 class ExitView(_Contract):
-    """One safety exit: a sell stop with an optional target leg, one cancelling the other (D188)."""
+    """One safety exit: a sell stop with an optional target leg, one cancelling the other (D188); or the entry's part
+    of a Trader's close sell (W8-B, D246), listed with the exits because it covers the same coins."""
 
     id: Identifier
     status: OrderStatus
