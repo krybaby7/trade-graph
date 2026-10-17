@@ -322,7 +322,8 @@ def build(output: Path, *, subscription_tools: Path | None = None,
             raise ValueError("package links forbidden")
         if not path.is_file() or "__pycache__" in path.parts:
             continue
-        if path.suffix not in {".py", ".typed", ".json", ".html", ".css", ".js", ".svg"}:
+        # .txt: the licence and notice of the vendored chart library, served beside it (T41, D195).
+        if path.suffix not in {".py", ".typed", ".json", ".html", ".css", ".js", ".svg", ".txt"}:
             raise ValueError("unexpected package input; review before image inclusion")
         target = source / path.relative_to(ROOT)
         target.parent.mkdir(parents=True, exist_ok=True)
