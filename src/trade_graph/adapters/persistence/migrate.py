@@ -9,6 +9,7 @@ from trade_graph.adapters.persistence.ai_spending_schema import migration as ai_
 from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as BUDGET_ORIGIN_STATEMENTS
 from trade_graph.adapters.persistence.coin_scan_schema import COIN_SCAN_STATEMENTS
 from trade_graph.adapters.persistence.dashboard_schema import STATEMENTS as DASHBOARD_STATEMENTS
+from trade_graph.adapters.persistence.day_plan_schema import migration as day_plan_migration
 from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as ENGINEERING_STATEMENTS
 from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEMENTS as FINANCIAL_CHECKPOINT_STATEMENTS
 from trade_graph.adapters.persistence.financial_recovery_schema import STATEMENTS as FINANCIAL_RECOVERY_STATEMENTS
@@ -474,6 +475,7 @@ STATEMENTS.append(("0030", PRACTICE_RANGE_STATEMENTS))
 STATEMENTS.append(("0031", COIN_SCAN_STATEMENTS))
 STATEMENTS.append(ai_spending_migration())  # 0032, W2-C (T40)
 STATEMENTS.append(money_limit_migration())  # 0033, W3-A (T32)
+STATEMENTS.append(day_plan_migration())  # 0034, W4-A (T34)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

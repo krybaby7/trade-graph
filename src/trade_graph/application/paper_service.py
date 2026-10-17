@@ -21,6 +21,7 @@ from decimal import Decimal
 from typing import Any
 
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.day_plans import DayPlans
 from trade_graph.application.scheduler import Scheduler, TaskLease
 from trade_graph.application.secretary import Secretary
 from trade_graph.application.service_controller import service_finished, service_heartbeat, service_started
@@ -103,6 +104,8 @@ class PaperService:
         self.secretary.subscription_only = subscription_provider is not None
         self.handlers = dict(handlers or {})
         self.artifact_runtime, self.public_feed = artifact_runtime, public_feed
+        # T34: resting day-plan entries, their expiry and pause cancellation, and protective exits for fills.
+        self.day_plans = DayPlans(execution)
         if artifact_runtime:
             if optimisation_manual_only:
                 artifact_runtime.disabled_schedule_roles.add("optimisation")
@@ -328,6 +331,14 @@ class PaperService:
                     asyncio.run(self.execution.enforce_money_limits(pid))
                 except Exception as exc:
                     limit_failures.append("money_limits:" + type(exc).__name__)
+            # Day plans (T34): a pause cancels resting entries and keeps exits, expired entries are cancelled, and
+            # every filled part of an entry gets its protective exit. Reported like the money limits, never a
+            # reason to hold back dispatch.
+            for pid in self.management_portfolio_ids:
+                try:
+                    asyncio.run(self.day_plans.manage(pid))
+                except Exception as exc:
+                    limit_failures.append("day_plans:" + type(exc).__name__)
             # An unavailable reconciliation cannot authorize fresh submission.
             if not failures:
                 try:
@@ -531,7 +542,14 @@ class PaperService:
                 observation = observation.model_copy(update={
                     "observation_id": self.owner + ":" + observation.observation_id,
                 })
-                self.execution.on_observation(observation)
+                if self.execution.on_observation(observation):
+                    # A fill of a day-plan entry persisted its protective exit with it (T34); send it now, so the
+                    # next quote of this same poll can already trigger it. A failure here is not a feed failure:
+                    # the exit stays persisted, and the management step sends it and reports what went wrong.
+                    try:
+                        asyncio.run(self.execution.dispatch(protection_only=True))
+                    except Exception:  # noqa: BLE001 - reported by the management step's own dispatch
+                        pass
                 self._observations_total += 1
         return len(observations)
 

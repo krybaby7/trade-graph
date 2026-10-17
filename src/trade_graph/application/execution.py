@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from decimal import ROUND_CEILING, Context, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.authority import AuthorityRecord, CoinRule
+from trade_graph.application.day_plan_protection import DayPlanProtection
 from trade_graph.application.incident_resolution import ProtectedNativeIncidentResolver
 from trade_graph.application.ledger import Ledger
 from trade_graph.application.money_limits import MoneyLimitGuard
@@ -38,7 +39,7 @@ from trade_graph.domain.errors import (
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
 from trade_graph.domain.protocols import Broker
-from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
+from trade_graph.kernel.authority import pause_allows_increase, pause_allows_protection, pause_allows_reduction
 from trade_graph.kernel.money_limits import EntryValue, check_entry, entry_value
 from trade_graph.kernel.riba import refuse_riba_symbol
 from trade_graph.live_gate import LivePilotScope
@@ -113,6 +114,8 @@ class Execution:
         # ``coin_rule`` replaces the scanner store's answer (tests); the default reads the newest live scan.
         self.authority = AuthorityRecord(database, clock, coin_rule=coin_rule)
         self.money_limits = MoneyLimitGuard(database, ledger, clock)
+        # T34: a filled day-plan entry gets its protective exit in the transaction that records the fill.
+        self.day_plan_protection = DayPlanProtection(self)
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
@@ -425,7 +428,9 @@ class Execution:
                 self._pilot_lifecycle.reserve_increase(self._pilot_authorization_id, intent_id)
         return intent_id
 
-    async def dispatch(self) -> int:
+    async def dispatch(self, *, protection_only: bool = False) -> int:
+        """Send pending intents. ``protection_only`` sends only protective exits of filled day-plan entries (T34),
+        which reduce risk and may go out as soon as their fill is recorded, under any pause that keeps protection."""
         rows = self.database.execute(
             """SELECT o.payload_ref FROM outbox o JOIN order_intents i ON i.intent_id = o.payload_ref
             WHERE o.kind = 'submit' AND o.status = 'pending'
@@ -434,6 +439,10 @@ class Execution:
             AND json_extract(i.payload_json, '$.mode') = ?""",
             (self.venue, self.account_id, self.mode),
         ).fetchall()
+        if protection_only:
+            rows = [row for row in rows if self._payload(row["payload_ref"]).get("protective_exit")]
+            if not rows:
+                return 0
         if self.mode == "live":
             eligible = []
             for row in rows:
@@ -573,6 +582,9 @@ class Execution:
             self._record_native_cost_limits(fill)
             self._consume_reservation(fill)
             self._refresh_order_state(fill.intent_id)
+            # A day-plan entry's filled part is protected in this same transaction (T34, D117). A placement that
+            # cannot be made yet is recorded and retried by the management step; it never loses the fill.
+            self.day_plan_protection.after_fill(fill)
         return True
 
     async def reconcile(self) -> None:
@@ -805,6 +817,26 @@ class Execution:
         )
         await self.reconcile()
 
+    async def cancel_intents(self, intent_ids: Iterable[str], *, reason: str) -> list[str]:
+        """Cancel these outstanding intents: unsent ones are abandoned, sent ones cancelled and reconciled.
+
+        Returns the intents acted on. An intent that already ended is left as it is. One whose earlier cancellation
+        got no answer (``CANCEL_PENDING``) is asked again, because a cancellation is safe to repeat; while no answer
+        comes it stays ``CANCEL_PENDING`` (unknown is not cancelled) and reconciliation keeps looking.
+        """
+        acted: list[str] = []
+        for intent_id in dict.fromkeys(intent_ids):
+            state = self.intent_state(intent_id)
+            if state not in self._OUTSTANDING:
+                continue
+            if state == "SUBMISSION_PENDING":
+                self._abandon_unsent(intent_id, reason)
+                acted.append(intent_id)
+                continue
+            await self.cancel(intent_id)
+            acted.append(intent_id)
+        return acted
+
     async def replace(self, intent_id: str, decision: Decision) -> str:
         self._assert_current_scope(intent_id)
         await self.cancel(intent_id)
@@ -825,7 +857,15 @@ class Execution:
         quantity: Decimal,
         stop_price: Decimal,
         snapshot_id: str,
+        *,
+        take_profit_price: Decimal | None = None,
+        protective: dict | None = None,
     ) -> str:
+        """A paper sell stop on held coins, optionally with a take-profit leg (one cancels the other).
+
+        ``protective`` marks a day-plan exit (T34): it names its plan and entry, and such an exit may be sent under
+        any pause that keeps protection (``pause_allows_protection``).
+        """
         if (self.venue, self.account_id, self.mode) != ("paper", "paper", "paper"):
             raise AuthorityDenied("paper protection requires the default paper execution binding")
         portfolio = self.database.execute(
@@ -840,6 +880,8 @@ class Execution:
         rules = self.instrument("paper", symbol)
         if quantity <= 0 or stop_price <= 0:
             raise ValidationFailure("protective quantity and stop must be positive")
+        if take_profit_price is not None and take_profit_price <= stop_price:
+            raise ValidationFailure("a take-profit sits above the protective stop")
         if quantity != floor_to_increment(quantity, rules.quantity_increment):
             raise ValidationFailure("protective quantity precision")
         available = self.owned_quantity(portfolio_id, rules.base_asset) - self._reserved(portfolio_id, rules.base_asset)
@@ -857,6 +899,7 @@ class Execution:
             order_type="stop",
             quantity=quantity,
             stop_price=stop_price,
+            take_profit_price=take_profit_price,
             snapshot_id=snapshot_id,
             eligible_after_utc=self.clock.now(),
             reduce_only=True,
@@ -864,6 +907,8 @@ class Execution:
         payload = json.loads(intent.model_dump_json())
         payload["reserve_asset"] = rules.base_asset
         payload["reserve_amount"] = canonical_decimal(quantity)
+        if protective is not None:
+            payload["protective_exit"] = dict(protective)
         now = self.now()
         with self.database.immediate() as conn:
             conn.execute(
@@ -1114,6 +1159,8 @@ class Execution:
             return "unsupported or untested native stop"
         if intent.stop_price is not None and intent.order_type != "stop":
             return "unsupported combined stop order"
+        if intent.take_profit_price is not None and not caps.native_take_profit:
+            return "unsupported take-profit exit"
         return None
 
     def _unsent_increase_block(self, intent: AuthorizedOrderIntent) -> str:
@@ -1273,7 +1320,10 @@ class Execution:
         self._assert_current_scope(intent_id)
         intent = self._intent_model(intent_id)
         profile = self.profile(intent.portfolio_id)
-        allowed = pause_allows_reduction(profile) if intent.side == "sell" else pause_allows_increase(profile)
+        if intent.side == "sell" and self._payload(intent_id).get("protective_exit"):
+            allowed = pause_allows_protection(profile)  # type: ignore[arg-type]
+        else:
+            allowed = pause_allows_reduction(profile) if intent.side == "sell" else pause_allows_increase(profile)
         if not allowed:
             return False
         now = self.now()

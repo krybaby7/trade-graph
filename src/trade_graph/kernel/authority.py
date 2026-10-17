@@ -55,6 +55,10 @@ PROTECTED_PATH_PREFIXES = (
     # T32 money limits and coin list: owner policy and execution controls outside the kernel folder.
     "src/trade_graph/contracts/money_limits.py",
     "src/trade_graph/application/money_limits.py",
+    # T34 day plans: their validation, installation and protective exits are execution controls.
+    "src/trade_graph/contracts/day_plans.py",
+    "src/trade_graph/application/day_plans.py",
+    "src/trade_graph/application/day_plan_protection.py",
 )
 
 
@@ -130,3 +134,9 @@ def pause_allows_new_decisions(profile: PauseProfile) -> bool:
 
 def pause_allows_reduction(profile: PauseProfile) -> bool:
     return profile in {"RUNNING", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "FLATTEN"}
+
+
+def pause_allows_protection(profile: PauseProfile) -> bool:
+    """May software place or send a protective exit for a position? Every pause keeps protection (D117), except
+    the owner's explicit cancel-all, a flatten that sells everything itself, and a stopped (flat) portfolio."""
+    return profile in {"RUNNING", "PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY"}
