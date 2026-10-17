@@ -36,6 +36,7 @@ from trade_graph.adapters.persistence.subscription_admission_schema import (
 from trade_graph.adapters.persistence.subscription_attempt_schema import STATEMENTS as SUBSCRIPTION_ATTEMPT_STATEMENTS
 from trade_graph.adapters.persistence.transport_evidence_schema import STATEMENTS as TRANSPORT_EVIDENCE_STATEMENTS
 from trade_graph.adapters.persistence.usage_provenance_schema import STATEMENTS as USAGE_PROVENANCE_STATEMENTS
+from trade_graph.adapters.persistence.wake_schema import migration as wake_migration
 from trade_graph.adapters.persistence.web_research_schema import STATEMENTS as WEB_RESEARCH_STATEMENTS
 
 STATEMENTS: list[tuple[str, list[str]]] = [
@@ -476,6 +477,7 @@ STATEMENTS.append(("0031", COIN_SCAN_STATEMENTS))
 STATEMENTS.append(ai_spending_migration())  # 0032, W2-C (T40)
 STATEMENTS.append(money_limit_migration())  # 0033, W3-A (T32)
 STATEMENTS.append(day_plan_migration())  # 0034, W4-A (T34)
+STATEMENTS.append(wake_migration())  # 0035, W5-A (T35)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
