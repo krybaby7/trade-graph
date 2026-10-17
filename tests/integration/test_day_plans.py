@@ -225,15 +225,16 @@ def test_the_take_profit_closes_the_position_and_cancels_the_stop(tmp_path) -> N
     assert D(fill["price"]) == D("103.89")  # the target less the 0.10% exit slippage, on the 0.01 tick
 
 
-def test_a_fill_whose_exit_cannot_be_placed_yet_is_protected_by_the_next_management_step(tmp_path,
-                                                                                          monkeypatch) -> None:
+@pytest.mark.parametrize("error", [StaleState("synthetic: no quote yet"), RuntimeError("synthetic: a bug")])
+def test_a_fill_whose_exit_cannot_be_placed_yet_is_protected_by_the_next_management_step(tmp_path, monkeypatch,
+                                                                                          error) -> None:
     account = day_plan_account(tmp_path)
     installed = install(account)
     account.dispatch()
     original = account.execution.place_protection
 
     def refused(*args, **kwargs):
-        raise StaleState("synthetic: protection unavailable")
+        raise error
 
     monkeypatch.setattr(account.execution, "place_protection", refused)
     _cross(account, "99.4", "99.5", volume="100")
@@ -428,3 +429,23 @@ def test_a_plan_records_the_policy_revision_it_was_installed_under(tmp_path) -> 
     account.install(synthetic_policy("synthetic-2"))
     installed = install(account)
     assert installed.policy_revision == "synthetic-2"
+
+
+def test_a_database_still_on_an_older_schema_records_fills_without_day_plans(tmp_path, monkeypatch) -> None:
+    from tests.integration.test_execution import _decision, _quote, _stack
+
+    from trade_graph.adapters.persistence import migrate
+
+    # A legacy installation being upgraded step by step opens before migration 0034 exists.
+    monkeypatch.setattr(migrate, "STATEMENTS", [(version, statements) for version, statements in migrate.STATEMENTS
+                                                if version < "0034"])
+    clock, ledger, execution, _broker, portfolio = _stack(tmp_path)
+    assert not ledger.database.execute("SELECT 1 FROM sqlite_master WHERE name = 'day_plans'").fetchone()
+    execution.save_observation(_quote(clock, "99", "100", observation_id="seed"))
+    intent = execution.authorize(portfolio, _decision(clock, portfolio))
+    asyncio.run(execution.dispatch())
+    clock.advance(1)
+    assert execution.on_observation(_quote(clock, "99", "100", observation_id="fill"))
+    assert execution.intent_state(intent) == "FILLED"
+    result = asyncio.run(DayPlans(execution).manage(portfolio))
+    assert (result["cancelled"], result["protected"], result["dispatched"]) == ([], [], 0)

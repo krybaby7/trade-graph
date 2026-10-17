@@ -91,6 +91,12 @@ The caller keeps `remaining` between events and passes each event once.
   limit, never beyond the limit; otherwise at the limit if trades later print beyond it. Limits on candles
   therefore need `placement_price`.
 - **Market order on candles.** The next open plus slippage, as a taker, for at most the volume share.
+- **Lots (W4-A, D189).** Given the instrument's `quantity_increment` and `min_quantity`, a partial fill is
+  rounded down to the lot. A share that covers what remains fills it exactly. When the rounded share would be
+  below the minimum, an order filled on the engine's own assumption (a quote with no volume figure: half of what
+  remains) finishes, because what remains is then at most about two minimum lots; an order limited by a reported
+  volume or displayed size fills nothing yet, because that much did not trade. The paper broker passes its
+  instrument rules; the practice range does not yet (its fills keep the earlier behaviour).
 - **Quotes (paper broker).** A resting limit fills when the opposite best price reaches it, because a real
   resting order there would have been matched; this is a crossed book, not a touch (T05). A market order
   takes the displayed size at the touch.
@@ -129,8 +135,12 @@ under `fill_terms`; the `FillRecord` itself is unchanged, and orders stored befo
 A changed profile or fee applies to later fills only. Stop fills now include the 0.10% exit slippage, so a
 stop gapped to a bid of 90 on a 0.1 tick fills at 89.9.
 
-Not yet in the paper broker: take-profit legs and one-cancels-the-other exits as submitted orders. The engine
-supports them; attaching them to entries is T34 (day plans).
+Since W4-A (T34) a paper sell stop may carry a take-profit leg (`take_profit_price` on the order intent, broker
+capability `native_take_profit`): one stored order with both legs, so whichever fills first closes the whole
+exit and the other leg is gone with it (one cancels the other). Day plans attach these exits to every filled
+part of an entry: [DAY-PLANS.md](DAY-PLANS.md). Partial fills on quotes are rounded down to the instrument's
+lot (above, D189); before that fix a crossed resting limit on volume-less quotes filled half of what remained
+each time, the digits grew without end and the books eventually refused a fill (`decimal.Inexact`).
 
 ## For the practice range (T29) and day plans (T34)
 

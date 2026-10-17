@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 
 from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import utc_iso
-from trade_graph.domain.errors import TradeGraphError
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.domain.precision import floor_to_increment
 from trade_graph.kernel.authority import pause_allows_protection
@@ -35,8 +34,9 @@ if TYPE_CHECKING:
 OUTSTANDING = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING"})
 TERMINAL = frozenset({"FILLED", "CANCELLED", "REJECTED"})
 _ENTRY = """SELECT e.*, p.portfolio_id, p.symbol FROM day_plan_entries e JOIN day_plans p ON p.plan_id = e.plan_id"""
-# What a refused placement may raise without the fill itself being lost: the next sweep tries again.
-_DEFERRABLE = (TradeGraphError, ValueError, ArithmeticError, sqlite3.IntegrityError)
+# A placement that fails for any reason is recorded and retried by the next sweep: recording the fill that needs the
+# exit must never fail because the exit could not be placed yet.
+_DEFERRABLE = (Exception,)
 
 
 class DayPlanProtection:
@@ -46,6 +46,11 @@ class DayPlanProtection:
     @property
     def database(self):
         return self.execution.database
+
+    def available(self) -> bool:
+        """A database still on a schema before 0034 (a legacy upgrade in progress) has no day plans."""
+        return self.database.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'day_plan_exits'").fetchone() is not None
 
     def entry_for_intent(self, intent_id: str) -> sqlite3.Row | None:
         return self.database.execute(f"{_ENTRY} WHERE e.intent_id = ?", (intent_id,)).fetchone()
@@ -69,7 +74,7 @@ class DayPlanProtection:
 
     def after_fill(self, fill: FillRecord) -> str | None:
         """Attach the exit for a day-plan entry fill; called inside the fill's own transaction."""
-        if fill.intent_id is None or fill.side != "buy":
+        if fill.intent_id is None or fill.side != "buy" or not self.available():
             return None
         entry = self.entry_for_intent(fill.intent_id)
         if entry is None:
@@ -116,7 +121,7 @@ class DayPlanProtection:
     def sweep(self, portfolio_id: str) -> list[str]:
         """Protect every filled, uncovered day-plan entry of the portfolio's held coins. Returns the new exits."""
         execution = self.execution
-        if not pause_allows_protection(execution.profile(portfolio_id)):  # type: ignore[arg-type]
+        if not self.available() or not pause_allows_protection(execution.profile(portfolio_id)):  # type: ignore[arg-type]
             return []
         placed: list[str] = []
         held: dict[str, bool] = {}

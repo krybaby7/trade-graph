@@ -341,6 +341,9 @@ class DayPlans:
         """
         execution = self.execution
         profile = execution.profile(portfolio_id)
+        if not self.protection.available():
+            return {"portfolio_id": portfolio_id, "profile": profile, "cancelled": [], "protected": [],
+                    "dispatched": 0}
         now = utc_iso(self.clock.now())
         rows = self.database.execute(
             """SELECT e.*, i.state FROM day_plan_entries e JOIN day_plans p ON p.plan_id = e.plan_id

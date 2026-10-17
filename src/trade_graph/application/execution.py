@@ -439,6 +439,10 @@ class Execution:
             AND json_extract(i.payload_json, '$.mode') = ?""",
             (self.venue, self.account_id, self.mode),
         ).fetchall()
+        if protection_only:
+            rows = [row for row in rows if self._payload(row["payload_ref"]).get("protective_exit")]
+            if not rows:
+                return 0
         if self.mode == "live":
             eligible = []
             for row in rows:
@@ -452,10 +456,6 @@ class Execution:
                         continue
                 eligible.append(row)
             rows = eligible
-            if not rows:
-                return 0
-        if protection_only:
-            rows = [row for row in rows if self._payload(row["payload_ref"]).get("protective_exit")]
             if not rows:
                 return 0
         capabilities = await self._require_broker_binding()
