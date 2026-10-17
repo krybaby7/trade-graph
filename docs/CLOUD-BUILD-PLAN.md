@@ -93,7 +93,7 @@ The integrator updates this table each time it merges a wave.
 | W6-B | T38 | Leader news rounds and wake notes | Merged 2026-10-17 (#18); the same switch and wiring as W6-A at L3 |
 | W6-C | T39 | HQ wake log and next check-ins | Merged 2026-10-17 (#15); you look at the Calendar and Story tabs on your phone and iPad after L3 |
 | W6-D | C2 | Code ready to install: one price collector, new data store wired in | Merged 2026-10-17 (#17); the real image build and the first collector pass are L3 steps ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
-| W7-A | T45 | News alarms really wake the Leader and Trader | Not started |
+| W7-A | T45 | News alarms really wake the Leader and Trader | Merged 2026-10-17 (#19); ships in shadow mode (it records whom an alarm would wake and wakes nobody): after L3 you decide from the shadow log and HQ's wake counts (`trade-graph news-wakes`, [L3 checklist](L3-INSTALL-CHECKLIST.md) step 17), once the news poll runs next to the installed service with your Jev key |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
 | L3 | — | New engine installed on your PC (your approval) | Not started; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |

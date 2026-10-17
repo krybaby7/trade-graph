@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-17T14:10:04.000000Z",
+  "updated_at": "2026-10-17T17:33:45.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -361,7 +361,7 @@
     {
       "id": "T45",
       "title": "Turn Jev news alarms into real wake-ups",
-      "status": "todo",
+      "status": "done",
       "description": "Turn Jev news alarms into real wake-ups",
       "phase": "DN",
       "dependencies": [
@@ -370,7 +370,7 @@
         "T39",
         "T44"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T28",
