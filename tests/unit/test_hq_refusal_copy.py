@@ -29,6 +29,15 @@ VALUATION = "the account's value couldn't be confirmed at that moment"
     ("unknown instrument BTC/XYZ", "the exchange's rules for that coin aren't known"),
     ("no positive reference price", hq_copy.REASON["prices"]),
     ("expired mandate allows management only", hq_copy.REASON["mandate"]),
+    # T32: the owner's money limits and coin list.
+    ("daily loss limit reached: new entries wait for the next day start at 2026-10-17T00:00:00.000000Z; "
+     "protective exits and exits continue", hq_copy.REASON["loss_limit"]),
+    ("the daily loss limit can't be checked: the day-start value is not known yet", hq_copy.REASON["loss_limit_check"]),
+    ("symbol is outside the owner's coin rule: thin_volume", hq_copy.REASON["coin_list"]),
+    ("the owner's coin rule can't be checked: no_recent_scan", hq_copy.REASON["coin_list_check"]),
+    ("'BTCPERP/USD' names a derivative: futures and perpetuals are refused (D127)", hq_copy.REASON["riba"]),
+    ("day-plan orders stay off until the owner records money limits (trade-graph money-limits --confirm)",
+     hq_copy.REASON["limits_missing"]),
 ])
 def test_refusal_reasons_map_to_plain_words(raw, words):
     assert hq_copy.reason_plain(raw) == words

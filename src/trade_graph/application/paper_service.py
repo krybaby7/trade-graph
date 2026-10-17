@@ -319,12 +319,22 @@ class PaperService:
                     management[pid] = asyncio.run(self.execution.advance_pause(pid))
                 except Exception as exc:
                     failures.append("pause:" + type(exc).__name__)
+            # The owner's money limits (T32): day-start values, the daily loss stop and its cancellation of
+            # resting entries. A failure here is reported but never holds back protective exits: unsent entries
+            # are re-checked against the limits at dispatch.
+            limit_failures = []
+            for pid in self.management_portfolio_ids:
+                try:
+                    asyncio.run(self.execution.enforce_money_limits(pid))
+                except Exception as exc:
+                    limit_failures.append("money_limits:" + type(exc).__name__)
             # An unavailable reconciliation cannot authorize fresh submission.
             if not failures:
                 try:
                     asyncio.run(self.execution.dispatch())
                 except Exception as exc:
                     failures.append("dispatch:" + type(exc).__name__)
+            failures.extend(limit_failures)
         return management, tuple(failures)
 
     def _ai_paused(self) -> bool:

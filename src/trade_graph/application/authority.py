@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.contracts.models import Decision, Mandate, OwnerPolicy
 from trade_graph.domain.clock import Clock, utc_iso
-from trade_graph.domain.errors import AuthorityDenied, DuplicateRecord, ValidationFailure
+from trade_graph.domain.errors import AuthorityDenied, DuplicateRecord, StaleState, ValidationFailure
 from trade_graph.domain.money import Money
 from trade_graph.kernel.authority import assert_action, mandate_within_owner
+
+# ``coin_rule(symbol, as_of=..., max_age=...)`` answers like ``CoinScanStore.coin_rule`` (W2-B, D174): an object
+# with ``passed`` (True, False or None for unknown), ``status`` and ``reasons``.
+CoinRule = Callable[..., Any]
 
 # The paper default names only strategies with an installed template. Earlier
 # defaults also carried two test-fixture IDs; databases that hold them are
@@ -25,15 +31,18 @@ def _digest(document: str) -> str:
 
 
 class AuthorityRecord:
-    def __init__(self, database: Database, clock: Clock) -> None:
+    def __init__(self, database: Database, clock: Clock, *, coin_rule: CoinRule | None = None) -> None:
         self.database = database
         self.clock = clock
+        self._coin_rule = coin_rule
 
     def install_policy(self, policy: OwnerPolicy, *, role: str) -> None:
         if role != "owner":
             raise AuthorityDenied("only the owner can revise owner policy")
         if policy.withdrawals_allowed:
             raise AuthorityDenied("withdrawals are not a runtime permission")
+        if policy.leverage_allowed:
+            raise AuthorityDenied("margin and leverage are refused (D127)")
         document = policy.model_dump_json()
         digest = _digest(document)
         with self.database.immediate() as conn:
@@ -131,6 +140,55 @@ class AuthorityRecord:
                 self.install_mandate(revised, role="owner")
         return revised
 
+    @staticmethod
+    def _require_listed(policy: OwnerPolicy, mandate: Mandate, symbol: str) -> None:
+        """The list part of the coin scope. Under the owner's coin rule a rule mandate names no list."""
+        if mandate.coin_scope == "owner_rule":
+            if policy.coin_scope is None:
+                raise AuthorityDenied("symbol is outside the active mandate: it follows a coin rule the owner "
+                                      "policy does not have")
+            return
+        if symbol not in mandate.symbols or (policy.coin_scope is None and symbol not in policy.allowed_symbols):
+            raise AuthorityDenied("symbol is outside the active mandate")
+
+    def coin_rule_answer(self, policy: OwnerPolicy, symbol: str):
+        """The scanner's answer for ``symbol`` now (D138 item 3); None when the policy keeps a list."""
+        scope = policy.coin_scope
+        if scope is None:
+            return None
+        rule = self._coin_rule
+        if rule is None:
+            from trade_graph.application.coin_scanner.store import CoinScanStore
+
+            rule = CoinScanStore(self.database, self.clock).coin_rule
+        return rule(symbol, as_of=self.clock.now(), max_age=timedelta(seconds=scope.max_scan_age_seconds))
+
+    def require_coin_rule(self, policy: OwnerPolicy, symbol: str) -> None:
+        """Entries only: a pair that passed the scanner's checks at this moment. Unknown refuses, as stale."""
+        scope = policy.coin_scope
+        if scope is None:
+            return
+        if not symbol.endswith("/" + scope.quote_asset):
+            raise AuthorityDenied(f"symbol is outside the owner's coin rule: only {scope.quote_asset} pairs")
+        answer = self.coin_rule_answer(policy, symbol)
+        if answer.passed is True:
+            return
+        if answer.passed is False:
+            reasons = ", ".join(answer.reasons) if answer.reasons else answer.status
+            raise AuthorityDenied(f"symbol is outside the owner's coin rule: {reasons}")
+        raise StaleState(f"the owner's coin rule can't be checked: {answer.status}")
+
+    def entry_scope(self, policy: OwnerPolicy, mandate: Mandate, symbol: str) -> str:
+        """For an unsent entry: "submit", "reject" (outside the scope) or "hold" (the coin rule is unknown)."""
+        try:
+            self._require_listed(policy, mandate, symbol)
+            self.require_coin_rule(policy, symbol)
+        except AuthorityDenied:
+            return "reject"
+        except StaleState:
+            return "hold"
+        return "submit"
+
     def active_policy(self) -> OwnerPolicy:
         row = self.database.execute(
             """SELECT document_json FROM owner_policy_revisions
@@ -175,10 +233,10 @@ class AuthorityRecord:
             raise AuthorityDenied("decision mode mismatch")
         if venue not in policy.allowed_venues:
             raise AuthorityDenied("venue is outside the owner policy")
-        if decision.symbol is not None and (
-            decision.symbol not in mandate.symbols or decision.symbol not in policy.allowed_symbols
-        ):
-            raise AuthorityDenied("symbol is outside the active mandate")
+        if decision.symbol is not None:
+            self._require_listed(policy, mandate, decision.symbol)
+            if decision.action == "enter" and policy.coin_scope is not None:
+                self.require_coin_rule(policy, decision.symbol)
         if decision.action == "enter" and self.mandate_expired(mandate):
             raise AuthorityDenied("expired mandate allows management only")
         order_type = "limit" if decision.limit_price is not None else "market"
