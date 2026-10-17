@@ -301,11 +301,10 @@ class SwitchedDepartment:
             return False
 
     def _problem(self) -> str | None:
-        return self.installation.problem_now(self.clock.now().date()) if self.perplexity is not None else (
-            self.installation.problem or "the Perplexity route is not built")
+        return self.installation.problem_now(self.clock.now().date())
 
     def recover(self, task: dict) -> dict | None:
-        if _is_wake(task) and self.perplexity is not None:
+        if _is_wake(task):
             recovered = self.perplexity.recover(task)  # a round already recorded: its answer, or "interrupted"
             if recovered is not None:
                 return recovered
@@ -355,16 +354,18 @@ def perplexity_departments(runtime, protected_owner: Path, handlers: Mapping[str
     installation = assemble_perplexity_route(database, runtime.clock, protected_owner,
                                              deployment_id=runtime.deployment_id,
                                              transport_factory=transport_factory)
+    # Not ready: the handlers still recover rounds recorded earlier (an unfinished one becomes "interrupted"), but
+    # their gateway has paid calls off and a wake fails with the reason before anything is built or sent.
+    gateway = installation.gateway or ModelGateway(BudgetGateway(database, runtime.clock), paid_calls_enabled=False)
+    route = installation.route or PerplexityRoute(deployment_id=route_deployment(runtime.deployment_id))
     for role in switched:
-        perplexity = None
-        if installation.problem is None:
-            if role == "research":
-                perplexity = FocusResearch(runtime.execution, gateway=installation.gateway, route=installation.route)
-            else:
-                perplexity = LeaderNewsRounds(
-                    PerplexityWebResearch(installation.gateway, route=installation.route, policy=None),
-                    enabled=lambda: perplexity_enabled_for(database, "leader"),
-                    spend_policy=lambda: perplexity_setting(database).spend_policy, engine=engine)
+        if role == "research":
+            perplexity = FocusResearch(runtime.execution, gateway=gateway, route=route)
+        else:
+            perplexity = LeaderNewsRounds(
+                PerplexityWebResearch(gateway, route=route, policy=None),
+                enabled=lambda: perplexity_enabled_for(database, "leader"),
+                spend_policy=lambda: perplexity_setting(database).spend_policy, engine=engine)
         result[role] = SwitchedDepartment(role, perplexity=perplexity, subscription=handlers[role],
                                           installation=installation, clock=runtime.clock,
                                           enabled=lambda role=role: perplexity_enabled_for(database, role))

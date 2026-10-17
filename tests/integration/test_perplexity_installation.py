@@ -289,6 +289,13 @@ def test_a_switched_department_whose_route_is_not_ready_fails_its_wake_visibly_a
     assert output["_status"] == "FAILED" and output["failure_scope"] == "turn"
     assert "not ready: no Perplexity key" in output["reason"] and "Nothing was sent" in output["reason"]
     assert handlers["research"].calls == []
+    # It can still recover a round recorded before (an unfinished one becomes "interrupted"), on a gateway with paid
+    # calls off; a wake with no recorded round has nothing to recover.
+    from trade_graph.application.focus_research import FocusResearch
+
+    assert isinstance(result["research"].perplexity, FocusResearch)
+    assert result["research"].perplexity.gateway.paid_calls_enabled is False
+    assert result["research"].recover({"task_id": "t-2", "input": wake["input"]}) is None
     assert account.database.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
 
 
