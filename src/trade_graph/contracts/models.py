@@ -124,6 +124,9 @@ class OwnerPolicy(ContractModel):
     money_limits: OwnerMoneyLimits | None = None
     # None keeps the paper coin list as ``allowed_symbols``; a scope makes it the scanner rule (D138 item 3).
     coin_scope: CoinScope | None = None
+    # T45 (D227): whether news alarms really wake departments. None (older revisions) and "shadow" record whom an
+    # alarm would wake and wake nobody; "live" wakes them. Only the owner command ``news-wakes --confirm`` sets it.
+    news_wakes: Literal["shadow", "live"] | None = None
 
     @field_validator(
         "maximum_gross_exposure_fraction",
@@ -149,7 +152,7 @@ class OwnerPolicy(ContractModel):
     def _omit_absent_money_limits(self, handler):
         # Stored revisions are hashed and compared as documents; an older one must re-serialise byte for byte.
         result = handler(self)
-        for name in ("money_limits", "coin_scope"):
+        for name in ("money_limits", "coin_scope", "news_wakes"):
             if getattr(self, name) is None:
                 result.pop(name, None)
         return result
