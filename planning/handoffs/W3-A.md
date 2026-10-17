@@ -10,7 +10,7 @@ exactly what it will record). Nothing needs a decision from you; the tests used 
 money, key, paid service or exchange was used.
 
 Branch: `claude/t32-money-limits`, head: the commit that adds this line; code at `6e8914c`. Pull request:
-PR_LINK.
+https://github.com/krybaby7/trade-graph/pull/10.
 
 ## What was built
 
