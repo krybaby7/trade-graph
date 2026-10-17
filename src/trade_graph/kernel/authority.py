@@ -64,6 +64,9 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/events/",
     # T42 scorecard: how the paper result is valued and compared is a scoring definition, like the kernel sums.
     "src/trade_graph/application/scorecard.py",
+    # T38 Leader news rounds: the Leader's authority boundary (no trade, approval or block), routing and receipts.
+    "src/trade_graph/contracts/leader_news.py",
+    "src/trade_graph/application/leader_news/",
 )
 
 
