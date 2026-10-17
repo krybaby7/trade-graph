@@ -60,6 +60,10 @@ DEFAULT_DAY_START = "00:00"  # D138 item 6, when the owner recorded no other tra
 RUNNING_TASKS = frozenset({"LEASED", "RUNNING"})
 LATE_AFTER_SECONDS = 300  # a day start recorded later than this says how late the team started
 NOTE_QUOTE_CHARS = 120  # notes handed to a wake are quoted shorter than summaries, so a busy page stays in budget
+SOFTWARE_PREFIX = "software:"  # the engine's prefix for a software source's trigger (``EventEngine.notify``)
+NEWS_ROUTE_PREFIX = "software:news-alarm:"  # a news alarm's trigger names its saved route (T45, migration 0042)
+SOURCE_CHARS = 80  # the feed's publisher as the owner's settings name it (``FeedSource.publisher``)
+_UNSAFE = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 _SYMBOL = re.compile(SYMBOL_PATTERN)
 WakesBefore = Annotated[int | None, Query(ge=1)]
 WakesLimit = Annotated[int, Query(ge=1, le=PAGE_MAX)]
@@ -302,6 +306,32 @@ class _Reader:
             """SELECT department, COUNT(*) FROM alarm_deliveries WHERE status = 'pending' AND kind = 'alarm_fired'
                AND (portfolio_id IS NULL OR portfolio_id = ?) GROUP BY department""", (self.pid,))}
 
+    def news_sources(self, refs: Iterable[str]) -> dict[str, str]:
+        """The source (feed publisher) of each saved news-alarm route, by the engine trigger's source (T45)."""
+        wanted = sorted({ref for ref in refs if ref})
+        if not wanted or not self.has("news_alarm_wake_routes", "news_headlines"):
+            return {}
+        marks = ",".join("?" for _ in wanted)
+        return {f"{SOFTWARE_PREFIX}{row[0]}": row[1] for row in self.rows(
+            f"""SELECT r.source_ref, h.publisher FROM news_alarm_wake_routes r JOIN news_headlines h
+                ON h.headline_id = r.headline_id WHERE r.source_ref IN ({marks})""",
+            [ref[len(SOFTWARE_PREFIX):] for ref in wanted])}
+
+    def news_mode(self) -> str:
+        """The owner's news wake-up switch in the newest owner policy (T45): live, or shadow (also when unreadable)."""
+        if not self.has("owner_policy_revisions"):
+            return "shadow"
+        row = self.one("SELECT document_json FROM owner_policy_revisions ORDER BY created_at DESC, rowid DESC LIMIT 1")
+        return "live" if row and _loads(row[0]).get("news_wakes") == "live" else "shadow"
+
+    def news_routes(self, since: datetime) -> dict[str, int]:
+        """News-alarm routes of this portfolio since ``since`` by mode: wake-ups made (live) or only recorded."""
+        if not self.has("news_alarm_wake_routes"):
+            return {}
+        return {row[0]: int(row[1]) for row in self.rows(
+            """SELECT mode, COUNT(*) FROM news_alarm_wake_routes WHERE portfolio_id = ? AND alarm_at >= ?
+               GROUP BY mode""", (self.pid, utc_iso(since)))}
+
     def counts(self, since: datetime) -> dict[str, int]:
         return {row[0]: int(row[1]) for row in self.rows(
             "SELECT department, COUNT(*) FROM wakes WHERE portfolio_id = ? AND created_at >= ? GROUP BY department",
@@ -339,8 +369,16 @@ def _fill_words(template: str, trigger: dict, **extra: str) -> str:
                            price=_amount(trigger.get("price")), symbol=symbol, **extra)
 
 
+def _source(value: Any) -> str | None:
+    """A news alarm's source for a sentence: the feed's publisher, cleaned, redacted and bounded."""
+    if not isinstance(value, str):
+        return None
+    cleaned = c.cut(redact(_UNSAFE.sub(" ", value)), SOURCE_CHARS)
+    return cleaned or None
+
+
 def _event(trigger: dict, context: dict, deliveries: dict[str, dict], conditions: dict[str, dict],
-           check_ins: dict[str, dict]) -> list:
+           check_ins: dict[str, dict], sources: dict[str, str] | None = None) -> list:
     """One trigger in plain words."""
     kind = trigger.get("kind")
     event = W["event"]
@@ -395,6 +433,10 @@ def _event(trigger: dict, context: dict, deliveries: dict[str, dict], conditions
         return c.says(_capital(event["wake_request"].format(who=_who(trigger.get("requested_by")))))
     if kind == "news_alarm":
         symbol = _symbol(trigger.get("symbol"))
+        source = _source((sources or {}).get(trigger.get("source_ref") or ""))
+        if source is not None:
+            return c.says(event["news_alarm_symbol_source"].format(symbol=symbol, source=source) if symbol
+                          else event["news_alarm_source"].format(source=source))
         return c.says(event["news_alarm_symbol"].format(symbol=symbol) if symbol else event["news_alarm"])
     if kind == "task_created":
         return c.says(c.text(event["task_created"], code=c.technical(trigger.get("objective"))))
@@ -512,6 +554,9 @@ class _Lookups:
         self.tasks = reader.task_states(row["task_id"] for row in rows if row["status"] in OPEN_STATUSES)
         wanted = [trigger.get("alarm_id") for trigger in triggers if trigger.get("kind") == "alarm_fired"]
         self.conditions = reader.alarm_conditions(alarm for alarm in wanted if isinstance(alarm, str))
+        self.sources = reader.news_sources(
+            trigger["source_ref"] for trigger in triggers if trigger.get("kind") == "news_alarm"
+            and isinstance(trigger.get("source_ref"), str) and trigger["source_ref"].startswith(NEWS_ROUTE_PREFIX))
 
 
 def _deliveries(context: dict) -> dict[str, dict]:
@@ -530,7 +575,7 @@ def _item(row, lookups: _Lookups) -> dict:
     if not reasons or row["department"] not in DEPARTMENTS:
         raise ValueError("a wake without a readable reason or department")
     deliveries = _deliveries(context)
-    events = [_event(trigger, context, deliveries, lookups.conditions, lookups.check_ins)
+    events = [_event(trigger, context, deliveries, lookups.conditions, lookups.check_ins, lookups.sources)
               for trigger in triggers[:EVENT_LINES_MAX]]
     allowance = _allowance(_loads(row["allowance_json"]))
     status = row["status"]
@@ -722,9 +767,23 @@ def _counts(reader: _Reader, day: TradingDay) -> dict:
     total_week = sum(item["week"] for item in departments)
     reasons = reader.reasons(day.start)
     words = (_plural(copy["today"], total_today) if total_today else copy["today_none"]) + \
-        copy["week"].format(n=total_week)
+        copy["week"].format(n=total_week) + _news_counts(reader, day)
     return {"today": total_today, "week": total_week, "text": c.says(words), "departments": departments,
             "reasons_today": [{"kind": kind, "count": reasons[kind]} for kind in TRIGGER_KINDS if reasons.get(kind)]}
+
+
+def _news_counts(reader: _Reader, day: TradingDay) -> str:
+    """News alarms in the day's counts (T45): wake-ups they made when live, or would have made in shadow mode."""
+    if not reader.has("news_alarm_wake_routes"):
+        return ""
+    copy = W["counts"]
+    mode = reader.news_mode()
+    today, week = reader.news_routes(day.start), reader.news_routes(min(day.start, reader.now - WEEK))
+    if mode == "live":
+        return _plural(copy["news_live"], today.get("live", 0), week=week.get("live", 0))
+    if not week.get("shadow"):
+        return copy["news_shadow_none"]
+    return _plural(copy["news_shadow"], today.get("shadow", 0), week=week["shadow"])
 
 
 def _day(reader: _Reader) -> dict:

@@ -1341,6 +1341,9 @@ WAKES: Final = {
         "wake_request": "{who} asked for it with a note.",
         "news_alarm": "A news alarm.",
         "news_alarm_symbol": "A news alarm about {symbol}.",
+        # T45: the headline's source (the owner's feed list) from the saved route; the headline itself is a quote.
+        "news_alarm_source": "A news alarm from {source}.",
+        "news_alarm_symbol_source": "A news alarm about {symbol} from {source}.",
         "task_created": "A task was made for it outside its wake-ups (for example a report to look at).",
     },
     "leg": {"stop": "stop", "take_profit": "target"},
@@ -1441,6 +1444,15 @@ WAKES: Final = {
         "today": ("Today: 1 wake-up.", "Today: {n} wake-ups."),
         "today_none": "Today: no wake-up yet.",
         "week": " Last 7 days: {n}.",
+        # T45 (D227): the owner decides from these whether news alarms should really wake people (news-wakes).
+        "news_shadow": (" News alarms only record whom they would wake for now: 1 wake-up would have happened today, "
+                        "{week} in the last 7 days; nobody was woken.",
+                        " News alarms only record whom they would wake for now: {n} wake-ups would have happened "
+                        "today, {week} in the last 7 days; nobody was woken."),
+        "news_shadow_none": (" News alarms only record whom they would wake for now; none would have woken anyone in "
+                             "the last 7 days."),
+        "news_live": (" News alarms wake people: 1 news wake-up today, {week} in the last 7 days.",
+                      " News alarms wake people: {n} news wake-ups today, {week} in the last 7 days."),
     },
 }
 
