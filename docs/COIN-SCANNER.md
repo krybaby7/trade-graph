@@ -165,8 +165,11 @@ the financial database as a candle file (the D133 guard) and creates neither fil
 labelled fixture instead of Kraken. Each scan prints one JSON line with `public_requests`, `model_calls: 0` and
 `paid_calls: false`. `coin-shortlist` opens the database read-only and never creates or upgrades it.
 
-Running the scan every hour inside the paper service (after each candle collection) is wiring for the event
-engine and install packages (W5-A, W6-D); until then `--scans` or a scheduled task runs it.
+Since W6-D (D222) the paper service runs the scan every hour itself: its price collector first collects every
+eligible pair's hourly candles after the hour settled, then makes the one Ticker request and records the scan
+(KRAKEN-CANDLE-COLLECTION.md, "In the service"). The day start uses the newest of these scans; during the day they
+keep the coin rule's answer fresh (at most two hours old) without changing the day's shortlist. Outside the service
+`--scans` still works.
 
 ## Measured (synthetic data, cloud container, 2026-10-16)
 

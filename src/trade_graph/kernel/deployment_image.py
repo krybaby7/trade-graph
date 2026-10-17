@@ -29,6 +29,9 @@ from trade_graph.kernel.subscription_network import PreparedSubscriptionNetworkP
 
 OWNER_MOUNT = "/run/trade-graph-owner"
 STATE_MOUNT = "/var/lib/trade-graph"
+# W6-D (D224): the candle file lives beside the financial database in the private state mount. The service's price
+# collector writes it; the dashboard opens it read-only for HQ's charts. It is public data, never part of the books.
+MARKET_DATABASE = f"{STATE_MOUNT}/market_data.sqlite"
 OWNER_MANIFEST = Path(OWNER_MOUNT) / "runtime-manifest.json"
 IMAGE_SEAL = Path("/opt/trade-graph/image-seal.json")
 UID = GID = 10001
@@ -522,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
 
             return cli_main(["dashboard", "--mode", "paper", "--database", f"{STATE_MOUNT}/trade_graph.sqlite",
                              "--protected-owner", OWNER_MOUNT, "--session-file", f"{STATE_MOUNT}/owner-session.json",
-                             "--protected-network-bind", "--port", "8000"])
+                             "--market-database", MARKET_DATABASE, "--protected-network-bind", "--port", "8000"])
         if args.action == "manage-subscription":
             from trade_graph.application.subscription_management import run_subscription_management
 

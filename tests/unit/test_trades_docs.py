@@ -114,5 +114,5 @@ def test_the_id_gap_flag_and_the_first_trade_limit_are_documented() -> None:
     assert any(note.startswith("sequence_ids:") and "first trade a run receives" in note for note in NOTES)
 
 
-def test_the_integration_note_about_the_second_limiter_is_present() -> None:
-    assert "For the integration owner" in DOC and "rate_limit.py" in DOC
+def test_the_note_about_the_one_shared_limiter_is_present() -> None:
+    assert "One limiter (W6-D, D221)" in DOC and "rate_limit.KrakenRestLimiter" in FLAT

@@ -9,7 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.engineering.artifact_files import write_file
@@ -33,6 +33,29 @@ from trade_graph.domain.errors import AuthorityDenied
 from trade_graph.kernel.authority import owner_scope_covers
 
 
+class PriceCollectorConfig(BaseModel):
+    """The in-service price collector (W6-D, D222). It runs only with ``public_data_enabled``; ``enabled`` false keeps
+    the older behaviour (the hourly BTC/ETH refresh into ``hourly_candles`` and no candle file in the service)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = True
+    one_minute_symbols: list[str] = Field(default_factory=lambda: ["BTC/USD", "ETH/USD"], max_length=50)
+    one_minute_every_seconds: int = Field(default=300, ge=60, le=43_200)
+    ranking_every_hours: int = Field(default=1, ge=1, le=24)
+    wide_every_hours: int = Field(default=24, ge=1, le=60)
+    hourly_scan: bool = True
+    chunk_requests: int = Field(default=30, ge=1, le=500)
+
+    def settings(self):
+        from trade_graph.application.price_collector import CollectorSettings
+
+        return CollectorSettings(one_minute_symbols=tuple(self.one_minute_symbols),
+                                 one_minute_every_seconds=self.one_minute_every_seconds,
+                                 ranking_every_hours=self.ranking_every_hours, wide_every_hours=self.wide_every_hours,
+                                 hourly_scan=self.hourly_scan, chunk_requests=self.chunk_requests)
+
+
 class PaperRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -52,6 +75,17 @@ class PaperRuntimeConfig(BaseModel):
     paper_symbols: list[str] = Field(default_factory=lambda: ["BTC/USD", "ETH/USD"], min_length=1, max_length=10)
     tick_interval_seconds: float = Field(default=1, gt=0, le=60, allow_inf_nan=False)
     public_poll_interval_seconds: int = Field(default=10, ge=1, le=3600)
+    # W6-D: the price collector keeps the candle file beside the database current (D222, D224).
+    price_collector: PriceCollectorConfig = Field(default_factory=PriceCollectorConfig)
+    # W6-D (D223): the event engine (T35) replaces the fixed role timers. Off until the owner turns it on at step L3.
+    event_engine: bool = False
+
+    @model_validator(mode="after")
+    def _engine_needs_fresh_candles(self):
+        # The price watcher's candle and indicator alarms and the day start's scan read the collector's candle file.
+        if self.event_engine and not (self.public_data_enabled and self.price_collector.enabled):
+            raise ValueError("the event engine needs public data and the price collector")
+        return self
 
     @field_validator("schedule_intervals", mode="before")
     @classmethod
@@ -92,6 +126,29 @@ def subscription_market_transport(protected_owner: Path):
     return HttpxTextTransport(timeout=5, proxy=profile.market_proxy_url, trust_env=False)
 
 
+def collector_transports(protected_owner: Path | None):
+    """The price collector's public transports (D222): pair list, OHLC and Ticker with their own response limits; in
+    a protected deployment through the owner-pinned public-market proxy, like the quote feed."""
+    from trade_graph.adapters.market.kraken_candles import OHLC_MAXIMUM_RESPONSE_BYTES, OHLC_TIMEOUT_SECONDS
+    from trade_graph.adapters.market.kraken_catalog import CATALOG_MAXIMUM_RESPONSE_BYTES, CATALOG_TIMEOUT_SECONDS
+    from trade_graph.adapters.market.kraken_ticker import TICKER_MAXIMUM_RESPONSE_BYTES, TICKER_TIMEOUT_SECONDS
+    from trade_graph.adapters.market.public import HttpxTextTransport
+    from trade_graph.application.price_collector import CollectorTransports
+
+    proxy, trust_env = None, True
+    if protected_owner is not None:
+        from trade_graph.kernel.subscription_network import load_subscription_network_profile
+
+        proxy, trust_env = load_subscription_network_profile(protected_owner).market_proxy_url, False
+
+    def transport(timeout: float, size: int) -> HttpxTextTransport:
+        return HttpxTextTransport(timeout, maximum_response_bytes=size, proxy=proxy, trust_env=trust_env)
+
+    return CollectorTransports(catalog=transport(CATALOG_TIMEOUT_SECONDS, CATALOG_MAXIMUM_RESPONSE_BYTES),
+                               ohlc=transport(OHLC_TIMEOUT_SECONDS, OHLC_MAXIMUM_RESPONSE_BYTES),
+                               ticker=transport(TICKER_TIMEOUT_SECONDS, TICKER_MAXIMUM_RESPONSE_BYTES))
+
+
 def _private_directory(path: Path) -> None:
     if path.is_symlink():
         raise ValueError("private runtime directory cannot be a symlink")
@@ -102,8 +159,15 @@ def _private_directory(path: Path) -> None:
 
 def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
                            config: PaperRuntimeConfig | None = None, clock=None,
-                           api_keys=None, transport=None, protected_owner: Path | None = None):
-    """Construct paper services, never fund budgets or enable persisted owner permissions."""
+                           api_keys=None, transport=None, protected_owner: Path | None = None,
+                           market_database: Path | None = None, market_transports=None,
+                           market_limiter=None, market_evidence_label: str = "live_public"):
+    """Construct paper services, never fund budgets or enable persisted owner permissions.
+
+    ``market_database`` is the installation's candle file (D224). With public data and the price collector enabled it
+    is opened (created private when missing), the collector is built (``runtime.price_collector``) and the hourly
+    features read it (D220). ``market_transports`` and ``market_limiter`` replace the real public transports and the
+    process limiter (tests)."""
     config = config or PaperRuntimeConfig()
     if path.is_symlink() or not path.is_file():
         raise ValueError("database does not exist; initialize a paper account first")
@@ -112,6 +176,7 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
     if not stat.S_ISREG(path.stat().st_mode):
         raise ValueError("paper database must be a regular file")
     database = Database(path)
+    market_data = None
     try:
         if database.execute("SELECT 1 FROM portfolios WHERE mode != 'paper' LIMIT 1").fetchone():
             raise ValueError("paper service requires a database containing paper accounts only")
@@ -187,10 +252,27 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             maintenance_ids = [item[0] for item in database.execute(
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper'",
             )]
+            extra = None
+            if config.event_engine:
+                # D223: day plans rest on the day's coins, so the feed quotes them too (one extra request a poll).
+                from trade_graph.application.service_market_data import quoted_day_coins
+
+                extra = quoted_day_coins(database, clock, maintenance_ids, execution=execution, ledger=ledger)
             feed = PublicPaperFeed(execution, maintenance_ids, config.paper_symbols,
                                    interval_seconds=config.public_poll_interval_seconds,
                                    transport=subscription_market_transport(protected_owner)
-                                   if protected_owner is not None else None)
+                                   if protected_owner is not None else None, extra_symbols=extra)
+        if market_database is not None and config.public_data_enabled and config.price_collector.enabled:
+            from trade_graph.application.service_market_data import activity_recorder, open_service_market_data
+
+            portfolios = [item[0] for item in database.execute(
+                "SELECT portfolio_id FROM portfolios WHERE mode = 'paper'")]
+            market_data = open_service_market_data(
+                Path(market_database), database=database, clock=clock, portfolio_ids=portfolios, ledger=ledger,
+                paper_symbols=config.paper_symbols, settings=config.price_collector.settings(),
+                transports=market_transports or collector_transports(protected_owner), limiter=market_limiter,
+                evidence_label=market_evidence_label, record=activity_recorder(ledger, [pid]))
+            execution.hourly_history = market_data.history
         runtime = SimpleNamespace(database=database, clock=clock, portfolio_id=pid, ledger=ledger,
                                execution=execution, scheduler=scheduler, versions=versions,
                                artifact_runtime=artifact_runtime, budget=budget, secretary=secretary,
@@ -199,7 +281,9 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
                                model_config=model_config if paid else None,
                                prepare_runtime=None, runtime_ready=None,
                                deployment_id=model_config.deployment_id if model_config else "deployment",
-                               paid_calls_enabled=paid, live_enabled=False, config=config)
+                               paid_calls_enabled=paid, live_enabled=False, config=config,
+                               market_data=market_data,
+                               price_collector=market_data.collector if market_data is not None else None)
         if protected_owner is not None:
             from trade_graph.application.deployment_runtime import ProtectedDeploymentBinding
 
@@ -212,5 +296,7 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             runtime.prepare_runtime, runtime.runtime_ready = binding.prepare, binding.ready
         return runtime
     except BaseException:
+        if market_data is not None:
+            market_data.close()
         database.close()
         raise

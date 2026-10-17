@@ -18,6 +18,7 @@ import shutil
 import ssl
 import subprocess
 import tarfile
+import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -31,6 +32,10 @@ from trade_graph.kernel.deployment_image import (
 from trade_graph.kernel.runtime_manifest import canonical_json, document_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
+# The indicator engine's compiled libraries (T27, D136): the image must carry their Linux wheels (W6-D, D224).
+NATIVE_RUNTIME_WHEELS = ("numpy", "ta-lib")
+IMAGE_PYTHON_TAG = "cp312"
+IMAGE_MACHINE = "x86_64"
 
 # The same probe records the runtime during sealing and independently checks the
 # exact content-addressed image afterward. /proc maps proves Python actually
@@ -136,6 +141,46 @@ def stage_sqlite_source(context: Path, inputs: dict, *, archive: Path | None = N
     probe.write_text(SQLITE_RUNTIME_PROBE)
     return {"sqlite_source": policy, "sqlite_source_sha256": directory_sha256(target),
             "sqlite_runtime_probe_sha256": file_sha256(probe)}
+
+
+def _requirement_blocks(requirements: str) -> dict[str, str]:
+    """``uv export`` writes one block per package: ``name==version \\`` then indented hash lines."""
+    blocks: dict[str, str] = {}
+    current = None
+    for line in requirements.splitlines():
+        if line and not line[0].isspace() and not line.startswith("#"):
+            current = re.split(r"[=<>!~ ;]", line, maxsplit=1)[0].lower().replace("_", "-")
+            blocks[current] = line + "\n"
+        elif current is not None and line.strip().startswith("--hash="):
+            blocks[current] += line + "\n"
+        elif line and not line[0].isspace():
+            current = None
+    return blocks
+
+
+def native_wheel_pins(requirements: str, lock_text: str) -> dict:
+    """NumPy and TA-Lib must be pinned with hashes, including the hash of the lock's CPython 3.12 Linux x86-64 wheel.
+
+    The acquisition container downloads binary wheels only (``--only-binary=:all:``) for ``linux/amd64`` Python 3.12,
+    so a missing or unhashed pin, or a lock without that wheel, would fail inside Docker or build an image whose
+    indicator engine cannot load. This is checked before anything is downloaded.
+    """
+    packages = {item["name"]: item for item in tomllib.loads(lock_text).get("package", [])}
+    blocks = _requirement_blocks(requirements)
+    pins = {}
+    for name in NATIVE_RUNTIME_WHEELS:
+        package, block = packages.get(name), blocks.get(name, "")
+        version = package.get("version") if package else None
+        wheels = [wheel for wheel in (package or {}).get("wheels", [])
+                  if f"-{IMAGE_PYTHON_TAG}-{IMAGE_PYTHON_TAG}-" in wheel.get("url", "")
+                  and "manylinux" in wheel["url"] and wheel["url"].endswith(f"{IMAGE_MACHINE}.whl")]
+        hashes = set(re.findall(r"--hash=sha256:([0-9a-f]{64})", block))
+        chosen = next((wheel for wheel in wheels if wheel.get("hash", "").removeprefix("sha256:") in hashes), None)
+        if version is None or not block.startswith(f"{name}=={version}") or chosen is None:
+            raise ValueError("NumPy and TA-Lib must be pinned with the hash of a CPython 3.12 Linux x86-64 wheel")
+        pins[name] = {"version": version, "wheel": chosen["url"].rsplit("/", 1)[-1],
+                      "sha256": chosen["hash"].removeprefix("sha256:")}
+    return pins
 
 
 def run(arguments: list[str], *, output: bool = False) -> str:
@@ -292,6 +337,8 @@ def build(output: Path, *, subscription_tools: Path | None = None,
     requirements = context / "requirements.txt"
     requirements.write_text(run(["uv", "export", "--locked", "--offline", "--no-dev", "--no-emit-project",
                                 "--format", "requirements-txt"], output=True) + "\n")
+    # The indicator engine's NumPy and TA-Lib wheels are in the export, pinned and hashed (D224), before any download.
+    native_wheel_pins(requirements.read_text(), (ROOT / "uv.lock").read_text())
     (context / "build-requirements.txt").write_text(inputs["build_backend_requirement"] + "\n")
     wheelhouse = context / "wheelhouse"
     wheelhouse.mkdir()

@@ -175,6 +175,11 @@ intended fields and preserve unrelated owner settings:
 }
 ```
 
+Since W6-D two more settings exist (docs/L3-INSTALL-CHECKLIST.md): `price_collector` (on by default with public
+data: the service keeps the candle file `market_data.sqlite` beside the database current, runs the hourly coin scan,
+and the hourly features read the candle file instead of `hourly_candles`, D220 and D222) and `event_engine` (off by
+default; `true` replaces the fixed timers below with wakes, D223; it needs public data and the collector).
+
 Default cadence is Trader every four hours, Research daily, Learning twice weekly,
 Leader weekly and Optimisation weekly. `schedule_intervals` and activated permitted
 artifacts may configure supported role intervals. New schedules are immediately

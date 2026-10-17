@@ -20,6 +20,11 @@ The financial schema, `hourly_candles` and earlier feature snapshots are not
 touched. The financial database never needs this file; the file never needs
 the financial database.
 
+In an installation the file is `market_data.sqlite` beside the financial database
+(`/var/lib/trade-graph` in the protected image, W6-D, D224). The service's price
+collector is its only writer; the dashboard, the hourly features and the price
+watcher open it read-only (`ReadOnlyMarketData`).
+
 ## Tables (append-only; triggers refuse UPDATE and DELETE)
 
 | Table | Holds |

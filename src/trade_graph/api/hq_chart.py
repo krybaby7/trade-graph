@@ -124,6 +124,11 @@ class ChartCandleFile:
                 self._store = None
 
 
+def candle_store_for(runtime) -> tuple[CandleStore | None, str]:
+    """The dashboard's read-only candle store and its status (``connected`` or why not), for any HQ reader."""
+    return _candle_store(runtime)
+
+
 def _candle_store(runtime) -> tuple[CandleStore | None, str]:
     value = getattr(runtime, "chart_candles", None)
     if isinstance(value, ChartCandleFile):

@@ -184,7 +184,7 @@ class DurableDepartmentMixin:
         try:
             if not result.ok:
                 raise ValidationFailure(f"model {result.failure}: {result.message}")
-            return self.apply(task, self.reply_type.model_validate(result.payload))
+            return self.apply(task, self.reply_type_for(task).model_validate(result.payload))
         except (TradeGraphError, ValidationError) as exc:
             with self.database.immediate():
                 self.scheduler.leased_row(task["_lease"])

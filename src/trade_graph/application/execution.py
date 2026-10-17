@@ -116,6 +116,9 @@ class Execution:
         self.money_limits = MoneyLimitGuard(database, ledger, clock)
         # T34: a filled day-plan entry gets its protective exit in the transaction that records the fill.
         self.day_plan_protection = DayPlanProtection(self)
+        # D220: where the Trader's and Research's hourly features read their hours. An installation with the candle
+        # file sets the candle store's history here; None reads this database's hourly_candles (market_context).
+        self.hourly_history = None
 
     def now(self) -> str:
         return utc_iso(self.clock.now())

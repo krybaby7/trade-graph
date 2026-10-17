@@ -81,6 +81,7 @@ class PaperService:
         automatic_schedule: bool = True,
         optimisation_manual_only: bool = False,
         event_engine: EngineOptions | None = None,
+        price_collector=None,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
@@ -160,6 +161,10 @@ class PaperService:
         self._feed_last_diagnostic_at = None
         self._feed_last_failure = None
         self._reference_fx_error = None
+        # W6-D (D222): the price collector keeps the candle file current in its own thread; management never waits
+        # for it, and its failures are reported in the tick as collector:<error>.
+        self.price_collector = price_collector
+        self._collector_task: asyncio.Task | None = None
         # T35: with the event engine, departments wake on events and their own check-ins instead of fixed timers.
         self.event_engine: EventEngine | None = None
         self.price_watcher = None
@@ -179,6 +184,8 @@ class PaperService:
     def request_stop(self) -> None:
         """Signal a graceful drain; current paid attempts are never cancelled/replayed."""
         self._stop_requested.set()
+        if self.price_collector is not None:
+            self.price_collector.request_stop()  # its waits end at once; a request in flight finishes
 
     def _acquire(self) -> None:
         ownership = self.database.exclusive_lock("paper-service", single_link=False)
@@ -231,6 +238,8 @@ class PaperService:
         self._run_error_type = None
         self._last_tick_failures = ()
         self._stop_requested.clear()
+        if self.price_collector is not None:
+            self.price_collector.resume()
         self._acquire()
         self._shutdown_failures = []
         self._shutdown_task = None
@@ -768,6 +777,7 @@ class PaperService:
                     raise maintenance_errors[0]
         management, management_failures = await self._offload(self._management)
         failures.extend(management_failures)
+        failures.extend(self._collect_prices())
         scheduled = 0
         if not self._stop_requested.is_set():
             acquired, input_failures = await self._prepare_role_inputs()
@@ -798,6 +808,22 @@ class PaperService:
             self._last_tick_failures = tuple(failures)
         return TickResult(observations, scheduled, completed, self._role_task is not None,
                           management, tuple(failures))
+
+    def _collect_prices(self) -> list[str]:
+        """Keep one collector step running in its own thread; report a failed step, never wait for one."""
+        if self.price_collector is None:
+            return []
+        failures = []
+        if self._collector_task is not None and self._collector_task.done():
+            try:
+                self._collector_task.result()
+            except Exception as exc:  # noqa: BLE001 - the collector's failure is reported, management goes on
+                failures.append("collector:" + type(exc).__name__)
+            self._collector_task = None
+        if self._collector_task is None and not self._stop_requested.is_set():
+            self._collector_task = asyncio.create_task(
+                asyncio.to_thread(self._thread_call, self.price_collector.step))
+        return failures
 
     async def run(self, *, max_ticks: int | None = None, install_signal_handlers: bool = True) -> dict:
         if max_ticks is not None:
@@ -884,6 +910,14 @@ class PaperService:
                     # still-running feed thread before it releases ownership.
                     errors.append(exc)
                 self._role_task = None
+            if self._collector_task:
+                # The stop signal already ended its waiting; a public request in flight finishes first.
+                try:
+                    await self._wait_for_work(self._collector_task, maintenance_errors=errors)
+                except Exception as exc:  # noqa: BLE001 - a collector failure is reported, never a shutdown error
+                    self._shutdown_failures = list(dict.fromkeys(
+                        [*self._shutdown_failures, "collector:" + type(exc).__name__]))[:20]
+                self._collector_task = None
             if self._feed_task:
                 try:
                     _, failure = await self._consume_feed(self._feed_task, maintenance_errors=errors)

@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
 from trade_graph.adapters.persistence.db import Database
+from trade_graph.application.price_history import HistoryStore, HourlyHistory
 from trade_graph.domain.clock import parse_utc, utc_iso
 
 DEFAULT_DECISION_CANDLE_WAIT_SECONDS = 300
@@ -27,14 +28,16 @@ def expected_close(as_of: datetime) -> datetime:
     return as_of.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
 
 
-def missing_expected_candles(database: Database, symbols: Iterable[str], as_of: datetime,
+def _history(store: Database | HourlyHistory) -> HourlyHistory:
+    """The candle store's hourly history when given one (D220); a database means its ``hourly_candles`` table."""
+    return store if hasattr(store, "received_close") else HistoryStore(store)
+
+
+def missing_expected_candles(store: Database | HourlyHistory, symbols: Iterable[str], as_of: datetime,
                              source: str = "kraken_public_ohlc") -> list[str]:
     """Symbols whose expected candle had not been received by as_of."""
-    close, received_by = utc_iso(expected_close(as_of)), utc_iso(as_of)
-    return [symbol for symbol in symbols if database.execute(
-        """SELECT 1 FROM hourly_candles WHERE symbol=? AND source=? AND interval_minutes=60
-           AND close_time_utc=? AND available_at_utc<=? LIMIT 1""",
-        (symbol, source, close, received_by)).fetchone() is None]
+    history, close = _history(store), expected_close(as_of)
+    return [symbol for symbol in symbols if not history.received_close(symbol, close, as_of, source)]
 
 
 def wait_record(output_json: str | None) -> dict | None:
@@ -58,7 +61,7 @@ def _matching(record: dict | None, expected: datetime) -> dict | None:
     return record if times[0] == expected else None
 
 
-def candle_wait(database: Database, symbols: Iterable[str], now: datetime, *, wait_seconds: int,
+def candle_wait(database: Database | HourlyHistory, symbols: Iterable[str], now: datetime, *, wait_seconds: int,
                 previous_output_json: str | None, source: str = "kraken_public_ohlc") -> tuple[int, dict] | None:
     """Return (recheck delay, deferral output) while the expected candle is missing before the deadline."""
     expected = expected_close(now)
@@ -100,15 +103,11 @@ def _note(status: str, expected: datetime, latest: str | None, waited: int) -> s
     return f"{candle} is not stored yet; {earlier}."
 
 
-def expected_candle_status(database: Database, symbol: str, as_of: datetime, wait: dict | None, *,
+def expected_candle_status(database: Database | HourlyHistory, symbol: str, as_of: datetime, wait: dict | None, *,
                            source: str = "kraken_public_ohlc") -> dict:
     """Plainly state whether the latest completed hour is stored and whether this decision waited."""
     expected = expected_close(as_of)
-    row = database.execute(
-        """SELECT close_time_utc FROM hourly_candles WHERE symbol=? AND source=? AND interval_minutes=60
-           AND close_time_utc<=? AND available_at_utc<=? ORDER BY close_time_utc DESC LIMIT 1""",
-        (symbol, source, utc_iso(expected), utc_iso(as_of))).fetchone()
-    latest = row["close_time_utc"] if row else None
+    latest = _history(database).latest_close_at_or_before(symbol, expected, as_of, source)
     record = _matching(wait, expected)
     waited = max(0, (as_of - parse_utc(record["waiting_since_utc"])) // _SECOND) if record else 0
     status = "present" if latest == utc_iso(expected) else "missing_after_wait" if record else "missing"

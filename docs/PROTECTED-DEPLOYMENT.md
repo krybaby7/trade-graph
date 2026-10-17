@@ -79,7 +79,12 @@ Mount that owner directory read-only at `/run/trade-graph-owner`. Mount only the
 private financial state directory at `/var/lib/trade-graph`, owned by `10001:10001`
 with mode `0700`. Initialize the USD10,000 virtual paper account using the installed
 CLI before starting the service. Retain financial state across image switches;
-never roll it back with an executable release.
+never roll it back with an executable release. The candle file `market_data.sqlite` lives in the same state
+directory (W6-D, D224): the paper service's price collector writes it and the dashboard
+opens it read-only. It is public price data and not part of the financial recovery
+unit (D132). The image carries NumPy and TA-Lib for the indicator engine: the builder
+refuses an export without their pinned, hashed Python 3.12 Linux wheels before any
+download, and the build imports both before it seals the image.
 
 `ProtectedDeploymentSpec.create_arguments` generates the fixed Docker launch:
 read-only root filesystem, no network, all capabilities dropped,

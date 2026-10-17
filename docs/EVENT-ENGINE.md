@@ -193,7 +193,11 @@ portfolio and day, each step recorded once in `day_cycle_steps`:
   changes the department's check-in only when its answer names one;
 - engine failures are reported in the tick as `wakes:<part>:<error>` and never hold back management.
 
-The installed service (`run_subscription_operation`) does not switch the engine on yet; see "For the next packages".
+The installed service (`run_subscription_operation`) runs the engine only when the owner's protected
+`paper-config.json` says `"event_engine": true` (W6-D, D223; off by default, turned on at step L3). It then needs the
+price collector: the price watcher reads the collector's candle file read-only, and the day start uses the
+collector's newest hourly scan (`scan=None`, so the day start makes no request in the service step). The subscription
+Trader answers a wake with `TraderWakeReply` (see "For the next packages").
 
 ## For the next packages
 
@@ -208,18 +212,25 @@ The installed service (`run_subscription_operation`) does not switch the engine 
   `day_cycle_steps` (or `EventEngine.wakes`, `next_check_ins`, `focus`, `cycle`); reading starts nothing.
 - **W7-A (T45, news wake-ups).** `EventEngine.notify(portfolio_id, department, kind="news_alarm",
   source_ref=<headline id>, note=..., symbol=...)` adds one trigger per headline; it only adds wakes.
-- **W6-D (C2) or a follow-up before L3.** The provider-backed departments do not yet read `task["input"]["wake"]`
-  or return `wake_outcome`: the subscription Trader still answers `TraderReply`. Before the installation runs with
-  `event_engine`, the Trader's provider turn needs `TraderWakeReply` and the `wake` context key (an addition to the
-  protected `ROLE_CONTEXT_KEYS` and the owner's subscription profile), and `run_subscription_operation` needs the
-  switch. The hourly coin scan in the service is W6-D's, with the price collector.
+- **W6-D (C2), built.** A department chooses its reply per task (`GatewayRole.reply_type_for(task)`); the Trader's
+  is `TraderWakeReply` when the task is a wake and `TraderReply` otherwise. Its wake turn is handed `wake` (the wake,
+  with at most the newest 40 triggers and 20 alarm items shown and their totals) and `practice_range` (strategy
+  versions with a confirmation report, their newest reports in plain words), plus market data for the wake's coins;
+  both keys are in the protected `ROLE_CONTEXT_KEYS["trader"]` and must be in the owner's subscription profile (step
+  L3). Its answer goes under `wake_outcome` with a Secretary report; the engine installs the plans. With the engine on,
+  the paper feed also quotes the day's coins (focus, plans, alarms, held; within the owner's coin scope) in one extra
+  request per poll, so a plan on any of them can rest and fill; only `day_plan` and `check_in` wakes wait for the
+  closed hour (`decision_candle_wait_seconds`), event wakes never. Research and the
+  Leader answer wakes on Perplexity through W6-A and W6-B; their subscription handlers still answer their usual reply.
+  The hourly scan and the candle file come from the price collector (KRAKEN-CANDLE-COLLECTION.md, "In the service").
 
 ## Known limits
 
 - A department that has no running handler at the day start has its day step recorded as `skipped` for that day; a
   restart later the same day with the department running does not redo it (its events still wake it).
-- The day start's scan runs inside the service step, so a slow ticker request delays that step (W6-D may move the
-  scan next to its price collector).
+- With a `CoinScanStep` the day start's scan runs inside the service step, so a slow ticker request delays that step.
+  The installed service passes none (W6-D): it uses the price collector's newest hourly scan, made in the collector's
+  thread.
 - Alarm deliveries are per department (T33); with several graph portfolios in one service, one wake claims every
   pending alarm item of its department, whichever portfolio the alarm names. The paper service runs one graph
   portfolio.

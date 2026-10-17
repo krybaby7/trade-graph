@@ -54,6 +54,11 @@ class GatewayRole:
         self.provider, self.model = provider, model
         self.artifact_runtime = artifact_runtime
 
+    def reply_type_for(self, task: dict):
+        """The reply contract of this task. A department answers a wake with its wake reply (W6-D, D223: the Trader's
+        ``TraderWakeReply``); every other task keeps the department's usual reply."""
+        return self.reply_type
+
     def recover(self, task: dict) -> dict | None:
         row = self.database.execute(
             "SELECT * FROM role_results WHERE task_id = ? AND portfolio_id = ? AND role = ?",
@@ -192,10 +197,11 @@ class GatewayRole:
             with self.database.immediate():
                 self._eligible(task)
             instructions = self.instructions(task)
+            reply_type = self.reply_type_for(task)
             context = {
                 **task["snapshot"],
                 "max_input_tokens": len(json.dumps(task["snapshot"]).encode())
-                + len(json.dumps(self.reply_type.model_json_schema()))
+                + len(json.dumps(reply_type.model_json_schema()))
                 + len(instructions.encode())
                 + 1000,
             }
@@ -211,8 +217,8 @@ class GatewayRole:
                     model=self.model,
                     instructions=instructions,
                     context=context,
-                    output_schema=self.reply_type.model_json_schema(),
-                    schema_name=self.reply_type.__name__,
+                    output_schema=reply_type.model_json_schema(),
+                    schema_name=reply_type.__name__,
                     max_output_tokens=2000,
                     max_tool_calls=0,
                     timeout_seconds=20,
@@ -226,7 +232,7 @@ class GatewayRole:
                 raise ValidationFailure(f"model {result.failure}: {result.message}")
             # The model answered: a reply that cannot be validated or applied is set aside.
             turn_only = True
-            reply = self.reply_type.model_validate(result.payload)
+            reply = reply_type.model_validate(result.payload)
             return self.apply(task, reply)
         except (TradeGraphError, ValidationError) as exc:
             # A stale lease cannot publish even a failure. The new owner will recover.

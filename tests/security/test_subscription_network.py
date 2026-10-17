@@ -364,7 +364,17 @@ def test_subscription_dashboard_is_same_private_state_and_not_live_commissioning
     assert deployment_image.main(["boot-subscription-dashboard"]) == 0
     assert calls == [["dashboard", "--mode", "paper", "--database", "/var/lib/trade-graph/trade_graph.sqlite",
         "--protected-owner", "/run/trade-graph-owner", "--session-file", "/var/lib/trade-graph/owner-session.json",
-        "--protected-network-bind", "--port", "8000"]]
+        "--market-database", "/var/lib/trade-graph/market_data.sqlite", "--protected-network-bind", "--port", "8000"]]
+
+
+def test_the_dashboard_reads_the_candle_file_the_service_writes_beside_the_database():
+    """W6-D (D224): one candle file in the private state mount; the dashboard opens it read-only for HQ's charts."""
+    from pathlib import Path
+
+    from trade_graph.application.service_market_data import market_database_beside
+
+    database = Path(deployment_image.STATE_MOUNT) / "trade_graph.sqlite"
+    assert Path(deployment_image.MARKET_DATABASE) == market_database_beside(database)
 
 
 @pytest.mark.parametrize("action", ["boot-subscription", "boot-subscription-dashboard", "check-subscription",

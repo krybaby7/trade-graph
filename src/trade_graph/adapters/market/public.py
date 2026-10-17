@@ -237,6 +237,29 @@ class KrakenPublicRest:
         name, info = next(iter(result.items()))
         if self._pair_symbols.get(name) != symbol or not isinstance(info, dict):
             raise ValidationFailure("Kraken ticker identity differs from the requested symbol")
+        return self._ticker(symbol, info, observation_id=observation_id, available_at=available_at)
+
+    def fetch_tickers(self, symbols: list[str], *, observation_ids: list[str],
+                      available_at: datetime) -> list[Observation]:
+        """One Ticker request for several pairs whose metadata was fetched; every requested book exactly once."""
+        if (not symbols or len(symbols) != len(observation_ids) or len(set(symbols)) != len(symbols)
+                or len(symbols) > 32):
+            raise ValidationFailure("Kraken tickers require a bounded unique pair scope")
+        query = urlencode({"pair": ",".join(_rest_pair(symbol) for symbol in symbols)})
+        result = self._get(f"{KRAKEN_REST}/Ticker?{query}").get("result") or {}
+        if not isinstance(result, dict) or len(result) != len(symbols):
+            raise ValidationFailure("Kraken Ticker must return exactly the requested books")
+        books: dict[str, dict] = {}
+        for name, info in result.items():
+            symbol = self._pair_symbols.get(name)
+            if symbol not in symbols or symbol in books or not isinstance(info, dict):
+                raise ValidationFailure("Kraken ticker identity differs from the requested symbols")
+            books[symbol] = info
+        return [self._ticker(symbol, books[symbol], observation_id=identity, available_at=available_at)
+                for symbol, identity in zip(symbols, observation_ids, strict=True)]
+
+    @staticmethod
+    def _ticker(symbol: str, info: dict, *, observation_id: str, available_at: datetime) -> Observation:
         ask, ask_qty = _level(info.get("a"))
         bid, bid_qty = _level(info.get("b"))
         last = _level(info.get("c"))[0]

@@ -8,7 +8,7 @@ from datetime import datetime
 
 from trade_graph.adapters.market.replay import quote_features
 from trade_graph.application.candle_readiness import expected_candle_status
-from trade_graph.application.price_history import FEATURE_VERSION, HistoryStore
+from trade_graph.application.price_history import FEATURE_VERSION, HistoryStore, HourlyHistory
 from trade_graph.domain.clock import utc_iso
 
 
@@ -50,23 +50,31 @@ def _unsupported_history(symbol: str, as_of: datetime, requested: list[str], sou
     return result
 
 
+def hourly_history(execution) -> HourlyHistory:
+    """Where the hourly features read their hours (D220): the candle store when the installation wired one to the
+    execution (``execution.hourly_history``), otherwise the financial database's ``hourly_candles``."""
+    return getattr(execution, "hourly_history", None) or HistoryStore(execution.database)
+
+
 def market_context(execution, guard: dict, templates: dict, *, as_of: datetime,
-                   candle_wait: dict | None = None) -> dict:
+                   candle_wait: dict | None = None, extra_symbols: tuple[str, ...] = ()) -> dict:
+    """Quotes and hourly features for the mandate's coins, plus ``extra_symbols`` (a wake's coins of the day)."""
     requested = list(dict.fromkeys(feature for item in active_templates(templates, guard).values()
                                    for feature in item["features"]))
     maximum_quote_age = min(guard["policy"]["maximum_quote_age_seconds"],
                             guard["mandate"]["max_quote_age_seconds"])
-    history_store = HistoryStore(execution.database)
+    history_store = hourly_history(execution)
     market = {}
-    for symbol in guard["mandate"]["symbols"]:
+    for symbol in dict.fromkeys([*guard["mandate"]["symbols"], *extra_symbols]):
         quote = execution.latest_observation(symbol, utc_iso(as_of), execution.venue)
         source = "synthetic" if quote and quote.source in {"synthetic", "scripted", "replay"} else "kraken_public_ohlc"
-        history = (history_store.snapshot(symbol, as_of, requested, source=source) if symbol in {"BTC/USD", "ETH/USD"}
+        supported = history_store.supports(symbol)
+        history = (history_store.snapshot(symbol, as_of, requested, source=source) if supported
                    else _unsupported_history(symbol, as_of, requested, source))
         history = _compact_history(history)
-        if symbol in {"BTC/USD", "ETH/USD"}:
+        if supported:
             # A service fact beside the hashed features; the retained snapshot keeps it.
-            history["expected_candle"] = expected_candle_status(execution.database, symbol, as_of, candle_wait,
+            history["expected_candle"] = expected_candle_status(history_store, symbol, as_of, candle_wait,
                                                                 source=source)
         features = quote_features([quote]) if quote and quote.bid is not None and quote.ask is not None else {}
         age = (as_of - quote.event_time_utc).total_seconds() if quote else None

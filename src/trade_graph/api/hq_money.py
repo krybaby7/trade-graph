@@ -18,7 +18,8 @@ from decimal import Decimal
 from time import monotonic
 
 from trade_graph.api import controls, live
-from trade_graph.application.price_history import HistoryStore
+from trade_graph.api.hq_chart import candle_store_for
+from trade_graph.application.price_history import CandleStoreHistory, HistoryStore
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError
 
@@ -185,7 +186,10 @@ def _max_attempts(runtime) -> int | None:
 
 
 def _market(runtime) -> dict:
-    history = HistoryStore(runtime.database)
+    # D220: the trend label reads the candle file when HQ has one (the collector keeps it current), else hourly_candles.
+    candles, status = candle_store_for(runtime)
+    history = CandleStoreHistory(candles) if candles is not None and status == "connected" else HistoryStore(
+        runtime.database)
     at: datetime = runtime.clock.now()
     result = {}
     for symbol in MARKET_SYMBOLS:
