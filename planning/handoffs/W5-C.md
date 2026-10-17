@@ -11,7 +11,8 @@ once it runs you can read a scorecard at any time with `trade-graph scorecard --
 a decision from you.
 
 Branch: `claude/t42-scorecard`, head: the commit that adds this handoff's pull request link (code at
-`cb114a5`). Pull request: PR_PLACEHOLDER (not merged).
+`cb114a5`; the handoff itself first committed in `086fcaf`). Pull request:
+https://github.com/krybaby7/trade-graph/pull/13 (not merged).
 
 ## What was built
 
