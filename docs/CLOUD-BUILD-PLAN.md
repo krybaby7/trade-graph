@@ -202,9 +202,10 @@ integration ran the full suite at `c4bde76` on Python 3.12.13 (from
 skipped. The night integrations ran it as GitHub's test job: wave 2 at
 `4c134c0`, 6,929 passed, 0 failed, 18 skipped; wave 3 at `ce17fcb`, 7,084
 passed, 0 failed, 18 skipped; wave 4 at `b09cae4`, 7,189 passed, 0 failed, 18
-skipped; wave 5 at `e1008e5`, 7,347 passed, 0 failed, 18 skipped. Any failure
-now counts and must be reported. The container run took
-105 minutes (W1-E measured 54); GitHub's test job takes 50 to 66 minutes and
+skipped; wave 5 at `e1008e5`, 7,347 passed, 0 failed, 18 skipped; wave 6 at
+`0595d98`, 7,600 passed, 0 failed, 18 skipped. Any failure now counts and must
+be reported. The container run took
+105 minutes (W1-E measured 54); GitHub's test job takes 50 to 72 minutes and
 may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
