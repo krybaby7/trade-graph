@@ -329,3 +329,20 @@ def test_the_engine_refuses_departments_it_cannot_wake(tmp_path) -> None:
     with pytest.raises(ValidationFailure, match="engineer"):
         engine_for(account, departments={"trader", "engineer"})
     assert datetime(2026, 10, 16, tzinfo=UTC) < account.clock.now()
+
+
+def test_an_alarm_that_fires_between_collection_and_dispatch_still_reaches_the_wake(tmp_path, monkeypatch) -> None:
+    account, scheduler, engine = engine_account(tmp_path, departments={"trader"}, daily_cycle=False)
+    engine.request_wake(account.portfolio, "trader", "a reason", requested_by="leader")
+    collect = engine.sources._alarms
+
+    def late_fire(portfolios):
+        added = collect(portfolios)
+        _fire(account)  # the watcher fires in the feed thread just after the queue was read
+        return added
+
+    monkeypatch.setattr(engine.sources, "_alarms", late_fire)
+    engine.step([account.portfolio])
+    (wake,) = _wakes(engine, account)
+    assert wake.reasons == ("alarm_fired", "wake_request") and len(wake.alarm_delivery_ids) == 1
+    assert AlarmQueue(account.database, account.clock).waiting() == {}

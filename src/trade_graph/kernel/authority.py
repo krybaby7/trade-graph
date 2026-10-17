@@ -59,6 +59,9 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/contracts/day_plans.py",
     "src/trade_graph/application/day_plans.py",
     "src/trade_graph/application/day_plan_protection.py",
+    # T35 event engine: the obsolete-wake guard, the allowance-floor behaviour and day-plan installation.
+    "src/trade_graph/contracts/wakes.py",
+    "src/trade_graph/application/events/",
 )
 
 

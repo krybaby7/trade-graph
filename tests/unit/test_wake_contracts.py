@@ -130,3 +130,13 @@ def test_the_store_accepts_exactly_the_contracts_values() -> None:
     """The migration's CHECK lists are frozen; a new kind in the contract needs a new migration."""
     for name in ("DEPARTMENTS", "TRIGGER_KINDS", "TRIGGER_STATUSES", "WAKE_PURPOSES", "WAKE_STATUSES", "CYCLE_STEPS"):
         assert getattr(wake_schema, name) == getattr(wakes, name), name
+
+
+@pytest.mark.parametrize("path", ["src/trade_graph/contracts/wakes.py", "src/trade_graph/application/events/engine.py",
+                                  "src/trade_graph/application/events/cycle.py",
+                                  "src/trade_graph/adapters/persistence/wake_schema.py"])
+def test_the_event_engine_is_a_protected_path(path) -> None:
+    """It holds the obsolete-wake guard, the allowance-floor behaviour and day-plan installation: agents cannot edit it."""
+    from trade_graph.kernel.authority import path_is_protected
+
+    assert path_is_protected(path)
