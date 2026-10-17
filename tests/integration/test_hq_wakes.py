@@ -145,6 +145,17 @@ def test_each_reason_reads_in_plain_words(account, kind, department, fields, hea
     assert item["more_events"] == 0
 
 
+def test_a_focus_step_says_how_many_coins_the_shortlist_handed_over(account) -> None:
+    wakes = Wakes(account)
+    for symbols in (["SOL/USD"], ["SOL/USD", "ADA/USD"]):
+        scan = ScanReference(status="ok", source="day_start_scan", scan_id="scan-synthetic-1",
+                             as_of=account.clock.now(),
+                             shortlist=tuple({"symbol": symbol, "position": n + 1} for n, symbol in enumerate(symbols)))
+        wake_id = wakes.wake("research", [wakes.trigger("focus_step", "research")], scan=scan)
+        words = _words(_item(_log(account), wake_id)["events"][0])
+        assert words.endswith("shortlist of 1 coin." if len(symbols) == 1 else "shortlist of 2 coins.")
+
+
 def test_every_trigger_kind_has_its_words() -> None:
     # A new trigger kind (contracts/wakes.py) needs its plain words here before HQ can show it.
     assert set(hq_copy.WAKES["reason"]) == set(TRIGGER_KINDS)

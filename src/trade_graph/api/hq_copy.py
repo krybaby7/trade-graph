@@ -1318,7 +1318,8 @@ WAKES: Final = {
     # One line per event. Prices and quantities are the saved exact decimals.
     "event": {
         "day_start": ("The trading day started (", ")."),
-        "focus_step": "Day start: name today's focus coins from the scanner's shortlist of {n} coins.",
+        "focus_step": ("Day start: name today's focus coins from the scanner's shortlist of 1 coin.",
+                       "Day start: name today's focus coins from the scanner's shortlist of {n} coins."),
         "focus_step_none": "Day start: name today's focus coins from the scanner's shortlist (none was handed over).",
         "day_plan_step": "Day start: write today's day plans.",
         "day_plan_step_focus": "Day start: write today's day plans (focus coins: {coins}).",

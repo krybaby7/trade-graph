@@ -350,7 +350,7 @@ def _event(trigger: dict, context: dict, deliveries: dict[str, dict], conditions
                       event["day_start"][1])
     if kind == "focus_step":
         shortlist = (context.get("scan") or {}).get("shortlist") or []
-        return c.says(event["focus_step"].format(n=len(shortlist)) if shortlist else event["focus_step_none"])
+        return c.says(_plural(event["focus_step"], len(shortlist)) if shortlist else event["focus_step_none"])
     if kind == "day_plan_step":
         coins = [coin.get("symbol") for coin in (((context.get("focus") or {}).get("selection") or {})
                                                  .get("coins") or []) if isinstance(coin, dict)]
