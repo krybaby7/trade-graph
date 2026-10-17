@@ -76,6 +76,9 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/contracts/focus_research.py",
     "src/trade_graph/application/focus_research.py",
     "src/trade_graph/application/focus_scope.py",
+    # T38 Leader news rounds: the Leader's authority boundary (no trade, approval or block), routing and receipts.
+    "src/trade_graph/contracts/leader_news.py",
+    "src/trade_graph/application/leader_news/",
 )
 
 

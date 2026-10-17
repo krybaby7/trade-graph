@@ -15,6 +15,7 @@ from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEME
 from trade_graph.adapters.persistence.financial_recovery_schema import STATEMENTS as FINANCIAL_RECOVERY_STATEMENTS
 from trade_graph.adapters.persistence.financial_transition_schema import STATEMENTS as FINANCIAL_TRANSITION_STATEMENTS
 from trade_graph.adapters.persistence.focus_research_schema import migration as focus_research_migration
+from trade_graph.adapters.persistence.leader_news_schema import migration as leader_news_migration
 from trade_graph.adapters.persistence.money_limit_schema import migration as money_limit_migration
 from trade_graph.adapters.persistence.native_fee_reservation_schema import (
     STATEMENTS as NATIVE_FEE_RESERVATION_STATEMENTS,
@@ -480,6 +481,7 @@ STATEMENTS.append(money_limit_migration())  # 0033, W3-A (T32)
 STATEMENTS.append(day_plan_migration())  # 0034, W4-A (T34)
 STATEMENTS.append(wake_migration())  # 0035, W5-A (T35)
 STATEMENTS.append(focus_research_migration())  # 0038, W6-A (T37)
+STATEMENTS.append(leader_news_migration())  # 0039, W6-B (T38)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
