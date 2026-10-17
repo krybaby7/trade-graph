@@ -27,8 +27,8 @@ bypasses the launcher.
 - The Perplexity test key is at hand for the owner folder (step 3, `perplexity.key`; D125, D154) and auto top-up is
   off. Step L2's smoke has re-checked Perplexity's pricing page; if a price changed, the new dated card is in
   `config/perplexity-price-cards.json` (see "Perplexity in the installed service" below).
-- For step 12: the Perplexity wiring (W8-A) is merged into `<commit>`; it is, from wave 8 on. Without step 12's
-  `--confirm`, Research and the Leader stay on the subscription.
+- For step 12: `<commit>` includes wave 8, which has the Perplexity wiring (W8-A). Without step 12's `--confirm`,
+  Research and the Leader stay on the subscription.
 - You have about an hour; the account is on hold (MANAGE_ONLY) from step 4 to step 15. Management, reconciliation and
   protective exits keep running the whole time (D117).
 
