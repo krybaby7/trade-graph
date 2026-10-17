@@ -1805,12 +1805,14 @@ def _pays(p: Projection, cache: dict) -> dict:
     return {"status": status, "net": net, "missing": missing, "honest_note": honest}
 
 
-def pays_plain(block: dict) -> str:
+def pays_plain(block: dict, *, live: bool = False) -> str:
     pays = block["pays_for_itself"]
+    suffix = "_live" if live else ""
     if pays["status"] == "covered":
-        return c.PROMPT["pays_covered"].format(net=pays["net"]["display"])
+        return c.PROMPT["pays_covered" + suffix].format(net=pays["net"]["display"])
     if pays["status"] == "not_covered":
-        return c.PROMPT["pays_not_covered"].format(net=pays["net"]["display"])
+        net = pays["net"]["display"] if live else pays["net"]["display"].lstrip("\u2212-")
+        return c.PROMPT["pays_not_covered" + suffix].format(net=net)
     return c.NOT_KNOWN_YET
 
 
@@ -1886,7 +1888,7 @@ def prompt_facts(p: Projection, attention_items: list, story_items: list, money:
                   "completed_trades": counts["completed_trades"], "problems": counts["problems"],
                   "research_notes": counts["research_notes"]},
         "flagged": flagged, "practice_value": value["display"] if value else None,
-        "value_final": money["value_final"], "pays_for_itself": pays_plain(money),
+        "value_final": money["value_final"], "pays_for_itself": pays_plain(money, live=not p.paper),
     }
 
 

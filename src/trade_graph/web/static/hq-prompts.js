@@ -91,7 +91,7 @@
       `- Team: ${str(facts.team) || "not known"}. Setting: ${str(facts.setting) || "not known"}. AI allowance: ${str(facts.allowance) || "not known"}.`,
       `- Since ${sinceLabel}: ${since.decisions ?? "?"} Trader decisions (${since.waits ?? "?"} waits), ${since.orders ?? "?"} ${practice}orders, ${since.completed_trades ?? "?"} completed trades, ${since.research_notes ?? "?"} research notes, ${since.problems ?? "?"} problems.`,
       `- Next turns: ${turns}.`,
-      `- ${live ? "Account value" : "Practice money"} ${str(facts.practice_value) || "not known yet"} (${facts.value_final ? "final" : "estimate"}); pays for itself: ${str(facts.pays_for_itself) || "not known yet"}.`,
+      `- ${live ? "Account value" : "Practice money"} ${str(facts.practice_value) || "not known yet"} (${facts.value_final ? "final" : "estimate"}); ${live ? "pays for itself" : "paper result against real costs"}: ${str(facts.pays_for_itself) || "not known yet"}.`,
       `- HQ flagged: ${flagged}.`,
       `Report: worker last sign of life; freshness of prices, euro rate and hourly history; each department's last and next turn; real successes and failures and why; Trader decisions; ${practice}orders and trades; balances and accounting; current AI allowance with its timestamp, ${reserve}, and which limits are not reported.`,
       `A valid "wait" is not a failure; no trades means trading behaviour is untested; keep unknown costs unknown; don't count my own chat use as team usage.`,

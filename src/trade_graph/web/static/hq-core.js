@@ -482,6 +482,7 @@
     story: (init, options) => fetch(`/api/v1/hq/story?before=${encodeURIComponent(options.before)}&limit=60`, init),
     chart: (init, options) => fetch(`/api/v1/hq/chart${chartQuery(options)}`, init),
     wakes: (init, options) => fetch(`/api/v1/hq/wakes${wakesQuery(options)}`, init),
+    plans: init => fetch("/api/v1/hq/plans", init),
     config: init => fetch("/api/v1/owner/config", init),
     pause: init => fetch("/api/v1/owner/pause", init),
     resume: init => fetch("/api/v1/owner/resume", init),
@@ -491,7 +492,7 @@
     expenses: init => fetch("/api/v1/owner/expenses", init),
     checkins: init => fetch("/api/v1/owner/checkins", init),
   });
-  const READS = new Set(["hq", "story", "config", "chart", "wakes"]);
+  const READS = new Set(["hq", "story", "config", "chart", "wakes", "plans"]);
   // T41: a price chart is asked for by coin and candle size; both are optional (the server picks the defaults).
   function chartQuery(options) {
     const parts = [];

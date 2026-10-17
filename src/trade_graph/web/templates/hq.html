@@ -37,6 +37,7 @@
   <script src="/static/hq-checkins.js" defer></script>
   <script src="/static/hq-charts.js" defer></script>
   <script src="/static/hq-wakes.js" defer></script>
+  <script src="/static/hq-plans.js" defer></script>
   <script src="/static/hq.js" defer></script>
 {% endblock %}
 {% block eyebrow %}Trade Graph{% endblock %}
@@ -166,6 +167,35 @@
       </div>
       <div data-hq="money"></div>
     </article>
+    {#- W8-C: today's loss against the daily loss limit and the scorecard, from the snapshot's trading block (first
+        paint: each headline); today's day plans read GET /api/v1/hq/plans while the panel is on screen (hq-plans.js).
+        Reading starts nothing. -#}
+    {% set trading = snap.get('trading') if snap.get('trading') is mapping else {} %}
+    {% set loss = trading.get('loss') if trading.get('loss') is mapping else {} %}
+    {% set scorecard = trading.get('scorecard') if trading.get('scorecard') is mapping else {} %}
+    {% set collector = trading.get('collector') if trading.get('collector') is mapping else {} %}
+    <article class="hq-panel hq-loss" aria-labelledby="hq-h-loss">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-loss" class="hq-panel-title">Today's loss limit</h2>
+        {{ help('loss', "Today's loss limit") }}
+      </div>
+      <div data-hq="loss">{% if loss.get('headline') %}<p class="hq-loss-head">{{ segs(loss.get('headline')) }}</p>{% endif %}</div>
+    </article>
+    <article class="hq-panel hq-plans" aria-labelledby="hq-h-plans">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-plans" class="hq-panel-title">Today's day plans</h2>
+        {{ help('plans', "Today's day plans") }}
+      </div>
+      <div data-hq="plans"><p class="hq-muted">Day plans load when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">Day plans need JavaScript, which is switched off here. The Trading records page lists every order.</p></noscript>
+    </article>
+    <article class="hq-panel hq-scorecard" aria-labelledby="hq-h-scorecard">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-scorecard" class="hq-panel-title">Scorecard</h2>
+        {{ help('scorecard', 'Scorecard') }}
+      </div>
+      <div data-hq="scorecard">{% if scorecard.get('headline') %}<p class="hq-scorecard-head">{{ segs(scorecard.get('headline')) }}</p>{% endif %}</div>
+    </article>
     <article class="hq-panel hq-allowance" aria-labelledby="hq-h-allowance">
       <div class="hq-panel-head"><h2 id="hq-h-allowance" class="hq-panel-title">AI allowance</h2></div>
       <div data-hq="allowance"></div>
@@ -183,6 +213,14 @@
     <article class="hq-panel hq-market-panel" aria-labelledby="hq-h-market">
       <div class="hq-panel-head"><h2 id="hq-h-market" class="hq-panel-title">Market weather</h2></div>
       <div data-hq="market"></div>
+    </article>
+    {#- W8-C: the price collector's newest records (W6-D), from the snapshot's trading block. -#}
+    <article class="hq-panel hq-collector" aria-labelledby="hq-h-collector">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-collector" class="hq-panel-title">Price collector</h2>
+        {{ help('collector', 'Price collector') }}
+      </div>
+      <div data-hq="collector">{% if collector.get('headline') %}<p class="hq-collector-head">{{ segs(collector.get('headline')) }}</p>{% endif %}</div>
     </article>
     {#- T41: price charts, read from GET /api/v1/hq/chart only when the panel is shown (hq-charts.js). The
         attribution line stays beside the chart box: Lightweight Charts' licence asks for it wherever a chart is shown,

@@ -11,6 +11,7 @@
   HQ.use("render")?.initBalance();
   HQ.use("charts")?.init();
   HQ.use("wakes")?.init();
+  HQ.use("plans")?.init();
 
   let data = null;
   try { data = JSON.parse(doc.getElementById("hq-snapshot")?.textContent || "null"); } catch (_) { data = null; }

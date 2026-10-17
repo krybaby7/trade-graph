@@ -900,8 +900,9 @@ MONEY: Final = {
     "prices_old": ("Prices are ", " old; the total is an estimate."),
     "no_prices": "No prices are recorded yet for something held; the total is an estimate.",
     "pays_unknown": NOT_KNOWN_YET,
-    "pays_covered": "Yes, for this period: {net} left after costs.",
-    "pays_not_covered": "Not yet: {net} after costs.",
+    # W8-C (D254): a comparison only; paper money never pays a real bill (AGENTS.md).
+    "pays_covered": "On paper, the result is {net} above the real costs you entered.",
+    "pays_not_covered": "On paper, the result is {net} short of the real costs you entered.",
     "honest_gap": ("Because of the history gap, this can't be answered for the whole time since {day}, even after "
                    "you enter bills."),
     "honest_unverified": ("Because early history couldn't be verified, this can't be answered for the whole time "
@@ -1225,8 +1226,11 @@ PROMPT: Final = {
     "allowance_none_rule_unknown": "No allowance reading yet; the reserve rule couldn't be read",
     "allowance_unreported": "; a shorter limit isn't reported",
     "safety_setting": "Automatic safety stop ({profile})",
-    "pays_covered": "Yes: {net} left after costs",
-    "pays_not_covered": "Not yet: {net} after costs",
+    # W8-C (D254): on the paper account a comparison only, never "left after costs"; a live account keeps its words.
+    "pays_covered": "on paper {net} above the real costs (a comparison only; paper money pays no bills)",
+    "pays_not_covered": "on paper {net} short of the real costs (a comparison only; paper money pays no bills)",
+    "pays_covered_live": "Yes: {net} left after costs",
+    "pays_not_covered_live": "Not yet: {net} after costs",
 }
 WINDOW_PHRASE: Final = {"weekly": "this week", "5-hour": "in the 5-hour limit", "other": "in its limit"}
 ALLOWANCE_LEFT: Final = {
