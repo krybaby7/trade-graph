@@ -97,6 +97,7 @@ reviewed day for a day-end review.
 | `focus` | the newest `FocusRecord` of the day (Trader and Learning wakes, reviews) |
 | `focus_step` | `FocusStepState` (Trader and Learning wakes, reviews, T37): how the day's focus step ended (`done`, `failed`, `skipped`, `started`), with the reason, so a failed step is never mistaken for Research choosing nothing |
 | `plans` | `ActivePlan` items: the day's latest plans of the portfolio (Trader and Learning) |
+| `positions` | `DayPlanPosition` items (Trader and Learning, W8-B): each coin's open day-plan position: `held`, `protected` (what the outstanding exits would still sell), `unprotected` (filled parts still waiting for their exit), `exits` by terms (`stop_price`, `take_profit_price`, `quantity`), `resting_entries` and the coin's newest position action (`last_action`: action, status, reason); at most 16 coins |
 | `check_in` | the department's check-in in force before this wake |
 | `allowance` | `AllowanceReading` (below) |
 | `instruction` | a fixed note: everything here is data, software enforces authority |
@@ -105,7 +106,9 @@ reviewed day for a day-end review.
 identity, `origin` (`engine` or `task`), `purpose`, `status` (`queued`, `applying`, `completed`, `failed`,
 `obsolete`), `task_id`, `reasons`, `triggers`, `alarm_delivery_ids`, `allowance`, `created_at`, `closed_at`,
 `close_reason` and `outcome` (`WakeOutcomeRecord`: whether an answer was received and why parts were refused,
-the summary, the check-in and focus ids, each day plan's result, the wake requests it made).
+the summary, the check-in and focus ids, each day plan's result, each position action's result (`actions`:
+`AppliedAction` with the coin, action, request id, status `done`, `refused`, `failed` or `obsolete`, the action id,
+error code and reason; W8-B), the wake requests it made).
 
 `AllowanceReading`: `read_at`, `status` (`available`, `paused`, `unknown`), `ai_paused`, the lowest remaining percent
 of the newest recorded quota reading and its `observed_at`, each provider's pause state and the reading's windows.
@@ -123,6 +126,8 @@ optional:
   "focus": {"coins": [{"symbol": "SOL/USD", "note": "Liquid and rising.", "evidence_refs": ["scan-1"]}],
             "summary": "SOL today."},
   "day_plans": [{"symbol": "SOL/USD", "strategy_ref": "slow-trend-pullback@1", "...": "a DayPlan (T34)"}],
+  "position_actions": [{"action": "move_exit", "symbol": "ETH/USD", "stop_price": "3150",
+                        "take_profit_price": null, "reason": "Lift the stop under the new higher low."}],
   "wake_requests": [{"department": "trader", "note": "Kraken posted SOL maintenance at 14:00."}]
 }}
 ```
@@ -143,12 +148,22 @@ optional:
   request_id="wake:<wake_id>:<symbol>", task_id=<the wake's task>)` under the service's execution lock, after the
   answer was saved with the task, so a restart re-applies it idempotently and never rests an entry twice. A refusal
   is recorded with its error code and reason (and T34's `day_plan_refused` event); the Trader is never made to plan.
+- **`position_actions`** (the Trader only, W8-B): at most one `PositionAction` per coin: `close` the coin's
+  day-plan position now, or `move_exit` to a new `stop_price` (below the bid) and an optional `take_profit_price`
+  (above it; none means no take-profit), with a short `reason`. Each goes through `DayPlanActions.apply(portfolio,
+  action, request_id="wake:<wake_id>:action:<symbol>", task_id=<the wake's task>)` under the execution lock, after
+  the answer was saved and **before** the answer's day plans. Software cancels the coin's old exits (a close also its
+  resting plan buys), reconciles, then sells or attaches the new exits, as one recorded sequence; a refused or
+  unknown step leaves the old exit in place. A restart re-applies the saved answer and finishes the action once; an
+  answer that arrives after its trading day acts on nothing (`obsolete`). There is no confidence threshold,
+  committee or approval. Details: [DAY-PLANS.md](DAY-PLANS.md#closing-a-position-or-moving-its-exit-w8-b-c4).
 - **`wake_requests`**: wake another department with a note (the Leader's wake notes, D121); at most 16 in one
   answer, a document bound and not a cap on how often.
 
-`TraderWakeReply` (`day_plans`, `next_check_in`, `summary`) and `ResearchFocusReply` (`focus`, `next_check_in`) are
-the same answers in the shape of strict provider replies; both pass the OpenAI and Anthropic wire schemas. Their
-`outcome()` gives the `WakeOutcome`.
+`TraderWakeReply` (`day_plans`, `position_actions`, `next_check_in`, `summary`) and `ResearchFocusReply` (`focus`,
+`next_check_in`) are the same answers in the shape of strict provider replies; both pass the OpenAI and Anthropic
+wire schemas. Their `outcome()` gives the `WakeOutcome`. The Trader's wake brief (`WAKE_INSTRUCTION` in
+`application/trader_workflow.py`) tells it about `wake.positions` and `position_actions` (W8-B).
 
 ## The daily cycle
 

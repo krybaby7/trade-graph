@@ -26,6 +26,7 @@ and keeps the safety exits.
 | Take-profit legs on paper sell stops | `take_profit_price` on `AuthorizedOrderIntent` and `native_take_profit` on `BrokerCapabilities` (`contracts/models.py`); `adapters/brokers/paper.py` |
 | Hooks in execution | `Execution.record_fill`, `place_protection(take_profit_price=, protective=)`, `dispatch(protection_only=)`, `cancel_intents` (`application/execution.py`); `pause_allows_protection` (`kernel/authority.py`) |
 | Service wiring | `PaperService._management` and `_ingest` (`application/paper_service.py`) |
+| The Trader's exit tools: close a position, move its safety exit (W8-B, C4) | `PositionAction` (`contracts/day_plans.py`); `application/day_plan_actions.py`; state migration 0044 (`adapters/persistence/day_plan_action_schema.py`, `migrations/versions/0044_day_plan_actions.py`); tests `tests/unit/test_position_action_contract.py`, `tests/integration/test_day_plan_actions.py`, `test_wake_position_actions.py`, `test_migration_0044.py`, `tests/property/test_day_plan_action_properties.py` |
 | State migration 0034 | `src/trade_graph/adapters/persistence/day_plan_schema.py`, `migrations/versions/0034_day_plans.py` |
 | Tests | `tests/unit/test_day_plan_contract.py`, `tests/integration/test_day_plans.py`, `test_day_plan_recovery.py`, `test_day_plan_service.py`, `test_migration_0034.py`, `tests/property/test_day_plan_protection_properties.py`; helpers in `tests/day_plan_support.py` |
 
@@ -152,6 +153,56 @@ a pause ends or a new day starts: the Trader plans again.
 is still unprotected, with the plan's events; `active(portfolio_id)` lists the latest plan of each coin whose
 trading day has not ended.
 
+## Closing a position or moving its exit (W8-B, C4)
+
+In plain words: the Trader can change its mind about a position its plan opened. In its wake answer it may ask to
+**close** the position in a coin now, or to **move its safety exit** to a new stop (and, if it wants, a new profit
+target). Software does the rest as one recorded sequence: it cancels the old exit, checks with the broker that the
+cancel really happened, then sells, or puts the new exit on. The position is never left without a safety exit,
+except for the short moment of the sell itself; if a step is refused or the broker gives no answer, the old exit
+stays (or is put straight back with its own prices). Nobody approves the Trader's choice and there is no score.
+
+The Trader answers with `position_actions` (`PositionAction`, at most one per coin), next to its `day_plans`:
+
+```json
+{"action": "move_exit", "symbol": "SOL/USD", "stop_price": "99", "take_profit_price": "106",
+ "reason": "Lift the stop to break-even after the bounce."}
+{"action": "close", "symbol": "BTC/USD", "reason": "The setup is invalidated."}
+```
+
+- **The position** is what the coin's day-plan exits protect, across all plans of the portfolio (today's and
+  earlier ones), plus any filled part still waiting for its exit. The woken Trader sees it in `wake.positions`
+  (`DayPlanPosition`: held, protected, unprotected, the exits by terms, resting entries, the newest action).
+- **Checks before anything is touched** (a refusal changes nothing): the paper account and a paper portfolio; the
+  portfolio is `RUNNING` (any pause refuses: the pause manages the position and the exits stay); spot only
+  (D127); an open day-plan position in the coin; a quote. A move: the stop and take-profit on the price increment,
+  the stop below the bid and the take-profit above it (otherwise it would sell at once: to sell now, close). A
+  close: the mandate allows the market sell and it is above the venue minimum. There is no confidence threshold,
+  committee or approval (D116, D121).
+- **Close:** the coin's resting day-plan buys are cancelled first (so the position stays closed until the Trader
+  plans again), then its exits; each set of intents is recorded before any cancel request; then one market sell of
+  exactly what those exits protected (never more than is held and unreserved), each entry's part recorded so the
+  protection arithmetic counts it; the sell is sent at once.
+- **Move:** the coin's exits are cancelled and reconciled, then new exits at the new terms are attached for exactly
+  what is filled and uncovered, one per entry, and sent at once. A still-resting entry keeps resting; its later fills
+  get its own bracket terms. When the owner's cancel-all later removed a moved exit, the sweep puts it back at the
+  moved terms (the terms in force); a move the broker refused never becomes the terms in force.
+- **A refused or unknown step leaves the old exit in place.** A cancel without an answer ends the action `failed`:
+  the unanswered exit still covers its coins (unknown is not cancelled) and every exit that was cancelled is put
+  back with its own stop and take-profit. A sell or new exit refused by software or the broker ends it `refused`
+  and puts the old exits back the same way. Anything still filled and uncovered is swept.
+- **Restarts.** A crash leaves the action running; the management step's sweep protects the position meanwhile at
+  the terms in force. Applying the same request again (the event engine re-applies a saved answer) finishes it from
+  the records: a sell that was persisted is sent, never placed twice. A newer action for the coin, or an obsolete
+  wake, ends an unfinished one as `failed` with its old exits back. One action per coin runs at a time (SQL).
+- **Order with plans.** The event engine applies the Trader's position actions before its day plans of the same
+  answer (`request_id` `wake:<wake_id>:action:<symbol>`), so a close never cancels the entries of a plan written
+  in the same turn. Only the Trader acts on positions.
+
+`DayPlanActions(execution)`: `apply(portfolio_id, action, request_id=, task_id=)` returns the `ActionRecord`
+(status `done`, `refused` or `failed`, reason, error code, every step); `abandon(...)`, `get`, `for_request`,
+`positions(portfolio_id)`. Paper only, like day plans. It is a protected path.
+
 ## Tables (migration 0034)
 
 | Table | Holds | Changes |
@@ -163,6 +214,17 @@ trading day has not ended.
 
 They are execution controls and evidence: the intents, fills and ledger stay the books. They are not added to agent
 context, the financial checkpoint or the review export; HQ views are later work.
+
+Migration 0044 (W8-B) adds the Trader's actions, all append-only:
+
+| Table | Holds | Changes |
+|---|---|---|
+| `day_plan_actions` | each close or move: the request, the document and hash, the coin, the new terms, the policy and mandate revisions | one per `(portfolio, request)`; at most one running per coin |
+| `day_plan_action_steps` | the sequence: `cancelling` (before any cancel), `cancelled`, `unsettled`, `sell_placed`, `sell_sent`, `exits_attached`, `exits_restored`, and one end: `done`, `refused` or `failed` | nothing after the end; a sell or an attachment once |
+| `day_plan_action_orders` | the orders an action placed per entry: a close's market `sell` (with each entry's part), a move's `moved_exit`, a `restored_exit` | a sell is a market sell of the entry's coin; an exit is a day-plan exit of that entry |
+
+It also adds the index `valuation_marks_newest` on `valuation_marks (portfolio_id, asset, observed_at)` for every
+"newest mark of a coin" read (W5-C's finding).
 
 ## For the next packages
 
@@ -181,10 +243,13 @@ context, the financial checkpoint or the review export; HQ views are later work.
 
 - One exit per filled part: many partial fills make many small exits. On paper that is exact; a real venue would
   refuse an exit below its minimum order value, so live use needs exits merged or resized first (T19).
-- The Trader has no tool yet to close a day-plan position by hand: its exit reserves the coins, so a plain sell
-  of them is refused as insufficient balance until the exit is cancelled. Closing or moving an exit is later
-  work (T35's Trader tools); until then the plan's exit or a pause manages the position.
+- A plain sell of protected coins is still refused as insufficient balance (the exit reserves them); the Trader
+  closes or moves a day-plan position with its position actions (W8-B, above). A close sells the whole day-plan
+  position of the coin; selling part of it is not built yet.
 - An entry whose cancellation got no answer and which the broker cannot find stays `CANCEL_PENDING` (unknown is not
   cancelled), and the coin's next plan is refused until reconciliation settles it; that needs the owner to look.
+- A lost submission acknowledgement on paper is settled by reconciliation (W8-B, D248): when the broker shows the
+  order open or partly filled and every fill it reports is recorded, the intent becomes `OPEN` or
+  `PARTIALLY_FILLED` with its venue order id, so it no longer blocks the coin. A live binding keeps it `UNKNOWN`.
 - Entries placed on the older single-order Trader path (`TraderReply`) carry no protective exit; the event engine
   replaces that path with day plans.
