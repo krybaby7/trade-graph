@@ -20,6 +20,7 @@ from trade_graph.application.runtime_departments import LearningHandler, Optimis
 from trade_graph.application.runtime_models import MODEL_ROLES
 from trade_graph.application.trader_workflow import TraderHandler
 from trade_graph.contracts.models import ContractModel, ModelResult
+from trade_graph.contracts.wakes import TraderWakeReply
 from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError, ValidationFailure
 from trade_graph.kernel.department_gateway import public_context
 from trade_graph.kernel.subscription_gateway import ProtectedSubscriptionGateway, SubscriptionQuotaDeferred
@@ -29,8 +30,10 @@ _COMMON = frozenset({"objective", "evidence_refs", "source_instruction"})
 ROLE_CONTEXT_KEYS = {
     "research": _COMMON | {"as_of", "market", "strategy_templates", "active_strategy_templates", "sources",
                             "analysis_instruction", "reports"},
+    # W6-D (D223): "wake" is the wake a Trader turn answers (T35) and "practice_range" the strategy versions a day
+    # plan may follow, with their reports. The owner's pinned subscription profile must list them too (step L3).
     "trader": _COMMON | {"as_of", "artifact", "market", "portfolio", "selected_context", "strategy_templates",
-                          "active_strategy_templates", "research"},
+                          "active_strategy_templates", "research", "wake", "practice_range"},
     "learning": _COMMON | {"reports", "decisions", "lesson_revisions", "analysis_instruction"},
     "optimisation": _COMMON | {"reports", "expenses", "task_counts", "analysis_instruction"},
     "leader": _COMMON | {"reports", "proposals", "candidates", "consultation_result"},
@@ -198,7 +201,7 @@ class SubscriptionDepartmentMixin:
             if not result.ok:
                 raise ValidationFailure(f"subscription {result.failure}: {result.message}")
             turn_only = True
-            return self.apply(task, self.reply_type.model_validate(result.payload))
+            return self.apply(task, self.reply_type_for(task).model_validate(result.payload))
         except (TradeGraphError, ValidationError) as exc:
             with self.database.immediate():
                 self.scheduler.leased_row(task["_lease"])
@@ -224,9 +227,34 @@ class SubscriptionResearchHandler(SubscriptionDepartmentMixin, ResearchHandler):
 
 
 class SubscriptionTraderHandler(SubscriptionDepartmentMixin, TraderHandler):
+    def _accounting(self, task: dict) -> dict:
+        """Context size and the tokens the provider reported for this turn; unknown stays None, never zero."""
+        invocation = self.database.execute(
+            "SELECT result_json FROM subscription_invocations WHERE invocation_id = ?",
+            (f"trader:{task['task_id']}",),
+        ).fetchone()
+        result = ModelResult.model_validate_json(invocation["result_json"])
+        allowed = self.gateway.router.config.subscription.allowed_context_keys["trader"]
+        plan = self.gateway._row(f"trader:{task['task_id']}", "invoke_model")
+        original = json.loads(plan["scope_json"])["original_request"]["context"]
+        context = public_context({key: value for key, value in original.items() if key in allowed})
+        usage = result.usage
+        return {
+            "context_bytes": len(json.dumps(context, sort_keys=True, ensure_ascii=False).encode()),
+            "input_tokens": (usage.provider_reported_input_tokens
+                if usage and usage.provider_reported_input_tokens is not None else
+                usage.uncached_input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+                if usage and not {"uncached_input_tokens", "cache_read_tokens", "cache_write_tokens"}
+                    .intersection(usage.unreported_fields) else None),
+            "output_tokens": usage.billed_output_tokens if usage else None,
+        }
+
     @atomic
     def apply(self, task: dict, reply) -> dict:
         self._eligible(task)
+        if isinstance(reply, TraderWakeReply):
+            # D223: the event engine installs the day plans from this saved answer; nothing is ordered here.
+            return self._apply_wake(task, reply, accounting=self._accounting(task))
         if not set(reply.evidence_ids).issubset(task["snapshot"]["evidence_refs"]):
             raise ValidationFailure("Trader cites research outside its persisted snapshot")
         turn = self.trader.act(
@@ -241,16 +269,6 @@ class SubscriptionTraderHandler(SubscriptionDepartmentMixin, TraderHandler):
                                    and item["history"]["available_at_utc"]
                                    and item["history"]["source_ref"] in task["snapshot"]["evidence_refs"]],
         )
-        invocation = self.database.execute(
-            "SELECT result_json FROM subscription_invocations WHERE invocation_id = ?",
-            (f"trader:{task['task_id']}",),
-        ).fetchone()
-        result = ModelResult.model_validate_json(invocation["result_json"])
-        allowed = self.gateway.router.config.subscription.allowed_context_keys["trader"]
-        plan = self.gateway._row(f"trader:{task['task_id']}", "invoke_model")
-        original = json.loads(plan["scope_json"])["original_request"]["context"]
-        context = public_context({key: value for key, value in original.items() if key in allowed})
-        usage = result.usage
         report_id = self.secretary.report(
             task["portfolio_id"], role="trader", kind="decision", summary=self._report_summary(reply, turn),
             evidence_refs=[turn.decision_id, task["snapshot_id"]], source_key=task["task_id"], material=False,
@@ -260,13 +278,7 @@ class SubscriptionTraderHandler(SubscriptionDepartmentMixin, TraderHandler):
             **({"refusal": turn.refusal} if turn.refusal else {}),
             "report_id": report_id,
             "artifact": task["snapshot"]["artifact"],
-            "context_bytes": len(json.dumps(context, sort_keys=True, ensure_ascii=False).encode()),
-            "input_tokens": (usage.provider_reported_input_tokens
-                if usage and usage.provider_reported_input_tokens is not None else
-                usage.uncached_input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
-                if usage and not {"uncached_input_tokens", "cache_read_tokens", "cache_write_tokens"}
-                    .intersection(usage.unreported_fields) else None),
-            "output_tokens": usage.billed_output_tokens if usage else None,
+            **self._accounting(task),
         }
         return self._record(task, output)
 
