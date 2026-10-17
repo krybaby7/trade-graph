@@ -846,6 +846,158 @@
       "label": "Costs"
     }
   },
+  "trading": {
+    "as_of": "2026-10-05T17:20:00.000Z",
+    "loss": {
+      "state": "not_recorded",
+      "currency": null,
+      "limit_percent": null,
+      "day_start": null,
+      "resumes_at": null,
+      "day_start_value": null,
+      "day_start_basis": null,
+      "value": null,
+      "loss": null,
+      "limit_amount": null,
+      "used_percent": null,
+      "headline": [
+        {
+          "t": "text",
+          "v": "Your money limits aren't recorded yet, so there is no daily loss limit and the Trader's day plans stay off."
+        }
+      ],
+      "detail": [
+        {
+          "t": "text",
+          "v": "You record them once at step L3 with trade-graph money-limits --confirm (run it without --confirm first to see what it records)."
+        }
+      ]
+    },
+    "scorecard": {
+      "available": true,
+      "unavailable_reason": null,
+      "status": "complete",
+      "period_start": "2026-10-05T17:17:19.483Z",
+      "period_end": "2026-10-05T17:20:00.000Z",
+      "currency": "USD",
+      "result": {
+        "amount": "0",
+        "currency": "USD",
+        "display": "$0.00"
+      },
+      "versus_btc": null,
+      "beats_cash": false,
+      "beats_btc": null,
+      "headline": [
+        {
+          "t": "text",
+          "v": "Since "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-05T17:17:19.483Z",
+          "style": "date"
+        },
+        {
+          "t": "text",
+          "v": ": even after every fee."
+        }
+      ],
+      "facts": [
+        {
+          "label": "Trades",
+          "value": [
+            {
+              "t": "text",
+              "v": "None completed yet"
+            }
+          ]
+        },
+        {
+          "label": "Fees paid",
+          "value": [
+            {
+              "t": "money",
+              "amount": "0",
+              "currency": "USD",
+              "display": "$0.00"
+            }
+          ]
+        },
+        {
+          "label": "Worst fall",
+          "value": [
+            {
+              "t": "text",
+              "v": "None"
+            }
+          ]
+        },
+        {
+          "label": "Longest losing run",
+          "value": [
+            {
+              "t": "text",
+              "v": "None"
+            }
+          ]
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "text",
+            "v": "Against keeping the cash: even. Cash earns nothing here."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Against holding Bitcoin: can't be compared: no BTC price was recorded by the start of the period, so holding BTC cannot be valued."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "In euros: not available: no reference rate from USD to EUR was recorded at the start of the period."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Real AI spending in these days: none recorded. The paper result never pays for AI."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Your test rule (D138 item 7) needs at least 28 days and 30 completed trades; so far 0 days and 0 trades. It's too early to judge. Beats cash: no. Beats holding Bitcoin: can't tell. Information only, not a pass mark."
+          }
+        ]
+      ],
+      "provisional": [],
+      "more_provisional": 0,
+      "note": [
+        {
+          "t": "text",
+          "v": "Working software, economic evidence and permission to trade real money are three separate gates. This scorecard is evidence about simulated paper trading over one period: it does not show that the software works, a good result does not prove that the Trader is profitable, and nothing here allows trading real money or spending a real budget."
+        }
+      ]
+    },
+    "collector": {
+      "state": "no_records",
+      "headline": [
+        {
+          "t": "text",
+          "v": "No price collector records in the last 24 hours. It runs inside the paper service and records its coin scans, pair-list updates and problems here."
+        }
+      ],
+      "last_at": null,
+      "last_scan_at": null,
+      "problems_24h": 0,
+      "lines": []
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",

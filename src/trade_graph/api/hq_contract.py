@@ -18,7 +18,7 @@ and a number never passes for a string. Conventions:
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
+from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation
 from typing import Annotated, Any, ClassVar, Final, Literal, Protocol, get_args
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
@@ -120,7 +120,9 @@ ServiceStatus = Literal["IDLE", "UNOBSERVED", "STARTING", "RUNNING", "MANAGEMENT
                         "FAILED", "INTERRUPTED", "ATTACHED_EXISTING"]
 SERVICE_STATUSES: Final = get_args(ServiceStatus)
 ACTIVE_SERVICE_STATUSES: Final = ("STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING")  # service_controller.py:28
-ProblemPrefix = Literal["feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "other"]
+# W8-C (D250): the money-limit, day-plan and price-collector steps of the paper service report in plain words too.
+ProblemPrefix = Literal["feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "money_limits:", "day_plans:",
+                        "collector:", "other"]
 PROBLEM_PREFIXES: Final = get_args(ProblemPrefix)
 
 PauseProfile = Literal["RUNNING", "PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN",
@@ -183,7 +185,8 @@ EconCode = Literal["subscription_bills_unconfirmed", "other_costs_unconfirmed", 
                    "ai_usage_records_incomplete", "other_cost_value_unknown", "invoice_differences", "history_gap",
                    "other"]
 ECON_CODES: Final = get_args(EconCode)
-NoticeCode = Literal["history_gap", "history_unverified", "resources", "read_only", "live_mode"]
+NoticeCode = Literal["history_gap", "history_unverified", "resources", "read_only", "live_mode",
+                     "loss_limit_reached"]
 MarketSymbol = Literal["BTC/USD", "ETH/USD"]
 Trend = Literal["below", "above", "level", "not_enough_history"]
 TimeStyle = Literal["relative", "clock", "day_clock", "relative_clock", "date"]
@@ -193,7 +196,7 @@ GlossaryKey = Literal["practice_money", "real_trading_off", "protect_only", "saf
                       "euro_rate", "currency_effect", "team_effect", "pays_for_itself", "bill_share",
                       "bills_complete", "history_gap", "avg_20h", "avg_50h", "trial", "rules", "sign_of_life",
                       "review_checkin", "review_prompt", "estimated_cost", "unresolved_cost", "testing_alert",
-                      "prepaid_credit"]
+                      "prepaid_credit", "loss_limit", "day_plan", "safety_exit", "scorecard", "price_collector"]
 GLOSSARY_KEYS: Final = get_args(GlossaryKey)
 
 # --- Owner check-ins (spec §B.10) ----------------------------------------------------------
@@ -1107,6 +1110,164 @@ class AiSpending(_Contract):
         return self
 
 
+# --- Today's trading: the loss limit, the scorecard and the price collector (W8-C, D250-D253) -----------------
+# Additive and omittable (``HQSnapshot.trading``): an older server leaves it out. Amounts are the paper account's own
+# currency (USD), exact: nothing is converted at a guessed rate. Unknown is null with its reason in words, never zero.
+# The day plans themselves are a separate read (``api/hq_plans_contract.py``), so this block stays small.
+
+LossState = Literal["not_recorded", "within", "reached", "stopped", "unknown", "not_applied"]
+LOSS_STATES: Final = get_args(LossState)
+DayStartBasis = Literal["at_day_start", "first_valuation_after_start"]
+ScorecardStatus = Literal["complete", "provisional"]
+CollectorState = Literal["off", "no_records", "ok", "attention"]
+COLLECTOR_STATES: Final = get_args(CollectorState)
+SCORECARD_FACTS_MAX: Final = 10
+SCORECARD_LINES_MAX: Final = 6
+SCORECARD_PROVISIONAL_MAX: Final = 5
+COLLECTOR_LINES_MAX: Final = 6
+_EXACT: Final = 120  # digits for exact checks of exact decimal strings
+
+
+def _exact(money: Money) -> Decimal:
+    return Decimal(money.amount)
+
+
+def _difference(first: Money, second: Money) -> Decimal:
+    return Context(prec=_EXACT).subtract(_exact(first), _exact(second))
+
+
+class LossLimit(_Contract):
+    """Today's loss against the owner's daily loss limit (D138 items 1 and 6, D182), from ``LossStatus.document()``.
+
+    ``loss`` is the day-start value less the current value, fees and open positions at their marks included: a
+    negative loss is a gain. ``used_percent`` is the loss as a share of the limit amount (0 for a gain, 100 once the
+    limit is reached). ``not_recorded``: the owner has not recorded money limits (day-plan orders stay off);
+    ``not_applied``: a live account, where the paper service's limit does not run.
+    """
+
+    state: LossState
+    currency: Currency | None
+    limit_percent: Dec | None  # the owner's fraction as a percent, e.g. "3"
+    day_start: ISO | None
+    resumes_at: ISO | None  # the next day start, when a stop lifts
+    day_start_value: Money | None
+    day_start_basis: DayStartBasis | None
+    value: Money | None
+    loss: Money | None
+    limit_amount: Money | None
+    used_percent: Percent | None
+    headline: NonEmptyText
+    detail: Text
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        measured = self.state not in ("not_recorded", "not_applied")
+        frame = (self.currency, self.limit_percent, self.day_start, self.resumes_at)
+        if measured != all(value is not None for value in frame) or (
+                not measured and any(value is not None for value in frame)):
+            raise ValueError("a measured loss limit names its currency, limit and trading day, and only then")
+        figures = (self.day_start_value, self.day_start_basis, self.value, self.loss, self.limit_amount,
+                   self.used_percent)
+        if not measured and any(value is not None for value in figures):
+            raise ValueError("a loss limit that isn't measured has no figures")
+        if any(money is not None and money.currency != self.currency
+               for money in (self.day_start_value, self.value, self.loss, self.limit_amount)):
+            raise ValueError("the loss is measured in the account's currency")
+        if (self.day_start_value is None) != (self.day_start_basis is None) or (
+                self.day_start_value is None) != (self.limit_amount is None):
+            raise ValueError("a day-start value says how it was taken and sets the limit amount")
+        if (self.loss is None) != (self.day_start_value is None or self.value is None):
+            raise ValueError("the loss is known exactly when both values are")
+        if self.loss is not None and _exact(self.loss) != _difference(self.day_start_value, self.value):
+            raise ValueError("the loss is the day-start value less the current value")
+        if (self.used_percent is None) != (self.loss is None):
+            raise ValueError("the share of the limit used is known exactly when the loss is")
+        under = self.loss is not None and _exact(self.loss) < _exact(self.limit_amount)
+        if self.state == "within" and not under:
+            raise ValueError("within the limit means a known loss below it")
+        if self.state == "reached" and (self.loss is None or under):
+            raise ValueError("a reached limit has a known loss at or above it")
+        if self.state == "unknown" and self.loss is not None:
+            raise ValueError("an unknown loss has no figure")
+        if measured and self.resumes_at <= self.day_start:
+            raise ValueError("the next day start comes after this one")
+        return self
+
+
+class Scorecard(_Contract):
+    """The paper scorecard (T42, D200-D204) since the account opened: the result after every fee against holding cash
+    and holding Bitcoin over the same days, with the real AI spending of those days beside it (never paid by it)."""
+
+    available: bool
+    unavailable_reason: Text | None  # plain words, null exactly when available
+    status: ScorecardStatus | None
+    period_start: ISO | None
+    period_end: ISO | None
+    currency: Currency | None
+    result: Money | None  # after every fee; open positions valued as if sold
+    versus_btc: Money | None  # null when holding BTC can't be valued
+    beats_cash: bool | None
+    beats_btc: bool | None
+    headline: NonEmptyText
+    facts: Annotated[list[Fact], Field(max_length=SCORECARD_FACTS_MAX)]
+    lines: Annotated[list[NonEmptyText], Field(max_length=SCORECARD_LINES_MAX)]
+    provisional: Annotated[list[NonEmptyText], Field(max_length=SCORECARD_PROVISIONAL_MAX)]
+    more_provisional: NonNegative
+    note: NonEmptyText  # the three separate gates (D204)
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.available == (self.unavailable_reason is not None):
+            raise ValueError("unavailable_reason is given exactly when the scorecard is unavailable")
+        scored = (self.status, self.period_start, self.period_end, self.currency, self.result, self.beats_cash)
+        if self.available != all(value is not None for value in scored):
+            raise ValueError("an available scorecard has its status, period, currency and result")
+        if not self.available and (any(value is not None for value in (*scored, self.versus_btc, self.beats_btc))
+                                   or self.facts or self.lines or self.provisional or self.more_provisional):
+            raise ValueError("an unavailable scorecard shows no figures")
+        if self.available:
+            if self.period_end <= self.period_start:
+                raise ValueError("a scorecard period ends after it starts")
+            if any(money is not None and money.currency != self.currency for money in (self.result, self.versus_btc)):
+                raise ValueError("the scorecard is in the account's currency")
+            if self.beats_cash != (_exact(self.result) > 0):
+                raise ValueError("cash earns nothing (D127): beating it means a result above zero")
+            if (self.versus_btc is None) != (self.beats_btc is None) or (
+                    self.versus_btc is not None and self.beats_btc != (_exact(self.versus_btc) > 0)):
+                raise ValueError("beating BTC is known exactly when holding BTC could be valued")
+            if (self.status == "provisional") != bool(self.provisional or self.more_provisional):
+                raise ValueError("a provisional scorecard says why, and only then")
+        return self
+
+
+class PriceCollector(_Contract):
+    """The service's price collector (W6-D, D222), read from its ``price_collection`` activity records."""
+
+    state: CollectorState
+    headline: NonEmptyText
+    last_at: ISO | None  # the newest record
+    last_scan_at: ISO | None  # the newest hourly coin scan
+    problems_24h: NonNegative  # failed or partial steps, gaps and rate-limit pauses in the last 24 hours
+    lines: Annotated[list[NonEmptyText], Field(max_length=COLLECTOR_LINES_MAX)]
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.state in ("ok", "attention") and self.last_at is None:
+            raise ValueError("a working collector has a newest record")
+        if self.state == "no_records" and (self.last_at is not None or self.problems_24h):
+            raise ValueError("without records there is nothing to count")
+        if self.last_scan_at is not None and (self.last_at is None or self.last_scan_at > self.last_at):
+            raise ValueError("the newest scan is one of the records")
+        return self
+
+
+class TradingBlock(_Contract):
+    as_of: ISO  # when the cached facts were read (at most 60 s old, D250)
+    loss: LossLimit
+    scorecard: Scorecard
+    collector: PriceCollector
+
+
 # --- Decisions, check-ins, prompt facts, notices, links ------------------------------------
 
 
@@ -1271,7 +1432,7 @@ class Links(_Contract):
 class HQSnapshot(_Contract):
     """``GET /api/v1/hq`` response and the page's JSON island."""
 
-    _omit_not_null = frozenset({"ai_spending"})
+    _omit_not_null = frozenset({"ai_spending", "trading"})
     schema_: Literal["trade-graph.hq.v1"] = Field(alias="schema")
     as_of: ISO
     poll_seconds: Literal[30]
@@ -1288,6 +1449,7 @@ class HQSnapshot(_Contract):
     money: MoneyBlock
     market: list[MarketItem]
     ai_spending: AiSpending | None = None  # T40; additive, may be omitted, never null
+    trading: TradingBlock | None = None  # W8-C; additive, may be omitted, never null
     decisions: list[DecisionCard]
     checkins: Checkins | None  # null unless owner
     prompt_facts: PromptFacts

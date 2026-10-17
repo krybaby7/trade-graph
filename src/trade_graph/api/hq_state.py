@@ -39,8 +39,9 @@ FINISHED_QUESTS_PER_DEPT = 5  # finished jobs listed per department (payload bud
 STALE_AFTER = timedelta(seconds=90)
 OVERDUE_GRACE = 120
 QUOTA_DEFERRAL_RECENT = 120
-PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:")
-ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:")
+PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "money_limits:", "day_plans:",
+                    "collector:")
+ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:", "money_limits:", "day_plans:")
 OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
 # Leader pauses that protect more than the owner's "Pause AI" (protect-only); HQ never offers to weaken them.
 STRONGER_PAUSES = ("CANCEL_ALL", "FLATTEN", "STOPPED")
