@@ -23,6 +23,12 @@ both filled as triggered taker sells of the whole quantity with slippage:
 
 Bar fills inside the bar are stamped at its close, when the completed bar shows they happened; fills at the
 open are stamped at its open. Slipped prices round to the price increment against the trader.
+
+Lots (W4-A): given the instrument's ``quantity_increment`` (and ``min_quantity``), a partial fill is rounded down to
+the lot. A share that covers what remains fills it exactly. When the rounded share would be below the minimum, an
+order filled on the engine's own assumption (no volume figure: half of what remains) finishes, because what remains
+is then at most about two minimum lots; an order limited by a reported volume or displayed size fills nothing yet,
+because that much did not trade. Without an increment the earlier behaviour is kept.
 """
 
 from __future__ import annotations
@@ -94,12 +100,32 @@ def _fill(*, order_id: str, symbol: str, side: Side, quantity: Decimal, price: D
     )
 
 
+def _on_the_lot(remaining: Decimal, share: Decimal, *, quantity_increment: Decimal | None,
+                min_quantity: Decimal | None, assumed: bool) -> Decimal:
+    """The quantity to fill from ``share`` of ``remaining``: on the lot, never a remainder of growing digits.
+
+    ``assumed`` says the share is the engine's own assumption (no volume figure), not traded evidence.
+    """
+    with localcontext(_EXACT):
+        available = min(remaining, share)
+        if quantity_increment is None or available >= remaining:
+            return available
+        if quantity_increment <= 0:
+            raise ValidationFailure("quantity increment must be positive")
+        quantity = floor_to_increment(available, quantity_increment)
+        minimum = max(quantity_increment, min_quantity or Decimal("0"))
+        if quantity >= minimum:
+            return quantity
+        return remaining if assumed else Decimal("0")
+
+
 def _order_eligible(order: SimOrder | ProtectiveExit, symbol: str, began, event_ref: str) -> bool:
     return symbol == order.symbol and began >= order.eligible_after_utc and order.excluded_event_ref != event_ref
 
 
 def fill_order_on_candle(order: SimOrder, candle: Candle, *, profile: CostProfile, policy: FillPolicy,
-                         price_increment: Decimal | None = None) -> SimFill | None:
+                         price_increment: Decimal | None = None, quantity_increment: Decimal | None = None,
+                         min_quantity: Decimal | None = None) -> SimFill | None:
     """Evaluate one entry or sell order against one completed candle."""
     if order.kind == "limit" and order.placement_price is None:
         raise ValidationFailure("a limit order on candles needs its placement price to tell resting from marketable")
@@ -107,9 +133,11 @@ def fill_order_on_candle(order: SimOrder, candle: Candle, *, profile: CostProfil
     if not _order_eligible(order, candle.symbol, candle.open_time_utc, event_ref) or order.remaining <= 0:
         return None
     with localcontext(_EXACT):
-        quantity = min(order.remaining, candle.volume * policy.participation)
+        share = candle.volume * policy.participation
+    quantity = _on_the_lot(order.remaining, share, quantity_increment=quantity_increment, min_quantity=min_quantity,
+                           assumed=False)
     if quantity <= 0:
-        return None  # no trades in the bar, so no evidence anything could be bought or sold
+        return None  # no trades in the bar (or not one lot), so no evidence anything could be bought or sold
     buy = order.side == "buy"
     common = dict(order_id=order.order_id, symbol=order.symbol, side=order.side, quantity=quantity,
                   event_ref=event_ref, heuristic=True, profile=profile, policy=policy)
@@ -174,7 +202,9 @@ def trigger_exit_on_candle(exit: ProtectiveExit, candle: Candle, *, armed_in_thi
 
 
 def fill_order_on_observation(order: SimOrder, observation: Observation, *, profile: CostProfile,
-                              policy: FillPolicy, price_increment: Decimal | None = None) -> SimFill | None:
+                              policy: FillPolicy, price_increment: Decimal | None = None,
+                              quantity_increment: Decimal | None = None,
+                              min_quantity: Decimal | None = None) -> SimFill | None:
     """Evaluate one order against one quote observation (the paper broker's path)."""
     event_ref = observation_ref(observation)
     if not _order_eligible(order, observation.symbol, observation.available_at_utc, event_ref):
@@ -191,7 +221,9 @@ def fill_order_on_observation(order: SimOrder, observation: Observation, *, prof
         if touch is None:
             return None
         with localcontext(_EXACT):
-            quantity = remaining if depth is None else min(remaining, depth * policy.participation)
+            share = remaining if depth is None else depth * policy.participation
+        quantity = _on_the_lot(remaining, share, quantity_increment=quantity_increment, min_quantity=min_quantity,
+                               assumed=False)
         if quantity <= 0:
             return None
         price = _slipped(touch, policy.entry_slippage_rate, order.side, price_increment)
@@ -205,9 +237,11 @@ def fill_order_on_observation(order: SimOrder, observation: Observation, *, prof
     heuristic = observation.volume is None
     with localcontext(_EXACT):
         if observation.volume is not None:
-            quantity = min(remaining, observation.volume * policy.participation)
+            share = observation.volume * policy.participation
         else:
-            quantity = min(remaining, remaining * policy.unknown_volume_fill_share)
+            share = remaining * policy.unknown_volume_fill_share
+    quantity = _on_the_lot(remaining, share, quantity_increment=quantity_increment, min_quantity=min_quantity,
+                           assumed=heuristic)
     if quantity <= 0:
         return None
     return _fill(quantity=quantity, price=limit, reference=limit, liquidity="maker", reason="limit_book_cross",

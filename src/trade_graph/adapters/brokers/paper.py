@@ -251,7 +251,8 @@ class PaperBroker:
                 if document.get("excluded_observation_id") else None
             ),
         }
-        increment = self._price_increment(document["symbol"])
+        rules = self._rules(document["symbol"])
+        increment = None if rules is None else rules.price_increment
         if document["order_type"] == "stop":
             if document["side"] != "sell":
                 return None
@@ -267,14 +268,19 @@ class PaperBroker:
             limit_price=None if document.get("limit_price") is None else Decimal(document["limit_price"]),
             **common,
         )
-        return fill_order_on_observation(order, observation, profile=self.cost_profile, policy=self.fill_policy,
-                                         price_increment=increment)
+        # Partial fills round down to the lot and finish cleanly at the minimum (W4-A), so a resting order never
+        # leaves a remainder whose digits grow on every quote.
+        return fill_order_on_observation(
+            order, observation, profile=self.cost_profile, policy=self.fill_policy, price_increment=increment,
+            quantity_increment=None if rules is None else rules.quantity_increment,
+            min_quantity=None if rules is None else rules.min_quantity,
+        )
 
-    def _price_increment(self, symbol: str) -> Decimal | None:
+    def _rules(self, symbol: str) -> InstrumentRules | None:
         row = self.database.execute(
             "SELECT document_json FROM instruments WHERE venue = 'paper' AND symbol = ?", (symbol,),
         ).fetchone()
-        return None if row is None else InstrumentRules.model_validate_json(row["document_json"]).price_increment
+        return None if row is None else InstrumentRules.model_validate_json(row["document_json"])
 
     def match(self, observation: Observation) -> list[FillRecord]:
         rows = self.database.execute(
