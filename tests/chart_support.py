@@ -15,10 +15,9 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
-from trade_graph.adapters.persistence.market_data_readonly import ReadOnlyMarketData
-
 from tests.day_plan_support import day_plan_account, entry, install, plan
 from trade_graph.adapters.persistence.market_data import MarketDataDatabase
+from trade_graph.adapters.persistence.market_data_readonly import ReadOnlyMarketData
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.contracts.candles import Candle, align_close_time
 
