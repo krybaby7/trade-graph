@@ -199,10 +199,11 @@ These rules add to [AGENTS.md](../AGENTS.md), which always applies.
 **Known failures.** None since W1-E (C1) was merged on 2026-10-16. The wave 1
 integration ran the full suite at `c4bde76` on Python 3.12.13 (from
 `uv python install 3.12`) in a cloud container: 6,664 passed, 0 failed, 23
-skipped. The wave 2 night integration ran it as GitHub's test job at `4c134c0`:
-6,929 passed, 0 failed, 18 skipped. Any failure now counts and must be
-reported. The container run took 105 minutes (W1-E measured 54); GitHub's test
-job took 48 minutes for wave 2 and may run 120.
+skipped. The night integrations ran it as GitHub's test job: wave 2 at
+`4c134c0`, 6,929 passed, 0 failed, 18 skipped; wave 3 at `ce17fcb`, 7,084
+passed, 0 failed, 18 skipped. Any failure now counts and must be reported. The
+container run took 105 minutes (W1-E measured 54); GitHub's test job takes
+about 50 minutes and may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
 fail because of the container itself. Bubblewrap (`bwrap`) is not installed:
