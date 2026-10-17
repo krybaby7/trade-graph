@@ -431,9 +431,11 @@ class Execution:
                 self._pilot_lifecycle.reserve_increase(self._pilot_authorization_id, intent_id)
         return intent_id
 
-    async def dispatch(self, *, protection_only: bool = False) -> int:
+    async def dispatch(self, *, protection_only: bool = False, intent_ids: Iterable[str] | None = None) -> int:
         """Send pending intents. ``protection_only`` sends only protective exits of filled day-plan entries (T34),
-        which reduce risk and may go out as soon as their fill is recorded, under any pause that keeps protection."""
+        which reduce risk and may go out as soon as their fill is recorded, under any pause that keeps protection.
+        ``intent_ids`` sends only these (the Trader's close sends its sell right after the cancel, W8-B); every
+        other rule of dispatch applies to them unchanged."""
         rows = self.database.execute(
             """SELECT o.payload_ref FROM outbox o JOIN order_intents i ON i.intent_id = o.payload_ref
             WHERE o.kind = 'submit' AND o.status = 'pending'
@@ -442,6 +444,11 @@ class Execution:
             AND json_extract(i.payload_json, '$.mode') = ?""",
             (self.venue, self.account_id, self.mode),
         ).fetchall()
+        if intent_ids is not None:
+            wanted = set(intent_ids)
+            rows = [row for row in rows if row["payload_ref"] in wanted]
+            if not rows:
+                return 0
         if protection_only:
             rows = [row for row in rows if self._payload(row["payload_ref"]).get("protective_exit")]
             if not rows:
@@ -711,6 +718,12 @@ class Execution:
                 self._set_state(row["intent_id"], "CANCELLED", {"venue_order_id": status.venue_order_id}
                                 if status.venue_order_id else {})
                 self._release(row["intent_id"])
+            elif status.status in {"open", "partially_filled"} and self._settles_lost_acknowledgement(
+                    row["state"], row["intent_id"], recorded, status.filled_quantity):
+                # A lost acknowledgement the broker can see (W8-B, D248): unknown was never rejection, and once
+                # the broker shows the order resting with every fill it reports recorded, it is open. Paper only.
+                self._set_state(row["intent_id"], "PARTIALLY_FILLED" if recorded > 0 else "OPEN",
+                                {"venue_order_id": status.venue_order_id} if status.venue_order_id else {})
         if unowned:
             raise UncertainExternal("broker history includes unowned fills; account reconciliation is incomplete")
         with self.database.immediate():
@@ -734,6 +747,18 @@ class Execution:
             )
         for row in rows:
             self._sync_pilot_effect(row["intent_id"])
+
+    def _settles_lost_acknowledgement(self, before: str, intent_id: str, recorded: Decimal,
+                                      reported: Decimal) -> bool:
+        """May reconciliation settle this intent from the broker's ``open``/``partially_filled`` answer? (D248)
+
+        Only on a paper binding (live behaviour is the owner's question), only for an intent whose submission had no
+        answer (``UNKNOWN``, or ``SUBMITTING`` after a crash; a fill recorded meanwhile may already have marked it
+        ``PARTIALLY_FILLED``), and only when the fills recorded equal the broker's filled quantity.
+        """
+        if self.mode != "paper" or before not in {"UNKNOWN", "SUBMITTING"}:
+            return False
+        return self.intent_state(intent_id) in {"UNKNOWN", "PARTIALLY_FILLED"} and recorded == reported
 
     async def startup(self) -> None:
         if self.mode == "live" and self._pilot_lifecycle is not None:

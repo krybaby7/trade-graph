@@ -221,12 +221,18 @@ def test_unknown_submit_reconciles_without_replay_after_restart(tmp_path):
     activate(runtime, ENTER)
     result = asyncio.run(runtime.cycle(portfolio, "BTC/USD"))
     intent = result["response"]["intent_id"]
-    assert execution.intent_state(intent) == "UNKNOWN"
+    # The acknowledgement was lost (the submission got no answer). The paper
+    # broker shows the order resting with no fills, so reconciliation records
+    # it OPEN with its venue order id (W8-B, D248; before, it stayed UNKNOWN).
+    # It keeps its reservation and is never replayed.
+    assert execution._payload(intent)["error"] == "timeout"
+    assert execution.intent_state(intent) == "OPEN"
     recovered = asyncio.run(runtime.recover(portfolio))
     assert recovered["status"] == "RECONCILED"
-    # Core deliberately retains UNKNOWN while an acknowledged-open order has
-    # no fills. That uncertainty must keep its reservation and never replay.
-    assert execution.intent_state(intent) == "UNKNOWN"
+    assert execution.intent_state(intent) == "OPEN"
+    assert execution._payload(intent)["venue_order_id"]
+    assert db.execute("SELECT state FROM position_reservations WHERE intent_id = ?",
+                      (intent,)).fetchone()[0] == "held"
     assert db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 1
     quote = execution.latest_observation("BTC/USD", execution.now())
     asyncio.run(runtime.ingest_observation(quote.model_copy(update={"observation_id": "fill-after-unknown"})))

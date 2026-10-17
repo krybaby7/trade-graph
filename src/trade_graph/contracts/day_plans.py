@@ -291,8 +291,127 @@ def expiry_of(entry: PlanEntry, day_end: datetime) -> datetime:
     return entry.expires_at_utc or day_end
 
 
+# --- the Trader's position actions (W8-B, C4; D245-D247) -------------------------------------------------------------
+
+MAX_ACTION_REASON_LENGTH = 500
+PositionActionKind = Literal["close", "move_exit"]
+PositionActionStatus = Literal["running", "done", "refused", "failed"]
+
+
+class PositionAction(_Frozen):
+    """The Trader closes its day-plan position in one coin now, or moves that position's safety exit (D245).
+
+    The position is what the coin's day-plan exits protect (every plan of the portfolio, today's and earlier ones).
+    ``close`` sells it now: software cancels the coin's resting day-plan entries and its exits, reconciles, then
+    sells what they protected at the market. ``move_exit`` replaces those exits with exits at ``stop_price`` and,
+    when given, ``take_profit_price`` (none means no take-profit leg); the new stop rests below the bid and a
+    take-profit above it. Software checks only deterministic facts (paper, not paused, spot, the price steps, a
+    position exists); there is no confidence figure, approval or vote, and nobody approves it (D116, D121).
+    ``reason`` is a concise decision summary, not a transcript.
+    """
+
+    action: PositionActionKind
+    symbol: str = Field(pattern=SYMBOL_PATTERN)
+    stop_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
+    reason: str = Field(min_length=1, max_length=MAX_ACTION_REASON_LENGTH)
+
+    @field_validator("stop_price", "take_profit_price", mode="before")
+    @classmethod
+    def _positive(cls, value: Any) -> Decimal | None:
+        return None if value is None else _price(value)
+
+    @field_serializer("stop_price", "take_profit_price")
+    def _serialize(self, value: Decimal | None) -> str | None:
+        return None if value is None else canonical_decimal(value)
+
+    @field_validator("reason")
+    @classmethod
+    def _text(cls, value: str) -> str:
+        return _plain(value) or value
+
+    @model_validator(mode="after")
+    def _terms_fit_the_action(self) -> PositionAction:
+        if self.action == "close":
+            if self.stop_price is not None or self.take_profit_price is not None:
+                raise ValueError("a close sells now; it names no stop or take-profit")
+            return self
+        if self.stop_price is None:
+            raise ValueError("a moved exit names its new stop")
+        if self.take_profit_price is not None and self.take_profit_price <= self.stop_price:
+            raise ValueError("the take-profit sits above the stop")
+        return self
+
+    def canonical_document(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+    @property
+    def content_sha256(self) -> str:
+        text = json.dumps(self.canonical_document(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(text.encode("ascii")).hexdigest()
+
+
+class PositionExit(_Frozen):
+    """Outstanding day-plan exits of a coin at one set of terms: what they would still sell."""
+
+    stop_price: Decimal
+    take_profit_price: Decimal | None = None
+    quantity: Decimal
+
+    @field_validator("stop_price", "quantity", mode="before")
+    @classmethod
+    def _exact(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @field_validator("take_profit_price", mode="before")
+    @classmethod
+    def _target(cls, value: Any) -> Decimal | None:
+        return None if value is None else parse_decimal(value)
+
+    @field_serializer("stop_price", "take_profit_price", "quantity")
+    def _serialize(self, value: Decimal | None) -> str | None:
+        return None if value is None else canonical_decimal(value)
+
+
+class PositionActionSummary(_Frozen):
+    """The newest position action of a coin, as the Trader's next wake shows it."""
+
+    action_id: str
+    action: PositionActionKind
+    status: PositionActionStatus
+    reason: str | None = Field(default=None, max_length=500)
+    requested_at: AwareDatetime
+
+
+class DayPlanPosition(_Frozen):
+    """A coin's day-plan position as software sees it when a wake is made (data for the Trader, never authority).
+
+    ``held`` is every coin of that asset the portfolio holds; ``protected`` what the outstanding day-plan exits would
+    still sell, listed by terms in ``exits``; ``unprotected`` filled day-plan parts still waiting for their exit (the
+    management step attaches it); ``resting_entries`` the coin's day-plan buys still resting.
+    """
+
+    symbol: str = Field(pattern=SYMBOL_PATTERN)
+    held: Decimal
+    protected: Decimal
+    unprotected: Decimal
+    exits: tuple[PositionExit, ...] = ()
+    resting_entries: int = 0
+    last_action: PositionActionSummary | None = None
+
+    @field_validator("held", "protected", "unprotected", mode="before")
+    @classmethod
+    def _exact(cls, value: Any) -> Decimal:
+        return parse_decimal(value)
+
+    @field_serializer("held", "protected", "unprotected")
+    def _serialize(self, value: Decimal) -> str:
+        return canonical_decimal(value)
+
+
 __all__ = [
-    "DAY_PLAN_CONTRACT_VERSION", "MAX_ALARMS", "MAX_ENTRIES", "MAX_INDICATORS", "MAX_INVALIDATION_LENGTH",
-    "MAX_RATIONALE_LENGTH", "STRATEGY_REF_PATTERN", "DayPlan", "PlanAlarm", "PlanEntry", "PlanIndicator",
-    "PlanParameter", "expiry_of",
+    "DAY_PLAN_CONTRACT_VERSION", "MAX_ACTION_REASON_LENGTH", "MAX_ALARMS", "MAX_ENTRIES", "MAX_INDICATORS",
+    "MAX_INVALIDATION_LENGTH", "MAX_RATIONALE_LENGTH", "STRATEGY_REF_PATTERN", "DayPlan", "DayPlanPosition",
+    "PlanAlarm", "PlanEntry", "PlanIndicator", "PlanParameter", "PositionAction", "PositionActionKind",
+    "PositionActionStatus", "PositionActionSummary", "PositionExit", "expiry_of",
 ]

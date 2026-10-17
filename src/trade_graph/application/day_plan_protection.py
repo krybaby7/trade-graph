@@ -8,8 +8,14 @@ covers what could not be placed then (no quote yet, a pause that removed every o
 How much an entry still needs protecting is plain arithmetic over persisted records: what it filled, less what its
 exits cover. An exit still outstanding, or whose status is unknown, covers its whole quantity, so an unknown status
 never leads to a second exit for the same coins (it is reconciled first); a filled exit covers what it sold; an exit
-that ended without filling (cancelled by the owner's cancel-all, or refused) covers only what it sold. An exit never
-asks to sell more than is held and not already reserved, so spot stays spot (D127).
+that ended without filling (cancelled by the owner's cancel-all, or refused) covers only what it sold. The Trader's
+close (W8-B) counts the same way: its market sell covers each entry's part while it is outstanding, unknown or
+filled, and only what it sold once it ended unfilled. An exit never asks to sell more than is held and not already
+reserved, so spot stays spot (D127).
+
+Terms (W8-B, D246): a fill's exit uses the entry's own stop and take-profit (the bracket the Trader wrote). When the
+Trader moved the position's exit, re-protecting that entry later (the sweep, after the owner's cancel-all) uses the
+newest moved terms; a move the broker refused never becomes the terms in force.
 
 This module is protected execution control (``kernel/authority.py``): agents cannot edit it.
 """
@@ -33,6 +39,7 @@ if TYPE_CHECKING:
 
 OUTSTANDING = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING"})
 TERMINAL = frozenset({"FILLED", "CANCELLED", "REJECTED"})
+ACTION_TABLE = "day_plan_action_orders"  # migration 0044 (W8-B): the Trader's closes and moved exits
 _ENTRY = """SELECT e.*, p.portfolio_id, p.symbol FROM day_plan_entries e JOIN day_plans p ON p.plan_id = e.plan_id"""
 # A placement that fails for any reason is recorded and retried by the next sweep: recording the fill that needs the
 # exit must never fail because the exit could not be placed yet.
@@ -59,8 +66,13 @@ class DayPlanProtection:
         return self.database.execute("SELECT * FROM day_plan_exits WHERE entry_id = ? ORDER BY sequence",
                                      (entry_id,)).fetchall()
 
+    def actions_available(self) -> bool:
+        """A database before migration 0044 has no Trader actions (W8-B): nothing of them is counted."""
+        return self.database.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (ACTION_TABLE,)).fetchone() is not None
+
     def coverage(self, entry: sqlite3.Row) -> tuple[Decimal, Decimal]:
-        """(filled by the entry, covered by its exits), in the coin's own units."""
+        """(filled by the entry, covered by its exits and the Trader's close), in the coin's own units."""
         execution = self.execution
         filled = execution._filled_quantity(entry["intent_id"])
         covered = Decimal("0")
@@ -70,7 +82,51 @@ class DayPlanProtection:
                 covered += Decimal(item["quantity"])
             else:
                 covered += execution._filled_quantity(item["intent_id"])
+        if self.actions_available():
+            for part in self.database.execute(
+                    f"SELECT * FROM {ACTION_TABLE} WHERE entry_id = ? AND role = 'sell' ORDER BY sequence",
+                    (entry["entry_id"],)).fetchall():
+                state = execution.intent_state(part["intent_id"])
+                if state in OUTSTANDING or state == "FILLED":
+                    covered += Decimal(part["quantity"])
+                else:
+                    covered += self._sold_part(part)
         return filled, covered
+
+    def _sold_part(self, part: sqlite3.Row) -> Decimal:
+        """What an ended close sell sold for this part: its fills shared out over its parts in their order."""
+        left = self.execution._filled_quantity(part["intent_id"])
+        for item in self.database.execute(
+                f"SELECT sequence, quantity FROM {ACTION_TABLE} WHERE intent_id = ? AND role = 'sell' "
+                "ORDER BY sequence", (part["intent_id"],)).fetchall():
+            share = min(left, Decimal(item["quantity"]))
+            if item["sequence"] == part["sequence"]:
+                return share
+            left -= share
+        return Decimal("0")
+
+    def terms(self, entry: sqlite3.Row) -> tuple[Decimal, Decimal | None]:
+        """The exit terms in force for re-protecting ``entry``: its newest exit the Trader moved (W8-B), else its own.
+
+        Only a move that ended ``done`` counts, so a move the broker refused never becomes the terms in force.
+        """
+        if self.actions_available():
+            row = self.database.execute(
+                f"""SELECT x.stop_price, x.take_profit_price FROM {ACTION_TABLE} o
+                    JOIN day_plan_exits x ON x.intent_id = o.intent_id
+                    JOIN day_plan_action_steps s ON s.action_id = o.action_id AND s.kind = 'done'
+                    WHERE o.entry_id = ? AND o.role = 'moved_exit' ORDER BY o.sequence DESC LIMIT 1""",
+                (entry["entry_id"],)).fetchone()
+            if row is not None:
+                return Decimal(row["stop_price"]), (None if row["take_profit_price"] is None
+                                                    else Decimal(row["take_profit_price"]))
+        return self.own_terms(entry)
+
+    @staticmethod
+    def own_terms(entry: sqlite3.Row) -> tuple[Decimal, Decimal | None]:
+        """The stop and take-profit the Trader wrote for the entry (its bracket)."""
+        target = entry["take_profit_price"]
+        return Decimal(entry["stop_price"]), None if target is None else Decimal(target)
 
     def after_fill(self, fill: FillRecord) -> str | None:
         """Attach the exit for a day-plan entry fill; called inside the fill's own transaction."""
@@ -82,41 +138,61 @@ class DayPlanProtection:
         return self.protect(entry, cause="fill", fill_trade_id=fill.trade_id)
 
     def protect(self, entry: sqlite3.Row, *, cause: str, fill_trade_id: str | None = None) -> str | None:
-        """Place one exit for whatever part of ``entry`` is filled and not yet covered; None when nothing is due."""
+        """Place one exit for whatever part of ``entry`` is filled and not yet covered; None when nothing is due.
+
+        A fill's exit uses the entry's own terms; the sweep uses the terms in force (a move by the Trader, W8-B).
+        """
         execution = self.execution
-        portfolio_id, symbol = entry["portfolio_id"], entry["symbol"]
-        if not pause_allows_protection(execution.profile(portfolio_id)):  # type: ignore[arg-type]
+        if not pause_allows_protection(execution.profile(entry["portfolio_id"])):  # type: ignore[arg-type]
             return None
         filled, covered = self.coverage(entry)
         exposed = filled - covered
         if exposed <= 0:
             return None
         try:
-            rules = execution.instrument("paper", symbol)
-            available = (execution.owned_quantity(portfolio_id, rules.base_asset)
-                         - execution._reserved(portfolio_id, rules.base_asset))
-            wanted = min(exposed, available)
-            quantity = floor_to_increment(wanted, rules.quantity_increment) if wanted > 0 else Decimal("0")
-            if quantity <= 0:
-                return None  # nothing held and unreserved to protect: the coins were sold another way
-            take_profit = None if entry["take_profit_price"] is None else Decimal(entry["take_profit_price"])
-            with self.database.immediate() as connection:
-                intent_id = execution.place_protection(
-                    portfolio_id, symbol, quantity, Decimal(entry["stop_price"]), f"day-plan:{entry['plan_id']}",
-                    take_profit_price=take_profit,
-                    protective={"plan_id": entry["plan_id"], "entry_id": entry["entry_id"]},
-                )
-                connection.execute(
-                    """INSERT INTO day_plan_exits (exit_id, entry_id, intent_id, quantity, stop_price,
-                       take_profit_price, cause, fill_trade_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (f"dx-{uuid.uuid4().hex}", entry["entry_id"], intent_id, canonical_decimal(quantity),
-                     entry["stop_price"], entry["take_profit_price"], cause, fill_trade_id,
-                     utc_iso(execution.clock.now())),
-                )
+            stop, take_profit = self.own_terms(entry) if cause == "fill" else self.terms(entry)
+            placed = self.place(entry, cause=cause, stop_price=stop, take_profit_price=take_profit,
+                                fill_trade_id=fill_trade_id)
         except _DEFERRABLE as error:
             self._deferred(entry, error, exposed=exposed)
             return None
-        return intent_id
+        return None if placed is None else placed[0]
+
+    def place(self, entry: sqlite3.Row, *, cause: str, stop_price: Decimal, take_profit_price: Decimal | None,
+              limit: Decimal | None = None, fill_trade_id: str | None = None) -> tuple[str, Decimal] | None:
+        """Place one exit at these terms for the entry's filled, uncovered part (at most ``limit``).
+
+        Returns ``(intent_id, quantity)``, or None when nothing is due or nothing is held and unreserved; raises when
+        the exit cannot be placed. It does not look at the pause: callers decide (``protect`` and W8-B's actions).
+        """
+        execution = self.execution
+        portfolio_id, symbol = entry["portfolio_id"], entry["symbol"]
+        filled, covered = self.coverage(entry)
+        exposed = filled - covered if limit is None else min(filled - covered, limit)
+        if exposed <= 0:
+            return None
+        rules = execution.instrument("paper", symbol)
+        available = (execution.owned_quantity(portfolio_id, rules.base_asset)
+                     - execution._reserved(portfolio_id, rules.base_asset))
+        wanted = min(exposed, available)
+        quantity = floor_to_increment(wanted, rules.quantity_increment) if wanted > 0 else Decimal("0")
+        if quantity <= 0:
+            return None  # nothing held and unreserved to protect: the coins were sold another way
+        with self.database.immediate() as connection:
+            intent_id = execution.place_protection(
+                portfolio_id, symbol, quantity, stop_price, f"day-plan:{entry['plan_id']}",
+                take_profit_price=take_profit_price,
+                protective={"plan_id": entry["plan_id"], "entry_id": entry["entry_id"]},
+            )
+            connection.execute(
+                """INSERT INTO day_plan_exits (exit_id, entry_id, intent_id, quantity, stop_price,
+                   take_profit_price, cause, fill_trade_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (f"dx-{uuid.uuid4().hex}", entry["entry_id"], intent_id, canonical_decimal(quantity),
+                 canonical_decimal(stop_price),
+                 None if take_profit_price is None else canonical_decimal(take_profit_price), cause, fill_trade_id,
+                 utc_iso(execution.clock.now())),
+            )
+        return intent_id, quantity
 
     def sweep(self, portfolio_id: str) -> list[str]:
         """Protect every filled, uncovered day-plan entry of the portfolio's held coins. Returns the new exits."""
@@ -159,4 +235,4 @@ class DayPlanProtection:
                  utc_iso(self.execution.clock.now())))
 
 
-__all__ = ["OUTSTANDING", "TERMINAL", "DayPlanProtection"]
+__all__ = ["ACTION_TABLE", "OUTSTANDING", "TERMINAL", "DayPlanProtection"]

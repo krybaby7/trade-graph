@@ -10,10 +10,10 @@ ended unvisited expire, which is recorded too. Nothing here limits how many trig
 
 A wake hands the department a ``WakeContext`` (``task["input"]["wake"]``). The department answers through its
 handler's output under ``"wake_outcome"`` with a ``WakeOutcome``: when it wants its next check-in (none named means
-the next day start, D123), Research's focus coins, the Trader's day plans and requests to wake another department
-with a note. The engine applies the outcome after the department's result is saved, and day plans go through
-``DayPlans.install`` like any plan. ``TraderWakeReply`` and ``ResearchFocusReply`` are the same outcome in the shape
-of a strict provider reply.
+the next day start, D123), Research's focus coins, the Trader's day plans and position actions (close a day-plan
+position or move its safety exit, W8-B) and requests to wake another department with a note. The engine applies
+the outcome after the department's result is saved, and day plans go through ``DayPlans.install`` like any plan.
+``TraderWakeReply`` and ``ResearchFocusReply`` are the same outcome in the shape of a strict provider reply.
 
 Everything is data: a trigger's note, a focus note or a wake request never carries authority. This module imports no
 adapter, library or model code; money and quantities are exact decimals.
@@ -29,7 +29,7 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from trade_graph.contracts.alarms import REFERENCE_PATTERN, SYMBOL_PATTERN, AlarmDelivery
-from trade_graph.contracts.day_plans import DayPlan
+from trade_graph.contracts.day_plans import DayPlan, DayPlanPosition, PositionAction, PositionActionKind
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 WAKE_CONTRACT_VERSION = "wake-v1"
@@ -88,6 +88,8 @@ MAX_SUMMARY_LENGTH = 1000
 MAX_FOCUS_COINS = 16
 MAX_DAY_PLANS = 16
 MAX_WAKE_REQUESTS = 16
+MAX_POSITION_ACTIONS = 16
+MAX_POSITIONS_SHOWN = 16
 MAX_EVIDENCE_REFS = 20
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f​-‏‪-‮⁦-⁩]")
 
@@ -387,6 +389,8 @@ class WakeOutcome(_Frozen):
     - ``check_in``: its next check-in; leaving it out means the next day start (D123).
     - ``focus``: Research only, the day's focus coins.
     - ``day_plans``: the Trader only, one plan per coin, installed through ``DayPlans.install``.
+    - ``position_actions``: the Trader only, at most one per coin: close a day-plan position now or move its safety
+      exit (W8-B, D245), applied through ``DayPlanActions.apply`` before the turn's day plans.
     - ``wake_requests``: wake other departments with a note.
     """
 
@@ -394,6 +398,7 @@ class WakeOutcome(_Frozen):
     check_in: CheckInRequest | None = None
     focus: FocusSelection | None = None
     day_plans: tuple[DayPlan, ...] = Field(default=(), max_length=MAX_DAY_PLANS)
+    position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
     wake_requests: tuple[WakeRequest, ...] = Field(default=(), max_length=MAX_WAKE_REQUESTS)
 
     @field_validator("summary")
@@ -406,13 +411,22 @@ class WakeOutcome(_Frozen):
         symbols = [plan.symbol for plan in self.day_plans]
         if len(symbols) != len(set(symbols)):
             raise ValueError("one day plan per coin in a turn; a later turn may replace it")
+        _one_action_per_coin(self.position_actions)
         return self
 
 
+def _one_action_per_coin(actions: tuple[PositionAction, ...]) -> None:
+    symbols = [action.symbol for action in actions]
+    if len(symbols) != len(set(symbols)):
+        raise ValueError("one position action per coin in a turn; a later turn may act again")
+
+
 class TraderWakeReply(_Frozen):
-    """The Trader's wake turn as a strict provider reply: day plans (possibly none), its next check-in, a summary."""
+    """The Trader's wake turn as a strict provider reply: day plans (possibly none), position actions (close a
+    day-plan position or move its safety exit, W8-B), its next check-in and a summary."""
 
     day_plans: tuple[DayPlan, ...] = Field(default=(), max_length=MAX_DAY_PLANS)
+    position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
     next_check_in: CheckInRequest | None = None
     summary: str = Field(min_length=1, max_length=MAX_SUMMARY_LENGTH)
 
@@ -421,8 +435,14 @@ class TraderWakeReply(_Frozen):
     def _text(cls, value: str) -> str:
         return _plain(value) or value
 
+    @model_validator(mode="after")
+    def _one_action_per_coin(self) -> TraderWakeReply:
+        _one_action_per_coin(self.position_actions)
+        return self
+
     def outcome(self) -> WakeOutcome:
-        return WakeOutcome(summary=self.summary, check_in=self.next_check_in, day_plans=self.day_plans)
+        return WakeOutcome(summary=self.summary, check_in=self.next_check_in, day_plans=self.day_plans,
+                           position_actions=self.position_actions)
 
 
 class ResearchFocusReply(_Frozen):
@@ -462,6 +482,8 @@ class WakeContext(_Frozen):
     focus: FocusRecord | None = None
     focus_step: FocusStepState | None = None
     plans: tuple[ActivePlan, ...] = ()
+    # W8-B: the coins' day-plan positions with their exits, so the Trader can close one or move its exit.
+    positions: tuple[DayPlanPosition, ...] = Field(default=(), max_length=MAX_POSITIONS_SHOWN)
     check_in: CheckIn | None = None
     allowance: AllowanceReading
     instruction: str = Field(min_length=1, max_length=1000)
@@ -478,6 +500,18 @@ class AppliedPlan(_Frozen):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class AppliedAction(_Frozen):
+    """What came of one of the Trader's position actions (W8-B): the action's own record holds every step."""
+
+    symbol: str
+    action: PositionActionKind
+    request_id: str
+    status: Literal["done", "refused", "failed", "obsolete"]
+    action_id: str | None = None
+    error_code: str | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class WakeOutcomeRecord(_Frozen):
     """What the engine did with a department's answer. ``refused`` says why an answer could not be used."""
 
@@ -488,6 +522,7 @@ class WakeOutcomeRecord(_Frozen):
     focus_id: str | None = None
     focus_refused: str | None = Field(default=None, max_length=500)
     plans: tuple[AppliedPlan, ...] = ()
+    actions: tuple[AppliedAction, ...] = ()
     requested_trigger_ids: tuple[str, ...] = ()
 
 
@@ -542,9 +577,11 @@ def is_obsolete(purpose: str, trading_day_end: datetime, now: datetime) -> bool:
 
 __all__ = [
     "CHECK_IN_KEEPING_KINDS",
-    "CYCLE_STEPS", "DAY_BOUND_KINDS", "DEPARTMENTS", "MAX_DAY_PLANS", "MAX_FOCUS_COINS", "MAX_WAKE_REQUESTS",
+    "CYCLE_STEPS", "DAY_BOUND_KINDS", "DEPARTMENTS", "MAX_DAY_PLANS", "MAX_FOCUS_COINS", "MAX_POSITION_ACTIONS",
+    "MAX_POSITIONS_SHOWN", "MAX_WAKE_REQUESTS",
     "RIDE_ALONG_KINDS", "SOFTWARE_KINDS", "TRIGGER_KINDS", "TRIGGER_STATUSES", "WAKE_CONTRACT_VERSION",
-    "WAKE_PURPOSES", "WAKE_STATUSES", "ActivePlan", "AllowanceReading", "AllowanceWindow", "AppliedPlan", "CheckIn",
+    "WAKE_PURPOSES", "WAKE_STATUSES", "ActivePlan", "AllowanceReading", "AllowanceWindow", "AppliedAction",
+    "AppliedPlan", "CheckIn",
     "CheckInBasis", "CheckInRequest", "CycleStatus", "CycleStep", "Department", "ExitLeg", "FocusCoin",
     "FocusRecord", "FocusSelection", "FocusStepState", "ProviderAllowance", "ResearchFocusReply", "ScanReference",
     "ShortlistCoin", "TraderWakeReply", "TriggerKind", "TriggerStatus", "WakeContext", "WakeOrigin", "WakeOutcome",
