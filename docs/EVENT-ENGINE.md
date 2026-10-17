@@ -212,6 +212,11 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
 - **W6-B (T38, Leader news rounds).** The Leader wakes at the day start (unless it named a time) and at its named
   check-ins. It wakes the Trader or Research with `wake_requests` (or `EventEngine.request_wake(..., requested_by=
   "leader")`); the note is data and it cannot install plans (only the Trader's answer can).
+  Built by W6-B: the Leader's wake handler is `LeaderNewsRounds` (`application/leader_news/`,
+  [LEADER-NEWS-ROUNDS.md](LEADER-NEWS-ROUNDS.md)): one Perplexity news round per wake, answered with the Leader's
+  check-in and one `wake_request` per Trader note, deep dive or strategy idea. It reads W6-A's owner switch through
+  injected functions (`perplexity_enabled_for(database, "leader")`, `perplexity_setting(database).spend_policy`);
+  the installed service does not build it yet (L3-INSTALL-CHECKLIST.md, step 12).
 - **W6-C (T39, HQ wake log).** Read `wakes`, `wake_triggers`, `department_check_ins`, `focus_selections` and
   `day_cycle_steps` (or `EventEngine.wakes`, `next_check_ins`, `focus`, `cycle`); reading starts nothing.
   Built by W6-C: `GET /api/v1/hq/wakes` (`api/hq_wakes.py`) reads these tables directly in a read snapshot,

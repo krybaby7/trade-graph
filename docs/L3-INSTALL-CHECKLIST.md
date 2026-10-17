@@ -62,7 +62,9 @@ for a follow-up package before L3 or the integrator; until they exist, leave the
 1. A Research handler (W6-A's focus research) and a Leader news-round handler (W6-B) assembled inside the protected
    process boundary with a paid-enabled gateway. Today `run_subscription_operation` refuses separately billed API
    configuration (`models` or `price_cards` in `paper-config.json`) and builds every department from the subscription
-   profile.
+   profile. The Leader handler reads the switch as `LeaderNewsRounds(..., enabled=lambda: perplexity_enabled_for(
+   database, "leader"), spend_policy=lambda: perplexity_setting(database).spend_policy, ...)`; that composition is
+   tested (`tests/integration/test_leader_news_switch.py`), its installation is not built.
 2. A pinned transport that reaches both Perplexity endpoints. The subscription market proxy admits only
    `api.kraken.com` and `api.frankfurter.dev` (`kernel/subscription_proxy.py`, `MARKET_HOSTS`), so the owner's proxy
    review and network profile need the Perplexity hosts as a separately reviewed route.
@@ -71,8 +73,8 @@ for a follow-up package before L3 or the integrator; until they exist, leave the
 4. Seeded, re-verified price cards and their route: the 2026-10-12 Agent card goes stale on 2026-11-11 (W6-B).
 5. A money allocation for Research and Leader wakes on Perplexity: in a subscription installation every wake task
    gets EUR0 (`PaperService._wake_task`), so a Perplexity wake stops at its allocation before any request (safe, but
-   no round runs); W6-A gives a switched-on department's wake the owner's paid root allocation (the integrator merges
-   it with this package's `paper_service.py` changes).
+   no round runs); W6-A gives a switched-on department's wake the owner's paid root allocation. Merged in the wave 6
+   integration together with this package's `paper_service.py` changes.
 6. `event_engine: true` in `paper-config.json` (this package, step 3): without it nobody is woken for a focus step or a
    news round.
 
