@@ -59,6 +59,8 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/contracts/day_plans.py",
     "src/trade_graph/application/day_plans.py",
     "src/trade_graph/application/day_plan_protection.py",
+    # T42 scorecard: how the paper result is valued and compared is a scoring definition, like the kernel sums.
+    "src/trade_graph/application/scorecard.py",
 )
 
 

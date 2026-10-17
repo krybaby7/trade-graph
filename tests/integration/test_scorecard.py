@@ -14,6 +14,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.network_guard import block_network
 from tests.scorecard_support import PORTFOLIO, START, Paper, golden_day
 
 from trade_graph.application.scorecard import (
@@ -302,3 +303,10 @@ def test_ledger_reference_rates_are_read_as_the_books_use_them(paper):
     paper.fx("0.91", stale=True)
     assert paper.ledger.fx_rate("USD", "EUR", "2026-11-02T00:00:00.000000Z") == (D("0.91"), True)
     assert paper.ledger.fx_rate("USD", "USD", "2026-11-02T00:00:00.000000Z") == (D("1"), False)
+
+
+def test_the_scorecard_makes_no_network_call(paper, monkeypatch):
+    golden_day(paper)
+    block_network(monkeypatch)
+    card = _card(paper)
+    assert card.metrics.result == D("210.14") and format_scorecard_text(card)
