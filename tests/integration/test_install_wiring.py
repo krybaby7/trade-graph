@@ -159,7 +159,8 @@ def test_the_subscription_operation_opens_the_candle_file_beside_its_database_an
     h.database.close()
 
 
-def test_the_subscription_operation_keeps_its_fixed_timers_while_the_engine_is_off(operating_flow) -> None:
+def test_the_subscription_operation_keeps_its_fixed_timers_while_the_engine_is_off(
+        operating_flow) -> None:  # noqa: F811
     h = operating_flow
     result = run_operation(h, ticks=2)
     assert result["event_engine"] is False

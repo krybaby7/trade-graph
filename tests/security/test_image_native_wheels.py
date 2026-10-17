@@ -30,8 +30,8 @@ def builder():
 def exported() -> str:
     if shutil.which("uv") is None:  # CI and the development setup both run tests through uv
         pytest.fail("uv is required: the image builder exports its requirements with it")
-    return subprocess.run(["uv", "export", "--locked", "--offline", "--no-dev", "--no-emit-project", "--format",
-                           "requirements-txt"], cwd=ROOT, check=True, capture_output=True, text=True, timeout=120).stdout
+    command = ["uv", "export", "--locked", "--offline", "--no-dev", "--no-emit-project", "--format", "requirements-txt"]
+    return subprocess.run(command, cwd=ROOT, check=True, capture_output=True, text=True, timeout=120).stdout
 
 
 def test_numpy_and_ta_lib_are_pinned_with_the_hash_of_a_linux_python_312_wheel(exported) -> None:
