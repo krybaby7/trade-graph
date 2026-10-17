@@ -16,6 +16,7 @@ from trade_graph.adapters.engineering.artifact_files import write_file
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
 from trade_graph.application.artifact_runtime import ArtifactRuntime
+from trade_graph.application.authority import owner_scope_covers
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.candle_readiness import (
     DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
@@ -176,7 +177,8 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             policy = execution.authority.active_policy()
         except AuthorityDenied:
             raise ValueError("persisted owner policy is required") from None
-        if not set(config.paper_symbols) <= set(policy.allowed_symbols):
+        # Under the owner's coin rule (T32) the feed may watch any pair the rule can include.
+        if not all(owner_scope_covers(policy, symbol) for symbol in config.paper_symbols):
             raise ValueError("public-data symbols exceed the persisted owner policy")
         feed = None
         if config.public_data_enabled:

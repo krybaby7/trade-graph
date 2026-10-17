@@ -14,6 +14,7 @@ from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import AuthorityDenied, DuplicateRecord, StaleState, ValidationFailure
 from trade_graph.domain.money import Money
 from trade_graph.kernel.authority import assert_action, mandate_within_owner
+from trade_graph.kernel.riba import refuse_riba_symbol
 
 # ``coin_rule(symbol, as_of=..., max_age=...)`` answers like ``CoinScanStore.coin_rule`` (W2-B, D174): an object
 # with ``passed`` (True, False or None for unknown), ``status`` and ``reasons``.
@@ -252,6 +253,18 @@ class AuthorityRecord:
         ):
             raise AuthorityDenied("strategy is outside the active mandate")
         return policy, mandate
+
+
+def owner_scope_covers(policy: OwnerPolicy, symbol: str) -> bool:
+    """Can the owner's coin list ever include ``symbol``? Listed, or under the coin rule a spot pair in its quote
+    currency (whether it may be bought at a given moment is the scanner's answer, checked per entry)."""
+    if policy.coin_scope is None:
+        return symbol in policy.allowed_symbols
+    try:
+        refuse_riba_symbol(symbol)
+    except AuthorityDenied:
+        return False
+    return symbol in policy.allowed_symbols or symbol.endswith("/" + policy.coin_scope.quote_asset)
 
 
 def paper_owner_policy(

@@ -149,6 +149,12 @@ class MoneyLimitGuard:
         limits = policy.money_limits
         if limits is None:
             return None
+        if record:
+            # Read first; take the writer lock only when there is something to record.
+            seen = self.status(portfolio_id, policy)
+            recorded = seen.day_start is not None and seen.day_start.recorded
+            if recorded and (seen.stopped or not seen.reached):
+                return seen
         now = self.clock.now()
         day = trading_day(now, limits.trading_day_start_utc)
         currency = limits.account_currency
@@ -256,18 +262,22 @@ class MoneyLimitGuard:
 
     def flag_interest_postings(self, portfolio_id: str) -> list[dict[str, Any]]:
         """Flag, once each, the cash and coin postings that look like interest, staking or earn income."""
-        flagged = []
-        with self.database.immediate():
-            rows = self.database.execute(
-                """SELECT event_id, kind, payload_json, external_ref FROM ledger_events e
+        flagged: list[dict[str, Any]] = []
+        query = """SELECT event_id, kind, payload_json, external_ref FROM ledger_events e
                    WHERE portfolio_id = ? AND kind IN ('deposit', 'withdraw', 'internal')
                    AND NOT EXISTS (SELECT 1 FROM riba_posting_flags f WHERE f.ledger_event_id = e.event_id)
-                   ORDER BY sequence""", (portfolio_id,)).fetchall()
-            for row in rows:
+                   ORDER BY sequence"""
+
+        def candidates() -> list:
+            return [row for row in self.database.execute(query, (portfolio_id,)).fetchall()
+                    if interest_posting_reasons(row["kind"], row["external_ref"], json.loads(row["payload_json"]))]
+
+        if not candidates():  # read first; the writer lock only when there is something to flag
+            return flagged
+        with self.database.immediate():
+            for row in candidates():
                 payload = json.loads(row["payload_json"])
                 reasons = interest_posting_reasons(row["kind"], row["external_ref"], payload)
-                if not reasons:
-                    continue
                 now = utc_iso(self.clock.now())
                 self.database.execute(
                     "INSERT INTO riba_posting_flags (portfolio_id, ledger_event_id, kind, reasons_json, flagged_at) "
