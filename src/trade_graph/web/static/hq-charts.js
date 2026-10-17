@@ -14,7 +14,9 @@
   const {el, button, list, str} = HQ;
 
   const LIBRARY = Object.freeze({
-    src: "/static/vendor/lightweight-charts/lightweight-charts.standalone.production.js",
+    // The pinned version in the address lets the browser keep the file for a year (W8-C, D253); HQ sends everything
+    // else no-store. scripts/vendor_lightweight_charts.py --check keeps it equal to VENDOR.json's version.
+    src: "/static/vendor/lightweight-charts/lightweight-charts.standalone.production.js?v=5.2.1",
     integrity: "sha384-KkYqTZlM13Zya6fVUF3IGCBOQ1ehFeJVVgxaVvD/0MebineF9EI8Jkd3NnWNChqN",
   });
   const SCHEMA = "trade-graph.hq.chart.v1";

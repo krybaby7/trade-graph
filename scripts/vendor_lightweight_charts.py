@@ -11,7 +11,8 @@ is the only way the vendored files change.
 integrity pinned below; it takes the standalone production build and the LICENSE from that tarball, and the NOTICE
 from the release tag on GitHub, refused unless its SHA-256 equals the pin. To move to a newer release, read the new
 version's ``dist.integrity`` from https://registry.npmjs.org/lightweight-charts, update the pins, run ``--fetch``,
-update the ``integrity`` attribute in ``hq-charts.js`` (``--check`` prints the expected value) and run the tests.
+update the ``integrity`` attribute and the ``?v=`` version of the script address in ``hq-charts.js`` (``--check``
+prints the expected values) and run the tests.
 Only the Python standard library is used; nothing here runs at HQ runtime.
 """
 
@@ -133,6 +134,9 @@ def check() -> list[str]:
         loader = LOADER.read_text(encoding="utf-8") if LOADER.is_file() else ""
         if f'"{integrity}"' not in loader:
             problems.append(f"hq-charts.js must pin integrity {integrity}")
+        # W8-C (D253): the loader asks for the script by its version, the address HQ lets browsers keep for a year.
+        if f'/{SCRIPT}?v={VERSION}"' not in loader:
+            problems.append(f"hq-charts.js must load {SCRIPT}?v={VERSION}")
     return problems
 
 
