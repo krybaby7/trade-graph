@@ -12,7 +12,8 @@ to see what it records), which moves both Research and the Leader to Perplexity 
 nothing needs a decision from you now.
 
 Branch: `claude/t37-focus-coins`, head: the commit that adds this handoff's pull request link (code at `c5d1871`,
-docs at `5a65509`). Pull request: PR_LINK (not merged).
+docs at `5a65509`). Pull request:
+https://github.com/krybaby7/trade-graph/pull/16 (not merged).
 
 ## What was built
 
