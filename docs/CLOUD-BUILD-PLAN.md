@@ -100,9 +100,9 @@ The integrator updates this table each time it merges a wave.
 | W6-C | T39 | HQ wake log and next check-ins | Merged 2026-10-17 (#15); you look at the Calendar and Story tabs on your phone and iPad after L3 |
 | W6-D | C2 | Code ready to install: one price collector, new data store wired in | Merged 2026-10-17 (#17); the real image build and the first collector pass are L3 steps ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | W7-A | T45 | News alarms really wake the Leader and Trader | Merged 2026-10-17 (#19); ships in shadow mode (it records whom an alarm would wake and wakes nobody): after L3 you decide from the shadow log and HQ's wake counts (`trade-graph news-wakes`, [L3 checklist](L3-INSTALL-CHECKLIST.md) step 17), once the news poll runs next to the installed service with your Jev key |
-| W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Not started |
-| W8-B | C4 | The Trader can close a position early or move its safety exit | Not started |
-| W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Not started |
+| W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Merged 2026-10-17 (#21); ships switched off: at L3 you put the Perplexity key and the price file in your owner folder and add the Perplexity route to your network profile and proxy (step 3), then switch Research and the Leader on (step 12, `trade-graph perplexity-departments --confirm`); the prices are re-checked at L2, because today's price card goes stale on 2026-11-11 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
+| W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-17 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
+| W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-17 (#20); you look at the Money tab on your phone and iPad after L3 |
 | W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Not started |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |

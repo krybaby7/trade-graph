@@ -2313,3 +2313,283 @@ Alembic runs 0035 → 0038 → 0039 → 0042 with one head; 0040 and 0041 stay u
   calendar (the calendar's 48-hour past window would otherwise grow with every
   wake). Reason: T45's second deliverable, W6-C's handoff, HQ's payload budget
   (D110, D215).
+
+Cloud wave 8 (D240–D254, 2026-10-17). The wave 8 integration copied these
+implementation defaults from `planning/handoffs/W8-A.md` (D240–D244), `W8-B.md`
+(D245–D249) and `W8-C.md` (D250–D254), where each package's evidence is kept.
+State migration 0044 (W8-B) follows W7-A's 0042, and Alembic runs 0039 → 0042 →
+0044 with one head; W8-A's 0043 and W8-C's 0045 are unused. D230–D239 stay
+reserved for the local steps L1–L4. D246 and D251 meet in HQ's day plans panel:
+the integration counts a Trader's close sell there as the protection arithmetic
+does (D246), so a closed position never reads as left without a safety exit, and
+says when a buy or safety exit was cancelled at the Trader's request.
+
+- **D240 (2026-10-17, implementation default for C3): Perplexity departments in
+  the installed service.** With the event engine on and the owner's switch on,
+  `run_subscription_operation` hands a switched department's engine wakes to
+  W6-A's `FocusResearch` (Research) or W6-B's `LeaderNewsRounds` (the Leader),
+  built in the protected parent process; the mutable graph child never sees a
+  key, route or price. Tasks the engine did not make (the Secretary's digests,
+  owner requests) stay on the subscription handler (as D210 for the Leader), and
+  so does every task while the switch reads off (fail closed). With the switch
+  off for both, or the engine off, the handlers are returned unchanged and
+  nothing is read, seeded or built, so the service runs exactly as before;
+  `paper-config.json` still refuses `models` and `price_cards`. A turn's route
+  is fixed in its snapshot. If a prerequisite is missing, a switched
+  department's wake fails with the reason and nothing is sent; it does not fall
+  back to the subscription silently (the owner asked for Perplexity, and a
+  silent fallback would hide a broken install); the focus step is then recorded
+  failed and the Trader is still woken (D208, D223). Reason: the W8-A package
+  bullets, D124, D205, D210, rule 7.
+
+- **D241 (2026-10-17, implementation default for C3): separately reviewed
+  network routes.** The subscription proxy gains one listener per reviewed
+  route, each admitting only owner-listed hosts from a reviewed catalogue in
+  code (`REVIEWED_ROUTE_HOSTS`; `paid_research` = `api.perplexity.ai`), with the
+  same CONNECT, DNS, TLS-name and size checks as the provider and market
+  listeners, apart from `MARKET_HOSTS` (Kraken, Frankfurter), which is
+  unchanged. The owner's protected network profile lists each route's port and
+  hosts (`reviewed_routes`, optional, omitted when empty so older profiles load
+  and hash as before); the transport sends only to fixed URLs the route admits,
+  through that port only, without environment proxies. A second list (W9-A: news
+  feeds and TypeSafe) is one catalogue entry plus the owner's profile and proxy
+  lines. Reason: the package's "separately reviewed route ... nothing reaches a
+  host the owner has not listed", D150, D154, FUNDED-PAPER-PROFILE.md's
+  owner-reviewed proxy.
+
+- **D242 (2026-10-17, implementation default for C3): the key and the price
+  cards come from the owner's folder.** The key is `<owner>/perplexity.key`
+  (`root:10001`, mode `0440`, like `capability.key`), read only by the protected
+  owner-file reader, one name, held as `SecretStr`, sent only as the
+  `Authorization` header (D154 inside the image: `read_private_key`'s "owned by
+  the reading user" rule cannot hold for a root-owned read-only mount, so the
+  protected reader's root-owned, not-other-readable, no-link rule replaces it).
+  The cards are `<owner>/perplexity-price-cards.json`, a copy of
+  `config/perplexity-price-cards.json`, seeded as immutable records (an edited
+  card is refused); the newest effective card per endpoint is used, so a
+  re-checked dated card needs no code change. A card is stale 30 days after its
+  `verified_at` (the 2026-10-12 Agent card on 2026-11-11, as the plan and W6-B
+  state; one day stricter than the API model router's "more than 30 days") and
+  then refuses paid calls; it never prices one as free. The cloud could not open
+  docs.perplexity.ai on 2026-10-17 (proxy 403, DNS failure), so no new card was
+  added and the re-check is listed for step L2. Reason: AGENTS.md (prices are
+  dated configured records), D151, D154, the package bullets.
+
+- **D243 (2026-10-17, implementation default for C3): money on the installed
+  route.** Every agent step and search reserves first and ends with a receipt or
+  stays unresolved (T36). The owner's Perplexity spend rule is the money rule
+  (D125 testing mode by default; D138 item 4's monthly limit pauses only these
+  rounds); the deployment's EUR allowance, unused by a subscription
+  installation, is not consulted, so it cannot block the testing period; the
+  wake task's allocation (the owner's root paid limit, W6-A) still bounds one
+  round. Reservations carry their own deployment id, `<deployment>:perplexity`:
+  the protected subscription deployment's financial witness requires a protected
+  budget origin for each of its reservations and re-verifies all of them, and
+  re-scanning the portfolio's books on every Perplexity dispatch and settlement
+  would not scale; HQ's AI spending reads Perplexity by price card, so it shows
+  them as before. Reservations are admitted only for a leased task of a switched
+  department, on the route's fresh cards, never synthetic. USD amounts are held
+  in EUR at 1:1 plus the 2% buffer (no FX quote is configured for this route;
+  conservative), receipts keep the USD cost. A provider request id that repeats
+  an earlier receipt is a typed refusal (`DuplicateProviderRequest`), settled
+  unresolved; its answer is not used. Reason: AGENTS.md (every paid call
+  reserved and receipted; unknown usage unresolved, not free), D125, D138 item
+  4, D152, D153, W1-C's finding.
+
+- **D244 (2026-10-17, implementation default for C3, the plan's recommended
+  default): protected paths.** `application/price_collector.py` and
+  `application/service_market_data.py` (they feed the coin rule's hourly scan
+  and the price alarms) and the new `application/perplexity_installation.py`
+  (key, prices, the route's money rule, which wakes go where) are added to
+  `PROTECTED_PATH_PREFIXES`; the proxy catalogue and the network profile are
+  already under `kernel/`. Reason: the package bullet (W6-D left it open),
+  AGENTS.md (protected owner policy, accounting and receipt collection are not
+  agent-editable).
+
+- **D245 (2026-10-17, implementation default for C4): the Trader's position
+  actions.** In its wake reply the Trader may name at most one `PositionAction`
+  per coin: `close` (sell the coin's day-plan position now) or `move_exit` (a
+  new stop and an optional take-profit; none means no take-profit leg; the new
+  terms replace all of the coin's exits). The position is coin-level: what the
+  coin's day-plan exits protect across every plan of the portfolio (today's and
+  earlier ones), plus filled parts still waiting for their exit; the Trader sees
+  it in `wake.positions`. Software checks only deterministic facts before
+  touching anything: the paper account and portfolio (live needs native
+  protective orders first, T19); the portfolio is `RUNNING` (any pause refuses:
+  the pause manages the position and the exits stay); spot only (D127); a
+  position exists; a quote; for a move, prices on the tick, the stop below the
+  bid and the take-profit above it (otherwise it would sell at once: to sell
+  now, close); for a close, the mandate allows the market sell and it is above
+  the venue minimum. No confidence threshold, committee, approval or score
+  (D116, D121); a refusal is recorded with its reason and touches nothing. A
+  close also cancels the coin's resting day-plan buys first, so the position
+  stays closed until the Trader plans again. Selling only part of a position is
+  not built. Reason: the C4 deliverable, D115–D117, AGENTS.md (real Trader
+  discretion, concise rationale).
+
+- **D246 (2026-10-17, implementation default for C4): one recorded sequence that
+  never leaves a position bare.** Each action is a row in `day_plan_actions`
+  with its steps in `day_plan_action_steps`: the intents about to be cancelled
+  are recorded before any cancel request; cancel and reconcile; then a close's
+  single market sell (each entry's part in `day_plan_action_orders`, counted by
+  the protection arithmetic like an exit) or a move's new exits (one per entry,
+  for exactly what is filled and uncovered); sent at once; one end. A cancel
+  without an answer ends the action `failed` and the unanswered exit keeps
+  covering its coins (unknown is not cancelled); a sell or new exit refused by
+  software or the broker ends it `refused`; in both cases every exit it had
+  cancelled is put back with its own stop and take-profit for what it had not
+  sold, and anything still uncovered is swept. A position is without a safety
+  exit only during the sell itself (between the cancel and the sell's fill, or
+  while the sell's own status is unknown). A fill's exit keeps the entry's
+  bracket terms; re-protection after the owner's cancel-all uses the terms in
+  force (the newest move that ended `done`; a refused move never becomes them).
+  One action per coin runs at a time (SQL); a crash leaves it running, the
+  management sweep protects the position meanwhile, and the same request applied
+  again finishes it from the records (a persisted sell is sent, never placed
+  twice). A newer action for the coin, or an obsolete wake, ends an unfinished
+  one `failed`, abandons a sell it persisted but never sent, and puts the old
+  exits back. Reason: the C4 acceptance, AGENTS.md (persist intents before
+  effects, unknown is not rejection, reconcile before replacement, every pause
+  specifies order and position management), D117, D187, D188.
+
+- **D247 (2026-10-17, implementation default for C4): the event engine and what
+  the Trader sees.** The engine applies position actions under the execution
+  lock after the answer is saved and before the same answer's day plans, with
+  `request_id` `wake:<wake_id>:action:<symbol>`, so a restart re-applies them
+  once and a close never cancels a plan written in the same turn; each result is
+  recorded in the wake outcome (`AppliedAction`: done, refused, failed or
+  obsolete, with the action id, error code and reason). Only the Trader acts on
+  positions; an answer that arrives after its trading day acts on nothing
+  (D193). Trader and Learning wakes carry `positions` (held, protected,
+  unprotected, the exits by terms, resting entries, the newest action), at most
+  16 coins and 8 terms each, a document bound and not a cap on activity; the
+  Trader's wake brief and the engine's instruction explain the action. No new
+  trigger kind: a close's sell fill wakes the Trader as `order_filled`, a moved
+  exit's fill as `exit_filled`. Reason: D190–D194, D223, D116.
+
+- **D248 (2026-10-17, implementation default for C4, W4-A's finding with W5-A's
+  proposed fix): a lost acknowledgement the paper broker can see.** On the paper
+  binding, when the broker answers `open` or `partially_filled` for an intent
+  whose submission had no answer (`UNKNOWN`, or `SUBMITTING` after a crash) and
+  the recorded fills equal its filled quantity, reconciliation moves it to
+  `OPEN` or `PARTIALLY_FILLED` with its venue order id, so it no longer blocks
+  new entries of that coin ("unresolved execution"). Nothing is resent; a cancel
+  still unanswered (`CANCEL_PENDING`) is not reopened; when the fills differ it
+  stays `UNKNOWN`. Live bindings keep today's behaviour (unknown live effects
+  stay under owner review); the live question is an owner question below.
+  Reason: the C4 deliverable, AGENTS.md (unknown order status is not rejection).
+
+- **D249 (2026-10-17, implementation default for C4): state migration 0044 and
+  the valuation-mark index.** Three append-only tables (`day_plan_actions`,
+  `day_plan_action_steps`, `day_plan_action_orders`) hold the actions as
+  execution controls and evidence (intents, fills and the ledger stay the
+  books); SQL keeps one request per action, one running action per coin, one end
+  per action and nothing after it, a sell or attachment once, a close's sell a
+  market sell of the entry's coin and an action's exit a day-plan exit of that
+  entry. The index `valuation_marks_newest` on `valuation_marks (portfolio_id,
+  asset, observed_at)` serves every "newest mark of a coin" read (W5-C's
+  finding); existing databases upgrade once without rewriting rows. Day-plan
+  tables of 0034 are unchanged (entries a close cancels are recorded in the
+  action's steps, not as `day_plan_events`, whose reasons are frozen).
+  `Execution.dispatch(intent_ids=...)` is additive. The new module is a
+  protected path. Reason: rule 11, AGENTS.md (persist before effects, protected
+  execution controls).
+
+- **D250 (2026-10-17, implementation default for C5): today's loss in HQ.** The
+  snapshot gains the additive, omittable `trading` key (`loss`, `scorecard`,
+  `collector`). Today's loss is the money-limit guard's own reading,
+  `MoneyLimitGuard.status(portfolio, policy)` with `record=False`, so reading HQ
+  never records a day-start value or a stop (only the paper service's management
+  step does) and never decides anything. It is shown in the account's currency
+  (USD), exactly, never converted at a guessed rate; HQ works the loss out from
+  the two values the guard read, so it always adds up. States: `not_recorded`
+  (no money limits yet: day plans stay off, the command is named), `within`,
+  `reached` (new entries are refused already; the next step records the stop),
+  `stopped`, `unknown` (the guard's reason in plain words: new buying waits),
+  and `not_applied` for a live account (the paper service's limit doesn't run
+  there). A meter shows the share of the limit used (0 for a gain) with its
+  percentage in words. While the limit is reached or stopped, the HQ tab shows a
+  `loss_limit_reached` notice (attention tone, linked to Trading records);
+  nothing needs the owner, so it is not a Needs-you card. The service's
+  `money_limits:`, `day_plans:` and `collector:` failures get problem prefixes
+  with plain words of their own (none says "practice", so a live account reads
+  them too); money-limit and day-plan failures also turn the Accounts room's
+  light to "needs a look". Reason: the W8-C package ("today's loss against the
+  3% limit, and a money-limit failure in plain words"), W3-A's contract for HQ
+  and "unknown is not a yes" (D182).
+
+- **D251 (2026-10-17, implementation default for C5): the day plans are a
+  separate read.** `GET /api/v1/hq/plans` (`trade-graph.hq.plans.v1`) is read
+  only while its panel is on screen, never inside the snapshot, as the charts
+  and the wake log are (D197, D215): a busy synthetic day of plans is about 70
+  KB, more than the snapshot has left of its 80 KB. Listed: each coin's newest
+  plan whose trading day has not ended, then older plans that still have an
+  order open (a safety exit protecting coins bought on an earlier day, or a buy
+  being checked), newest first. What is not protected uses
+  `DayPlanProtection.coverage`'s arithmetic (an exit open or being checked
+  covers its whole quantity, a sold exit what it sold, an exit that ended
+  unfilled only what it sold); a filled part without a safety exit is marked for
+  attention in the panel. Order states are words: sending, waiting, partly
+  filled, filled, cancelled (with the recorded reason: a pause, the end of its
+  time, a newer plan), refused, being checked (an unknown status is never read
+  as refused). Today's refusals come from `day_plan_refused` activity records
+  with the day-plan checks in plain words and HQ's usual order-refusal words for
+  the money rules; the recorded reason shows only with "Show technical names".
+  The rationale and invalidation are labelled quotes (280 characters). Bounds
+  are page bounds, never limits on plans (D116): 8 plans, 16 buys (a plan's own
+  bound), 4 safety exits and 4 fills per order, 8 events per plan, 10 refusals,
+  each list saying how many more there are. Reason: the package ("today's day
+  plans per coin: entries, safety exits, fills, refusals and plan events")
+  within HQ's payload budget, and D219 (reading starts nothing).
+
+- **D252 (2026-10-17, implementation default for C5): the scorecard in HQ.** HQ
+  shows W5-C's scorecard for the paper portfolio from its opening deposit to now
+  (D200's default period; T43's report passes the scored test's own start and
+  end), cached for 60 seconds behind the same fingerprint as today's loss:
+  fills, ledger events, day-start values, loss stops, owner policies, AI
+  receipts, budget reservations and reference rates. Prices are not in the
+  fingerprint, so the value of coins still held refreshes at most once a minute;
+  at four weeks of 10-second prices one refresh takes about 3.5 s (W5-C's
+  measure). Shown: the result after every fee with its percentage, beats cash
+  (result above zero, D127) and beats holding Bitcoin as a word and a ✓ or ✗
+  shape, up to 10 figures (trades, won, average win and loss, fees, worst fall,
+  longest losing run, positions still held), up to 6 lines (cash, Bitcoin, euros
+  with the dollar's own move, real AI spending of the same days with "up to" for
+  unknown costs and "under $0.01" for tiny ones, never paid by the paper result,
+  and the owner's test rule D138 item 7 as information, not a pass mark), up to
+  5 provisional reasons, and the scorecard's own gates statement (D204). A
+  period that can't be scored says why in the scorecard's plain words; a live
+  account has none. Reason: W5-C's handoff ("a block would need caching like
+  HQ's money facts ... and must stay within the 80 KB payload budget"): the
+  fullest block is about 6 KB and the busy week with it is about 72 KB.
+
+- **D253 (2026-10-17, implementation default for C5): the price collector panel
+  and caching the chart library.** The panel reads the collector's
+  `price_collection` activity records of the last 24 hours (newest first, at
+  most 2,000; more reads "at least"): the newest hourly coin scan, the newest
+  candle status change, Kraken's pair list, rate-limit pauses, gaps and the
+  number of problems. It needs a look when the newest scan failed, there was no
+  scan in the last 2 hours (new buys under the coin rule wait for a fresh one,
+  D183), the newest candle step failed or was partial, the clock is behind, or
+  the newest pair-list update failed; an installation whose settings switch the
+  collector off says so. Ordinary successful steps are not recorded (W6-D), so
+  "working" is read from the hourly scan. Separately, every HQ response stays
+  `no-store` except the vendored chart library asked for by its pinned version
+  (`?v=<VENDOR.json version>`): its bytes never change under that address and
+  the page pins its integrity, so a browser may keep it for a year (`public,
+  max-age=31536000, immutable`); the same file without the version, any other
+  version, every other static file, page and API stay `no-store`. Reason: the
+  package and W5-B's follow-up ("today every page load that opens a chart
+  fetches the 198 KB script again").
+
+- **D254 (2026-10-17, recommended default for W2-C's question): the comparison
+  box never suggests paper gains pay bills.** On the paper account the older
+  "Pays for itself?" box is titled "Paper result against real costs", says "On
+  paper, the result is X above (or short of) the real costs you entered" and
+  always adds "A comparison only: paper money is simulated, never pays a real
+  bill and never refills your budget"; the glossary entry is the neutral "Result
+  against real costs", and the review prompt's label follows. A live account
+  keeps the old words, because its trading results are real money. The contract
+  keys and states (`pays_for_itself`, `covered`, `not_covered`) are unchanged.
+  Reason: AGENTS.md ("USD10,000 paper equity and resets cannot replenish the
+  real operating budget") and W2-C's open question.
