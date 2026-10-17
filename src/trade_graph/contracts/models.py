@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_serializer, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from trade_graph.contracts.money_limits import CoinScope, OwnerMoneyLimits
 from trade_graph.domain.money import Money, Quantity, parse_decimal
@@ -173,7 +174,10 @@ class Mandate(ContractModel):
     resource_note: str
     # "listed": entries and exits name ``symbols``. "owner_rule": entries follow the owner policy's coin rule
     # (D138 item 3) and exits may close any held coin; only valid while the owner policy has a ``coin_scope``.
-    coin_scope: Literal["listed", "owner_rule"] = "listed"
+    # Left out of the JSON schema, as it is left out of a listed mandate's document: a model's reply schema
+    # (the Leader's mandate change, which OpenAI's strict wire requires in full) then matches what the contract
+    # serialises, older mandates hash as before, and only software (the owner command) sets "owner_rule".
+    coin_scope: SkipJsonSchema[Literal["listed", "owner_rule"]] = "listed"
 
     @field_validator(
         "max_gross_exposure_fraction",

@@ -16,7 +16,6 @@ from trade_graph.adapters.engineering.artifact_files import write_file
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.activation import VersionController
 from trade_graph.application.artifact_runtime import ArtifactRuntime
-from trade_graph.application.authority import owner_scope_covers
 from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.candle_readiness import (
     DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
@@ -31,6 +30,7 @@ from trade_graph.application.secretary import Secretary
 from trade_graph.contracts.models import PriceCard
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import AuthorityDenied
+from trade_graph.kernel.authority import owner_scope_covers
 
 
 class PaperRuntimeConfig(BaseModel):

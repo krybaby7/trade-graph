@@ -13,7 +13,7 @@ riba), D131 (no stablecoins or yield tokens) and D116 (money limits, never activ
 | D127 product check and interest-like postings | `src/trade_graph/kernel/riba.py` |
 | Run-time guard and the owner revision | `src/trade_graph/application/money_limits.py` |
 | Where entries are authorized and the management step | `Execution.authorize`, `Execution.enforce_money_limits` in `application/execution.py`; `PaperService._management` |
-| Coin scope in authority | `AuthorityRecord.require_coin_rule`, `entry_scope`, `owner_scope_covers` in `application/authority.py` |
+| Coin scope in authority | `AuthorityRecord.require_coin_rule`, `entry_scope` in `application/authority.py`; `owner_scope_covers`, `mandate_within_owner` in `kernel/authority.py` |
 | State migration 0033 | `src/trade_graph/adapters/persistence/money_limit_schema.py`, `migrations/versions/0033_money_limits.py` |
 | Owner command `money-limits` | `src/trade_graph/market_data_cli/money_limits.py` |
 | Tests | `tests/unit/test_money_limit_rules.py`, `tests/property/test_money_limit_properties.py`, `tests/property/test_money_limit_execution_properties.py`, `tests/integration/test_money_limits.py`, `test_money_limits_cli.py`, `test_migration_0033.py`; helpers in `tests/money_limit_support.py` |
@@ -44,7 +44,10 @@ as below. A revision holding `money_limits` is the one in which the owner record
 `OwnerPolicy.coin_scope` (`CoinScope`): the rule `scanner_checks`, the quote asset (USD), the scan age
 (`max_scan_age_seconds`, 7200, W2-B's default) and `when_unknown: refuse_new_entries`. Without it the coin list
 stays `allowed_symbols`. A mandate follows the rule with `coin_scope: owner_rule`, which needs a policy that has
-one; a listed mandate (the default) still narrows the rule to its own list.
+one; a listed mandate (the default) still narrows the rule to its own list, which may name any pair the rule
+covers. `coin_scope` is left out of the JSON schema, as it is left out of a listed mandate's document: a model
+reply (the Leader's mandate change, which OpenAI's strict wire requires in full) matches what the contract
+serialises, and only software, the owner command, sets `owner_rule`.
 
 Both blocks are absent from older revisions, and an absent block is left out of the stored document, so every
 existing policy and mandate reads and hashes exactly as before. A mandate cannot carry a loss limit or a day

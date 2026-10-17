@@ -6,6 +6,7 @@ No database, clock or network here.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -90,6 +91,20 @@ def test_an_older_policy_document_reads_and_serialises_byte_for_byte_as_before()
     mandate = _mandate()
     assert mandate.coin_scope == "listed"
     assert "coin_scope" not in mandate.model_dump_json()
+
+
+def test_the_mandate_schema_matches_what_a_listed_mandate_serialises() -> None:
+    # OpenAI's strict wire requires every schema property, so a field the document leaves out must not be in the
+    # schema either: the Leader's mandate change (LeaderReply) stays valid and older mandates hash as before.
+    from trade_graph.contracts.leadership import LeaderReply
+
+    assert "coin_scope" not in Mandate.model_json_schema()["properties"]
+    assert "coin_scope" not in json.dumps(LeaderReply.model_json_schema())
+    listed = _mandate().model_dump(mode="json")
+    assert set(listed) == set(Mandate.model_json_schema()["properties"])
+    assert _mandate(coin_scope="owner_rule").model_dump(mode="json")["coin_scope"] == "owner_rule"
+    with pytest.raises(ValidationError):
+        _mandate(coin_scope="any_coin")
 
 
 def test_a_policy_with_money_limits_and_the_coin_rule_round_trips() -> None:
@@ -264,6 +279,16 @@ def test_a_mandate_may_follow_the_coin_rule_only_when_the_owner_policy_has_one()
     with pytest.raises(AuthorityDenied, match="coin rule"):
         mandate_within_owner(_mandate(coin_scope="owner_rule"), _policy())
     mandate_within_owner(_mandate(coin_scope="owner_rule"), _policy(coin_scope=CoinScope()))
+
+
+def test_under_the_coin_rule_a_listed_mandate_may_name_any_pair_the_rule_covers() -> None:
+    rule = _policy(coin_scope=CoinScope())
+    mandate_within_owner(_mandate(symbols=["SOL/USD", "ADA/USD"]), rule)  # not in allowed_symbols
+    for symbol in ("SOL/EUR", "BTCPERP/USD", "ETH.S/USD"):
+        with pytest.raises(AuthorityDenied, match="outside owner universe"):
+            mandate_within_owner(_mandate(symbols=[symbol]), rule)
+    with pytest.raises(AuthorityDenied, match="outside owner universe"):
+        mandate_within_owner(_mandate(symbols=["SOL/USD"]), _policy())  # a list policy keeps its list
 
 
 @pytest.mark.parametrize("path", [

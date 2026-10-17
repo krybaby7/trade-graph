@@ -204,7 +204,7 @@ def test_a_missing_or_open_database_is_refused(tmp_path, capsys) -> None:
 
 
 def test_under_the_recorded_coin_rule_the_paper_feed_may_watch_other_usd_pairs(tmp_path, capsys, monkeypatch) -> None:
-    from trade_graph.application.authority import owner_scope_covers
+    from trade_graph.kernel.authority import owner_scope_covers
     from trade_graph.paper_runtime import PaperRuntimeConfig, assemble_paper_runtime
 
     folder = tmp_path / "runtime"

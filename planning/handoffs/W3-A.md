@@ -32,11 +32,12 @@ https://github.com/krybaby7/trade-graph/pull/10.
   recorded; the balance check now runs before the exposure check; `_unsent_increase_block` re-checks them at
   dispatch; `enforce_money_limits(portfolio_id)` is the management step (records, stops, cancels resting buys);
   `_cancel_for_pause` takes a reason and returns what it cancelled.
-- `src/trade_graph/application/authority.py`: the coin scope (`require_coin_rule`, `entry_scope`,
-  `owner_scope_covers`, an injectable `coin_rule` defaulting to `CoinScanStore.coin_rule`), and
-  `install_policy` refuses `leverage_allowed` (D127). `kernel/authority.py`: a mandate may follow the coin rule
-  only under a policy that has one; the Leader is forbidden `edit_owner_policy` and `raise_money_limits`; the
-  new contract and application modules are protected paths.
+- `src/trade_graph/application/authority.py`: the coin scope (`require_coin_rule`, `entry_scope`, an
+  injectable `coin_rule` defaulting to `CoinScanStore.coin_rule`), and `install_policy` refuses
+  `leverage_allowed` (D127). `kernel/authority.py`: `owner_scope_covers`; a mandate may follow the coin rule only
+  under a policy that has one, and under the rule a listed mandate may name any pair the rule covers; the Leader
+  is forbidden `edit_owner_policy` and `raise_money_limits`; the new contract and application modules are
+  protected paths.
 - `src/trade_graph/application/paper_service.py`: `_management` runs `enforce_money_limits` for every managed
   portfolio on every tick; its failure is reported (`money_limits:`) but never holds back dispatch, so
   protective exits keep going. `src/trade_graph/paper_runtime.py`: under a recorded coin rule the feed may
@@ -79,7 +80,9 @@ https://github.com/krybaby7/trade-graph/pull/10.
   which the owner recorded all four values. `OwnerPolicy.coin_scope` makes the coin list the scanner rule.
   Absent blocks are left out of stored documents, so older revisions and mandates hash exactly as before. Only
   the owner installs policy; a mandate cannot carry a loss limit or day start, may follow the coin rule
-  (`coin_scope: owner_rule`) only under a policy that has one, and may only narrow the fractions; the Leader is
+  (`coin_scope: owner_rule`) only under a policy that has one (the field is left out of the JSON schema, like
+  the document of a listed mandate, so a model-made mandate is always listed), and may only narrow the
+  fractions; the Leader is
   also forbidden `edit_owner_policy` and `raise_money_limits`, and the new contract and application modules are
   protected paths like the kernel. Day-plan entries (`authorize(..., day_plan=True)`) are refused until such a
   revision exists; the existing Trader path keeps working without one, and exits are never gated. Reason: D138
@@ -118,7 +121,7 @@ https://github.com/krybaby7/trade-graph/pull/10.
   `scan_failed`, refuses a new entry as stale (retried, like a stale quote) and holds an unsent one until a fresh
   scan answers. Exits, protective exits and reconciliation never consult the scan, and an entry already resting
   at the venue is not cancelled by a later scan (it passed when it was authorized). Only pairs in the rule's
-  quote currency (USD) are covered; a listed mandate still narrows the rule to its list; the paper feed may be
+  quote currency (USD) are covered; a listed mandate still narrows the rule to its list, and may name any pair the rule covers; the paper feed may be
   configured with any pair the rule can include. Reason: D138 item 3 ("passes the scanner's checks at that
   moment") and D171's "nothing is guessed", while selling is never blocked.
 - **D184 (2026-10-17, implementation default for T32): D127, the owner command and the records.** Entries on
@@ -201,6 +204,29 @@ key, paid, model or exchange call in any test.
 - `python3 scripts/check_plan.py`: plan valid, 46 tasks, acyclic. `python3 scripts/test_planning.py`: 11 tests OK.
   `python3 scripts/check_repository_hygiene.py` (and `--staged` before every commit): passed.
 - Full suite: not run (night shift: the wave integration runs it).
+- **Fix after the wave 3 full suite.** GitHub's `test` job on the night lead's candidate `290713e` found two new
+  failures caused by this package: `tests/integration/test_provider_wire_schemas.py::
+  test_actual_six_role_wire_dialects_and_original_typed_replies[OpenAIAdapter-leader]` and
+  `::test_real_six_role_schema_goes_through_gateway_http_fixture[leader-OpenAIAdapter]` (the Leader reply's
+  mandate change "is not valid under any of the given schemas"). Root cause: `Mandate.coin_scope` was in the
+  contract's JSON schema but left out of a listed mandate's document (so older mandates hash as before), and
+  OpenAI's strict wire schema requires every listed property, so the serialised reply no longer matched its own
+  schema. Fix: the field is now `SkipJsonSchema`, so schema and document agree; validation still accepts it,
+  older mandates still read and hash byte for byte, and only software (the owner command) sets `owner_rule`, so
+  a model-made mandate is always listed, which can only narrow. To keep the Leader able to narrow under the coin
+  rule, a listed mandate may now name any pair the rule covers (`kernel.authority.owner_scope_covers`, moved
+  from the application layer). New tests `test_the_mandate_schema_matches_what_a_listed_mandate_serialises` and
+  `test_under_the_coin_rule_a_listed_mandate_may_name_any_pair_the_rule_covers` fail before the fix and pass
+  after. `uv run pytest -p no:cacheprovider -rf tests/integration/test_provider_wire_schemas.py`: 2 failed, 63
+  passed before; **65 passed** after. Then every test module that mentions `Mandate`, `OwnerPolicy`,
+  `paper_mandate`, `paper_owner_policy`, `seed_paper_authority`, `LeaderReply`, `MandateChange`, the wire
+  schemas (`_wire_schema`, `build_body`, `output_schema`), `model_json_schema`, `export_schemas`,
+  `schema_version` or golden/snapshot JSON (110 modules found by `grep -rlE` over `tests`, including all of this
+  package's), plus `tests/unit/test_hq_refusal_copy.py`, `tests/integration/test_paper_packaging.py` and
+  `test_order_refusal.py`: `uv run pytest -p no:cacheprovider -rfs <those 113 modules>`, 66 min: **2832 passed,
+  0 failed, 14 skipped** (all 14 in `tests/security/test_subscription_process_boundary.py`, "native Linux
+  bubblewrap boundary required": `bwrap` is not in the cloud container). `uv run ruff check src tests`,
+  `check_plan.py` (46 tasks, acyclic), `test_planning.py` (11 OK) and `check_repository_hygiene.py`: passed.
 - Real or synthetic: everything is synthetic and labelled (a USD10,000 account, scripted quotes, a scripted coin
   rule, and one synthetic coin scan built with W2-B's helpers). No real order, key, paid call or exchange call.
 

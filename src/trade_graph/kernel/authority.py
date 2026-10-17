@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from trade_graph.contracts.models import Mandate, OwnerPolicy, PauseProfile
 from trade_graph.domain.errors import AuthorityDenied
+from trade_graph.kernel.riba import refuse_riba_symbol
 
 LEADER_FORBIDDEN = frozenset(
     {
@@ -70,12 +71,24 @@ def assert_action(role: str, action: str, *, owner_halt: bool) -> None:
         raise AuthorityDenied(action)
 
 
+def owner_scope_covers(policy: OwnerPolicy, symbol: str) -> bool:
+    """Can the owner's coin list ever include ``symbol``? Listed, or under the coin rule (T32) a spot pair in its
+    quote currency; whether it may be bought at a given moment is the scanner's answer, checked per entry."""
+    if policy.coin_scope is None:
+        return symbol in policy.allowed_symbols
+    try:
+        refuse_riba_symbol(symbol)
+    except AuthorityDenied:
+        return False
+    return symbol in policy.allowed_symbols or symbol.endswith("/" + policy.coin_scope.quote_asset)
+
+
 def mandate_within_owner(mandate: Mandate, policy: OwnerPolicy) -> None:
     if mandate.max_gross_exposure_fraction > policy.maximum_gross_exposure_fraction:
         raise AuthorityDenied("mandate gross exposure exceeds owner envelope")
     if mandate.max_single_asset_exposure_fraction > policy.maximum_single_asset_exposure_fraction:
         raise AuthorityDenied("mandate single-asset exposure exceeds owner envelope")
-    unknown = [symbol for symbol in mandate.symbols if symbol not in policy.allowed_symbols]
+    unknown = [symbol for symbol in mandate.symbols if not owner_scope_covers(policy, symbol)]
     if unknown:
         raise AuthorityDenied(f"symbols outside owner universe: {unknown}")
     if mandate.coin_scope == "owner_rule" and policy.coin_scope is None:
