@@ -213,3 +213,13 @@ The installed service (`run_subscription_operation`) does not switch the engine 
   `event_engine`, the Trader's provider turn needs `TraderWakeReply` and the `wake` context key (an addition to the
   protected `ROLE_CONTEXT_KEYS` and the owner's subscription profile), and `run_subscription_operation` needs the
   switch. The hourly coin scan in the service is W6-D's, with the price collector.
+
+## Known limits
+
+- A department that has no running handler at the day start has its day step recorded as `skipped` for that day; a
+  restart later the same day with the department running does not redo it (its events still wake it).
+- The day start's scan runs inside the service step, so a slow ticker request delays that step (W6-D may move the
+  scan next to its price collector).
+- Alarm deliveries are per department (T33); with several graph portfolios in one service, one wake claims every
+  pending alarm item of its department, whichever portfolio the alarm names. The paper service runs one graph
+  portfolio.
