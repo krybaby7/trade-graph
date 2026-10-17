@@ -12,6 +12,7 @@ import copy
 import itertools
 import json
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from trade_graph.application.budget import BudgetGateway
 from trade_graph.application.gateway import ModelGateway
 from trade_graph.application.leader_news import LeaderNewsRounds, LeaderRoundSettings
 from trade_graph.application.web_research import PerplexityRoute, PerplexityWebResearch, load_price_cards
+from trade_graph.contracts.wakes import ScanReference, ShortlistCoin
 from trade_graph.contracts.web_research import PerplexitySpendPolicy
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -140,6 +142,19 @@ class ScriptedPerplexity:
         return response(body) if callable(response) else copy.deepcopy(response)
 
 
+class ScriptedScan:
+    """A day-start scan step with a fixed shortlist (labelled synthetic), so focus coins come from a shortlist."""
+
+    def __init__(self, *symbols: str) -> None:
+        self.symbols, self.calls = symbols or ("SOL/USD", "BTC/USD"), 0
+
+    def __call__(self, *, portfolio_id: str, as_of: datetime) -> ScanReference:
+        self.calls += 1
+        return ScanReference(status="ok", source="day_start_scan", scan_id=f"scan-{self.calls}", as_of=as_of,
+                             evidence="synthetic", shortlist=tuple(ShortlistCoin(symbol=symbol, position=index + 1)
+                                                                   for index, symbol in enumerate(self.symbols)))
+
+
 class LeaderSetup:
     """A paper account, the event engine and the Leader's news-round handler on a scripted Perplexity."""
 
@@ -149,6 +164,7 @@ class LeaderSetup:
                  settings: LeaderRoundSettings | None = None, account=None, **engine_options: Any) -> None:
         self.account = account or day_plan_account(tmp_path)
         self.database, self.clock, self.portfolio = self.account.database, self.account.clock, self.account.portfolio
+        engine_options.setdefault("scan", ScriptedScan())
         self.scheduler, self.engine = engine_for(self.account, departments=departments, **engine_options)
         self.budget = BudgetGateway(self.database, self.clock)
         for card in load_price_cards(CARDS):
@@ -194,4 +210,4 @@ class LeaderSetup:
 
 
 __all__ = ["AGENT_NEWS", "CRYPTO_NEWS", "DEPARTMENTS", "KEY", "UNLIMITED", "LeaderSetup", "ScriptedPerplexity",
-           "final", "full_round", "news_reply", "refs_in", "search", "tool_call"]
+           "ScriptedScan", "final", "full_round", "news_reply", "refs_in", "search", "tool_call"]
