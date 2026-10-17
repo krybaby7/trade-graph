@@ -1430,3 +1430,105 @@ evidence is kept. State migration 0033 (W3-A) follows 0032, and Alembic runs
   context, the financial checkpoint or the runtime evidence, and the ledger
   stays the books. Reason: D127, D138's closing paragraph and the T32
   deliverable "audited and revision-checked".
+
+Cloud wave 4 (D185–D189, 2026-10-17). The wave 4 integration copied these
+implementation defaults from `planning/handoffs/W4-A.md`, where the package's
+evidence is kept. State migration 0034 (W4-A) follows 0033, and Alembic runs
+0033 → 0034 with one head.
+
+- **D185 (2026-10-17, implementation default for T34): the day-plan contract.**
+  A `DayPlan` names one focus coin (a plain spot pair), a registered
+  practice-range strategy version, the menu indicators it watches (collected
+  intervals 1, 5, 15, 60; menu-bounded settings as name and value pairs),
+  alarms (a flat form of the T33 alarm contract, owned by the Trader,
+  `day_plan_ref` the plan), resting limit buys each with a stop below the limit
+  and an optional take-profit above it and an optional expiry, and a concise
+  rationale (at most 1,000 characters) and invalidation (500). It has no
+  confidence, score, approval or vote field and refuses unknown fields; prices
+  and quantities are exact decimals, floats refused. A plan may set alarms
+  without entries (the Trader is never made to trade) but must do one or the
+  other. Document size bounds (16 entries, 16 alarms, 8 indicators) are request
+  envelopes, not limits on activity: plans may be written and revised without
+  limit (D116). The shapes are plain named objects so the contract can be the
+  Trader's strict provider reply in T35. Reason: the T34 deliverable, AGENTS.md
+  (real Trader discretion, concise rationale) and D116.
+
+- **D186 (2026-10-17, implementation default for T34): deterministic
+  validation.** A plan is refused, writing only a `day_plan_refused` activity
+  event, unless: the execution binding and portfolio are paper (live venues
+  need native protective orders first, T19); the owner has recorded money
+  limits (D138, W3-A's gate); the portfolio is `RUNNING`; the coin is a plain
+  spot pair (D127); the strategy version is registered and has at least one
+  practice-range **confirmation** report recorded before now (D138 item 5, with
+  W2-A's recommendation that a tuning report alone is in-sample evidence; still
+  no pass mark); prices are on the instrument's tick and quantities on its lot
+  and at or above its minimums (refused, never rounded, so what rests is
+  exactly what the Trader wrote); every entry's limit is below the current ask
+  (a resting maker bid, not an order that would fill at once as a taker; this
+  also avoids W1-B's open point about marketable quote-path limits); and every
+  entry expires in the future and no later than the end of the trading day
+  (default: the end of the day, D138 item 6). Each entry then goes through
+  `Execution.authorize(..., day_plan=True)`, which applies the coin list or
+  rule, the mandate (strategy id, order type), the daily loss limit, quote
+  freshness, the balance and the per-coin and total shares counting every
+  resting entry as if filled (D181); one refusal refuses the whole plan.
+  Reason: T34 "deterministic validation", D138 and "unknown is not a yes".
+
+- **D187 (2026-10-17, implementation default for T34): installation,
+  idempotency and replacement.** The plan row, every entry's authorized intent
+  with its reservation and outbox row, the alarms and an `installed` event are
+  written in one transaction before anything is sent; the service's dispatch
+  sends the entries. `(portfolio, request_id)` is unique, so a retried
+  installation returns the installed plan (the same request with another
+  document is refused) and never rests an entry twice; an interrupted
+  submission is `UNKNOWN`, reconciled by its client id and never resent. Each
+  coin of a portfolio has one chain of plans (SQL triggers): a new plan
+  replaces the coin's latest plan after cancelling and reconciling its
+  outstanding entries (a cancellation that got no answer is asked again), and
+  is refused while any of them is still unknown or cancel-pending; the replaced
+  plan's alarms are cancelled; positions it opened keep their exits. If the new
+  plan is then refused (for example by the money limits) the replaced entries
+  stay cancelled, and the refusal is visible. Reason: AGENTS.md (persist
+  intents before effects; unknown is not rejection; reconcile before
+  replacement) and the T34 acceptance "no duplicate entries after a crash".
+
+- **D188 (2026-10-17, implementation default for T34): protective exits and
+  pauses.** An exit is one paper sell stop at the entry's stop with the entry's
+  take-profit as a second leg of the same order (`take_profit_price`,
+  capability `native_take_profit`), so whichever fills first closes it (one
+  cancels the other); both fill as triggered taker sells with the 0.10% exit
+  slippage (D147). `Execution.record_fill` attaches the exit inside the
+  transaction that records an entry fill, for exactly the filled part not yet
+  covered; each partial fill gets its own exit. Coverage is arithmetic over
+  records: an outstanding or unknown exit covers its whole quantity (so an
+  unknown status never leads to a second exit), a filled exit what it sold, an
+  exit that ended unfilled only what it sold; an exit never sells more than is
+  held and unreserved. A placement that cannot be made yet is recorded once per
+  reason (`protection_deferred`) and the management step's sweep retries it;
+  the fill is never lost. Protective exits may be placed and sent under
+  `RUNNING`, `PAUSE_DECISIONS`, `NO_NEW_EXPOSURE` and `MANAGE_ONLY`; the
+  owner's `CANCEL_ALL` cancels them by choice and nothing is re-attached until
+  it ends, `FLATTEN` sells everything itself, `STOPPED` is flat. Under every
+  pause but `RUNNING`, including `PAUSE_DECISIONS` and the system's
+  `MANAGE_ONLY`, the management step cancels day-plan resting entries (D117: a
+  pause cancels resting entries and keeps exits); other resting buys keep their
+  existing pause behaviour. Expired entries are cancelled; cancelled entries
+  are never restored. The paper service sends protective exits right after the
+  quote that filled an entry. Reason: D117, the T34 acceptance "every open
+  paper position carries a protective exit while the Trader sleeps" and
+  AGENTS.md (every pause specifies order and position management; protection
+  continues).
+
+- **D189 (2026-10-17, implementation default for T34, fixing a W1-B defect):
+  partial fills on the lot.** Given the instrument's `quantity_increment` and
+  `min_quantity`, the shared fill engine rounds every partial fill down to the
+  lot; a share that covers what remains fills it exactly (even a remainder left
+  off the lot earlier); when the rounded share is below the minimum, an order
+  filled on the engine's own assumption (a quote with no volume figure,
+  `paper-quote@1`'s half of what remains) finishes, because what remains is
+  then at most about two minimum lots, and an order limited by a reported
+  volume or displayed size fills nothing yet, because that much did not trade.
+  The paper broker passes its instrument rules; without them (the practice
+  range today) nothing changes. Reason: the reproduced `decimal.Inexact` after
+  26 volume-less quotes, venues fill whole lots, and resting day-plan entries
+  make volume-less crossings common.
