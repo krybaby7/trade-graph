@@ -534,8 +534,10 @@ The hourly features the Trader already receives (decision D89, window rules from
 Decimal arithmetic: an in-house formula for every one of them. D118 forbids that, so
 `hourly-price-features-v3` computes them with the library. The windows, the shared anchor, the per-field
 statuses (`ready`, `stale`, `gapped_history`, `insufficient_history`, `unsupported`), the per-field missing
-hours, `latest_close`, `recent_candles` and the snapshot hash rule are unchanged. The hourly features still read
-the `hourly_candles` table; they are not wired to the new candle store (that is a later step).
+hours, `latest_close`, `recent_candles` and the snapshot hash rule are unchanged. Since W6-D (D220) an installation
+with the price collector reads them from the candle store's 60-minute series (`CandleStoreHistory`, for any coin, point
+in time, the snapshot saying `history_store: "candle_store"`); one without it still reads the `hourly_candles` table.
+The numbers come from the same code either way.
 
 <!-- BEGIN hourly-table -->
 | Field | hourly-price-features-v2 (hand-written) | hourly-price-features-v3 | Why |
