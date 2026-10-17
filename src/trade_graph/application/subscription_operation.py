@@ -10,15 +10,19 @@ import asyncio
 from datetime import UTC, timedelta
 from pathlib import Path
 
+from trade_graph.application.alarms.book import AlarmBook
+from trade_graph.application.alarms.watcher import PriceWatcher
 from trade_graph.application.candle_readiness import (
     DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
     MAX_DECISION_CANDLE_WAIT_SECONDS,
     candle_wait,
 )
 from trade_graph.application.collect_price_history import collect_public_hourly_history
+from trade_graph.application.events import EngineOptions
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
 from trade_graph.application.scheduler import TaskLease
+from trade_graph.application.service_market_data import market_database_beside
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
@@ -94,24 +98,33 @@ class _HistoryRefreshingFeed:
 
 
 class _NormalSubscriptionService(PaperService):
-    def __init__(self, *args, candle_wait_seconds: int = DEFAULT_DECISION_CANDLE_WAIT_SECONDS, **kwargs):
+    def __init__(self, *args, candle_wait_seconds: int = DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
+                 candle_history=None, history_symbols: tuple[str, ...] = (), **kwargs):
         super().__init__(*args, **kwargs)
         if type(candle_wait_seconds) is not int or not 0 <= candle_wait_seconds <= MAX_DECISION_CANDLE_WAIT_SECONDS:
             raise ValidationFailure("decision candle wait must be 0 to 3000 whole seconds")
         self.candle_wait_seconds = candle_wait_seconds
+        # D220: with the price collector the wait reads the candle store (the collector stores the hour in its own
+        # thread); without it, the hourly refresh below stores it in hourly_candles before inputs are captured.
+        self.candle_history, self.history_symbols = candle_history, tuple(history_symbols)
 
     def _input_wait(self, lease: TaskLease, row) -> tuple[int, dict] | None:
         # A fresh Trader decision waits, boundedly, for the hour that just closed.
         # Started or reclaimed tasks keep their pinned snapshot and recovery path.
-        if (row["role"] != "trader" or lease.reclaimed or row["attempts_used"] != 0
-                or not isinstance(self.public_feed, _HistoryRefreshingFeed)):
+        if row["role"] != "trader" or lease.reclaimed or row["attempts_used"] != 0:
+            return None
+        if isinstance(self.public_feed, _HistoryRefreshingFeed):
+            history, candidates = self.database, self.public_feed.history_symbols
+        elif self.candle_history is not None:
+            history, candidates = self.candle_history, self.history_symbols
+        else:
             return None
         try:
             mandate = self.execution.authority.active_mandate(row["portfolio_id"])
         except (TradeGraphError, ValueError):
             return None  # Authority errors surface at decision time, never as a wait.
-        symbols = [symbol for symbol in self.public_feed.history_symbols if symbol in mandate.symbols]
-        return candle_wait(self.database, symbols, self.clock.now(), wait_seconds=self.candle_wait_seconds,
+        symbols = [symbol for symbol in candidates if symbol in mandate.symbols]
+        return candle_wait(history, symbols, self.clock.now(), wait_seconds=self.candle_wait_seconds,
                            previous_output_json=row["output_json"])
 
     async def _tick(self, *, wait_roles: bool, wait_feed: bool):
@@ -165,6 +178,18 @@ def _resume_previous_task_pause(runtime) -> bool:
     return False
 
 
+def event_engine_options(config: PaperRuntimeConfig, runtime) -> EngineOptions | None:
+    """The owner's ``event_engine`` switch (D223): wakes replace the fixed timers. The price watcher reads the
+    collector's candle file read-only; the day start uses the collector's newest hourly scan (no request of its own)."""
+    if not config.event_engine:
+        return None
+    market = getattr(runtime, "market_data", None)
+    if market is None:
+        raise ValidationFailure("the event engine needs the price collector's candle file")
+    watcher = PriceWatcher(AlarmBook(runtime.database, runtime.clock), market.candles, runtime.clock)
+    return EngineOptions(scan=None, watcher=watcher, daily_cycle=True)
+
+
 def run_subscription_operation(database_path: Path, protected_owner: Path, *,
                                maximum_ticks: int | None = None, portfolio_id: str | None = None,
                                service_run_id: str | None = None) -> dict:
@@ -172,6 +197,9 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
 
     This never creates a portfolio, grants paid/live authority or changes mandate
     settings. Stronger and unrelated owner/system pauses remain authoritative.
+    The candle file lives beside the database (D224); the price collector keeps it
+    current when public data is on (D222), and the event engine runs only when the
+    owner's protected configuration says ``event_engine: true`` (D223).
     """
     if maximum_ticks is not None and (type(maximum_ticks) is not int or maximum_ticks < 1):
         raise ValueError("maximum_ticks must be a positive integer or None")
@@ -180,7 +208,9 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
     if config.models is not None or config.price_cards:
         raise PermissionError("subscription paper operation refuses separately billed API configuration")
     runtime = assemble_paper_runtime(database_path, portfolio_id=portfolio_id, config=config,
-                                     protected_owner=protected_owner, api_keys={})
+                                     protected_owner=protected_owner, api_keys={},
+                                     market_database=market_database_beside(database_path))
+    market = getattr(runtime, "market_data", None)
     try:
         before_attempts = _attempts(runtime.database)
         before_decisions = runtime.database.execute("SELECT COUNT(*) FROM decisions WHERE portfolio_id=?",
@@ -193,15 +223,20 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
                 resumed = _resume_previous_task_pause(runtime)
             return handlers
         feed = runtime.public_feed
-        if feed is not None and config.public_history_enabled:
+        if feed is not None and config.public_history_enabled and market is None:
+            # Without the price collector the hourly BTC/ETH refresh into hourly_candles goes on as before.
             feed = _HistoryRefreshingFeed(feed, runtime, hours=config.public_history_hours,
                                           interval_seconds=config.public_history_interval_seconds)
+        collector = getattr(runtime, "price_collector", None)
         service = _NormalSubscriptionService(runtime.database, runtime.execution, clock=runtime.clock,
             portfolio_ids=[runtime.portfolio_id], handlers={}, artifact_runtime=runtime.artifact_runtime,
             public_feed=feed, secretary=runtime.secretary, schedule_intervals=config.schedule_intervals,
             automatic_schedule=config.automatic_schedule, optimisation_manual_only=config.optimisation_manual_only,
             tick_interval_seconds=config.tick_interval_seconds,
             candle_wait_seconds=config.decision_candle_wait_seconds,
+            candle_history=market.history if market is not None else None,
+            history_symbols=tuple(config.paper_symbols), price_collector=collector,
+            event_engine=event_engine_options(config, runtime),
             recover_commands=lambda: recover_owner_commands(runtime), prepare_runtime=prepare,
             runtime_ready=runtime.runtime_ready,
             subscription_provider=getattr(runtime, "subscription_provider", None), service_run_id=service_run_id)
@@ -218,7 +253,12 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             "automatic_optimisation": config.automatic_schedule and not config.optimisation_manual_only,
             "blockers": list(admission.status.get("blockers", [])) if admission else [],
             "public_history": feed.last_history if isinstance(feed, _HistoryRefreshingFeed) else None,
+            "price_collection": None if collector is None else {
+                "market_database": market.path.name, "public_requests": collector.requests_total},
+            "event_engine": service.event_engine is not None,
             "billing_kind": "subscription", "actual_cost_native": None, "cost_status": "unknown",
             "live_authorization": False, "paid_authorization": False}
     finally:
+        if market is not None:
+            market.close()
         runtime.database.close()
