@@ -34,6 +34,7 @@ COPY verify-sqlite-runtime.py /verify-sqlite-runtime.py
 RUN mkdir -p /opt/trade-graph /var/lib/trade-graph /run/trade-graph-owner && \
     chown 10001:10001 /var/lib/trade-graph && chmod 0700 /var/lib/trade-graph && \
     python -I -B /verify-sqlite-runtime.py /build-inputs.json --record && \
+    python -I -B -c "import numpy, talib; talib.SMA(numpy.arange(30, dtype=float), 5)" && \
     python -I -B -m trade_graph.kernel.deployment_image seal --inputs /build-inputs.json --output /opt/trade-graph/image-seal.json && \
     rm -rf /wheelhouse /built /requirements.txt /build-inputs.json /verify-sqlite-runtime.py
 USER 10001:10001
