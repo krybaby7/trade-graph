@@ -34,7 +34,7 @@ from trade_graph.adapters.market.kraken_trades import (
     TradesThrottled,
     pair_code_for_symbol,
 )
-from trade_graph.adapters.market.trades_rate_limit import RateLimitWaitTooLong, RequestLimiter
+from trade_graph.adapters.market.rate_limit import KrakenRestLimiter, RateLimitWaitTooLong
 from trade_graph.application import backfill_report as report_documents
 from trade_graph.application.backfill_model import (
     ARCHIVE_SOURCE,
@@ -315,7 +315,7 @@ def _held_message(state: PairState) -> str | None:
             "earlier than their close; they stay undecided and the next run rebuilds them, so check the clock first")
 
 
-def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: RequestLimiter, budget: Budget,
+def _run_pair(store: CandleStore, run_id: int, client: TradesClient, limiter: KrakenRestLimiter, budget: Budget,
               state: PairState, page_size: int) -> None:
     aggregator = state.aggregator
     assert aggregator is not None
@@ -438,7 +438,7 @@ def _prepare_pair(store: CandleStore, scope: BackfillScope, summaries: dict, sym
     return state
 
 
-def backfill_trades(store: CandleStore, clock: Clock, client: TradesClient, limiter: RequestLimiter,
+def backfill_trades(store: CandleStore, clock: Clock, client: TradesClient, limiter: KrakenRestLimiter,
                     scope: BackfillScope, *, max_requests: int, evidence_label: str = "live_public",
                     page_size: int = MAX_TRADES_PER_PAGE, ignore_cursor: bool = False) -> BackfillResult:
     """Run one bounded backfill; always records a ``trades_backfill`` run whose report holds the resume cursor."""
@@ -494,7 +494,7 @@ def backfill_trades(store: CandleStore, clock: Clock, client: TradesClient, limi
     return BackfillResult(run_id=run_id, status=status, report=report)
 
 
-def _finish(store: CandleStore, clock: Clock, run_id: int, report: dict[str, Any], limiter: RequestLimiter,
+def _finish(store: CandleStore, clock: Clock, run_id: int, report: dict[str, Any], limiter: KrakenRestLimiter,
             budget: Budget, forced: str | None) -> str:
     pairs = report["pairs"]
     run_totals = report_documents.totals(pairs, budget)

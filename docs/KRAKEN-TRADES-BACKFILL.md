@@ -163,8 +163,12 @@ the leading gap show which case it is.
 points of headroom (never above 13), at least 1 second between calls, an injected clock and sleeper. After a
 rate-limit or throttle answer it assumes the counter is full and waits until it is back under the ceiling (9.091
 seconds, or until the throttle time if that is later), then asks the same page again, twice at most. A failing transport is backed off the same way. Sustained, this is one call every 3.03 seconds.
-**For the integration owner:** the collector stream is writing its own `adapters/market/rate_limit.py` with the same
-counter model; the two should become one limiter shared by every REST caller in the process.
+**One limiter (W6-D, D221).** The earlier note for the integration owner (the collector had its own
+`adapters/market/rate_limit.py` with the same counter model) is resolved: there is one implementation,
+`rate_limit.KrakenRestLimiter`, which now has the spacing and the penalty rule above, and `RequestLimiter` is that class
+with the settings above, so this command's numbers are unchanged. Inside the service one instance carries the price
+collector, the hourly scan's ticker request and any backfill, so together they never pass its ceiling (there it starts
+at 10 of 15, drains 0.30 a second and spaces calls 1 second apart).
 
 ## How big is the job? (measured 2026-10-13)
 
