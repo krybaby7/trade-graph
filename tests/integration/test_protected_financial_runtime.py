@@ -216,17 +216,38 @@ def test_restart_dispatches_prior_intent_even_when_new_candidate_fails(tmp_path)
     assert db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 1
 
 
-def test_unknown_submit_reconciles_without_replay_after_restart(tmp_path):
+def _without_management_ticks(monkeypatch):
+    """The candidate returns before the cycle's first 0.25 s management tick (a fast runner, as on GitHub)."""
+    real_wait = asyncio.wait
+
+    async def wait(tasks, timeout=None, **options):
+        return await real_wait(tasks, timeout=None, **options)
+
+    monkeypatch.setattr(asyncio, "wait", wait)
+
+
+@pytest.mark.parametrize("fast_candidate", [False, True], ids=["as_timed", "returns_before_first_tick"])
+def test_unknown_submit_reconciles_without_replay_after_restart(tmp_path, monkeypatch, fast_candidate):
     db, clock, ledger, execution, broker, portfolio, runtime = stack(tmp_path, broker_type=DropAckBroker)
     activate(runtime, ENTER)
+    if fast_candidate:
+        _without_management_ticks(monkeypatch)
     result = asyncio.run(runtime.cycle(portfolio, "BTC/USD"))
     intent = result["response"]["intent_id"]
-    # The acknowledgement was lost (the submission got no answer). The paper
-    # broker shows the order resting with no fills, so reconciliation records
-    # it OPEN with its venue order id (W8-B, D248; before, it stayed UNKNOWN).
-    # It keeps its reservation and is never replayed.
+    # The acknowledgement was lost (the submission got no answer): unknown, never rejection. Each management step
+    # reconciles, then dispatches. When the candidate returns before the next 0.25 s step, the submit goes out in
+    # the cycle's last step and nothing has reconciled it yet, so it is UNKNOWN; when a step ran while the candidate
+    # worked, the cycle's last step already found the order resting at the paper broker with no fills and recorded
+    # it OPEN (W8-B, D248). The recovery below settles it either way. It keeps its reservation and is never replayed.
     assert execution._payload(intent)["error"] == "timeout"
-    assert execution.intent_state(intent) == "OPEN"
+    if fast_candidate:
+        assert execution.intent_state(intent) == "UNKNOWN"
+    else:
+        assert execution.intent_state(intent) in {"UNKNOWN", "OPEN"}
+    assert db.execute("SELECT state FROM position_reservations WHERE intent_id = ?",
+                      (intent,)).fetchone()[0] == "held"
+    assert db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] == 1
+    monkeypatch.undo()
     recovered = asyncio.run(runtime.recover(portfolio))
     assert recovered["status"] == "RECONCILED"
     assert execution.intent_state(intent) == "OPEN"
