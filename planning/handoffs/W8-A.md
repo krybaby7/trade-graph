@@ -9,7 +9,7 @@ Perplexity door to your network profile and proxy (the checklist gives each line
 re-checked because today's price card goes stale on 2026-11-11; nothing needs your decision now.
 
 Branch: `claude/c3-perplexity-in-service`, head: the commit that adds this handoff's pull request link (code, tests
-and docs at `641ec6f`). Pull request: PR_LINK_PLACEHOLDER.
+and docs at `641ec6f`). Pull request: https://github.com/krybaby7/trade-graph/pull/21 (not merged).
 
 ## What was built
 
