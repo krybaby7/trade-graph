@@ -36,7 +36,9 @@ ROLE_CONTEXT_KEYS = {
                           "active_strategy_templates", "research", "wake", "practice_range"},
     "learning": _COMMON | {"reports", "decisions", "lesson_revisions", "analysis_instruction"},
     "optimisation": _COMMON | {"reports", "expenses", "task_counts", "analysis_instruction"},
-    "leader": _COMMON | {"reports", "proposals", "candidates", "consultation_result"},
+    # T45 (D226): "wake" is the wake a Leader turn answers (T35): news alarms and wake requests with their notes, as
+    # data. The owner's pinned subscription profile must list it too (step L3).
+    "leader": _COMMON | {"reports", "proposals", "candidates", "consultation_result", "wake"},
     "engineer": frozenset({"change", "source_files", "source_instruction", "previous_findings"}),
 }
 
