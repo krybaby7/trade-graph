@@ -37,6 +37,7 @@ from trade_graph.adapters.research.perplexity_search import (
     build_search_body,
     parse_search_response,
 )
+from trade_graph.application.budget import DuplicateProviderRequest
 from trade_graph.application.gateway import ModelGateway, _budget_stop
 from trade_graph.application.research import ResearchStore
 from trade_graph.application.transport_evidence import TransportJournal
@@ -432,7 +433,12 @@ class _SearchTool:
         except MalformedSearchResponse:
             self._settle(call_id, reservation, "malformed", None, [])
             return {"status": "malformed", "results": [], "note": "the search answer was unreadable; nothing stored"}
-        refs = self._settle(call_id, reservation, "results", request_id, hits)
+        try:
+            refs = self._settle(call_id, reservation, "results", request_id, hits)
+        except DuplicateProviderRequest:
+            # W8-A: an answer repeating an earlier request id may be a replay; it is not stored or shown, and its
+            # bill stays unresolved at its reserved maximum.
+            return self._unresolved(call_id, reservation, "uncertain", "duplicate_request_id")
         return {"status": "results", "query": query.query, "note": _UNTRUSTED_NOTE, "results": [
             {"source_ref": ref, "title": hit.title, "url": hit.url, "publisher": hit.publisher,
              "published_on": None if hit.published_on is None else hit.published_on.isoformat(),

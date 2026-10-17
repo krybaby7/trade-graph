@@ -17,6 +17,14 @@ from trade_graph.kernel.pricing import usage_cost, worst_case_cost
 OPEN_STATES = ("RESERVED", "COMMITTED", "UNCERTAIN", "RECONCILED", "CONSERVATIVE")
 
 
+class DuplicateProviderRequest(ValueError):
+    """A provider answer repeats a request id that already has a receipt for another reservation (W8-A).
+
+    The answer may be a replay, so this call's bill is unknown: nothing is written, and the caller settles the
+    reservation as unresolved (held at its reserved maximum, never free), as for any other unusable answer.
+    """
+
+
 @dataclass(frozen=True)
 class InvoiceReconciliation:
     reconciliation_id: str
@@ -250,6 +258,13 @@ class BudgetGateway:
             raise ValueError("receipt conflict requires explicit reconciliation")
         if row["state"] not in {"RESERVED", "UNCERTAIN"}:
             raise ValueError("reservation is already settled")
+        if usage.provider_request_id is not None and self.database.execute(
+                "SELECT 1 FROM usage_receipts WHERE provider = ? AND provider_request_id = ? AND reservation_id != ?",
+                (provider, usage.provider_request_id, reservation_id)).fetchone():
+            # The table keeps one receipt per provider request id; a repeat must not escape as IntegrityError and
+            # leave the reservation RESERVED. Callers settle the ValueError as unresolved (W8-A).
+            raise DuplicateProviderRequest("provider request id already has a receipt for another reservation; "
+                                           "this call's bill stays unresolved")
         now = utc_iso(self.clock.now())
         receipt_id = str(uuid.uuid4())
         with self.database.immediate() as conn:

@@ -97,6 +97,10 @@ editing one.
 
 ## Key file
 
+In the installed service the key is `<owner>/perplexity.key`, read by the
+protected owner-file reader ([PERPLEXITY-IN-SERVICE.md](PERPLEXITY-IN-SERVICE.md)).
+For the L2 smoke on your PC:
+
 `trade_graph.application.private_key_file.read_private_key` accepts one plain
 key in a file that is outside any Git checkout, owned by you, mode 600 or 400,
 with a single name, in a folder others cannot write. The value is masked in
@@ -139,12 +143,13 @@ result fields, and both prices.
   A reply type must extend `WebResearchReply`, whose findings cite
   `source_ref`. Treat `paused_at_limit` as "this round pauses", never as a
   system pause. The owner policy and route come from protected configuration.
-  A durable department handler will also need: a protected route for the
-  registered tool (the department gateway refuses `tools` in a department's
-  context), the resolved model check in `RuntimeGateway` (Perplexity must
-  report `anthropic/claude-sonnet-5-5`, or receipts stay unresolved), a
-  pinned transport with both Perplexity endpoints, and a price card verified
-  within 30 days for the model router.
+  In the installed service (W8-A, [PERPLEXITY-IN-SERVICE.md](PERPLEXITY-IN-SERVICE.md)) the rounds run in the
+  protected process on their own gateway, which carries only Research's and the
+  Leader's rounds and the software `web_search` tool (the department gateway
+  still refuses `tools` in a department's context), treats a bill for another
+  model than the card's as unresolved, sends through the reviewed
+  `paid_research` route to both Perplexity endpoints only, and refuses a price
+  card checked 30 or more days ago.
 - **T40 (W2-C, HQ spending):** Perplexity receipts are ordinary
   `usage_receipts` with provider `perplexity`; search receipts use the
   `perplexity-search-api-…` card. Unresolved reservations are held, not free.

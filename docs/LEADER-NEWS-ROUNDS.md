@@ -125,7 +125,8 @@ reading starts nothing.
   Perplexity the owner root limit instead.
 - **The paper service.** Pass the handler as `handlers["leader"]` and set `rounds.engine = service.event_engine`
   after the service is made (the service builds its engine). Under an owner or system halt the service defers the
-  Leader's wake, so nothing is sent; the AI allowance floor holds it too.
+  Leader's wake, so nothing is sent; the AI allowance floor holds it too. The installed subscription service does
+  this itself when the Leader is switched on (W8-A, [PERPLEXITY-IN-SERVICE.md](PERPLEXITY-IN-SERVICE.md)).
 
 ## Restart
 

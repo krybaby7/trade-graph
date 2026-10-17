@@ -4,6 +4,8 @@ Status: written 2026-10-17 by cloud package W6-D (C2, decisions D220–D224) for
 [cloud build plan](CLOUD-BUILD-PLAN.md#local-steps--on-the-owners-pc). Nothing in it has been run: the cloud has no
 Docker, no installation, no key and no private data. Paper only. **Every step runs only with your yes.** Cloud package
 W7-A (T45, D225–D229) added step 17, the after-L3 owner switch for news wake-ups, and the Leader's `wake` key in step 3.
+Cloud package W8-A (C3, D240–D244) built Perplexity inside the installed service: step 3 now names the Perplexity owner
+files and network route, and step 12 is no longer conditional.
 
 In plain words: on your PC a local build session builds the new protected image from the merged code, puts your paper
 account on hold, copies your price history into the installation, moves the books to the new release, records your
@@ -22,9 +24,11 @@ bypasses the launcher.
 ## Before you start
 
 - Waves 1 to 6 are merged into `claude/day-trader-engine-20261012` and GitHub's `test` job passed on `<commit>`.
-- The Perplexity test key is installed through the private-file route (D125, D154) and auto top-up is off.
-- For step 12 only: the Perplexity wiring listed under "Perplexity in the installed service" is merged; otherwise
-  step 12 is skipped and Research and the Leader stay on the subscription.
+- The Perplexity test key is at hand for the owner folder (step 3, `perplexity.key`; D125, D154) and auto top-up is
+  off. Step L2's smoke has re-checked Perplexity's pricing page; if a price changed, the new dated card is in
+  `config/perplexity-price-cards.json` (see "Perplexity in the installed service" below).
+- For step 12: `<commit>` includes wave 8, which has the Perplexity wiring (W8-A). Without step 12's `--confirm`,
+  Research and the Leader stay on the subscription.
 - You have about an hour; the account is on hold (MANAGE_ONLY) from step 4 to step 15. Management, reconciliation and
   protective exits keep running the whole time (D117).
 
@@ -34,7 +38,7 @@ bypasses the launcher.
 |---|---|---|---|
 | 1 | Get the code and run the full suite | `git fetch origin && git checkout <commit>`, then `uv sync --frozen --group dev --python 3.12` and `uv run pytest -p no:cacheprovider -rf` (trusted checkout on the PC; or read GitHub's `test` job on `<commit>`) | No failure. Compare with "Known failures" in the cloud build plan. |
 | 2 | Build the protected image | `uv run python scripts/build_protected_image.py --output <new-build-dir> --subscription-tools <reviewed-native-inputs>` then `uv run python scripts/verify_protected_image.py --build-directory <new-build-dir> --output <new-proof-dir>` (trusted checkout, [PROTECTED-DEPLOYMENT.md](PROTECTED-DEPLOYMENT.md)) | An image pin. The builder first checks that NumPy and TA-Lib are pinned with the hash of a Python 3.12 Linux wheel (it stops before any download if not), and the build imports both before it seals the image (D224). |
-| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"` and `"practice_range"` added to `allowed_context_keys.trader` and `"wake"` added to `allowed_context_keys.leader` (T45: the Leader reads why it was woken, news alarms included); `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
+| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"` and `"practice_range"` added to `allowed_context_keys.trader` and `"wake"` added to `allowed_context_keys.leader` (T45: the Leader reads why it was woken, news alarms included); `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below). For Perplexity (step 12): `perplexity.key` (your key, one line) and `perplexity-price-cards.json` (a copy of `config/perplexity-price-cards.json`), both `root:10001` mode `0440`; `"reviewed_routes": {"paid_research": {"port": 8082, "hosts": ["api.perplexity.ai"]}}` in `subscription-network-profile.json`; and your reviewed proxy recreated with `--route paid_research=8082:api.perplexity.ai` added to its command and its new review recorded ([REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
 | 4 | Hold the account and stop the service | HQ: **Pause AI** / the authenticated owner pause to MANAGE_ONLY, then **Stop safely** (the dashboard, old image) | HQ shows the account on hold and the service stopped; `paper-service` and `role-worker` leases cleared. |
 | 5 | Stop the old Windows price tasks | `Get-ScheduledTask -TaskName 'TradeGraph-Candles-*' \| Disable-ScheduledTask` (PowerShell on the PC) | Both tasks `Disabled`. They are removed in step 14, once the new collector is seen working. Two collectors at once are not coordinated (D133). |
 | 6 | Back up | `trade-graph backup --database /var/lib/trade-graph/trade_graph.sqlite --destination <private-backup>` (inside the old image, service stopped); keep a copy of the WSL candle file `~/.local/share/trade-graph-market/market_data.sqlite` | A backup file; the candle file copy. The candle file is public data and not part of the financial recovery unit (D132). |
@@ -43,8 +47,8 @@ bypasses the launcher.
 | 9 | Start the new dashboard | `python -I -B -m trade_graph.kernel.deployment_image boot-subscription-dashboard` (the launcher, new image) | HQ opens; it reads the candle file read-only (`--market-database /var/lib/trade-graph/market_data.sqlite`, set by the image). |
 | 10 | Clean up the mandate | `python -I -B -m trade_graph.cli mandate-cleanup --database /var/lib/trade-graph/trade_graph.sqlite`, then the same with `--confirm` (inside the image, service not running) | A new mandate revision without the leftover test strategy ids (D129). |
 | 11 | Record your money limits | `python -I -B -m trade_graph.cli money-limits --database /var/lib/trade-graph/trade_graph.sqlite` (preview), then the same with `--confirm` (W3-A, D138 items 1, 2, 3 and 6) | A new policy revision: 3% daily loss limit, 20% per coin, 80% in total, the coin rule, day start 00:00 UTC. Until this exists day plans are refused. |
-| 12 | Switch Research and the Leader to Perplexity (only once the wiring below is merged) | `python -I -B -m trade_graph.cli perplexity-departments --database /var/lib/trade-graph/trade_graph.sqlite` (preview), then the same with `--confirm` (W6-A's command for both departments; options `--expect-revision`, `--research on\|off`, `--leader on\|off`, `--monthly-limit-usd`; it refuses while the service runs; the Leader's news rounds, W6-B, read the same switch) | A switch revision naming Research and the Leader. Until "Perplexity in the installed service" below is merged, skip this step: Research and the Leader stay on the subscription. |
-| 13 | Start the service and watch the prices | HQ **Start Trading** (the account stays on hold); after 10 to 70 minutes: `python -I -B -m trade_graph.cli candle-coverage --market-database /var/lib/trade-graph/market_data.sqlite --symbols BTC/USD,ETH/USD` and `python -I -B -m trade_graph.cli coin-shortlist --database /var/lib/trade-graph/trade_graph.sqlite` (inside the image) | The collector's first `price_collection` activity (the pair list), then BTC/USD and ETH/USD at 1, 5, 15 and 60 minutes with a last close within the hour; after the next hour's pass, a new live shortlist. HQ's charts draw current candles. No `price_collection` event with `stop_reason` `rate_limited` or `throttled` and no feed outage; if they appear, set `"ranking_every_hours": 2` (the quote feed's requests are outside the collector's limiter, KRAKEN-CANDLE-COLLECTION.md, "In the service"). |
+| 12 | Switch Research and the Leader to Perplexity | `python -I -B -m trade_graph.cli perplexity-departments --database /var/lib/trade-graph/trade_graph.sqlite` (preview), then the same with `--confirm` (W6-A's command for both departments; options `--expect-revision`, `--research on\|off`, `--leader on\|off`, `--monthly-limit-usd`; it refuses while the service runs; the Leader's news rounds, W6-B, read the same switch) | A switch revision naming Research and the Leader. After step 13's start, HQ's activity log shows `perplexity_route` with status `ready` (or `not_ready` and the reason: a missing key or price-card file, no `paid_research` route, a stale card). Skip this step to keep Research and the Leader on the subscription. |
+| 13 | Start the service and watch the prices | HQ **Start Trading** (the account stays on hold); after 10 to 70 minutes: `python -I -B -m trade_graph.cli candle-coverage --market-database /var/lib/trade-graph/market_data.sqlite --symbols BTC/USD,ETH/USD` and `python -I -B -m trade_graph.cli coin-shortlist --database /var/lib/trade-graph/trade_graph.sqlite` (inside the image) | With step 12 done, a `perplexity_route` activity with status `ready`. The collector's first `price_collection` activity (the pair list), then BTC/USD and ETH/USD at 1, 5, 15 and 60 minutes with a last close within the hour; after the next hour's pass, a new live shortlist. HQ's charts draw current candles. No `price_collection` event with `stop_reason` `rate_limited` or `throttled` and no feed outage; if they appear, set `"ranking_every_hours": 2` (the quote feed's requests are outside the collector's limiter, KRAKEN-CANDLE-COLLECTION.md, "In the service"). |
 | 14 | Remove the old Windows price tasks | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register_candle_schedule.ps1 -Remove` (PowerShell on the PC) | `removed TradeGraph-Candles-Short`, `removed TradeGraph-Candles-Full`. If step 13 showed no fresh candles, re-enable them instead (`Enable-ScheduledTask`) and stop here. |
 | 15 | Lift the hold | HQ **Resume** (authenticated owner resume with the current revision, [NORMAL-PAPER-OPERATION.md](NORMAL-PAPER-OPERATION.md)) | The service runs. With `event_engine` on, the next 00:00 UTC day start takes the collector's newest hourly scan as the day's shortlist and runs Research's focus step and the Trader's day plans; HQ's wake log (W6-C) shows the wakes. |
 | 16 | About two weeks later | Set the Perplexity monthly limit at about 1.5 times what HQ shows (D138 item 4) | — |
@@ -56,29 +60,36 @@ is never needed for the books (it is rebuilt from Kraken); the financial rules f
 
 ## Perplexity in the installed service: prerequisites of step 12
 
-W6-A and W6-B built Research's focus coins and the Leader's news rounds on Perplexity, and W6-A's switch. Running
-them **in the installed subscription service** still needs wiring that no wave 6 package built (W6-A's and W6-B's
-handoffs; W6-D could not build it on code that was not merged yet). Each item is an explicit prerequisite of step 12,
-for a follow-up package before L3 or the integrator; until they exist, leave the switch off:
+W6-A and W6-B built Research's focus coins and the Leader's news rounds on Perplexity, and W6-A's switch; W8-A (C3,
+D240–D244) built them into the installed subscription service ([PERPLEXITY-IN-SERVICE.md](PERPLEXITY-IN-SERVICE.md)).
+The six prerequisites, now done or concrete owner actions:
 
-1. A Research handler (W6-A's focus research) and a Leader news-round handler (W6-B) assembled inside the protected
-   process boundary with a paid-enabled gateway. Today `run_subscription_operation` refuses separately billed API
-   configuration (`models` or `price_cards` in `paper-config.json`) and builds every department from the subscription
-   profile. The Leader handler reads the switch as `LeaderNewsRounds(..., enabled=lambda: perplexity_enabled_for(
-   database, "leader"), spend_policy=lambda: perplexity_setting(database).spend_policy, ...)`; that composition is
-   tested (`tests/integration/test_leader_news_switch.py`), its installation is not built.
-2. A pinned transport that reaches both Perplexity endpoints. The subscription market proxy admits only
-   `api.kraken.com` and `api.frankfurter.dev` (`kernel/subscription_proxy.py`, `MARKET_HOSTS`), so the owner's proxy
-   review and network profile need the Perplexity hosts as a separately reviewed route.
-3. The Perplexity key read from the owner's private file inside the image (D154), never from chat, Git or the
-   environment.
-4. Seeded, re-verified price cards and their route: the 2026-10-12 Agent card goes stale on 2026-11-11 (W6-B).
-5. A money allocation for Research and Leader wakes on Perplexity: in a subscription installation every wake task
-   gets EUR0 (`PaperService._wake_task`), so a Perplexity wake stops at its allocation before any request (safe, but
-   no round runs); W6-A gives a switched-on department's wake the owner's paid root allocation. Merged in the wave 6
-   integration together with this package's `paper_service.py` changes.
-6. `event_engine: true` in `paper-config.json` (this package, step 3): without it nobody is woken for a focus step or a
-   news round.
+1. **Done (W8-A).** With `event_engine: true` and the switch on, `run_subscription_operation` hands Research's and the
+   Leader's engine wakes to `FocusResearch` and `LeaderNewsRounds` in the protected process, on a paid-enabled gateway
+   that carries only their rounds and the software `web_search` tool (every search result stored before the model
+   reads it). Their other tasks, and everything while the switch is off, stay on the subscription; `paper-config.json`
+   still refuses `models` and `price_cards`.
+2. **Owner action (step 3).** The reviewed `paid_research` route: add it to `subscription-network-profile.json`
+   (port 8082 suggested; hosts `["api.perplexity.ai"]`, the only host the reviewed catalogue allows) and to the proxy
+   command (`--route paid_research=8082:api.perplexity.ai`), re-pin the profile and record the proxy's new review. The
+   market listener still admits only Kraken and Frankfurter ([REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)).
+3. **Owner action (step 3).** The key: `<owner>/perplexity.key`, one line, `root:10001` mode `0440`, read only by the
+   protected owner-file reader (D154), never from chat, Git, the environment or a model's context.
+4. **Owner action (step 3), with step L2.** The prices: `<owner>/perplexity-price-cards.json`, a copy of
+   `config/perplexity-price-cards.json`, seeded into the database as immutable dated cards. The cloud could not open
+   Perplexity's pricing page on 2026-10-17, so the cards are unchanged: the 2026-10-12 Agent API card goes stale on
+   **2026-11-11** and the Search API card on 2026-11-15. **Re-check at step L2**: read the official pricing page; if a
+   price differs, or to renew a card that would be stale on the day of L3, add a new dated card (new id, new
+   `verified_at`) to `config/perplexity-price-cards.json` and copy the file again. A stale card refuses paid calls
+   (the wake fails with the reason), never prices them as free.
+5. **Done (W6-A, W8-A).** Money: each switched department's wake gets the owner's paid root allocation per task; the
+   deployment's EUR allowance is not consulted for these rounds, so it cannot block D125's testing period; your
+   spend rule (no limit while testing, `--monthly-limit-usd` later, step 16) pauses only these rounds.
+6. **Owner action (step 3).** `event_engine: true` in `paper-config.json`: without it nobody is woken for a focus step
+   or a news round.
+
+If anything is missing at start, HQ's activity log shows `perplexity_route` `not_ready` with the reason, the switched
+departments' wakes fail with it and nothing is sent; the Trader, protection and records continue.
 
 Without step 12 the engine still runs: Research's subscription answer names no focus coins, so each day's focus step
 is recorded as failed and the Trader's day-plan wake follows with the scanner's shortlist as its coins (D223).
@@ -95,7 +106,8 @@ urgent, whom it would wake (the Leader, and the Trader when the coin is held) an
 without verdicts, and verdicts need two things no wave built into the installed service: (1) the news poll running
 every 5 minutes next to the service, writing into the same state database (a scheduled task, or a later in-service
 poll), with a reviewed network route to the five feed hosts and to TypeSafe (the subscription market proxy admits only
-Kraken and Frankfurter, as for Perplexity above); (2) your Jev key installed through the private-file route and
+Kraken and Frankfurter; W9-A adds them as a second reviewed route, as W8-A did for Perplexity,
+[REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)); (2) your Jev key installed through the private-file route and
 `jev.calls_enabled` in your private news alarm settings (W1-A). Until both exist, skip step 17: switching on is refused
 without real shadow evidence, and it would wake nobody anyway. The Leader's news-alarm wake works on the subscription
 Leader (it reads the alarm in its `wake` context key, step 3) and on the Perplexity Leader of step 12 (in its brief).

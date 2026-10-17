@@ -27,15 +27,15 @@ from trade_graph.domain.errors import AuthorityDenied
 from trade_graph.kernel.runtime_manifest import ProtectedRuntimeManifest, protected_package_sha256
 
 
-def subscription_service(tmp_path, monkeypatch, *, quota_exhausted=False):
+def subscription_service(tmp_path, monkeypatch, *, quota_exhausted=False, source=GRAPH):
     flow = RuntimeFlow(tmp_path, provider="scripted", paid=False, owner_paid=False, keys={})
     manifest = ProtectedRuntimeManifest(
         schema_version=1, protected_package_sha256=protected_package_sha256(), deployment_id="deployment",
-        approved_source_sha256=(hashlib.sha256(GRAPH.encode()).hexdigest(),),
+        approved_source_sha256=(hashlib.sha256(source.encode()).hexdigest(),),
         operations=("submit_decision", "invoke_model", "apply_role_result"),
     )
     monkeypatch.setattr(deployment_runtime, "_owner_bundle",
-                        lambda _directory: (manifest, GRAPH, b"synthetic-owner-only-key-32-bytes-41"))
+                        lambda _directory: (manifest, source, b"synthetic-owner-only-key-32-bytes-41"))
     config = SubscriptionRuntimeConfig(subscription=SubscriptionConfig(
         provider="claude_subscription", model="claude-sonnet-5-5", enabled=True))
     readiness = SubscriptionReadiness("claude_subscription", "2.1.285", True, (), {},

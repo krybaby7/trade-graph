@@ -3,6 +3,9 @@
 The profile contains no provider/exchange secret or spending authority. Proxy
 routing is independently reviewed: provider and public-market listeners are
 separate, while the application has only one dedicated internal network.
+Separately reviewed routes (W8-A, D241; ``reviewed_routes``) add one listener per
+route with the owner's explicit host list, a subset of the reviewed catalogue in
+``kernel/subscription_proxy.py``; an older profile without them is unchanged.
 """
 
 from __future__ import annotations
@@ -13,14 +16,37 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Annotated
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_serializer, model_validator
 
 from trade_graph.kernel.runtime_manifest import canonical_json, document_sha256
+from trade_graph.kernel.subscription_proxy import REVIEWED_ROUTE_HOSTS, reviewed_hosts
 
 Fingerprint = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 ImageId = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 SECCOMP_FILENAME = "subscription-seccomp.json"
+
+
+class ReviewedRoute(BaseModel):
+    """One separately reviewed route: its own proxy listener port and the hosts the owner listed for it (W8-A)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    port: StrictInt = Field(ge=1024, le=65535)
+    hosts: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+    @field_validator("hosts", mode="before")
+    @classmethod
+    def listed_hosts(cls, value):
+        # JSON arrays arrive as lists; a bare string is never a host list.
+        if type(value) is list:
+            value = tuple(value)
+        if type(value) is not tuple or any(type(host) is not str for host in value):
+            raise ValueError("an explicit list of reviewed host names required")
+        if list(value) != sorted(set(value)):
+            raise ValueError("reviewed hosts are listed once each, in sorted order")
+        return value
 
 
 class PreparedSubscriptionNetworkProfile(BaseModel):
@@ -43,6 +69,8 @@ class PreparedSubscriptionNetworkProfile(BaseModel):
     proxy_review_sha256: Fingerprint
     seccomp_path: str = Field(min_length=1, max_length=512)
     seccomp_sha256: Fingerprint
+    # W8-A (D241): separately reviewed routes by name, each a subset of its reviewed catalogue on its own port.
+    reviewed_routes: dict[str, ReviewedRoute] = Field(default_factory=dict, max_length=8)
 
     @field_validator("proxy_ipv4")
     @classmethod
@@ -66,11 +94,45 @@ class PreparedSubscriptionNetworkProfile(BaseModel):
     def distinct_routes(self):
         if self.proxy_port == self.market_proxy_port:
             raise ValueError("subscription provider and public market listeners must be separate")
+        ports = [self.proxy_port, self.market_proxy_port]
+        for name, route in self.reviewed_routes.items():
+            if name not in REVIEWED_ROUTE_HOSTS:
+                raise ValueError("a reviewed route must be one the protected catalogue names")
+            reviewed_hosts(name, route.hosts)
+            ports.append(route.port)
+        if len(set(ports)) != len(ports):
+            raise ValueError("every reviewed route needs its own listener port")
         return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_routes(self, handler):
+        # An older owner profile without routes re-serialises and hashes exactly as before.
+        document = handler(self)
+        if not self.reviewed_routes:
+            document.pop("reviewed_routes", None)
+        return document
 
     @property
     def sha256(self):
         return document_sha256(self.model_dump(mode="json"))
+
+    def route_url(self, name: str) -> str:
+        """The proxy URL of one reviewed route; KeyError when the owner has not listed it."""
+        return f"http://{self.proxy_ipv4}:{self.reviewed_routes[name].port}"
+
+    def route_hosts(self, name: str) -> frozenset[str]:
+        return frozenset(self.reviewed_routes[name].hosts) if name in self.reviewed_routes else frozenset()
+
+    def route_admits(self, name: str, url: str) -> bool:
+        """Only a plain ``https://host/...`` URL whose host the owner listed for this route."""
+        try:
+            parts = urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return False
+        return (parts.scheme == "https" and port is None and parts.username is None and parts.password is None
+                and parts.hostname is not None and parts.netloc == parts.hostname
+                and parts.hostname in self.route_hosts(name))
 
     @property
     def proxy_url(self):

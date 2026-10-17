@@ -21,6 +21,7 @@ from trade_graph.application.collect_price_history import collect_public_hourly_
 from trade_graph.application.events import EngineOptions
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
+from trade_graph.application.perplexity_installation import perplexity_departments
 from trade_graph.application.scheduler import TaskLease
 from trade_graph.application.service_market_data import market_database_beside
 from trade_graph.domain.clock import utc_iso
@@ -228,7 +229,9 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             handlers = runtime.prepare_runtime() if runtime.prepare_runtime else runtime.handlers
             if handlers and (runtime.runtime_ready is None or runtime.runtime_ready()):
                 resumed = _resume_previous_task_pause(runtime)
-            return handlers
+            # W8-A (D240): with the event engine on and the owner's Perplexity switch on, Research's and the Leader's
+            # engine wakes run on Perplexity in this protected process; otherwise the handlers are unchanged.
+            return perplexity_departments(runtime, protected_owner, handlers, engine=service.event_engine)
         feed = runtime.public_feed
         if feed is not None and config.public_history_enabled and market is None:
             # Without the price collector the hourly BTC/ETH refresh into hourly_candles goes on as before.

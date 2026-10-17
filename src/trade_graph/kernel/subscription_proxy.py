@@ -4,6 +4,9 @@ Provider authentication/refresh hosts follow the official network documentation:
 https://code.claude.com/docs/en/network-config (reviewed 2026-10-07).
 Only native, subscription-authenticated Codex/Claude clients belong on the provider port.
 The market port admits Kraken/Frankfurter domains, never inference domains.
+Each separately reviewed route (W8-A, D241) has its own port and admits only the hosts the
+owner listed for it, from the reviewed catalogue ``REVIEWED_ROUTE_HOSTS``; paid research
+(Perplexity) is the first, and further lists (W9-A's news feeds) are added the same way.
 
 Encrypted HTTP paths and billing cannot be inspected here. The protected caller
 must separately enforce public market paths, official subscription authentication,
@@ -20,12 +23,22 @@ import ipaddress
 import math
 import signal
 import socket
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 PROVIDER_HOSTS = frozenset({"api.anthropic.com", "claude.ai", "platform.claude.com",
                             "chatgpt.com", "auth.openai.com"})
 MARKET_HOSTS = frozenset({"api.kraken.com", "api.frankfurter.dev"})
+# Separately reviewed routes (W8-A, D241): each names the only hosts one kind of protected work may ever reach, on its
+# own listener, apart from the provider and market hosts above. The owner's network profile and the proxy command list
+# the hosts a route admits (a subset). To add a route (W9-A: the news feeds and TypeSafe), add one entry here with its
+# reviewed hosts, then the owner adds it to the profile and the proxy command; nothing else changes.
+PAID_RESEARCH = "paid_research"
+REVIEWED_ROUTE_HOSTS: Mapping[str, frozenset[str]] = MappingProxyType({
+    # Perplexity's Agent API (/v1/agent) and Search API (/search), D124, D150.
+    PAID_RESEARCH: frozenset({"api.perplexity.ai"}),
+})
 
 Resolver = Callable[[str], Awaitable[Sequence[str]]]
 Dialer = Callable[[str, int], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
@@ -103,6 +116,26 @@ def _connect_host(payload: bytes, allowed: frozenset[str]) -> str:
         return host
     except (UnicodeError, ValueError):
         raise _Refused(400) from None
+
+
+def reviewed_hosts(route: str, hosts: Iterable[str] | None) -> frozenset[str]:
+    """The owner-listed hosts of one reviewed route: a non-empty subset of its reviewed catalogue, exactly spelled."""
+    if route not in REVIEWED_ROUTE_HOSTS or hosts is None or isinstance(hosts, (str, bytes)):
+        raise ValueError("a reviewed route needs its own explicit owner-listed hosts")
+    listed = tuple(hosts)
+    if (not listed or len(set(listed)) != len(listed) or any(type(host) is not str for host in listed)
+            or not set(listed) <= REVIEWED_ROUTE_HOSTS[route]):
+        raise ValueError("a reviewed route admits only hosts its reviewed catalogue names")
+    return frozenset(listed)
+
+
+def parse_route(value: str) -> tuple[str, int, frozenset[str]]:
+    """``NAME=PORT:HOST[,HOST...]``, for example ``paid_research=8082:api.perplexity.ai``."""
+    name, separator, rest = value.partition("=")
+    port, colon, hosts = rest.partition(":")
+    if not separator or not colon or not port.isdecimal() or len(port) > 5:
+        raise ValueError("reviewed route NAME=PORT:HOST[,HOST...] required")
+    return name, int(port), reviewed_hosts(name, hosts.split(",") if hosts else ())
 
 
 async def _resolve(host: str) -> Sequence[str]:
@@ -233,11 +266,16 @@ async def _client_hello(reader: asyncio.StreamReader, host: str, maximum: int) -
 class ConnectProxy:
     """One fixed-scope listener; production supplies no custom resolver/dialer."""
 
-    def __init__(self, scope: str, *, limits: ProxyLimits | None = None,
+    def __init__(self, scope: str, *, hosts: Iterable[str] | None = None, limits: ProxyLimits | None = None,
                  resolver: Resolver = _resolve, dialer: Dialer = _dial):
-        if scope not in {"provider", "market"}:
-            raise ValueError("exact provider or market proxy scope required")
-        self.allowed = PROVIDER_HOSTS if scope == "provider" else MARKET_HOSTS
+        if scope in {"provider", "market"}:
+            if hosts is not None:
+                raise ValueError("provider and market listeners keep their fixed reviewed hosts")
+            self.allowed = PROVIDER_HOSTS if scope == "provider" else MARKET_HOSTS
+        elif scope in REVIEWED_ROUTE_HOSTS:
+            self.allowed = reviewed_hosts(scope, hosts)
+        else:
+            raise ValueError("exact provider, market or reviewed route proxy scope required")
         self.limits = limits or ProxyLimits()
         if type(self.limits) is not ProxyLimits:
             raise ValueError("exact reviewed proxy limits required")
@@ -379,20 +417,31 @@ class ConnectProxy:
             await asyncio.gather(*pumps, return_exceptions=True)
 
 
-async def _serve(host: str, provider_port: int, market_port: int) -> None:
-    if provider_port == market_port or not all(1024 <= port <= 65535 for port in (provider_port, market_port)):
-        raise ValueError("two distinct unprivileged proxy ports required")
-    proxies = (ConnectProxy("provider"), ConnectProxy("market"))
+def _listeners(provider_port: int, market_port: int,
+               routes: Sequence[tuple[str, int, frozenset[str]]] = ()) -> list[tuple[ConnectProxy, int]]:
+    """One listener per scope on distinct unprivileged ports; each reviewed route at most once."""
+    ports = [provider_port, market_port, *(port for _, port, _ in routes)]
+    names = [name for name, _, _ in routes]
+    if (len(set(ports)) != len(ports) or len(set(names)) != len(names)
+            or not all(1024 <= port <= 65535 for port in ports)):
+        raise ValueError("distinct unprivileged proxy ports and one listener per reviewed route required")
+    return [(ConnectProxy("provider"), provider_port), (ConnectProxy("market"), market_port),
+            *((ConnectProxy(name, hosts=hosts), port) for name, port, hosts in routes)]
+
+
+async def _serve(host: str, provider_port: int, market_port: int,
+                 routes: Sequence[tuple[str, int, frozenset[str]]] = ()) -> None:
+    listeners = _listeners(provider_port, market_port, routes)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(signum, stop.set)
     try:
-        await proxies[0].start(host, provider_port)
-        await proxies[1].start(host, market_port)
+        for proxy, port in listeners:
+            await proxy.start(host, port)
         await stop.wait()
     finally:
-        await asyncio.gather(*(proxy.close() for proxy in proxies))
+        await asyncio.gather(*(proxy.close() for proxy, _ in listeners))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -400,9 +449,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--provider-port", type=int, default=8080)
     parser.add_argument("--market-port", type=int, default=8081)
+    parser.add_argument("--route", action="append", default=[], metavar="NAME=PORT:HOST[,HOST...]",
+                        help="a separately reviewed route on its own port, e.g. paid_research=8082:api.perplexity.ai")
     args = parser.parse_args(argv)
     try:
-        asyncio.run(_serve(args.listen_host, args.provider_port, args.market_port))
+        routes = [parse_route(value) for value in args.route]
+        _listeners(args.provider_port, args.market_port, routes)  # refuse before any socket is opened
+        asyncio.run(_serve(args.listen_host, args.provider_port, args.market_port, routes))
     except (ValueError, OSError):
         parser.exit(2, "reviewed proxy listener configuration/startup refused\n")
     return 0
