@@ -18,9 +18,10 @@ records. A strategy idea goes to Research or Optimisation and through the practi
 rewrites the system while it runs.
 
 The protected switch (owner setting, W6-A's for both departments) decides whether the Leader runs on Perplexity: it is
-injected as ``enabled``. Switched off, a configured Leader handler (``fallback``) keeps the Leader's wakes, or the
-round is recorded ``switched_off`` with no call. A wake task that is not an engine wake (a Secretary or owner task)
-goes to ``fallback``. Nothing here limits how often the Leader runs (D116): it may name a check-in a minute away.
+injected as ``enabled``, and the owner's spend rule that travels with it as ``spend_policy``; both are read fresh
+for every task and fail closed. Switched off, a configured Leader handler (``fallback``) keeps the Leader's wakes,
+or the round is recorded ``switched_off`` with no call. A task that is not an engine wake (a Secretary or owner
+task) goes to ``fallback``. Nothing here limits how often the Leader runs (D116): it may name a check-in a minute away.
 """
 
 from __future__ import annotations
@@ -45,7 +46,12 @@ from trade_graph.contracts.leader_news import (
 )
 from trade_graph.contracts.models import ModelRequest, PriceCard
 from trade_graph.contracts.wakes import WakeContext, WakeOutcome, WakeRequest
-from trade_graph.contracts.web_research import StoredSource, WebResearchOutcome, WebResearchReply
+from trade_graph.contracts.web_research import (
+    PerplexitySpendPolicy,
+    StoredSource,
+    WebResearchOutcome,
+    WebResearchReply,
+)
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 
 LEADER_GUIDANCE = (
@@ -110,8 +116,8 @@ class _LeaderResearch(PerplexityWebResearch):
     """W1-C's round with the Leader's guidance after the protected instructions, and the vetting above before
     anything from the reply is kept."""
 
-    def __init__(self, research: PerplexityWebResearch) -> None:
-        super().__init__(research.gateway, route=research.route, policy=research.policy)
+    def __init__(self, research: PerplexityWebResearch, policy: PerplexitySpendPolicy | None) -> None:
+        super().__init__(research.gateway, route=research.route, policy=policy)
 
     def _request(self, run_id: str, ask: WebResearchAsk, card: PriceCard,
                  reply_type: type[WebResearchReply]) -> ModelRequest:
@@ -137,12 +143,16 @@ class LeaderNewsRounds:
     role = "leader"
 
     def __init__(self, research: PerplexityWebResearch, *, enabled: Callable[[], bool],
+                 spend_policy: Callable[[], PerplexitySpendPolicy | None] | None = None,
                  engine: EngineReads | None = None, fallback: Callable[[dict], dict] | None = None,
                  settings: LeaderRoundSettings | None = None) -> None:
-        if not callable(enabled):
-            raise ValueError("the protected Perplexity switch is a function returning True or False")
+        if not callable(enabled) or (spend_policy is not None and not callable(spend_policy)):
+            raise ValueError("the protected switch and spend rule are read through functions")
         self.research = research
         self.enabled = enabled
+        # The owner's spend rule, read fresh for each round (it travels with the switch); without a reader the
+        # research service's own policy applies.
+        self.spend_policy = spend_policy
         # The event engine's reads; ``PaperService`` makes its engine itself, so this may be set after it exists.
         self.engine = engine
         self.fallback = fallback
@@ -156,6 +166,16 @@ class LeaderNewsRounds:
             return self.enabled() is True
         except Exception:  # noqa: BLE001 - an unreadable paid-call switch never turns paid calls on
             return False
+
+    def _policy(self) -> PerplexitySpendPolicy | None:
+        """The owner's spend rule for this round; one that cannot be read means none, so nothing is sent."""
+        if self.spend_policy is None:
+            return self.research.policy
+        try:
+            policy = self.spend_policy()
+        except Exception:  # noqa: BLE001 - an unreadable money rule never lets a paid call through
+            return None
+        return policy if isinstance(policy, PerplexitySpendPolicy) else None
 
     # --- the worker's protocol: recover, context, call ---------------------------------------------------------
 
@@ -207,7 +227,7 @@ class LeaderNewsRounds:
             max_input_tokens=self.settings.max_input_tokens, max_output_tokens=self.settings.max_output_tokens,
             timeout_seconds=self.settings.timeout_seconds)
         try:
-            outcome = _LeaderResearch(self.research).run(ask, reply_type=LeaderNewsReply)
+            outcome = _LeaderResearch(self.research, self._policy()).run(ask, reply_type=LeaderNewsReply)
         except (TradeGraphError, ValueError, LookupError) as error:
             reason = f"the news round could not start: {type(error).__name__}: {error}"[:500]
             output = _failed(reason, leader_round={"round_id": round_id, "status": "failed"})

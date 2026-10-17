@@ -242,6 +242,25 @@ def test_a_switch_that_cannot_be_read_counts_as_off(tmp_path) -> None:
     assert record.status == "switched_off" and setup.transport.calls == []
 
 
+def test_the_spend_rule_is_read_fresh_with_the_switch_and_fails_closed(tmp_path) -> None:
+    """The owner's spend rule travels with the switch (W6-A): read for each round, never assumed."""
+    setup = LeaderSetup(tmp_path, full_round(), policy=None)
+    rules = [UNLIMITED]
+    setup.rounds.spend_policy = lambda: rules[0]
+    _leader_round(setup)
+    assert [item.status for item in setup.rounds.store.rounds(setup.portfolio)] == ["completed"]
+
+    def unreadable():
+        raise OSError("synthetic: the spend rule could not be read")
+
+    setup.rounds.spend_policy = unreadable
+    setup.clock.advance(6 * 3600 + 1)  # the Leader's named check-in at 14:00
+    setup.engine.step([setup.portfolio])
+    assert run_one(setup.scheduler, setup.engine, {"leader": setup.rounds}) is not None
+    statuses = [item.status for item in setup.rounds.store.rounds(setup.portfolio)]
+    assert statuses == ["completed", "disabled"] and len(setup.transport.calls) == 5
+
+
 def test_with_the_switch_off_a_configured_leader_handler_keeps_the_leaders_wakes(tmp_path) -> None:
     calls: list = []
 
