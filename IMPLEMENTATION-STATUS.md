@@ -1,3 +1,17 @@
+# Follow-up waves 8 and 9 planned before the install, not built — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`. Plan only: no code changed, nothing deployed, no paid or network call. On the owner's request, [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md) gains waves 8 and 9, built from the night report's "What comes next" and the open items in the W2–W7 handoffs:
+- **W8-A (C3):** Research's focus step and the Leader's news rounds on Perplexity inside the protected installed service, behind the owner switch, with a separately reviewed host list, the protected `web_search` route, the key from the owner's private file, dated price cards, the `BudgetGateway` duplicate-request-id fix, and the price-collector modules made protected paths. Closes L3 checklist step 12.
+- **W8-B (C4):** a Trader action to close a day-plan position early or move its safety exit, the paper reconcile fix for a lost acknowledgement, and an index on `valuation_marks`.
+- **W8-C (C5):** HQ shows today's loss against the limit, today's day plans, the scorecard and a price-collector panel; chart-script caching; reworded "Pays for itself?" box.
+- **W9-A (C6):** the 5-minute news poll next to the installed service through a second reviewed host list, with Jev on protected budget origins. Closes the evidence gap of L3 checklist step 17.
+- Reserved: D240–D259 and state migrations 0043–0046. New owner decisions start at D260. L3 now follows waves 1–9.
+- Open owner question (recorded in the plan, recommended answer "keep"): should the older fallback Leader keep its R1 actions, pausing the account and narrowing a mandate (W6-B)?
+
+Next: the owner launches the night lead for waves 8 and 9; local step L2 can run at the same time.
+
+---
+
 # Cloud wave 7 merged (T45), not deployed — 2026-10-17
 
 Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave7`; GitHub's `test` job passed on it and the night lead pushed the same commit (`3008446`) to the integration branch. Merged with `git merge --no-ff` on the integration head `9fa7efb`: W7-A T45 `d2b0a1c` ([#19](https://github.com/krybaby7/trade-graph/pull/19), package head `c03c95e`, code `b7d3782`). Decisions [D225–D229](docs/DECISIONS.md) are copied from `planning/handoffs/W7-A.md`. **Nothing was deployed or installed.** No paid, model-provider, feed, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on invented headlines on a synthetic feed, scripted Jev answers receipted as synthetic, scripted departments, a scripted Perplexity for the Leader's round and the synthetic USD10,000 paper account.

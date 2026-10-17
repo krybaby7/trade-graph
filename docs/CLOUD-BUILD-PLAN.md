@@ -2,7 +2,9 @@
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
 cloud waves 1 to 7 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the night
-shift of 2026-10-16/17; D140–D229). The local steps L1–L4 remain. Every
+shift of 2026-10-16/17; D140–D229). Waves 8 and 9, added on 2026-10-17,
+close the gaps between "built" and "installed" that the night shift found.
+The local steps L1–L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -14,14 +16,15 @@ from it and returns to it through pull requests.
 
 ### In one minute
 
-- The work is split into **18 cloud packages in 7 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do.
+- The work is split into **22 cloud packages in 9 waves**, plus **4 local
+  steps** on your PC and a short list of things only you can do. Waves 1 to 7
+  are done; waves 8 and 9 are the follow-up before the install.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
   session, the **integrator**. It checks and merges that wave's work, then
   updates the status board below.
-- Then you start the next wave. Repeat until wave 7.
+- Then you start the next wave. Repeat until wave 9.
 - After that, a session on your PC installs the new engine (with your
   approval) and starts the scored practice test.
 
@@ -66,6 +69,8 @@ into a cloud session.
 | 5 | W5-A event engine, W5-B HQ charts, W5-C scorecard | Wave 4 merged |
 | 6 | W6-A focus coins, W6-B Leader news, W6-C HQ wake log, W6-D install readiness | Wave 5 merged |
 | 7 | W7-A real news wake-ups | Wave 6 merged |
+| 8 | W8-A Perplexity inside the installed system, W8-B Trader exit tools, W8-C HQ loss, plans and scorecard | Wave 7 merged |
+| 9 | W9-A news check next to the installed system | Wave 8 merged |
 
 The slowest chain is W1-B → W2-A and W2-B → W3-A → W4-A → W5-A → wave 6 →
 local install. If you can only start a few sessions at a time, start W1-B
@@ -95,6 +100,10 @@ The integrator updates this table each time it merges a wave.
 | W6-C | T39 | HQ wake log and next check-ins | Merged 2026-10-17 (#15); you look at the Calendar and Story tabs on your phone and iPad after L3 |
 | W6-D | C2 | Code ready to install: one price collector, new data store wired in | Merged 2026-10-17 (#17); the real image build and the first collector pass are L3 steps ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | W7-A | T45 | News alarms really wake the Leader and Trader | Merged 2026-10-17 (#19); ships in shadow mode (it records whom an alarm would wake and wakes nobody): after L3 you decide from the shadow log and HQ's wake counts (`trade-graph news-wakes`, [L3 checklist](L3-INSTALL-CHECKLIST.md) step 17), once the news poll runs next to the installed service with your Jev key |
+| W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Not started |
+| W8-B | C4 | The Trader can close a position early or move its safety exit | Not started |
+| W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Not started |
+| W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Not started |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
 | L3 | — | New engine installed on your PC (your approval) | Not started; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
@@ -107,6 +116,7 @@ The integrator updates this table each time it merges a wave.
 | Now | Switch on the price schedule on your PC, or tell the local Claude session it may | Windows blocked the agent. Without it, gaps appear in recent prices. |
 | Now | Check that Perplexity auto top-up is off | The prepaid credit is the outer limit while testing has no budget (D125). |
 | Optional | Get a Jev key at console.typesafe.ai only, then ask the local session to store it | The news alarm makes real checks only with a key. It is built and tested without one. |
+| Any time | Answer: should the older Leader keep its power to pause the account or narrow the allowed coins and strategies? Recommended: keep (both only reduce risk) | It stays as the fallback Leader beside the news rounds (W6-B). Nothing changes until you answer. |
 | Each wave | Start the wave's sessions, then the integrator, or one night lead for several waves | Cloud sessions don't start themselves. |
 | Step L3 | Approve installing the new engine and the policy update with your D138 settings | Agents cannot change protected owner settings. |
 | About 2 weeks after L3 | Set the Perplexity monthly limit at about 1.5 × what HQ shows (D138) | Testing runs without a limit until then. |
@@ -390,7 +400,7 @@ The owner is asleep: never stop to ask anything.
 
 ### Reserved numbers
 
-New owner decisions after this plan start at D240.
+New owner decisions after this plan start at D260.
 
 | Package | Branch | Decisions | State migration |
 |---|---|---|---|
@@ -413,6 +423,10 @@ New owner decisions after this plan start at D240.
 | W6-D | `claude/c2-install-ready` | D220–D224 | 0041 |
 | W7-A | `claude/t45-news-wakes` | D225–D229 | 0042 |
 | L1–L4 | local, see below | D230–D239 | none |
+| W8-A | `claude/c3-perplexity-in-service` | D240–D244 | 0043 |
+| W8-B | `claude/c4-trader-exit-tools` | D245–D249 | 0044 |
+| W8-C | `claude/c5-hq-loss-plans-scorecard` | D250–D254 | 0045 |
+| W9-A | `claude/c6-news-poll-in-service` | D255–D259 | 0046 |
 
 ### Wave 1 — start now
 
@@ -618,6 +632,138 @@ the Trader when the coin is held.
   W6-C's wake log. Ships in shadow mode; going live is an owner switch decided
   from shadow evidence after L3.
 
+### Wave 8 — follow-up before the install (added 2026-10-17)
+
+The night shift found gaps between "built" and "installed"
+(`planning/handoffs/NIGHT-2026-10-16.md`, "What comes next";
+[L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md), "Perplexity in the
+installed service"). Waves 8 and 9 close them. Each package reads the
+handoffs it names before it starts.
+
+Order for the integrator: W8-B, W8-C, W8-A.
+
+**W8-A · C3 · Perplexity inside the installed service.** Research's focus
+step and the Leader's news rounds can run on Perplexity in the installed
+subscription service, once the owner switches them on at L3 step 12.
+- Spec: L3-INSTALL-CHECKLIST.md "Perplexity in the installed service:
+  prerequisites of step 12", items 1 to 5; the W6-A, W6-B and W6-D handoffs;
+  D121, D124, D125, D154, D205–D214, D220–D224.
+- Assemble W6-A's `FocusResearch` and W6-B's `LeaderNewsRounds` inside the
+  protected process boundary with a paid-enabled `ModelGateway`, controlled by
+  the owner switch (`perplexity_enabled_for`, `perplexity_setting`). With the
+  switch off (the default), nothing changes: both departments stay on the
+  subscription, and `run_subscription_operation` keeps refusing any other
+  separately billed configuration.
+- A separately reviewed network route: the owner's protected network profile
+  gains an explicit, pinned list of reviewed hosts for paid research, kept
+  apart from the market proxy's `MARKET_HOSTS` (Kraken and Frankfurter).
+  Nothing reaches a host the owner has not listed. Design it so W9-A adds the
+  news-feed and TypeSafe hosts as a second reviewed list the same way, and
+  document it.
+- A protected route for the registered `web_search` tool (W1-C: the kernel
+  department gateway refuses `tools` in a department's context), so every
+  search result is still stored before a finding may cite it.
+- The Perplexity key is read only from the owner's private file inside the
+  image (D154), never from Git, chat, the environment or a model's context.
+- Seeded, dated price cards with their source. Re-check Perplexity's official
+  pricing if the cloud can reach it; otherwise keep the 2026-10-12 card, which
+  goes stale on 2026-11-11, and list the re-check for step L2. A stale card
+  refuses paid calls; it never prices them as free.
+- The deployment's EUR allowance must not block D125's "no money limit while
+  testing". The owner's monthly limit (D138 item 4), once set, pauses only
+  these rounds; the Trader, protection and records continue.
+- Fix, test first: a repeated provider request id raises `IntegrityError` out
+  of `BudgetGateway.commit` and leaves the reservation `RESERVED` (found by
+  W1-C). Every call, retry and failure still ends with a receipt or an
+  unresolved record.
+- Recommended default, record it: add `application/price_collector.py` and
+  `application/service_market_data.py` to `PROTECTED_PATH_PREFIXES`. They
+  feed the coin rule and the price alarms, so the deployed Engineer should not
+  edit them (W6-D left this open).
+- Update the L3 checklist: step 12's prerequisites become concrete owner
+  actions (which hosts to review, where the key file goes) or are marked done.
+- Done when a scripted day in the subscription operation, with the switch on,
+  runs Research's focus step and one Leader news round through a scripted
+  Perplexity transport, with receipts and stored sources; with the switch off
+  the same day runs as before. No real call.
+
+**W8-B · C4 · Trader exit tools and order reconcile.** The Trader can close a
+day-plan position early or move its safety exit.
+- Spec: the W4-A and W5-A handoffs ("Not done"), D115–D117, D185–D194.
+- A Trader action in its wake reply: close a day-plan position, or move its
+  safety exit. Software cancels the exit, reconciles, then sells or attaches
+  the new exit, as one recorded sequence. An open position is never left
+  without a safety exit, except during the sell itself; a refused or unknown
+  step leaves the old exit in place. Property tests over fills, partial
+  fills, cancels and restarts.
+- Within the owner's limits and the spot-only rules. No confidence threshold,
+  committee or approval.
+- Reconcile fix (W4-A's finding, W5-A's proposed fix), test first: when the
+  broker answers `open` or `partially_filled` and the recorded fills equal its
+  filled quantity, move an `UNKNOWN` intent to `OPEN` or `PARTIALLY_FILLED`
+  with its venue order id, in paper. Live behaviour does not change; record
+  the live question as an owner question in the handoff.
+- An index on `valuation_marks (portfolio_id, asset, observed_at)` (W5-C's
+  finding), in this package's migration; existing databases upgrade.
+- After any contract change, run `tests/integration/test_provider_wire_schemas.py`:
+  a new field in the Trader's reply can break the strict reply schema (wave
+  3's lesson).
+- Tell the Trader about the new action in its wake brief and in
+  `docs/EVENT-ENGINE.md`.
+
+**W8-C · C5 · HQ: today's loss, the day plans and the scorecard.**
+- Spec: the W3-A, W4-A, W5-B, W5-C, W6-D and W2-C handoffs;
+  `docs/HQ-DASHBOARD.md` (plain English, phone and iPad first, light and dark,
+  the 80 KB payload budget). Reading HQ starts nothing.
+- Today's loss against the 3% limit (W3-A's `LossStatus.document()`), and a
+  money-limit failure in plain words (today it shows as "a routine step is
+  failing").
+- Today's day plans per coin: entries, safety exits, fills, refusals and plan
+  events (W4-A).
+- The scorecard (W5-C's `compute_scorecard`) with caching like HQ's money
+  facts.
+- A small price-collector panel from the `price_collection` activity (W6-D).
+- Long-lived caching for the vendored chart script under `/static/vendor/`
+  (W5-B: it is fetched again on every page load).
+- Recommended default for W2-C's question, record it: reword the older "Pays
+  for itself?" box so it never suggests practice gains pay real bills
+  (AGENTS.md: paper equity cannot replenish the real budget).
+- A new HQ key goes into `api/hq_contract.py` and all nine
+  `tests/fixtures/hq/snapshot_*.json`, keeping the keys other packages added.
+
+### Wave 9 — after wave 8 is merged
+
+**W9-A · C6 · News check next to the installed service.** The 5-minute news
+check runs with the installed system, so the shadow log fills with real
+evidence after L3. Step 17 needs that evidence.
+- Spec: L3-INSTALL-CHECKLIST.md "News wake-ups: what step 17 needs";
+  `docs/NEWS-ALARM.md`; the W1-A and W7-A handoffs; D137, D138 item 10,
+  D140–D144, D225–D229; W8-A's reviewed-route design.
+- Run T44's poll every 5 minutes inside the service (a thread like the price
+  collector) or as a companion the owner launcher starts, writing into the
+  installation's state database.
+- Add the five feed hosts and TypeSafe as a second reviewed host list, using
+  W8-A's route mechanism.
+- The Jev key is read from the owner's private file. Jev calls stay off until
+  the owner sets `jev.calls_enabled`. Bind Jev checks to protected budget
+  origins, and decide whether the runtime evidence collector reads
+  `news_jev_attempts` (open since the wave 1 integration).
+- A lost feed is reported, never treated as "no news". Headlines stay data.
+- Update the L3 checklist's step 17 and "News wake-ups".
+- Done when a scripted service day polls scripted feeds every 5 minutes,
+  records headlines and Jev answers with receipts, and the engine records
+  shadow routes; with Jev off, headlines are stored and nothing is called.
+
+### Later, not packaged
+
+Open items the night shift found that wait for an owner decision or a later
+package: the suite's speed (about half of it is `runtime_environment_sha256()`
+re-hashing the standard library, which is protected engineering code); whole
+lots in practice-range replays (changes replay results); hourly scans widening
+the day's shortlist; Perplexity departments outside the AI allowance floor;
+how long hourly scans are kept (about 2 MB a day); money limits on the live
+path (live trading is out of scope).
+
 ### Local steps — on the owner's PC
 
 These need private data, keys, WSL or the installation, so they run in a
@@ -642,7 +788,8 @@ used synthetic ones. One opt-in Perplexity smoke call with the test key
 (D125), with its receipt. A Jev smoke call only if the owner has installed a
 key. Each result is labelled real or synthetic.
 
-**L3 · Install the new engine (after waves 1–6 are merged).** Each step only on
+**L3 · Install the new engine (after waves 1–9 are merged; waves 8 and 9
+close the gaps of its steps 12 and 17).** Each step only on
 the owner's yes: full suite; build the protected image and re-pin the kernel
 manifest; back up; install through the financial-manifest transition with the
 paper account in MANAGE_ONLY (docs/FINANCIAL-TRANSITION.md); run
@@ -651,9 +798,8 @@ command); switch Research and the Leader to Perplexity (W6-A, W6-B); confirm
 the new collector runs, then remove the Windows scheduled tasks; resume.
 The commands, in order, with what each should show, are in
 [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). Its step 12
-(Research and the Leader on Perplexity) waits for the installed-service wiring
-listed there; until it exists, skip that step and both stay on the
-subscription.
+(Research and the Leader on Perplexity) waits for W8-A, and its step 17 (news
+wake-ups) for W9-A; until each exists, skip that step.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final
