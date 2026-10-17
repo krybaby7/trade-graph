@@ -10,7 +10,7 @@ L3. Nothing needs a decision from you now; after L3, please look at the Calendar
 and after the first week use the wake counts at the top of the Wake log to decide on the 40% allowance floor (D138
 item 8).
 
-Branch: `claude/t39-hq-wake-log`, head: the commit that adds this line; code at `f1c80d0`. Pull request: (added after
+Branch: `claude/t39-hq-wake-log`, head: the commit that adds this line; code at `f322dde`. Pull request: (added after
 it is opened).
 
 ## What was built
@@ -109,9 +109,9 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
 `/home/user/claude/t39-hq-wake-log`. No network in any test, no key, paid, model or exchange call.
 
 - Tests written first: `tests/unit/test_hq_wakes_contract.py` failed at collection (`cannot import name
-  'hq_wakes_contract'`), `tests/integration/test_hq_wakes.py` (`cannot import name 'hq_wakes'`) and
-  `tests/integration/test_hq_wakes_routes.py` (6 of 9 failed: no route, so validation and the read-nothing check
-  failed) before the code; `tests/test_hq_wakes_static.py` failed against the base page files; `node --test
+  'hq_wakes_contract'`) and `tests/integration/test_hq_wakes.py` (`cannot import name 'hq_wakes'`) before the code;
+  `tests/integration/test_hq_wakes_routes.py` failed before the route was registered (checked again in a copy of the
+  branch with the one `register` line removed: 9 of 9 failed); `tests/test_hq_wakes_static.py` failed against the base page files; `node --test
   tests/js/hq_wakes.test.mjs` with `HQ_STATIC_DIR` set to the base commit's scripts: 10 of 10 failed (no `hq-wakes.js`),
   and 10 of 10 with the new module but the base `hq-core.js` (no `wakes` endpoint). The first runs found: a page of 50
   busy wakes at 101 KB (bounds set to 20/30 wakes, 20 alarms, notes at 120 characters: 51/71 KB); test mistakes (a note
@@ -120,7 +120,7 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
   line (fixed: day-and-clock form).
 - New tests: `uv run pytest -p no:cacheprovider -q tests/unit/test_hq_wakes_contract.py
   tests/integration/test_hq_wakes.py tests/integration/test_hq_wakes_routes.py tests/test_hq_wakes_static.py`:
-  RESULTS_NEW. `node --test tests/js/hq_wakes.test.mjs`: 10 passed, 0 failed; `node --test tests/js/hq_*.test.mjs`:
+  **73 passed, 0 failed, 0 skipped** (127 s, at `f322dde`). `node --test tests/js/hq_wakes.test.mjs`: 10 passed, 0 failed; `node --test tests/js/hq_*.test.mjs`:
   77 passed, 0 failed.
 - `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`:
   all checks passed.
@@ -129,8 +129,8 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
   files, the event engine's store and migration 0035 (the wake log reads them), T35's scripted day (one new test runs
   it), the provider wire schemas, `model_json_schema` and `export_schemas` users, found with `grep -lE` over `tests`; 66
   modules) in three parallel shards of whole modules (`uv run pytest -p no:cacheprovider -q -rfs <modules>`):
-  RESULTS_RELATED.
-- `uv run pytest -p no:cacheprovider -q tests/unit`: RESULTS_UNIT.
+  **1,277 passed, 0 failed, 14 skipped** (at `f1c80d0`; the 14 skips are `tests/security/test_subscription_process_boundary.py`: bubblewrap is not installed in the cloud container, as on GitHub). The last commit after that run (`f322dde`) changed one sentence and its test in `hq_copy.py`/`hq_wakes.py`; the new tests, `tests/unit/test_hq_copy.py` and `tests/unit` were run again on it.
+- `uv run pytest -p no:cacheprovider -q tests/unit`: **2,203 passed, 0 failed, 7 skipped** (at `f322dde`; the skips are the indicator cross-checks the second library cannot make and the archive-permission cases as root).
 - `python3 scripts/check_plan.py`: plan valid, 46 tasks, acyclic; `python3 scripts/test_planning.py`: 11 tests OK;
   `python3 scripts/check_repository_hygiene.py` (and `--staged` before every commit): passed.
 - Full suite: not run (night shift: the wave integration runs it).
