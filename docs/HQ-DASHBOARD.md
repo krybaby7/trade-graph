@@ -59,12 +59,45 @@ departments wrote themselves; HQ never rewrites them. "Load earlier" goes furthe
 may stop short of 3 days and the next page continues from there, so nothing is skipped. Below it, the **Wake log** lists every
 wake-up (below).
 
-**Money**: the scoreboard (practice money, what changed it, what is held), whether the run "pays for itself",
-"Is my money at risk?", the AI allowance gauge, **AI spending** (below), the market weather (price and
-20-hour / 50-hour averages) and **Price charts** (below). Practice money and real costs are always shown apart and
-never added together. Anything not known yet says "not known yet"; it is never shown as zero.
+**Money**: the scoreboard (practice money, what changed it, what is held), the paper result against the real
+costs you entered (a comparison only: paper money never pays a real bill), "Is my money at risk?", **Today's loss
+limit**, **Today's day plans** and the **Scorecard** (below), the AI allowance gauge, **AI spending** (below), the
+market weather (price and 20-hour / 50-hour averages), the **Price collector** and **Price charts** (below).
+Practice money and real costs are always shown apart and never added together. Anything not known yet says "not
+known yet"; it is never shown as zero.
 
 **Decide**: the buttons. See below.
+
+## Today's trading (the Money tab)
+
+Four panels show what the Trader is doing with the paper account today, all from saved records (W8-C, decisions
+D250-D254). Looking at them never starts, sends, cancels or changes anything.
+
+- **Today's loss limit**: today's loss against the daily loss limit you record at step L3 (3% of the account's value
+  at the day start, fees and coins held at their latest prices included), with a meter that says how much of the
+  limit is used, the value at the day start and now, the limit and when the next trading day starts. Reaching the
+  limit stops new buying until the next day start; safety exits and sales keep working and nothing is sold because
+  of it, and a note on the HQ tab says so. If the loss can't be checked (a coin held has no fresh price), it says
+  why: new buying waits until it can be checked. Until you record your money limits, the panel says they aren't
+  recorded and the Trader's day plans stay off.
+- **Today's day plans**: each coin's plan for today: every waiting buy (with its stop and target), what it bought,
+  the safety exit software put on every filled part and what that sold, and the plan's events (put in place,
+  replaced, a buy cancelled and why). A filled part with no safety exit right now is marked and says so. An older
+  plan whose safety exit still protects coins stays listed as "Earlier day". Plans software refused today are listed
+  under "Refused today" in plain words. The Trader's reasons are short quotes in their words. The panel reads its
+  records only while it is on screen.
+- **Scorecard**: since the account opened, the result after every fee (coins still held valued as if sold with
+  their fee), against keeping the cash and against buying Bitcoin at the start and selling it at the end, with the
+  number of trades, wins, the average win and loss, fees, the worst fall and the longest losing run, the result in
+  euros, the real AI spending of the same days (never paid by the paper result), and your test rule (D138 item 7)
+  read as information. "Provisional" says which price was old. It is evidence only: never proof of profit and never
+  permission for real money.
+- **Price collector**: the newest hourly coin scan, whether candles are being saved, Kraken's pair list, rate-limit
+  pauses, gaps and problems of the last 24 hours. If there was no coin scan in the last 2 hours, new buys under
+  your coin rule wait for a fresh one.
+
+When the money-limit, day-plan or price-collector step of the service fails, "Right now" and "Needs you" now name it
+in plain words (for example "couldn't check your money limits") instead of "a routine step is failing".
 
 ## AI spending (the Money tab)
 
@@ -253,6 +286,31 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   integrity the first time a chart is shown; its built-in logo is off because it would inject a `<style>` element
   (refused by the policy) and send HQ's address to TradingView. The plain attribution link beside every chart is the
   page's only outside address.
+- **Today's trading** (W8-C, D250, D252, D253) is the additive `trading` key of the snapshot
+  (`api/hq_trading.py`), cached for 60 seconds behind a fingerprint of fills, ledger events, day-start values,
+  loss stops, owner policies, AI receipts and reference rates, like the money facts. Today's loss is
+  `MoneyLimitGuard.status(portfolio, policy)` read with `record=False` (it never records a day-start value or a
+  stop; only the paper service's management step does) and shown from `LossStatus.document()`; the loss is the
+  day-start value less the current value, exact, in the account's currency. The scorecard is
+  `compute_scorecard(database, portfolio_id, end=now)` from the opening deposit (D200's default period) shown from
+  its `document()`, with its gates statement (D204); a period that can't be scored says why. The price collector
+  is read from its `price_collection` activity records of the last 24 hours. A live account's block says the
+  paper limit and scorecard aren't applied there. The fullest block is about 6 KB; the busy week with it stays
+  under 80 KB. A reached or recorded loss stop adds the notice `loss_limit_reached`. The service's
+  `money_limits:`, `day_plans:` and `collector:` failures are problem prefixes with plain words of their own.
+- **Day plans** (W8-C, D251) come from `GET /api/v1/hq/plans` (`trade-graph.hq.plans.v1`,
+  `api/hq_plans_contract.py`), never from the snapshot; the page asks only while the panel is on screen and again
+  with HQ's 30-second poll. The projection (`api/hq_plans.py`) reads `day_plans`, `day_plan_entries`,
+  `day_plan_exits`, `day_plan_events`, `order_intents`, `fills`, today's `day_plan_refused` activity records and the
+  newest owner policy with plain SQL in one read snapshot; it imports no execution, broker, engine or provider.
+  Which plans: each coin's newest plan whose trading day has not ended, then older plans that still have an order
+  open. What is not protected is `DayPlanProtection.coverage`'s arithmetic. Lists are page bounds (8 plans, 16
+  buys, 4 safety exits and 4 fills per order, 8 events per plan, 10 refusals), never limits on plans; every list
+  says how many more there are. A busy synthetic day is about 70 KB, within the endpoint's own 80 KB budget.
+- **Caching** (W8-C, D253): every HQ response stays `Cache-Control: no-store` except the pinned, vendored chart
+  library asked for by its version (`/static/vendor/lightweight-charts/…production.js?v=5.2.1`, `api/static_cache.py`),
+  which a browser may keep for a year: its bytes never change under that address, the page pins its integrity, and
+  `scripts/vendor_lightweight_charts.py --check` keeps the address equal to `VENDOR.json`'s version.
 - **Wake-ups** (T39, D215-D219) come from `GET /api/v1/hq/wakes` (`trade-graph.hq.wakes.v1`,
   `api/hq_wakes_contract.py`), never from the snapshot, so the snapshot's size is unchanged; the page asks only while
   one of the three panels is on screen and again with HQ's 30-second poll. The projection (`api/hq_wakes.py`) reads
@@ -293,6 +351,7 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 | `GET /api/v1/hq` | any signed-in role | HQ snapshot JSON (`trade-graph.hq.v1`); `calendar_days` 1–14, default 7 |
 | `GET /api/v1/hq/story` | any signed-in role | Earlier story; `before` (timezone-aware ISO, required), `limit` 1–60 |
 | `GET /api/v1/hq/chart` | any signed-in role | One price chart (`trade-graph.hq.chart.v1`); `symbol` (for example `SOL/USD`) and `interval` 1, 5, 15 or 60, both optional |
+| `GET /api/v1/hq/plans` | any signed-in role | Today's day plans per coin with their buys, fills, safety exits and events, and today's refusals (`trade-graph.hq.plans.v1`) |
 | `GET /api/v1/hq/wakes` | any signed-in role | Wake log, next check-ins, today's steps, focus coins and alarms (`trade-graph.hq.wakes.v1`); `before` (a wake cursor, for older pages) and `limit` 1–30, both optional |
 | `GET /api/v1/owner/checkins` | owner | Check-ins between `from` and `to` (default 7 days back to 30 days ahead) |
 | `POST /api/v1/owner/checkins` | owner (cookie sessions also need the CSRF header) | Plan, reschedule, done, skip or cancel a check-in |

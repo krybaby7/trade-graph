@@ -162,7 +162,8 @@ trading day has not ended.
 | `day_plan_events` | `installed`, `superseded`, `entry_cancelled` (`pause`, `expired`, `replaced`), `protection_deferred` | append-only; installed and superseded once per plan, a cancellation once per entry |
 
 They are execution controls and evidence: the intents, fills and ledger stay the books. They are not added to agent
-context, the financial checkpoint or the review export; HQ views are later work.
+context, the financial checkpoint or the review export. HQ shows them in the Money tab's "Today's day plans" panel
+(`GET /api/v1/hq/plans`, W8-C, D251).
 
 ## For the next packages
 
