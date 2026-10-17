@@ -120,6 +120,7 @@ class PaperBroker:
             fills_pagination=True,
             cancel_behaviour="local-after-reconcile",
             withdrawals=False,
+            native_take_profit=True,
         )
 
     async def instruments(self) -> list[InstrumentRules]:
@@ -178,6 +179,11 @@ class PaperBroker:
             return SubmitResult(status="rejected", error="rejected", message="unsupported combined stop order")
         if intent.order_type == "stop" and intent.side != "sell":
             return SubmitResult(status="rejected", error="rejected", message="unsupported buy stop")
+        if intent.take_profit_price is not None and (
+                intent.order_type != "stop" or intent.stop_price is None
+                or intent.take_profit_price <= intent.stop_price):
+            return SubmitResult(status="rejected", error="rejected",
+                                message="a take-profit is a leg of a sell stop, above its stop")
         venue_order_id = f"paper-{intent.client_order_id[:8]}"
         document = {
             "symbol": intent.symbol,
@@ -193,6 +199,9 @@ class PaperBroker:
             "intent_id": intent.intent_id,
             "account_id": intent.account_id,
         }
+        if intent.take_profit_price is not None:
+            # One order with both legs: whichever fills first closes the whole exit (one cancels the other).
+            document["take_profit_price"] = canonical_decimal(intent.take_profit_price)
         now = utc_iso(self.clock.now())
         with self.database.immediate() as conn:
             conn.execute(
@@ -256,8 +265,10 @@ class PaperBroker:
         if document["order_type"] == "stop":
             if document["side"] != "sell":
                 return None
+            target = document.get("take_profit_price")
             exit_ = ProtectiveExit(exit_id=client_order_id, quantity=Decimal(document["remaining"]),
-                                   stop_price=Decimal(document["stop_price"]), **common)
+                                   stop_price=Decimal(document["stop_price"]),
+                                   take_profit_price=None if target is None else Decimal(target), **common)
             return trigger_exit_on_observation(exit_, observation, profile=self.cost_profile,
                                                policy=self.fill_policy, price_increment=increment)
         if document["order_type"] not in {"market", "limit"}:

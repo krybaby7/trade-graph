@@ -401,6 +401,9 @@ class BrokerCapabilities(ContractModel):
     fills_pagination: bool
     cancel_behaviour: str
     withdrawals: bool = False
+    # A sell stop may carry a take-profit leg, one cancelling the other (T34 day-plan exits). Left out of the
+    # document when false, so every existing capability record reads and serialises as before.
+    native_take_profit: bool = Field(default=False, exclude_if=lambda value: value is False)
 
 
 class AuthorizedOrderIntent(ContractModel):
@@ -422,15 +425,18 @@ class AuthorizedOrderIntent(ContractModel):
     eligible_after_utc: datetime
     excluded_observation_id: str | None = None
     reduce_only: bool = False
+    # The take-profit leg of a protective sell stop (T34): the first leg to fill closes the whole exit. Left out of
+    # the stored payload when absent, so every existing intent reads and serialises byte for byte as before.
+    take_profit_price: Decimal | None = Field(default=None, exclude_if=lambda value: value is None)
 
-    @field_validator("quantity", "limit_price", "stop_price", mode="before")
+    @field_validator("quantity", "limit_price", "stop_price", "take_profit_price", mode="before")
     @classmethod
     def _decs(cls, value: Any) -> Decimal | None:
         if value is None:
             return None
         return _dec(value)
 
-    @field_serializer("quantity", "limit_price", "stop_price")
+    @field_serializer("quantity", "limit_price", "stop_price", "take_profit_price")
     def _ser(self, value: Decimal | None) -> str | None:
         if value is None:
             return None
