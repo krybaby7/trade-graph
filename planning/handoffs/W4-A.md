@@ -9,7 +9,8 @@ exits. Nothing is switched on yet: plans stay off until you record your money li
 the next package (W5-A). Nothing needs a decision from you; everything was tested with made-up prices, and no real
 money, key, paid service or exchange was used.
 
-Branch: `claude/t34-day-plans`, head: the commit that adds this line; code at `20dac09`. Pull request: added in the next commit.
+Branch: `claude/t34-day-plans`, head: the commit that adds this line; code at `20dac09`. Pull request:
+https://github.com/krybaby7/trade-graph/pull/11.
 
 ## What was built
 
