@@ -136,7 +136,7 @@ def test_the_store_accepts_exactly_the_contracts_values() -> None:
                                   "src/trade_graph/application/events/cycle.py",
                                   "src/trade_graph/adapters/persistence/wake_schema.py"])
 def test_the_event_engine_is_a_protected_path(path) -> None:
-    """It holds the obsolete-wake guard, the allowance-floor behaviour and day-plan installation: agents cannot edit it."""
+    """It holds the obsolete-wake guard, the allowance-floor behaviour and plan installation: agents cannot edit it."""
     from trade_graph.kernel.authority import path_is_protected
 
     assert path_is_protected(path)
