@@ -9,7 +9,7 @@ and a database index keeps the "latest price of a coin" lookups fast as the pric
 one question for later (whether the confirmation fix should also apply with real money) is listed below for the
 live pilot, and everything was tested only with made-up prices, without any key, paid service or exchange.
 
-Branch: `claude/c4-trader-exit-tools`, head: the commit that adds this line; code at `__CODE__`. Pull request:
+Branch: `claude/c4-trader-exit-tools`, head: the commit that adds this line; code at `f69a085`. Pull request:
 __PR__.
 
 ## What was built
@@ -147,13 +147,37 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
     one test fail): no restore of cancelled exits; the close's sell not counted by the protection arithmetic; a broker
     refusal of the sell ignored; no resume from a persisted sell (re-run the sequence); an unanswered cancel treated as
     settled; re-protection with the entry's own terms instead of the terms in force.
-- `tests/integration/test_day_plan_recovery.py::test_a_crash_while_sending_is_reconciled_and_never_resent`: its
-  `UNKNOWN` assertion after the startup reconciliation encoded the behaviour D248 changes (W4-A's finding); it now
-  asserts `OPEN` with the venue order id, and still that nothing is resent.
-- `uv run ruff check src tests`: __RUFF__
-- New tests: __NEW__
-- Related tests: __RELATED__
-- `tests/unit`: __UNIT__
+- Two existing expectations encoded the behaviour D248 changes and were updated (both passed on the base and failed
+  with the fix, as intended):
+  `tests/integration/test_day_plan_recovery.py::test_a_crash_while_sending_is_reconciled_and_never_resent` (after the
+  startup reconciliation the entry is `OPEN` with its venue order id, and still nothing is resent) and
+  `tests/integration/test_protected_financial_runtime.py::test_unknown_submit_reconciles_without_replay_after_restart`
+  (its comment said "Core deliberately retains UNKNOWN while an acknowledged-open order has no fills"; it now asserts
+  the lost answer, `OPEN` with the venue order id, the reservation still held and one submission attempt, no replay).
+  The second was found by the related-test run below.
+- `uv run ruff check src tests`: all checks passed (at `f69a085`).
+- New tests: `uv run pytest -p no:cacheprovider -rfs tests/unit/test_position_action_contract.py
+  tests/integration/test_reconcile_open_unknown.py tests/integration/test_migration_0044.py
+  tests/integration/test_day_plan_actions.py tests/integration/test_wake_position_actions.py
+  tests/property/test_day_plan_action_properties.py` (63 tests) together with the two updated modules
+  (`test_protected_financial_runtime.py`, `test_day_plan_recovery.py`) and `tests/integration/test_provider_wire_schemas.py`,
+  at `f69a085`: **166 passed, 0 failed, 0 skipped**.
+- Related tests: the 173 non-unit modules that mention day plans, the event engine or wakes, the paper broker,
+  `DropAckBroker`, reconciliation, `Execution(`, `.dispatch(`, `place_protection`, `cancel_intents`, the paper service,
+  the migration list (`apply_migrations`, `migrate`, Alembic, `schema_migrations`, `sqlite_master`), the wire or JSON
+  schemas (`_wire_schema`, `model_json_schema`, `export_schemas`), the wake and day-plan contracts, the Trader workflow,
+  the subscription runtime, `kernel.authority` and path protection, or `valuation_marks` (found with `grep -rlE` over
+  `tests`), in two shards of whole modules run side by side (`uv run pytest -p no:cacheprovider -rfs -q <modules>`, no
+  parallel plugin), at `0a344c3` (all code but the last test update): shard 1 **1,716 passed, 0 failed, 15 skipped**
+  (14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not installed in the cloud container,
+  as on GitHub; 1 archive-permission case: this user can read any file); shard 2 **1,561 passed, 1 failed, 0
+  skipped**: the failure was `test_unknown_submit_reconciles_without_replay_after_restart` (above), fixed in
+  `f69a085`; that module then passed 32 of 32. Then the 6 further modules that mention lost acknowledgements,
+  `UncertainExternal` or `UNKNOWN` and were not in the list (`test_hq_cost.py`, `test_hq_owner_writes.py`,
+  `test_live_home.py`, `test_live_owner_resume.py`, `test_service_proof.py`, `tests/test_dashboard_pages.py`) at
+  `f69a085`: **110 passed, 0 failed**.
+- `uv run pytest -p no:cacheprovider -rfs -q tests/unit` at `0a344c3`: **2,279 passed, 0 failed, 7 skipped** (the
+  indicator cross-checks the second library cannot make and the file-mode cases this user cannot make).
 - `python3 scripts/check_plan.py`: plan valid, 46 tasks, acyclic; `python3 scripts/test_planning.py`: 11 tests OK;
   `python3 scripts/check_repository_hygiene.py` (and `--staged` before every commit): passed.
 - Full suite: not run (night shift: the wave integration runs it).
