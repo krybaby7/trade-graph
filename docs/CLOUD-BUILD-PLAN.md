@@ -84,7 +84,7 @@ The integrator updates this table each time it merges a wave.
 | W2-A | T29 | Practice range: replay strategies on history with real fees | Merged 2026-10-16 (#9); first real reports and an OKX recording at L2 |
 | W2-B | T31 | Hourly coin scanner and shortlist of about 10 | Merged 2026-10-16 (#8); first real scan and a Ticker recording at L2 |
 | W2-C | T40 | HQ shows AI spending per department, $20 alert | Merged 2026-10-16 (#7); first real receipts and a look on phone and iPad at L2 |
-| W3-A | T32 | Your money limits and coin rule enforced by software | Not started |
+| W3-A | T32 | Your money limits and coin rule enforced by software | Merged 2026-10-17 (#10); you record the limits at L3 (`trade-graph money-limits --confirm`) |
 | W4-A | T34 | Trader day plans with resting entries and safety exits | Not started |
 | W5-A | T35 | Event engine: wake on alarms, fills, exits and check-ins | Not started |
 | W5-B | T41 | Price charts in HQ | Not started |

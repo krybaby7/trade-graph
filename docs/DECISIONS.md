@@ -1324,3 +1324,109 @@ candle-database version 0002, the next free one.
   Explanations that follow from the figures (open calls, estimates, test
   calls, the shared allowance) are static page copy; every figure and
   data-dependent sentence comes from the server.
+
+Cloud wave 3 (D180–D184, 2026-10-17). The wave 3 integration copied these
+implementation defaults from `planning/handoffs/W3-A.md`, where the package's
+evidence is kept. State migration 0033 (W3-A) follows 0032, and Alembic runs
+0032 → 0033 with one head.
+
+- **D180 (2026-10-17, implementation default for T32): the owner-policy fields
+  and the day-plan gate.** `OwnerPolicy.money_limits` holds the daily loss
+  limit (a Decimal fraction above 0 and below 1 of the day-start value, fees
+  included), the trading-day start (`HH:MM` UTC, default `00:00`, D138 item 6)
+  and the account currency the loss is measured in (the paper account's USD;
+  EUR reporting labels never move it). The amount per coin and the total stay
+  the existing `maximum_single_asset_exposure_fraction` and
+  `maximum_gross_exposure_fraction` rather than a second copy; a revision
+  holding `money_limits` is the one in which the owner recorded all four
+  values. `OwnerPolicy.coin_scope` makes the coin list the scanner rule. Absent
+  blocks are left out of stored documents, so older revisions and mandates hash
+  exactly as before. Only the owner installs policy; a mandate cannot carry a
+  loss limit or day start, may follow the coin rule (`coin_scope: owner_rule`)
+  only under a policy that has one (the field is left out of the JSON schema,
+  like the document of a listed mandate, so a model-made mandate is always
+  listed), and may only narrow the fractions; the Leader is also forbidden
+  `edit_owner_policy` and `raise_money_limits`, and the new contract and
+  application modules are protected paths like the kernel. Day-plan entries
+  (`authorize(..., day_plan=True)`) are refused until such a revision exists;
+  the existing Trader path keeps working without one, and exits are never
+  gated. Reason: D138 ("until then T32 and T43 keep refusing to install orders
+  without owner-recorded values") and AGENTS.md (protected owner policy,
+  deterministic permission checks).
+
+- **D181 (2026-10-17, implementation default for T32): entries counted as if
+  filled.** Every entry and every resting entry already authorized is valued at
+  the highest of its own price, the current buy quote and the coin's mark; the
+  coin being bought is held at the highest of its mark, quote and order price,
+  other coins at their marks; the caps are compared with the equity left after
+  every counted entry paid the reserve fee rate and any loss it could take
+  against the mark when it fills (quantity × (valuation − mark)); and a new
+  entry may not push another coin that was within its share above it through
+  its fees. This applies to every entry, with or without recorded limits: the
+  earlier check valued a resting buy and the coin already held at the order's
+  own price, so a resting buy below the market could fill past the per-coin
+  share (the property test found it, and the old valuation fails both property
+  tests). The balance check now runs before the exposure check so an order the
+  account cannot pay for says so. A coin that grows past its share because its
+  price rose is not a breach and is not sold. Reason: D138 item 2 "resting
+  entries count as if filled" and the acceptance "no sequence of resting-entry
+  fills can breach per-coin or total exposure".
+
+- **D182 (2026-10-17, implementation default for T32): the daily loss limit.**
+  The day-start value is the account's native equity read point-in-time at the
+  day start (books as they stood, the newest marks at or before it, each at
+  most 15 minutes old); when that is impossible (the portfolio opened later, or
+  a held coin's mark was missing or older because the service was down) the
+  first valuation the guard makes later that day is used and labelled
+  `first_valuation_after_start`. The limit is reached when the day-start value
+  less the current value (equity with fees paid and positions at marks no older
+  than 15 minutes) is at least the fraction of the day-start value. `authorize`
+  refuses new entries as soon as it is reached and only reads; the management
+  step, every service tick, records the day's stop and cancels every resting or
+  unsent buy; unsent buys are re-checked at dispatch; exits, protective exits
+  and reconciliation are untouched and nothing is sold. The stop lasts until
+  the next day start; cancelled entries are not restored. Without a day-start
+  value or a current value with fresh marks, new entries are refused as stale,
+  never allowed on a guess. Deposits and withdrawals during the day are not
+  adjusted for (a paper account has none; a withdrawal would count as a loss,
+  the cautious side), and a changed day start applies from the next valuation.
+  Reason: D138 items 1 and 6, D117, and "unknown is not a yes".
+
+- **D183 (2026-10-17, implementation default for T32): the coin rule and what
+  "unknown" means.** Under `coin_scope` an entry needs W2-B's
+  `coin_rule(symbol, as_of=now, max_age=2 hours)` to answer `passed_checks`
+  (any pair that passed every check of the newest live scan, not only the
+  shortlist). `excluded` and `not_in_catalog` refuse it (an unsent entry is
+  rejected at dispatch). Unknown, `no_recent_scan` or `scan_failed`, refuses a
+  new entry as stale (retried, like a stale quote) and holds an unsent one
+  until a fresh scan answers. Exits, protective exits and reconciliation never
+  consult the scan, and an entry already resting at the venue is not cancelled
+  by a later scan (it passed when it was authorized). Only pairs in the rule's
+  quote currency (USD) are covered; a listed mandate still narrows the rule to
+  its list, and may name any pair the rule covers; the paper feed may be
+  configured with any pair the rule can include. Reason: D138 item 3 ("passes
+  the scanner's checks at that moment") and D171's "nothing is guessed", while
+  selling is never blocked.
+
+- **D184 (2026-10-17, implementation default for T32): D127, the owner command
+  and the records.** Entries on anything but a plain spot pair `BASE/QUOTE` are
+  refused (futures, perpetuals, swaps, dated contracts, `BASE/QUOTE:SETTLE`,
+  Kraken staking/earn variants such as `ETH.S`); `install_policy` refuses
+  `leverage_allowed`; short sales stay impossible because an exit sells only
+  what is held. Deposits, withdrawals and transfers whose reference or asset
+  looks like interest, a staking or earn reward, a margin rollover or a funding
+  payment are flagged once each for the owner (information only; balances are
+  not changed). `trade-graph money-limits` previews by default and with
+  `--confirm` records, in one transaction, a new owner-policy revision copied
+  from the active one with the four values and the coin list, a mandate
+  revision for the paper portfolio set to those values (the Leader may narrow
+  it again), and an audit row naming the replaced revision and both document
+  hashes; it is refused while the paper service runs and, with
+  `--expect-revision`, if another revision became active since the preview; the
+  same values again write nothing. Its defaults are the D138 values; tests
+  record synthetic ones. Migration 0033 adds four append-only tables
+  (`trading_day_values`, `daily_loss_stops`, `owner_policy_audit`,
+  `riba_posting_flags`); they are controls and evidence, not added to agent
+  context, the financial checkpoint or the runtime evidence, and the ledger
+  stays the books. Reason: D127, D138's closing paragraph and the T32
+  deliverable "audited and revision-checked".

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-16T22:17:24.000000Z",
+  "updated_at": "2026-10-17T03:38:30.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -425,7 +425,7 @@
     {
       "id": "T32",
       "title": "Enforce the owner money-risk envelope and paper symbol scope",
-      "status": "todo",
+      "status": "done",
       "description": "Enforce the owner money-risk envelope and paper symbol scope",
       "phase": "D4",
       "dependencies": [
@@ -433,7 +433,7 @@
         "T24",
         "T31"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T33",
