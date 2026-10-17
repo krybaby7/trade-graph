@@ -158,7 +158,9 @@ def propose_news_wakes(record: AuthorityRecord, *, mode: str, revision_id: str, 
     policy = None
     if mode != before:
         policy = OwnerPolicy.model_validate({**current.model_dump(), "revision_id": revision_id, "news_wakes": mode})
-    refusal = NO_REAL_EVIDENCE if mode == "live" and before != "live" and evidence.real["shadow_routes"] < 1 else None
+    # The gate reads all the shadow evidence; ``since``/``until`` only narrow what the preview counts.
+    gate = evidence if since is None and until is None else shadow_evidence(record.database, portfolio)
+    refusal = NO_REAL_EVIDENCE if mode == "live" and before != "live" and gate.real["shadow_routes"] < 1 else None
     return NewsWakeProposal(current, policy, before, mode, evidence, refusal)  # type: ignore[arg-type]
 
 

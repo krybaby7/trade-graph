@@ -338,3 +338,26 @@ def test_routes_record_the_owner_revision_and_the_rule(tmp_path, mode) -> None:
         mode, f"owner-news-{mode}", "news-wake-route-v1")
     verdict = account.database.execute("SELECT verdict_id, created_at FROM news_alarm_verdicts").fetchone()
     assert (route["verdict_id"], route["alarm_at"]) == (verdict["verdict_id"], verdict["created_at"])
+
+
+def test_one_unreadable_verdict_never_holds_back_the_others(tmp_path, monkeypatch) -> None:
+    account, _, engine = _engine(tmp_path)
+    switch_news_wakes(account, "live", "owner-news-live")
+    desk = NewsDesk(account)
+    desk.delisting()
+    desk.delisting("BTC")
+    desk.poll()
+    original = NewsWakeRouter._route
+
+    def flaky(self, engine, portfolio_id, row, setting, held):
+        if "BTC" in row["title"]:  # the first verdict routed (Jev was asked about the BTC headline first)
+            raise ValueError("synthetic unreadable verdict")
+        return original(self, engine, portfolio_id, row, setting, held)
+
+    monkeypatch.setattr(NewsWakeRouter, "_route", flaky)
+    report = engine.step([account.portfolio])
+    assert "news:ValueError" in report.failures
+    assert [route["symbol"] for route in routes(account)] == ["SOL/USD"] and report.created == 1
+    monkeypatch.setattr(NewsWakeRouter, "_route", original)
+    engine.step([account.portfolio])  # the next step routes it: nothing is lost
+    assert sorted(route["symbol"] for route in routes(account)) == ["BTC/USD", "SOL/USD"]

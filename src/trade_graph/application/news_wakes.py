@@ -142,6 +142,7 @@ class NewsWakeRouter:
         if not self.available():
             return 0
         added = 0
+        failed: Exception | None = None
         for portfolio_id in portfolios:
             rows = self._unrouted(portfolio_id)
             if not rows:
@@ -149,7 +150,12 @@ class NewsWakeRouter:
             setting = news_wake_setting(self.database)
             held = self._held(portfolio_id)
             for row in rows:
-                added += self._route(engine, portfolio_id, row, setting, held)
+                try:
+                    added += self._route(engine, portfolio_id, row, setting, held)
+                except (TradeGraphError, ValueError, TypeError, KeyError, sqlite3.DatabaseError) as error:
+                    failed = failed or error  # one unreadable verdict never holds back the others; retried next step
+        if failed is not None:
+            raise failed  # reported by the engine as news:<error>, after every other verdict was routed
         return added
 
     # --- reading ------------------------------------------------------------------------------------------------

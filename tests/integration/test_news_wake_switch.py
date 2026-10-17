@@ -134,12 +134,14 @@ def test_it_is_refused_while_the_service_runs_after_a_changed_preview_and_for_an
     assert news_wake_setting(account.database).mode == "shadow" and _audit(account) == []
 
 
-def test_the_evidence_window_counts_only_what_happened_inside_it(tmp_path) -> None:
+def test_the_evidence_window_counts_only_what_happened_inside_it_and_the_gate_reads_all_of_it(tmp_path) -> None:
     account, _, engine = _engine(tmp_path)
-    _shadow_evidence(account, engine, real=False)
+    _shadow_evidence(account, engine, real=True)
     later = account.clock.now() + timedelta(hours=1)
     assert shadow_evidence(account.database, account.portfolio, since=later).document()["would_wake"] == 0
     assert shadow_evidence(account.database, account.portfolio).document()["would_wake"] == 1
+    proposal = record_news_wakes(_record(account), mode="live", revision_id="owner-news-1", since=later)
+    assert proposal.evidence.real["shadow_routes"] == 0 and proposal.policy.news_wakes == "live"
 
 
 def test_the_command_previews_by_default_and_confirms_only_with_real_evidence(tmp_path, capsys) -> None:
