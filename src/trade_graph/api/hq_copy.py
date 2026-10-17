@@ -1597,6 +1597,84 @@ TRADING: Final = {
     },
 }
 
+# --- Today's day plans (W8-C, D251) -------------------------------------------------------------------------
+# Words for ``api/hq_plans.py``. Prices and quantities are exact decimal text with the coin's quote currency.
+
+PLANS: Final = {
+    "unavailable": "This database has no day-plan records yet (they come with the new engine's install).",
+    "limits_off": ("Day plans are off until you record your money limits at step L3 "
+                   "(trade-graph money-limits --confirm)."),
+    "none_today": "No day plan today.",
+    "today": ("1 day plan today ({coins})", "{n} day plans today ({coins})"),
+    "refused_today": ("1 plan refused today.", "{n} plans refused today."),
+    "unknown_amount": "an unknown amount",
+    "buy": "Buy {quantity} {base} at {price} {quote} or lower (stop {stop}{target})",
+    "target": ", target {target}",
+    "until": ", until ",
+    "entry_status": {"sending": "being sent", "waiting": "waiting at the exchange",
+                     "partly_filled": "partly filled: {filled} of {quantity}", "filled": "filled",
+                     "cancelled": "cancelled", "rejected": "refused", "being_checked": "its status is being checked"},
+    "cancel_reason": {"pause": " because a pause was on", "expired": " at the end of its time",
+                      "replaced": " because the plan was replaced by a newer plan"},
+    "cancelled_after": " after {filled} {base} filled",
+    "unprotected": (" {quantity} {base} bought here has no safety exit right now: software puts one on at its next "
+                    "step, unless your cancel-all setting is on."),
+    "bought": "Bought {quantity} {base} at {price} {quote}",
+    "sold": "Sold {quantity} {base} at {price} {quote}",
+    "at_time": " at ",
+    "fee": " (fee {fee} {asset})",
+    "exit": "Safety exit for {quantity} {base}: stop {stop}{either}",
+    "exit_either": ", or target {target}, whichever comes first",
+    "exit_status": {"sending": ": being sent", "waiting": ": in place, waiting for the price",
+                    "partly_filled": ": partly sold", "filled": ": sold", "cancelled": ": cancelled",
+                    "rejected": ": refused", "being_checked": ": its status is being checked"},
+    "event": {"installed": "Put in place at ", "superseded": "Replaced by a newer plan at ",
+              "cancelled": "Buy {n} cancelled at ", "deferred": "A safety exit for buy {n} couldn't be placed yet at ",
+              "deferred_tail": "; software tries again at every step.", "other": "Recorded at "},
+    "interval": " ({n}-minute candles)",
+    "watching": "Watching {names}",
+    "alarms": ("1 price alarm", "{n} price alarms"),
+    "strategy": "Strategy {name}, version {version}, as tested on the practice range.",
+    "no_buys": "no buys, alarms only",
+    "earlier_day": " (a plan from an earlier day, still protecting coins)",
+    "count": {
+        "waiting": ("1 waiting buy", "{n} waiting buys"), "sending": ("1 buy being sent", "{n} buys being sent"),
+        "partly_filled": ("1 buy partly filled", "{n} buys partly filled"),
+        "filled": ("1 buy filled", "{n} buys filled"),
+        "being_checked": ("1 buy being checked", "{n} buys being checked"),
+        "cancelled": ("1 buy cancelled", "{n} buys cancelled"), "rejected": ("1 buy refused", "{n} buys refused"),
+        "protected": ("1 with its safety exit", "{n} with their safety exits"),
+        "unprotected": ("1 without a safety exit right now", "{n} without a safety exit right now"),
+        "bought": ("1 buy filled or partly filled", "{n} buys filled or partly filled"),
+    },
+    "refused": "A plan for {symbol} was refused: {why}.",
+    "a_coin": "a coin",
+    # Day-plan checks (``application/day_plans.py``) in plain words; HQ's usual order refusals cover the money rules.
+    "refusal_markers": (
+        ("rests below the market", "above_price"), ("trading day", "day"), ("must be in the future", "day"),
+        ("price increment", "steps"), ("quantity increment", "steps"), ("below the venue minimum", "minimum"),
+        ("not a registered practice-range strategy", "strategy"), ("no practice-range confirmation report", "report"),
+        ("no quote yet to tell", "no_price"), ("refuses new day plans", "paused"), ("paper account only", "paper_only"),
+        ("need a paper portfolio", "paper_only"), ("is not settled yet", "unsettled"),
+        ("already installed a different plan", "duplicate"),
+    ),
+    "refusal": {
+        "above_price": ("a waiting buy was at or above the current price, so it would have bought at once instead "
+                        "of waiting"),
+        "day": "a waiting buy's end time was outside today's trading day",
+        "steps": "a price or amount wasn't on the exchange's steps",
+        "minimum": "a buy was smaller than the exchange's minimum",
+        "strategy": "its strategy isn't registered on the practice range",
+        "report": "its strategy has no practice-range confirmation report yet",
+        "no_price": "there was no price for that coin yet",
+        "paused": "a pause was on (waiting buys are cancelled and safety exits kept while paused)",
+        "paper_only": "day plans work on the paper account only",
+        "unsettled": "the coin's earlier plan still had a buy being checked; it is double-checked first",
+        "duplicate": "the same request had already put a different plan in place",
+        "unknown": "a problem HQ can't describe in plain words",
+    },
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {
