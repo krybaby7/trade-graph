@@ -101,6 +101,7 @@
     money: {title: "Money", text: "Practice money and real costs are kept apart. Unknown is never shown as zero."},
     decide: {title: "Decide", text: "Every button shows what will happen first and asks you to confirm. HQ never acts on its own."},
     spending: {title: "AI spending", text: "Real costs of paid AI from receipts, kept apart from practice money. Costs not known yet are never shown as zero. Alerts never pause anything."},
+    charts: {title: "Price charts", text: "Saved candles with the indicators, alarms and orders the team chose. Missing candles stay as gaps. Looking at a chart never changes anything."},
   });
   const SECTION_HELP_LIVE = Object.freeze({
     ...SECTION_HELP,

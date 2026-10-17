@@ -35,6 +35,7 @@
   <script src="/static/hq-prompts.js" defer></script>
   <script src="/static/hq-decide.js" defer></script>
   <script src="/static/hq-checkins.js" defer></script>
+  <script src="/static/hq-charts.js" defer></script>
   <script src="/static/hq.js" defer></script>
 {% endblock %}
 {% block eyebrow %}Trade Graph{% endblock %}
@@ -156,6 +157,22 @@
     <article class="hq-panel hq-market-panel" aria-labelledby="hq-h-market">
       <div class="hq-panel-head"><h2 id="hq-h-market" class="hq-panel-title">Market weather</h2></div>
       <div data-hq="market"></div>
+    </article>
+    {#- T41: price charts, read from GET /api/v1/hq/chart only when the panel is shown (hq-charts.js). The
+        attribution line stays beside the chart box: Lightweight Charts' licence asks for it wherever a chart is shown,
+        and the script draws nothing without it (D196). -#}
+    <article class="hq-panel hq-charts" aria-labelledby="hq-h-charts" data-hq-charts>
+      <div class="hq-panel-head">
+        <h2 id="hq-h-charts" class="hq-panel-title">Price charts</h2>
+        {{ help('charts', 'Price charts') }}
+      </div>
+      <div class="hq-chart-controls" data-hq-chart-controls></div>
+      <p class="hq-chart-status" data-hq-chart-status>Charts load when you open them.</p>
+      <div class="hq-chart-box" data-hq-chart-box role="img" aria-label="Price chart"></div>
+      <p class="hq-chart-readout" data-hq-chart-readout></p>
+      <ul class="hq-chart-legend" data-hq-chart-legend></ul>
+      <noscript><p class="hq-muted">Charts need JavaScript, which is switched off here.</p></noscript>
+      <p class="hq-chart-attribution" data-hq-chart-attribution>Charts drawn with TradingView Lightweight Charts™ (Apache License 2.0). TradingView Lightweight Charts™ · Copyright (c) 2025 TradingView, Inc. · <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">TradingView</a> · <a href="/static/vendor/lightweight-charts/LICENSE.txt">Licence</a> · <a href="/static/vendor/lightweight-charts/NOTICE.txt">Notice</a></p>
     </article>
   </section>
 

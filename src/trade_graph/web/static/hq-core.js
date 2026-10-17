@@ -480,6 +480,7 @@
   const ENDPOINTS = Object.freeze({
     hq: (init, options) => fetch(`/api/v1/hq?calendar_days=${options.days === 14 ? 14 : 7}`, init),
     story: (init, options) => fetch(`/api/v1/hq/story?before=${encodeURIComponent(options.before)}&limit=60`, init),
+    chart: (init, options) => fetch(`/api/v1/hq/chart${chartQuery(options)}`, init),
     config: init => fetch("/api/v1/owner/config", init),
     pause: init => fetch("/api/v1/owner/pause", init),
     resume: init => fetch("/api/v1/owner/resume", init),
@@ -489,7 +490,16 @@
     expenses: init => fetch("/api/v1/owner/expenses", init),
     checkins: init => fetch("/api/v1/owner/checkins", init),
   });
-  const READS = new Set(["hq", "story", "config"]);
+  const READS = new Set(["hq", "story", "config", "chart"]);
+  // T41: a price chart is asked for by coin and candle size; both are optional (the server picks the defaults).
+  function chartQuery(options) {
+    const parts = [];
+    if (typeof options.symbol === "string" && /^[A-Z0-9]{1,16}\/[A-Z]{3,5}$/.test(options.symbol)) {
+      parts.push(`symbol=${encodeURIComponent(options.symbol)}`);
+    }
+    if ([1, 5, 15, 60].includes(options.interval)) parts.push(`interval=${options.interval}`);
+    return parts.length ? `?${parts.join("&")}` : "";
+  }
   async function call(name, options = {}) {
     const go = ENDPOINTS[name];
     const write = options.body !== undefined;

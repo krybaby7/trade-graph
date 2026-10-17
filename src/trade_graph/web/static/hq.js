@@ -9,6 +9,7 @@
   HQ.bindGlobal();
   HQ.use("render")?.initTabs();
   HQ.use("render")?.initBalance();
+  HQ.use("charts")?.init();
 
   let data = null;
   try { data = JSON.parse(doc.getElementById("hq-snapshot")?.textContent || "null"); } catch (_) { data = null; }

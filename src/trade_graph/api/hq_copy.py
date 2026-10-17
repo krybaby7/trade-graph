@@ -1298,6 +1298,8 @@ SECTION_HELP: Final = {
     "decide": "Every button shows what will happen first and asks you to confirm. HQ never acts on its own.",
     "spending": ("Real costs of paid AI from receipts, kept apart from practice money. Costs not known yet are "
                  "never shown as zero. Alerts never pause anything."),
+    "charts": ("Saved candles with the indicators, alarms and orders the team chose. Missing candles stay as gaps. "
+               "Looking at a chart never changes anything."),
 }
 NO_RECORDED_ACTIVITY: Final = "No recorded activity"
 
