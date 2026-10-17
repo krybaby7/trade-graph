@@ -11,7 +11,7 @@ switched on in your running system yet: the real AI Trader first needs to learn 
 (listed below for the next package), so there is nothing for you to decide or do now.
 
 Branch: `claude/t35-event-engine`, head: the commit that adds this line; code at `2711ee9` (docs to `07b89da`; the evidence runs are at `07b89da`). Pull request:
-PR_LINK.
+https://github.com/krybaby7/trade-graph/pull/14.
 
 ## What was built
 
