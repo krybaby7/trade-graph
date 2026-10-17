@@ -374,3 +374,31 @@ def test_delegation_bounds_apply_inside_a_wake_and_never_to_the_number_of_wakes(
     assert len(_wakes(engine, account)) == scheduler.max_descendants + 4
     roots = account.database.execute("SELECT COUNT(*) FROM tasks WHERE role = 'leader' AND parent_id IS NULL")
     assert roots.fetchone()[0] == scheduler.max_descendants + 4  # every wake is its own root task
+
+
+def test_a_task_made_outside_the_engine_is_recorded_as_a_wake_and_keeps_its_departments_check_in(tmp_path) -> None:
+    account, scheduler, engine = engine_account(tmp_path, departments={"leader"}, daily_cycle=False)
+    engine.request_wake(account.portfolio, "leader", "first", requested_by="software")
+    engine.step([account.portfolio])
+    run_one(scheduler, engine, {"leader": scripted({"check_in": {"at_utc": "2026-10-16T14:30:00Z"}})})
+    # The Secretary routes an incident to the Leader with an ordinary task; its handler knows nothing of wakes.
+    routed = scheduler.add_task(role="leader", objective="Review material incident", portfolio_id=account.portfolio)
+    engine.step([account.portfolio])
+    recorded = _wakes(engine, account)[-1]
+    assert (recorded.origin, recorded.purpose, recorded.task_id, recorded.reasons) == (
+        "task", "task", routed, ("task_created",))
+    run_one(scheduler, engine, {"leader": scripted(fail=True)})
+    assert engine.wake(recorded.wake_id).status == "failed"
+    assert engine.next_check_ins(account.portfolio)["leader"]["due_at"] == "2026-10-16T14:30:00.000000Z"
+    # A failed outside task is no missed reason: nothing of it is carried into the Leader's next wake.
+    engine.request_wake(account.portfolio, "leader", "second", requested_by="software")
+    engine.step([account.portfolio])
+    nxt = _wakes(engine, account)[-1]
+    assert (nxt.origin, nxt.purpose, nxt.reasons) == ("engine", "event", ("wake_request",))
+    run_one(scheduler, engine, {"leader": scripted({"check_in": {"at_utc": "2026-10-16T15:00:00Z"}})})
+    routed_again = scheduler.add_task(role="leader", objective="Another routed report", portfolio_id=account.portfolio)
+    engine.step([account.portfolio])
+    run_one(scheduler, engine, {"leader": scripted()})  # an ordinary task that says nothing about wakes
+    assert engine.wake(_wakes(engine, account)[-1].wake_id).task_id == routed_again
+    assert engine.wake(_wakes(engine, account)[-1].wake_id).status == "completed"
+    assert engine.next_check_ins(account.portfolio)["leader"]["due_at"] == "2026-10-16T15:00:00.000000Z"

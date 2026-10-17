@@ -188,7 +188,9 @@ portfolio and day, each step recorded once in `day_cycle_steps`:
 - the engine wakes the departments that have handlers (Optimisation only when not owner-requested-only);
 - each wake's task gets the same allocation, attempt bound and artifact version pin as a scheduled task;
 - `_ingest` hands every quote to the T33 `PriceWatcher` (`observe_quote`), and each step runs `watcher.tick()`;
-- the Secretary keeps routing reports; Leader tasks it makes are recorded as `task` wakes;
+- the Secretary keeps routing reports; Leader tasks it makes are recorded as `task` wakes. A `task` wake is not
+  coalesced (it runs as its maker scheduled it), its `task_created` trigger is delivered whatever the outcome, and it
+  changes the department's check-in only when its answer names one;
 - engine failures are reported in the tick as `wakes:<part>:<error>` and never hold back management.
 
 The installed service (`run_subscription_operation`) does not switch the engine on yet; see "For the next packages".

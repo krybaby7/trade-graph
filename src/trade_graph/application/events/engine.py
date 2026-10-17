@@ -269,7 +269,8 @@ class EventEngine:
             if self._alarm_batch(wake):
                 self.queue.acknowledge(wake.wake_id)
             self.store.deliver(wake.wake_id)
-            check_in = self._check_in(wake, outcome)
+            # An outside task that says nothing about wakes leaves the department's chosen check-in as it is.
+            check_in = self._check_in(wake, outcome) if raw is not None or wake.origin == "engine" else None
             focus_id, focus_refused = self._focus(wake, outcome, obsolete)
             requested = self._requests(wake, outcome, notes)
             plans = outcome.day_plans
@@ -294,8 +295,11 @@ class EventEngine:
         with self.database.immediate():
             if self._alarm_batch(wake):
                 self.queue.release(wake.wake_id)
-            # A failed or obsolete turn's day steps are finished as failed; everything else waits for the next wake.
-            self.store.release(wake.wake_id, expire_kinds=DAY_BOUND_KINDS)
+            if wake.origin == "task":
+                self.store.deliver(wake.wake_id)  # an outside task ran as its maker scheduled it; nothing to carry
+            else:
+                # A failed or obsolete turn's day steps are finished as failed; everything else waits for the next.
+                self.store.release(wake.wake_id, expire_kinds=DAY_BOUND_KINDS)
             self.store.close_wake(wake.wake_id, "obsolete" if obsolete else "failed", outcome=None,
                                   reason=str(reason)[:500])
             self._steps_after(wake, done=False, record=None, reason=str(reason)[:500])

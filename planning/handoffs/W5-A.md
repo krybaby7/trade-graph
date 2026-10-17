@@ -81,7 +81,9 @@ PR_LINK.
   (`feed_restored`) rides with the next wake (W1-D left this to W5-A). Each wake is its own root task with the
   allocation, attempt bound and version pin of a scheduled task, so the T05 delegation bounds apply inside a wake
   and never to the number of wakes; nothing limits triggers or wakes. Department root tasks made outside the engine
-  (Secretary routing, owner requests) are recorded as `task` wakes so the wake log is complete. Reason: T35's
+  (Secretary routing, owner requests) are recorded as `task` wakes so the wake log is complete; they are not
+  coalesced, their trigger is delivered whatever their outcome, and they change a check-in only when their answer
+  names one. Reason: T35's
   acceptance "coalescing may batch wakes but never drops them", D116, W1-D's queue contract.
 - **D191 (2026-10-17, implementation default for T35): check-ins and the daily cycle.** A department's answer names
   its next check-in (`at_utc`) or none, which means the next day start (D123); the newest check-in is in force, a
@@ -140,7 +142,10 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
     Their first runs found: a test whose fake slow turn outlived its 30-second lease (test fixed); the day-start rule
     waking a department whose own check-in was due at the same moment (fixed: a named time today or later wins); and
     a real gap: a queued wake whose trading day ended without ever being claimed kept its department's next triggers
-    waiting forever (fixed: the step cancels such a task and closes the wake as obsolete).
+    waiting forever (fixed: the step cancels such a task and closes the wake as obsolete). A review found two more,
+    each shown by a new test first (`test_a_task_made_outside_the_engine_is_recorded_as_a_wake_and_keeps_its_
+    departments_check_in`): a failed outside task's trigger was carried and turned the department's next wake into a
+    `task` wake, and an outside task that knew nothing of wakes reset the department's named check-in.
   - `tests/integration/test_wake_service.py` failed before the service wiring (`ImportError: EngineOptions`) and
     passes now. `tests/integration/test_scripted_day.py` was written against the wired service; its first runs showed
     only test assumptions (two wakes made at the same instant run in either order; the review needed one more tick).
