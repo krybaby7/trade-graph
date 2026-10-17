@@ -8,7 +8,7 @@ Trader is only information, and this was tested with a note that said "block eve
 plan was installed anyway. It is built and tested with made-up news and a pretend Perplexity only, and it stays
 switched off until you turn on the Perplexity setting at step L3, so there is nothing for you to decide or do now.
 
-Branch: `claude/t38-leader-news`, head: the commit that adds this line; code at `02fd19d`. Pull request: __PR__.
+Branch: `claude/t38-leader-news`, head: the commit that adds this line; code at `02fd19d`. Pull request: https://github.com/krybaby7/trade-graph/pull/18.
 
 ## What was built
 
