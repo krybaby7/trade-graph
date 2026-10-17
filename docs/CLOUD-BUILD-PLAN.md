@@ -1,7 +1,8 @@
 # Cloud build plan for the day-trader engine
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
-cloud wave 1 is merged (T28, T33, T36, T44 and C1; D140–D164). Every
+cloud waves 1 to 7 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the night
+shift of 2026-10-16/17; D140–D229). The local steps L1–L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -203,9 +204,9 @@ skipped. The night integrations ran it as GitHub's test job: wave 2 at
 `4c134c0`, 6,929 passed, 0 failed, 18 skipped; wave 3 at `ce17fcb`, 7,084
 passed, 0 failed, 18 skipped; wave 4 at `b09cae4`, 7,189 passed, 0 failed, 18
 skipped; wave 5 at `e1008e5`, 7,347 passed, 0 failed, 18 skipped; wave 6 at
-`0595d98`, 7,600 passed, 0 failed, 18 skipped. Any failure now counts and must
-be reported. The container run took
-105 minutes (W1-E measured 54); GitHub's test job takes 50 to 72 minutes and
+`0595d98`, 7,600 passed, 0 failed, 18 skipped; wave 7 at `3008446`, 7,665
+passed, 0 failed, 18 skipped. Any failure now counts and must be reported. The container run took
+105 minutes (W1-E measured 54); GitHub's test job takes 50 to 73 minutes and
 may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
