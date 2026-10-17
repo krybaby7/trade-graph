@@ -40,7 +40,13 @@ WAKE_INSTRUCTION = (
     "mark), names the menu indicators it watches, sets alarms that should wake you and rests limit entries, each "
     "with a protective exit (a stop and an optional take-profit). Software installs a plan only within the owner's "
     "money limits and coin rule, spot, long only, unleveraged; nobody approves it. A plan for a coin replaces your "
-    "earlier plan for that coin. Market data for the wake's coins is in market. To change nothing, return no plans.")
+    "earlier plan for that coin. wake.positions lists your open day-plan positions with their safety exits (stop, "
+    "take-profit, quantity). To close a position now, or move its safety exit, add one position_actions item for "
+    "the coin: action close, or action move_exit with a new stop_price below the bid and an optional "
+    "take_profit_price above it (none means no take-profit), and a short reason. Software cancels the old exits, "
+    "reconciles, then sells or attaches the new exit; if a step is refused or gets no answer, the old exit stays. "
+    "Position actions are applied before your day plans; a close also cancels the coin's resting plan buys. "
+    "Market data for the wake's coins is in market. To change nothing, return no plans and no position actions.")
 
 
 class TraderReply(ContractModel):
@@ -308,8 +314,10 @@ class TraderHandler(GatewayRole):
             raise ValidationFailure("a wake reply answers a wake task only")
         outcome = reply.outcome()
         planned = ", ".join(plan.symbol for plan in outcome.day_plans) or "no plans"
+        acted = ", ".join(f"{item.action} {item.symbol}" for item in outcome.position_actions) or "none"
         report_id = self.secretary.report(
-            task["portfolio_id"], role="trader", kind="decision", summary=f"{reply.summary}\nDay plans: {planned}",
+            task["portfolio_id"], role="trader", kind="decision",
+            summary=f"{reply.summary}\nDay plans: {planned}\nPosition actions: {acted}",
             evidence_refs=[task["snapshot_id"]], source_key=task["task_id"], material=False,
         )
         return self._record(task, {"wake_outcome": outcome.model_dump(mode="json"), "report_id": report_id,
