@@ -51,11 +51,13 @@ On a phone, HQ shows one area at a time. Use the tab bar at the bottom: **HQ**, 
 **Calendar**: each department's next turns, your own check-ins, and deadlines. Items marked "≈" are estimates,
 because each turn sets the next one when it actually runs. Estimates more than 48 hours ahead are grouped under
 "Later (estimates)", one line per department. A turn that can only happen under a condition (the team running, the
-AI back on, allowance available, Resume) says so. "Show 2 weeks" looks further ahead.
+AI back on, allowance available, Resume) says so. "Show 2 weeks" looks further ahead. Below it, **Next check-ins** and **Today's focus
+coins and alarms** show the wake-ups the team chose for itself (below).
 
 **Story**: what happened, grouped by day, newest first. Short quotes labelled "In their words" are summaries the
 departments wrote themselves; HQ never rewrites them. "Load earlier" goes further back; on a very busy day a page
-may stop short of 3 days and the next page continues from there, so nothing is skipped.
+may stop short of 3 days and the next page continues from there, so nothing is skipped. Below it, the **Wake log** lists every
+wake-up (below).
 
 **Money**: the scoreboard (practice money, what changed it, what is held), whether the run "pays for itself",
 "Is my money at risk?", the AI allowance gauge, **AI spending** (below), the market weather (price and
@@ -123,6 +125,34 @@ website and to the licence and notice, as the licence asks.
 If the panel says price history isn't connected, the dashboard was started without the candle file
 (`runtime/market_data.sqlite`, or the file given with `trade-graph dashboard --market-database <file>`). HQ only reads
 that file; it never creates or changes it. Alarm and order levels are still listed.
+
+## Wake-ups (the Calendar and Story tabs)
+
+The departments don't work on a fixed timer any more: software wakes them when something happens, and each one picks
+its own next check-in (T35). HQ shows all of it from the saved records (T39, decisions D215-D219). Looking at these
+panels never wakes anyone, starts any work or places any order.
+
+- **Next check-ins** (Calendar tab): when each department looks next: the time it chose itself (with its own note, in
+  its words), or the next day start when it named no time. "Due" means its chosen time has passed and it is woken at
+  the team's next check; "Awake" means it is woken right now, and its answer will set its next time. "2 waiting" means
+  two things happened that it will hear about at its next wake-up. Under it, **Today's routine** shows the day's steps:
+  the day start, the coin scanner, Research's focus coins, the Trader's day plans and, at the day end, Learning's look
+  back at the day. Each step has a mark and a word (✓ done, ◐ in progress, ○ not yet, ▲ didn't finish, ↷ skipped).
+- **Today's focus coins and alarms** (Calendar tab): the coins Research picked for today from the scanner's shortlist
+  (each with its reason, in its words, and how many sources it cited; no coins is a valid answer), and the price
+  alarms the departments have set, with the alarms that went off and wait for their department's next wake-up.
+- **Wake log** (Story tab): every wake-up, newest first and grouped by day: which department, why (a price alarm went
+  off, a waiting buy filled, a safety exit filled, the Leader asked, its own check-in time, the day start, the day
+  end, and so on), the events written out, the **AI allowance** when it was woken (how much was left, paused, or not
+  known; not known is never counted as plenty), and what came of it (done, how long it took, the next time it chose,
+  day plans put in place or refused, focus coins named). Notes another department or a news alarm handed it, and its
+  own summary, are short quotes in their words. Filter by department; "Load earlier" goes further back. The top line
+  counts today's wake-ups and the last 7 days' per department, which is what you look at before deciding on the AI
+  allowance floor after the first week (D138 item 8).
+
+Nothing limits how often a department is woken (D116); the log lists every wake-up the records hold, a page at a
+time. Until the event engine is switched on in your installation (step L3), the panels say that no wake-up has been
+recorded yet.
 
 ## Decisions (the Decide tab)
 
@@ -213,6 +243,20 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   integrity the first time a chart is shown; its built-in logo is off because it would inject a `<style>` element
   (refused by the policy) and send HQ's address to TradingView. The plain attribution link beside every chart is the
   page's only outside address.
+- **Wake-ups** (T39, D215-D219) come from `GET /api/v1/hq/wakes` (`trade-graph.hq.wakes.v1`,
+  `api/hq_wakes_contract.py`), never from the snapshot, so the snapshot's size is unchanged; the page asks only while
+  one of the three panels is on screen and again with HQ's 30-second poll. The projection (`api/hq_wakes.py`) reads
+  the event engine's records (migration `0035`: `wakes` with the context and allowance reading saved with each wake,
+  `wake_triggers`, `department_check_ins`, `focus_selections`, `day_cycle_steps`), the alarm book (`price_alarms`,
+  `price_alarm_watch`, `alarm_deliveries`), `tasks` (whether a woken turn is running) and the newest owner policy (the
+  trading-day start), with plain SQL in one read snapshot that ends in a rollback. It imports no engine, scheduler,
+  provider or broker, so reading starts nothing (tested: the database is byte-for-byte the same after reads). Next
+  check-ins follow `EventEngine.next_check_ins` (D123). Pages hold 20 wakes (at most 30), newest first by the wake's
+  cursor (`before`); the first page also carries today's block. A wake writes out at most 6 of its events and counts
+  the rest; at most 20 alarms are listed and all are counted; notes are quoted at 120 characters and summaries at 280.
+  These are page bounds, never limits on wake-ups or alarms. A busy synthetic day (600 wakes of 12 reasons with long
+  notes, 45 alarms, 16 focus coins) is about 51 KB per default page and 71 KB at 30 wakes, within the endpoint's own
+  80 KB budget. A database from before migration `0035` says it has no wake-up records.
 - **Owner check-ins** (migration `0025`, D108) are owner-only and append-only, are not in the review export, the
   financial checkpoint, the activity feed or any agent context, and never bump the owner revision. A process sharing
   the SQLite file is not stopped by a module boundary; that residual risk is accepted for non-financial notes.
@@ -228,6 +272,7 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 | `GET /api/v1/hq` | any signed-in role | HQ snapshot JSON (`trade-graph.hq.v1`); `calendar_days` 1–14, default 7 |
 | `GET /api/v1/hq/story` | any signed-in role | Earlier story; `before` (timezone-aware ISO, required), `limit` 1–60 |
 | `GET /api/v1/hq/chart` | any signed-in role | One price chart (`trade-graph.hq.chart.v1`); `symbol` (for example `SOL/USD`) and `interval` 1, 5, 15 or 60, both optional |
+| `GET /api/v1/hq/wakes` | any signed-in role | Wake log, next check-ins, today's steps, focus coins and alarms (`trade-graph.hq.wakes.v1`); `before` (a wake cursor, for older pages) and `limit` 1–30, both optional |
 | `GET /api/v1/owner/checkins` | owner | Check-ins between `from` and `to` (default 7 days back to 30 days ahead) |
 | `POST /api/v1/owner/checkins` | owner (cookie sessions also need the CSRF header) | Plan, reschedule, done, skip or cancel a check-in |
 

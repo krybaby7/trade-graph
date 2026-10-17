@@ -1282,6 +1282,168 @@ SPENDING: Final = {
     },
 }
 
+# --- Wake-ups (T39, D215-D219) ----------------------------------------------------------------------------------
+# Every wake-up the event engine recorded, each department's next check-in, today's steps, focus coins and alarms.
+# All from saved records; reading them starts nothing. Notes and summaries are model text: quoted, never rewritten.
+
+WAKES: Final = {
+    "unavailable": ("This database has no wake-up records: it is older than the event engine. Nothing is missing; "
+                    "wake-ups appear here once the team runs with them."),
+    "none_yet": ("No wake-up has been recorded yet. Once the team runs with wake-ups, every one is listed here "
+                 "with its reason."),
+    "unreadable": ("1 wake-up record couldn't be read and is left out.",
+                   "{n} wake-up records couldn't be read and are left out."),
+    # Headline words per reason: (one, several). A wake's headline joins its reasons in the contract's order.
+    "reason": {
+        "day_start": ("the day start", "the day start"),
+        "focus_step": ("the day start: pick today's focus coins", "the day start: pick today's focus coins"),
+        "day_plan_step": ("the day start: write today's day plans", "the day start: write today's day plans"),
+        "day_end_review": ("the day end: look back at the day", "the day end: look back at {n} days"),
+        "check_in": ("its own check-in time", "its own check-in times"),
+        "alarm_fired": ("a price alarm went off", "{n} price alarms went off"),
+        "feed_lost": ("prices stopped arriving", "{n} price feeds stopped"),
+        "feed_restored": ("prices are arriving again", "{n} price feeds came back"),
+        "entry_filled": ("a waiting buy filled", "{n} fills of waiting buys"),
+        "exit_filled": ("a safety exit filled", "{n} fills of safety exits"),
+        "order_filled": ("an order filled", "{n} order fills"),
+        "loss_limit_reached": ("the daily loss limit was reached", "the daily loss limit was reached"),
+        "focus_updated": ("Research changed today's focus coins", "Research changed today's focus coins"),
+        "wake_request": ("{who} asked for it", "{n} requests from other departments"),
+        "news_alarm": ("a news alarm", "{n} news alarms"),
+        "task_created": ("a task made for it", "{n} tasks made for it"),
+    },
+    "and": " and ",
+    "who": {"leader": "the Leader", "trader": "the Trader", "research": "Research", "learning": "Learning",
+            "optimisation": "Optimisation", "software": "software", "other": "another department"},
+    # One line per event. Prices and quantities are the saved exact decimals.
+    "event": {
+        "day_start": ("The trading day started (", ")."),
+        "focus_step": ("Day start: name today's focus coins from the scanner's shortlist of 1 coin.",
+                       "Day start: name today's focus coins from the scanner's shortlist of {n} coins."),
+        "focus_step_none": "Day start: name today's focus coins from the scanner's shortlist (none was handed over).",
+        "day_plan_step": "Day start: write today's day plans.",
+        "day_plan_step_focus": "Day start: write today's day plans (focus coins: {coins}).",
+        "day_end_review": ("Day end: look back at the trading day of ", "."),
+        "check_in": ("Its own check-in time came (", ")."),
+        "alarm_fired": "{symbol} alarm went off: {condition}.",
+        "alarm_fired_unknown": "A price alarm went off.",
+        "feed_lost": "Prices for {symbol} stopped arriving ({feed}).",
+        "feed_lost_unknown": "Prices stopped arriving for a coin an alarm watches.",
+        "feed_restored": "Prices for {symbol} are arriving again ({feed}).",
+        "feed_restored_unknown": "Prices are arriving again for a coin an alarm watches.",
+        "entry_filled": "Waiting buy filled: {quantity} {base} at {price} {quote} each ({symbol}).",
+        "exit_filled": "Safety exit filled at its {leg}: sold {quantity} {base} at {price} {quote} each.",
+        "exit_filled_unknown_leg": "Safety exit filled: sold {quantity} {base} at {price} {quote} each.",
+        "order_filled": "Order filled: {side} {quantity} {base} at {price} {quote} each.",
+        "loss_limit_reached": ("The daily loss limit was reached: no new buying until the next day start; safety "
+                               "exits stay."),
+        "focus_updated": "Research changed today's focus coins.",
+        "wake_request": "{who} asked for it with a note.",
+        "news_alarm": "A news alarm.",
+        "news_alarm_symbol": "A news alarm about {symbol}.",
+        "task_created": "A task was made for it outside its wake-ups (for example a report to look at).",
+    },
+    "leg": {"stop": "stop", "take_profit": "target"},
+    "side": {"buy": "bought", "sell": "sold", "other": "traded"},
+    "feed": {"quote": "live prices", "candle": "{interval} candles", "other": "prices"},
+    "interval": {1: "1-minute", 5: "5-minute", 15: "15-minute", 60: "1-hour"},
+    # The AI allowance reading saved with the wake (D116). Unknown is never plenty.
+    "allowance_term": "AI allowance",
+    "allowance_head": " when woken: ",
+    "allowance_left": ("{percent}% left (a reading from ", ")."),
+    "allowance_no_amount": ("a reading from ", " that didn't say how much is left."),
+    "allowance_paused": ("new AI work was paused (the ", "stop line", " or a provider pause), so the turn waited; "
+                         "prices and protection went on."),
+    "allowance_paused_left": (" {percent}% was left at ", "."),
+    "allowance_unknown": "not known: no reading had been recorded. Unknown is never counted as plenty.",
+    # What came of it.
+    "queued": "Woken, waiting to start.",
+    "working": "Awake and working on it.",
+    "queued_paused": "Woken, waiting to start until the AI allowance allows new work. Protection goes on.",
+    "applying": "Its answer is being put in place.",
+    "done": ("Done after ", "."),
+    "done_plain": "Done.",
+    "failed": "Its turn didn't finish. What it was woken for waits for its next wake-up.",
+    "failed_task": "Its turn didn't finish.",
+    "obsolete": ("Too late to act: its trading day had ended before it ran, so it did nothing. What it was woken "
+                 "for waits for its next wake-up."),
+    "check_in_named": (" It chose to look again at ", "."),
+    "check_in_day_start": (" It looks again at the next day start (", ")."),
+    "focus_named": (" It named 1 focus coin.", " It named {n} focus coins."),
+    "focus_none": " It named no focus coins.",
+    "focus_refused": " Its focus coins weren't used: the software refused them.",
+    "plans_installed": (" 1 day plan put in place.", " {n} day plans put in place."),
+    "plans_refused": (" 1 refused by the software's checks.", " {n} refused by the software's checks."),
+    "plans_obsolete": (" 1 came too late to use.", " {n} came too late to use."),
+    "asked": " It asked {who} to look.",
+    "answer_refused": " Part of its answer couldn't be used.",
+    # Each department's next check-in (D123: its own time, or the next day start).
+    "check_in": {
+        "awake": ("Awake now: woken ", " for ", ". Its answer sets its next check-in."),
+        "awake_waiting": ("Woken ", " for ", ", waiting to start. Its answer sets its next check-in."),
+        "named": "It chose this time itself.",
+        "named_due": "Its chosen time has passed; it is woken at the next check while the team runs.",
+        "never": "It hasn't chosen a time yet, so the next day start wakes it.",
+        "came": "Its chosen time came and it was woken; until it names another, the next day start wakes it.",
+        "day_start": "It chose the next day start.",
+    },
+    # Today's steps of the daily cycle.
+    "step": {
+        "day_start": {"not_yet": "Not recorded yet: the day start runs when the team is running with wake-ups.",
+                      "done": ("The day started at ", "."),
+                      "late": (" The team started ", " after the day start.")},
+        "scan": {"not_yet": "The coin scanner hasn't run for today yet.",
+                 "ok": ("The coin scanner shortlisted 1 coin.", "The coin scanner shortlisted {n} coins."),
+                 "saved": (" It used the newest saved scan, from ", "."),
+                 "no_candidates": "The coin scanner found no coin worth a closer look today.",
+                 "failed": "The coin scanner failed, so the day went on without a shortlist.",
+                 "none": "No coin scan was available, so the day went on without a shortlist."},
+        "focus": {"not_yet": "Research names today's focus coins after the scan.",
+                  "started": "Research is picking today's focus coins.",
+                  "done": "Research named today's focus coins.",
+                  "failed": "Research's focus step didn't finish.",
+                  "skipped": "Skipped: Research wasn't running."},
+        "day_plan": {"not_yet": "The Trader writes its day plans after Research's focus step.",
+                     "started": "The Trader is writing today's day plans.",
+                     "none": "The Trader wrote no day plan today.",
+                     "failed": "The Trader's day-plan step didn't finish.",
+                     "skipped": "Skipped: the Trader wasn't running."},
+        "day_end_review": {"not_yet": ("Learning looks back at the day when it ends (", ")."),
+                           "started": "Learning is looking back at the day.",
+                           "done": "Learning looked back at the day.",
+                           "failed": "Learning's look back at the day didn't finish.",
+                           "skipped": "Skipped: Learning wasn't running."},
+    },
+    # The day's focus coins (Research's newest revision of the day).
+    "focus": {
+        "named": ("Research named 1 focus coin for today.", "Research named {n} focus coins for today."),
+        "revised": (" Changed during the day (version {revision}, ", ")."),
+        "none_named": "Research named no focus coins today. That is a valid answer: nothing looked worth a plan.",
+        "not_yet": "Research hasn't named today's focus coins yet.",
+        "failed": "Research didn't name focus coins today.",
+        "skipped": "Research wasn't running at the day start, so no focus coins were named.",
+        "unreadable": "Today's focus record doesn't match its saved check value, so HQ doesn't show it.",
+    },
+    # Price alarms that are set (armed), and alarms that went off and wait for their department.
+    "alarms": {
+        "none": "No price alarm is set.",
+        "set": ("1 price alarm is set.", "{n} price alarms are set."),
+        "waiting": (" 1 went off and waits for {who}'s next wake-up.",
+                    " {n} went off and wait for {who}'s next wake-up."),
+    },
+    "relation": {"above": "above", "below": "below", "crosses_above": "crosses above",
+                 "crosses_below": "crosses below"},
+    "quote_price": {"mid": "mid price", "bid": "bid", "ask": "ask", "last": "last trade price"},
+    "candle_price": {"close": "close", "high": "high", "low": "low"},
+    "candle": "{interval} candle {price} {relation} {level}",
+    "indicator": "{label}{output} ({interval} candles) {relation} {level}",
+    "counts": {
+        "today": ("Today: 1 wake-up.", "Today: {n} wake-ups."),
+        "today_none": "Today: no wake-up yet.",
+        "week": " Last 7 days: {n}.",
+    },
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {
@@ -1300,6 +1462,12 @@ SECTION_HELP: Final = {
                  "never shown as zero. Alerts never pause anything."),
     "charts": ("Saved candles with the indicators, alarms and orders the team chose. Missing candles stay as gaps. "
                "Looking at a chart never changes anything."),
+    "wakeplan": ("When each department looks next: the time it chose itself, or the next day start. Wake-ups happen "
+                 "only while the team is running."),
+    "watchlist": ("Today's focus coins from Research and the price alarms the departments set. Looking never changes "
+                  "anything."),
+    "wakes": ("Every wake-up from the saved records, with its reasons and the AI allowance at that moment. Nothing "
+              "limits how often a department is woken."),
 }
 NO_RECORDED_ACTIVITY: Final = "No recorded activity"
 

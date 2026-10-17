@@ -481,6 +481,7 @@
     hq: (init, options) => fetch(`/api/v1/hq?calendar_days=${options.days === 14 ? 14 : 7}`, init),
     story: (init, options) => fetch(`/api/v1/hq/story?before=${encodeURIComponent(options.before)}&limit=60`, init),
     chart: (init, options) => fetch(`/api/v1/hq/chart${chartQuery(options)}`, init),
+    wakes: (init, options) => fetch(`/api/v1/hq/wakes${wakesQuery(options)}`, init),
     config: init => fetch("/api/v1/owner/config", init),
     pause: init => fetch("/api/v1/owner/pause", init),
     resume: init => fetch("/api/v1/owner/resume", init),
@@ -490,7 +491,7 @@
     expenses: init => fetch("/api/v1/owner/expenses", init),
     checkins: init => fetch("/api/v1/owner/checkins", init),
   });
-  const READS = new Set(["hq", "story", "config", "chart"]);
+  const READS = new Set(["hq", "story", "config", "chart", "wakes"]);
   // T41: a price chart is asked for by coin and candle size; both are optional (the server picks the defaults).
   function chartQuery(options) {
     const parts = [];
@@ -499,6 +500,10 @@
     }
     if ([1, 5, 15, 60].includes(options.interval)) parts.push(`interval=${options.interval}`);
     return parts.length ? `?${parts.join("&")}` : "";
+  }
+  // T39: the wake log is read newest first; an older page continues below a wake's cursor.
+  function wakesQuery(options) {
+    return Number.isSafeInteger(options.before) && options.before > 0 ? `?before=${options.before}` : "";
   }
   async function call(name, options = {}) {
     const go = ENDPOINTS[name];

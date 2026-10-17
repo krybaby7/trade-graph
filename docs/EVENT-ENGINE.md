@@ -214,6 +214,9 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
   "leader")`); the note is data and it cannot install plans (only the Trader's answer can).
 - **W6-C (T39, HQ wake log).** Read `wakes`, `wake_triggers`, `department_check_ins`, `focus_selections` and
   `day_cycle_steps` (or `EventEngine.wakes`, `next_check_ins`, `focus`, `cycle`); reading starts nothing.
+  Built by W6-C: `GET /api/v1/hq/wakes` (`api/hq_wakes.py`) reads these tables directly in a read snapshot,
+  without the engine, and words each trigger kind for the owner; a new trigger kind needs its words in
+  `hq_copy.WAKES` (a test fails otherwise). See [HQ-DASHBOARD.md](HQ-DASHBOARD.md#wake-ups-the-calendar-and-story-tabs).
 - **W7-A (T45, news wake-ups).** `EventEngine.notify(portfolio_id, department, kind="news_alarm",
   source_ref=<headline id>, note=..., symbol=...)` adds one trigger per headline; it only adds wakes.
 - **W6-D (C2), built.** A department chooses its reply per task (`GatewayRole.reply_type_for(task)`); the Trader's
