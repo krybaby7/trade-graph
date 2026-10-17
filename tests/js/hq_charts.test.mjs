@@ -158,6 +158,8 @@ test("the library is loaded once from HQ itself, with its pinned integrity, afte
   const options = page.log.charts[0].options;
   assert.equal(options.layout.attributionLogo, false);
   assert.equal(options.autoSize, true);
+  assert.equal(options.handleScroll.vertTouchDrag, false, "an up-and-down swipe scrolls the page, not the chart");
+  assert.equal(options.handleScale.mouseWheel, false);
   assert.equal(options.layout.textColor, "token(--text)");
   assert.equal(options.layout.background.color, "token(--surface)");
   await page.advance(60000);
@@ -190,13 +192,14 @@ test("candles keep their gaps, end at the forming candle and read out the exact 
 test("indicators: overlays on the price pane, others on their own pane, unready ones only in words", async () => {
   const page = await start();
   const chart = page.log.charts[0];
-  const sma = chart.series.find(series => series.options.title === "SMA 20");
-  assert.equal(sma.type, "Line");
-  assert.equal(sma.pane, 0);
+  const sma = chart.series.find(series => series.type === "Line" && series.pane === 0);
+  assert.equal(sma.options.title, "", "lines on the prices are named in the legend, not on the chart");
+  assert.equal(sma.options.color, "token(--accent)");
   assert.deepEqual(sma.data.map(item => [item.time, item.value]), [[FIRST, 100], [FIRST + STEP, 100.1], [FIRST + 2 * STEP, 100.05], [FIRST + 3 * STEP, 100]]);
   const macd = chart.series.filter(series => series.pane === 1);
   assert.deepEqual(macd.map(series => [series.type, series.options.title]), [["Line", "MACD"], ["Line", "Signal"], ["Histogram", "Histogram"]]);
   assert.equal(chart.series.some(series => /RSI/.test(series.options.title || "")), false);
+  assert.deepEqual(clone(macd[0].options.priceFormat), {type: "price", precision: 6, minMove: 0.000001});
   assert.equal(chart.container.getAttribute("data-panes"), "2");
   assert.equal(chart.panesMade[0], 3);
   const legend = page.text(page.$("[data-hq-chart-legend]"));
@@ -214,6 +217,10 @@ test("alarm, order and safety exit lines carry their own look and words; fills a
     [104, "Target", 2, "token(--success)"]]);
   const macd = chart.series.find(series => series.options.title === "MACD");
   assert.deepEqual(macd.lines.map(line => [line.price, line.title]), [[0, "Alarm"]]);
+  // Order and exit levels within a tenth of the newest close widen the price scale so they show; alarm levels and
+  // the MACD pane's level do not.
+  const scale = candles.options.autoscaleInfoProvider(() => ({priceRange: {minValue: 99.7, maxValue: 100.4}}));
+  assert.deepEqual(clone(scale.priceRange), {minValue: 97, maxValue: 104});
   assert.equal(page.log.markers.length, 1);
   assert.deepEqual(page.log.markers[0].markers.map(marker => [marker.time, marker.shape, marker.position, marker.price, marker.text]),
     [[FIRST + 3 * STEP, "arrowUp", "atPriceBottom", 99.5, "Buy"]]);

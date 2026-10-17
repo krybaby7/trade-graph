@@ -124,8 +124,20 @@
     return {type: "price", precision: places, minMove: 10 ** -places};
   }
   function scaleFormat(values) {
-    const largest = Math.max(0, ...values.map(value => Math.abs(value)));
-    return priceFormat(largest >= 100 ? 2 : largest >= 1 ? 3 : 6);
+    const largest = values.reduce((most, value) => Math.max(most, Math.abs(value)), 0);
+    return priceFormat(largest >= 10 ? 2 : largest >= 1 ? 3 : 6);
+  }
+  // The price scale also takes in the account's own order levels near the price (resting entries, safety exits and
+  // other open orders within LEVEL_REACH of the newest close), so the money at stake is on screen. Alarm levels show
+  // once the price comes near them; every level, on screen or not, is in the legend.
+  const LEVEL_REACH = 0.1;
+  const ORDER_KINDS = new Set(["entry", "stop", "take_profit", "order"]);
+  function levelsNear(data) {
+    const rows = list(data.candles);
+    const close = rows.length ? Number(rows[rows.length - 1][4]) : NaN;
+    if (!Number.isFinite(close) || close <= 0) return [];
+    return list(data.lines).filter(line => line.pane === "price" && ORDER_KINDS.has(line.kind)).map(line => Number(line.price))
+      .filter(level => Number.isFinite(level) && Math.abs(level - close) <= close * LEVEL_REACH);
   }
   function slotTimes(window_) {
     const times = [];
@@ -266,12 +278,23 @@
         panes: {separatorColor: colors.border, separatorHoverColor: colors.border}},
       grid: {vertLines: {color: colors.border}, horzLines: {color: colors.border}},
       rightPriceScale: {borderColor: colors.border},
-      timeScale: {borderColor: colors.border, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickWords},
+      timeScale: {borderColor: colors.border, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: tickWords},
       localization: {timeFormatter: timeWords},
+      // The page keeps scrolling over the chart (a wheel or an up-and-down swipe never gets caught by it); drag
+      // sideways to look back, and pinch or drag the time axis to zoom.
+      handleScroll: {mouseWheel: false, vertTouchDrag: false},
+      handleScale: {mouseWheel: false},
     });
     const format = priceFormat(data.price_precision);
     const candles = chart.addSeries(LW.CandlestickSeries, {
       upColor: colors.surface, borderUpColor: colors.success, wickUpColor: colors.success,
+      autoscaleInfoProvider: base => {
+        const found = base();
+        const levels = levelsNear(state.document || data);
+        if (!found?.priceRange || !levels.length) return found;
+        return {...found, priceRange: {minValue: Math.min(found.priceRange.minValue, ...levels),
+          maxValue: Math.max(found.priceRange.maxValue, ...levels)}};
+      },
       downColor: colors.danger, borderDownColor: colors.danger, wickDownColor: colors.danger, priceFormat: format,
     });
     const series = [];
@@ -286,7 +309,9 @@
       const values = list(indicator.outputs).flatMap(output => list(output.values));
       list(indicator.outputs).forEach((output, position) => {
         const look = OUTPUT_LOOKS[position % OUTPUT_LOOKS.length];
-        const common = {color, title: output.label, priceLineVisible: false, lastValueVisible: false,
+        // Lines on the prices carry no label of their own (the legend names them; labels crowded a phone's chart);
+        // a panel of its own shows its name.
+        const common = {color, title: own ? output.label : "", priceLineVisible: false, lastValueVisible: false,
           priceFormat: own ? scaleFormat(values) : format};
         const made = output.style === "histogram"
           ? chart.addSeries(LW.HistogramSeries, common, index)
