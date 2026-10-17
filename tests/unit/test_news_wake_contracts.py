@@ -97,3 +97,15 @@ def test_each_route_has_its_own_trigger_source() -> None:
     assert route_source_ref("abc") == "news-alarm:abc"
     with pytest.raises(ValueError):
         route_source_ref("not a reference")
+
+
+@pytest.mark.parametrize("path", [
+    "src/trade_graph/contracts/news_wakes.py",
+    "src/trade_graph/application/news_wakes.py",
+    "src/trade_graph/application/news_wake_switch.py",
+    "src/trade_graph/market_data_cli/news_wakes.py",
+])
+def test_the_switch_its_evidence_gate_and_the_routing_are_protected_paths(path) -> None:
+    from trade_graph.kernel.authority import path_is_protected
+
+    assert path_is_protected(path)

@@ -31,10 +31,9 @@ UNRELATED_TITLE = "Kraken opens a new office in a synthetic city (synthetic)"
 class SyntheticFeed:
     """One synthetic RSS feed (the Kraken blog's address, invented items); every poll returns all items so far."""
 
-    evidence = "synthetic_fixture"
-
-    def __init__(self) -> None:
+    def __init__(self, evidence: str = "synthetic_fixture") -> None:
         self.items: list[tuple[str, str, str]] = []
+        self.evidence = evidence
 
     def add(self, title: str, link: str, published) -> None:
         self.items.append((title, link, format_datetime(published)))
@@ -46,13 +45,17 @@ class SyntheticFeed:
                 f"<link>https://blog.kraken.com</link><description>Synthetic test feed</description>{entries}"
                 "</channel></rss>").encode()
         return FetchResult(outcome="fetched", http_status=200, body=body, etag=None, last_modified=None,
-                           evidence="synthetic_fixture", error_category=None)
+                           evidence=self.evidence, error_category=None)
 
 
 class NewsDesk:
-    """T44's shadow poll writing into the account's own state database, with scripted Jev answers by link."""
+    """T44's shadow poll writing into the account's own state database, with scripted Jev answers by link.
 
-    def __init__(self, account, *, portfolio_id: str | None = None) -> None:
+    ``labelled_real`` labels the invented headlines ``live_public`` and the scripted Jev answers as not synthetic. It
+    stands in for a real poll in the owner switch's evidence tests only: no feed, TypeSafe or paid call is made.
+    """
+
+    def __init__(self, account, *, portfolio_id: str | None = None, labelled_real: bool = False) -> None:
         self.account = account
         database, clock = account.database, account.clock
         budget = BudgetGateway(database, clock)
@@ -61,13 +64,15 @@ class NewsDesk:
             amount = Decimal("5")
             budget.configure(deployment_id="deployment", currency="EUR", total=amount, period=amount,
                              priority_reserve=Decimal("0"), daily=amount, root=amount, roles={})
-        self.feed = SyntheticFeed()
+        self.feed = SyntheticFeed("live_public" if labelled_real else "synthetic_fixture")
         self.script = {"schema_version": 1, "evidence": "synthetic_fixture", "model": "jev-1.13.0",
                        "input_tokens": 420, "by_link": {}}
         self.transport = ScriptedJevHttp.from_script(self.script)
+        if labelled_real:
+            self.transport.synthetic = False
         store = NewsStore(database, clock)
         binding = JevBudgetBinding(deployment_id="deployment", price_card_id=JEV_PRICE_CARD.price_card_id,
-                                   fx_rate=Decimal("0.9"), fx_buffer=Decimal("1.02"), synthetic=True)
+                                   fx_rate=Decimal("0.9"), fx_buffer=Decimal("1.02"), synthetic=not labelled_real)
         checks = JevCheckRunner(database, clock, budget, JevAdapter(self.transport), binding, store)
         portfolio = portfolio_id or account.portfolio
         self.shadow = NewsAlarmShadow(store=store, fetcher=self.feed, settings=NewsAlarmSettings(feeds=(KRAKEN_BLOG,)),
