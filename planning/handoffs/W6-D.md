@@ -9,8 +9,8 @@ the install, together with a written checklist (`docs/L3-INSTALL-CHECKLIST.md`) 
 Nothing was installed or run against Kraken from the cloud; at step L3 you approve each step, and Research and the
 Leader can only move to Perplexity once the extra wiring listed in that checklist exists.
 
-Branch: `claude/c2-install-ready`, head: the commit that adds this handoff's pull request link. Pull request:
-opened after this commit (link added in the next commit).
+Branch: `claude/c2-install-ready`, head: the commit that adds this handoff's pull request link (code and tests
+at `0be53b5`, docs at `49e225a`). Pull request: [#17](https://github.com/krybaby7/trade-graph/pull/17).
 
 ## What was built
 
