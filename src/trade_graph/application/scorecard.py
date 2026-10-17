@@ -38,6 +38,7 @@ from trade_graph.contracts.models import FillRecord, InstrumentRules
 from trade_graph.domain.clock import FrozenClock, parse_utc, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import canonical_decimal
+from trade_graph.kernel.books import Mark, native_equity
 from trade_graph.kernel.cost_profiles import KRAKEN_STARTING, load_cost_profiles
 from trade_graph.kernel.trade_metrics import (
     METRICS_VERSION,
@@ -338,13 +339,17 @@ def _compute(connection, portfolio_id: str, start: datetime | None, end: datetim
                                    if account == "inventory"}
     marks: dict[str, _Mark | None] = {asset: _latest_mark(connection, portfolio_id, asset, start_iso)
                                       for asset in sorted(ever_held)}
+    for asset, mark in marks.items():
+        if mark is not None and mark.quote != currency:
+            raise ScorecardUnavailable(f"the {asset} price is recorded in {mark.quote}, not {currency}; the "
+                                       "scorecard does not guess a rate")
     provisional: list[str] = []
     for asset in start_held:
         _check_mark(marks[asset], asset, currency, start, "start", provisional)
     with localcontext(_EXACT):
         starting_equity = books.equity(currency, marks)
     ledger = Ledger(_Reader(connection), FrozenClock(end))
-    _agree(ledger, portfolio_id, currency, start_iso, starting_equity, "start")
+    _agree(ledger, portfolio_id, currency, start_iso, starting_equity, marks, "start")
     if starting_equity is None or starting_equity <= 0:
         raise ScorecardUnavailable("the account was worth nothing at the start of the period")
 
@@ -357,7 +362,7 @@ def _compute(connection, portfolio_id: str, start: datetime | None, end: datetim
         _check_mark(marks[asset], asset, currency, end, "end", provisional)
     with localcontext(_EXACT):
         marked_end = books.equity(currency, marks)
-    _agree(ledger, portfolio_id, currency, end_iso, marked_end, "end")
+    _agree(ledger, portfolio_id, currency, end_iso, marked_end, marks, "end")
 
     profile = _profile(profile_id, start)
     with localcontext(_EXACT):
@@ -456,8 +461,13 @@ def _age(mark: _Mark, asset: str, at: datetime, edge: str, provisional: list) ->
         provisional.append(f"the {asset} price used at the {edge} of the period is marked stale")
 
 
-def _agree(ledger: Ledger, portfolio_id: str, currency: str, at_iso: str, value: Decimal | None, edge: str) -> None:
-    view = ledger.native_equity(portfolio_id, currency, at_iso)
+def _agree(ledger: Ledger, portfolio_id: str, currency: str, at_iso: str, value: Decimal | None,
+           marks: dict[str, _Mark | None], edge: str) -> None:
+    """The ledger's own books at ``at_iso``, valued at the same prices, must give the same equity."""
+    books = ledger.books(portfolio_id, at_iso)
+    priced = [Mark(asset, mark.price, mark.quote, mark.at, mark.stale, "scorecard")
+              for asset, mark in marks.items() if mark is not None]
+    view = native_equity(books, currency=currency, marks=priced, rates=[], at=at_iso)
     if view.equity is None or value is None or view.equity != value:
         raise ScorecardUnavailable(f"the scorecard's running books do not agree with the ledger at the {edge} of "
                                    "the period, so nothing is scored")
@@ -470,40 +480,57 @@ def _curve(connection, portfolio_id: str, books: _Books, marks: dict[str, _Mark 
 
     Applies the period's postings to ``books`` and leaves the newest marks in ``marks``.
     """
-    prices: dict[str, list[tuple[str, str, Decimal, bool]]] = {}
+    prices: dict[str, list[tuple[str, Decimal, bool]]] = {}
     if assets:
         holes = ",".join("?" for _ in assets)
-        for row in connection.execute(
-                f"""SELECT asset, quote_currency, mark, observed_at, stale FROM valuation_marks
+        other = connection.execute(
+            f"""SELECT asset, quote_currency FROM valuation_marks WHERE portfolio_id = ? AND observed_at > ?
+            AND observed_at <= ? AND asset IN ({holes}) AND quote_currency != ? LIMIT 1""",
+            (portfolio_id, start_iso, end_iso, *assets, currency)).fetchone()
+        if other is not None:
+            raise ScorecardUnavailable(f"the {other['asset']} price is recorded in {other['quote_currency']}, not "
+                                       f"{currency}; the scorecard does not guess a rate")
+        for asset, mark, observed_at, stale in connection.execute(
+                f"""SELECT asset, mark, observed_at, stale FROM valuation_marks
                 WHERE portfolio_id = ? AND observed_at > ? AND observed_at <= ? AND asset IN ({holes})
                 ORDER BY observed_at, rowid""", (portfolio_id, start_iso, end_iso, *assets)):
-            prices.setdefault(row["observed_at"], []).append(
-                (row["asset"], row["quote_currency"], Decimal(row["mark"]), bool(row["stale"])))
+            prices.setdefault(observed_at, []).append((asset, Decimal(mark), bool(stale)))
+    held = books.holdings()
     points = [EquityPoint(start, starting_equity)]
     unvalued = 0
     with localcontext(_EXACT):
         for moment in sorted(moments.keys() | prices.keys()):
-            for account, asset, amount in moments.get(moment, ()):
-                books.post(account, asset, amount)
-            priced = set()
-            for asset, quote, price, stale in prices.get(moment, ()):
-                current = marks.get(asset)
+            postings = moments.get(moment)
+            if postings:
+                for account, asset, amount in postings:
+                    books.post(account, asset, amount)
+                    if account == "inventory":
+                        quantity = books.held[asset]
+                        if quantity:
+                            held[asset] = quantity
+                        else:
+                            held.pop(asset, None)
+                books.only_cash_in(currency, moment)
+            priced = False
+            for asset, price, stale in prices.get(moment, ()):
+                current = marks[asset]
                 if current is not None and current.at == moment:
                     continue  # the ledger uses the first mark recorded at one time
-                marks[asset] = _Mark(price, quote, moment, stale)
-                priced.add(asset)
-            held = books.holdings()
-            if any(marks[asset] is not None and marks[asset].quote != currency for asset in held):
-                raise ScorecardUnavailable(f"a coin held is priced in another currency than {currency}; the "
-                                           "scorecard does not guess a rate")
-            if moment == end_iso or not (moment in moments or priced & held.keys()):
+                marks[asset] = _Mark(price, currency, moment, stale)
+                priced = priced or asset in held
+            if moment == end_iso or not (postings or priced):
                 continue
-            books.only_cash_in(currency, moment)
-            value = books.equity(currency, marks)
+            value = books.cash.get(currency, Decimal("0"))
+            for asset, quantity in held.items():
+                mark = marks[asset]
+                if mark is None:
+                    value = None
+                    break
+                value += quantity * mark.price
             if value is None:
                 unvalued += 1
                 continue
-            points.append(EquityPoint(parse_utc(moment), value))
+            points.append(EquityPoint(datetime.fromisoformat(moment), value))
     return points, unvalued
 
 

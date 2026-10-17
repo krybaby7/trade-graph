@@ -310,3 +310,15 @@ def test_the_scorecard_makes_no_network_call(paper, monkeypatch):
     block_network(monkeypatch)
     card = _card(paper)
     assert card.metrics.result == D("210.14") and format_scorecard_text(card)
+
+
+def test_journal_postings_that_do_not_match_the_ledger_events_are_refused_never_scored(paper):
+    golden_day(paper)
+    with paper.database.immediate() as connection:  # a stray, balanced posting with no ledger event behind it
+        connection.execute("INSERT INTO journal_transactions VALUES ('stray', ?, 'fill', 'stray', ?)",
+                           (PORTFOLIO, "2026-11-02T06:30:00.000000Z"))
+        for posting, account, amount in (("stray-1", "cash", "100"), ("stray-2", "clearing", "-100")):
+            connection.execute("INSERT INTO journal_postings VALUES (?, 'stray', ?, ?, 'USD', ?)",
+                               (posting, PORTFOLIO, account, amount))
+    with pytest.raises(ScorecardUnavailable, match="do not agree with the ledger at the end"):
+        _card(paper)
