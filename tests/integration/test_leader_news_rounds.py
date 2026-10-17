@@ -230,6 +230,18 @@ def test_the_switch_off_means_no_perplexity_call_and_the_leader_sleeps_to_the_ne
     assert setup.engine.next_check_ins(setup.portfolio)["leader"]["basis"] == "day_start"
 
 
+def test_a_switch_that_cannot_be_read_counts_as_off(tmp_path) -> None:
+    setup = LeaderSetup(tmp_path, [])
+
+    def unreadable() -> bool:
+        raise OSError("synthetic: the protected setting could not be read")
+
+    setup.rounds.enabled = unreadable
+    _leader_round(setup)
+    [record] = setup.rounds.store.rounds(setup.portfolio)
+    assert record.status == "switched_off" and setup.transport.calls == []
+
+
 def test_with_the_switch_off_a_configured_leader_handler_keeps_the_leaders_wakes(tmp_path) -> None:
     calls: list = []
 

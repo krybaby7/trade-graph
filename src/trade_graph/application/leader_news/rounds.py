@@ -151,7 +151,11 @@ class LeaderNewsRounds:
         self.store = LeaderNewsStore(self.database, self.clock)
 
     def _switched_on(self) -> bool:
-        return self.enabled() is True
+        """The protected switch, read fresh each time; a switch that cannot be read counts as off (fail closed)."""
+        try:
+            return self.enabled() is True
+        except Exception:  # noqa: BLE001 - an unreadable paid-call switch never turns paid calls on
+            return False
 
     # --- the worker's protocol: recover, context, call ---------------------------------------------------------
 
