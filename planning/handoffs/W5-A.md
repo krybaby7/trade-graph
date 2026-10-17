@@ -10,7 +10,7 @@ never places an order. It is built and tested with made-up prices and scripted d
 switched on in your running system yet: the real AI Trader first needs to learn to answer a wake with day plans
 (listed below for the next package), so there is nothing for you to decide or do now.
 
-Branch: `claude/t35-event-engine`, head: the commit that adds this line; code at `CODE_COMMIT`. Pull request:
+Branch: `claude/t35-event-engine`, head: the commit that adds this line; code at `2711ee9` (docs to `07b89da`; the evidence runs are at `07b89da`). Pull request:
 PR_LINK.
 
 ## What was built
@@ -153,12 +153,30 @@ All runs on CPython 3.12.13 (`uv sync --frozen --group dev --python 3.12`) in th
     mutation-checked: making a failed wake expire its event triggers instead of carrying them fails it. The race of an
     alarm firing between collection and dispatch has its own test, which fails when the claimed batch is not
     mirrored into the wake.
-- `uv run ruff check src tests`: RUFF_RESULT
-- New tests: NEW_TESTS_RESULT
-- Related tests: RELATED_RESULT
-- `uv run pytest -p no:cacheprovider tests/unit`: UNIT_RESULT
-- `python3 scripts/check_plan.py`: PLAN_RESULT; `python3 scripts/test_planning.py`: PLANNING_RESULT;
-  `python3 scripts/check_repository_hygiene.py` (and `--staged` before every commit): HYGIENE_RESULT
+- `uv run ruff check src tests`: all checks passed (at `07b89da`).
+- New tests: `uv run pytest -p no:cacheprovider -rfs tests/unit/test_wake_contracts.py
+  tests/integration/test_migration_0035.py tests/integration/test_wake_engine.py tests/integration/test_wake_cycle.py
+  tests/integration/test_wake_service.py tests/integration/test_scripted_day.py tests/property/test_wake_properties.py`:
+  **56 passed, 0 failed, 0 skipped** (39 s). The scripted day and the service and cycle tests were also run six times
+  in a row (wakes made at the same instant run in random task-id order): all passed each time.
+- Related tests: every test module that imports or exercises changed code, 73 modules: those that mention
+  `PaperService`/`paper_service`, the normal subscription service, path protection, the migration list
+  (`migrate`, `apply_migrations`, Alembic heads, `sqlite_master`, `schema_migrations`), `model_json_schema`,
+  `export_schemas` or `_wire_schema`, `AlarmQueue` or `DayPlans` (found with `grep -lE` over `tests`), plus the new
+  modules and the Engineer path-protection tests, in three parallel shards of whole modules
+  (`uv run pytest -p no:cacheprovider -rfs <modules>`): **1,234 passed, 0 failed, 15 skipped** (14 in
+  `tests/security/test_subscription_process_boundary.py`: bubblewrap is not installed in the cloud container, as on
+  GitHub; 1 archive-permission case: this user can read any file). An earlier run of the same list at `3f8008a`, in
+  four shards with `tests/unit` running at the same time, had one failure:
+  `tests/integration/test_hourly_history_refresh.py::test_slow_hour_boundary_refresh_finishes_before_next_role_inputs_while_management_continues`
+  (`assert len(management) >= 2`: it expects two management loops within 50 ms of wall time). It does not use the
+  engine, passed 5 of 5 runs alone and passed in the final run; it is load-sensitive, like the timing cases on the
+  old known list. `tests/integration/test_provider_wire_schemas.py tests/unit/test_contracts.py
+  tests/unit/test_protocols.py tests/unit/test_import_boundary.py`: **73 passed**.
+- `uv run pytest -p no:cacheprovider -rfs tests/unit`: **2,152 passed, 0 failed, 7 skipped** (39 s; the indicator
+  cross-checks the second library cannot make and the archive-permission cases).
+- `python3 scripts/check_plan.py`: plan valid, 46 tasks, acyclic; `python3 scripts/test_planning.py`: 11 tests OK;
+  `python3 scripts/check_repository_hygiene.py` (and `--staged` before every commit): passed.
 - Full suite: not run (night shift: the wave integration runs it).
 - Real or synthetic: everything is synthetic and labelled: a USD10,000 paper account with synthetic money limits, the
   example practice strategy with one synthetic confirmation report, synthetic hourly candles, catalog and ticker for
