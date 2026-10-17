@@ -1,4 +1,4 @@
-"""Result sums for practice-range replays (T29) and the paper scorecard (T42): one set of sums for both (D119).
+"""Result sums for practice-range replays (T29) and the paper scorecard (T42): one set of sums for both (D119, D169).
 
 Pure functions over exact decimals in the protected kernel, because they decide what a result is said to be and
 agents must not edit them (AGENTS.md). Nothing here imports a provider SDK or an array library.
@@ -15,7 +15,9 @@ agents must not edit them (AGENTS.md). Nothing here imports a provider SDK or an
   price with the taker fee.
 
 Ratios and averages are rounded half-even to ten decimal places (``QUANTUM``); every sum is exact. The account is
-long only (D127): a sell larger than the position held is refused, never turned into a short.
+long only (D127): a sell larger than the position held is refused, never turned into a short. The practice range
+feeds simulated fills (``TradeFill.from_sim_fill``); the paper scorecard feeds the ledger's fills
+(``TradeFill.from_fill_record``, which puts fees in the coin or a third asset into the quote currency, D201).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, Context, Decimal, localcontext
 from typing import Any, Literal
 
 from trade_graph.contracts.fills import SimFill
+from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import canonical_decimal
@@ -96,6 +99,43 @@ class TradeFill:
             principal = fill.quantity * fill.price
         return cls(fill_ref=fill_ref, symbol=fill.symbol, side=fill.side, quantity=fill.quantity,
                    quote_amount=principal, fee=fill.fee, at=fill.filled_at_utc)
+
+    @classmethod
+    def from_fill_record(cls, fill: FillRecord, *, fill_ref: str, base_asset: str, quote_asset: str) -> TradeFill:
+        """A ledger fill (the paper scorecard, T42, D201) in the quote currency, with every fee leg the books posted.
+
+        A fee in the quote currency is the fee. A fee in the coin changes what is held, as the books post it: a buy
+        holds ``quantity - fee`` and a sell gives up ``quantity + fee``; the fee is valued at the fill price and the
+        principal moves with it, so ``sold - bought - fees`` stays the cash the trade made. A fee in a third asset
+        is valued at the rate identified with it, and without one the fill is refused. A net rebate (fees below
+        zero) lowers the principal of a buy or raises that of a sell instead, because fees paid are never negative.
+        """
+        if not isinstance(fill, FillRecord):
+            raise ValidationFailure("a ledger fill is a FillRecord")
+        if fill.symbol != f"{base_asset}/{quote_asset}":
+            raise ValidationFailure("the fill's symbol does not name the base and quote assets it was booked with")
+        with localcontext(_EXACT):
+            principal, quantity = fill.quote_principal, fill.quantity
+            fee = coin_fee = Decimal("0")
+            for leg in fill.fee_legs():
+                if leg.asset == quote_asset:
+                    fee += leg.amount
+                elif leg.asset == base_asset:
+                    coin_fee += leg.amount
+                    fee += leg.amount * fill.price
+                elif leg.identified_rate is not None:
+                    fee += leg.amount * leg.identified_rate
+                else:
+                    raise ValidationFailure("a fee in a third asset needs its identified rate to be valued")
+            if fill.side == "buy":
+                quantity, principal = quantity - coin_fee, principal - coin_fee * fill.price
+            else:
+                quantity, principal = quantity + coin_fee, principal + coin_fee * fill.price
+            if fee < 0:
+                principal = principal + fee if fill.side == "buy" else principal - fee
+                fee = Decimal("0")
+        return cls(fill_ref=fill_ref, symbol=fill.symbol, side=fill.side, quantity=quantity, quote_amount=principal,
+                   fee=fee, at=fill.filled_at_utc)
 
 
 @dataclass(frozen=True, slots=True)
