@@ -223,7 +223,7 @@ class LeaderNewsRounds:
             requests = self._route(round_id, wake, reply)
             answer = WakeOutcome(summary=reply.summary, check_in=reply.next_check_in, wake_requests=tuple(
                 WakeRequest(department=request.department, note=request.note) for request in requests))
-            output = {"leader_round": self._brief_record(round_id, outcome, requests),
+            output = {"leader_round": self._round_record(round_id, outcome, requests),
                       "wake_outcome": answer.model_dump(mode="json")}
             self.store.finish(round_id, "completed", output=output, run_id=outcome.run_id, reply=outcome.reply,
                               requests=requests)
@@ -232,7 +232,7 @@ class LeaderNewsRounds:
             return self._declined(round_id, outcome.status, NO_ROUND[outcome.status], outcome.reason or None,
                                   run_id=outcome.run_id, outcome=outcome)
         reason = f"the news round was {outcome.status}: {outcome.reason}"
-        output = _failed(reason, leader_round=self._brief_record(round_id, outcome, ()))
+        output = _failed(reason, leader_round=self._round_record(round_id, outcome, ()))
         self.store.finish(round_id, outcome.status, output=output, run_id=outcome.run_id, reply=outcome.reply,
                           reason=outcome.reason or outcome.status)
         return output
@@ -240,7 +240,7 @@ class LeaderNewsRounds:
     def _declined(self, round_id: str, status: str, summary: str, reason: str | None, *, run_id: str | None = None,
                   outcome: WebResearchOutcome | None = None) -> dict[str, Any]:
         """No round ran: the wake completes and the Leader looks again at the next day start (D123)."""
-        record = (self._brief_record(round_id, outcome, ()) if outcome is not None
+        record = (self._round_record(round_id, outcome, ()) if outcome is not None
                   else {"round_id": round_id, "status": status, "run_id": None, "billing": "none", "sources": 0,
                         "request_ids": []})
         output = {"leader_round": record, "wake_outcome": WakeOutcome(summary=summary).model_dump(mode="json")}
@@ -260,7 +260,7 @@ class LeaderNewsRounds:
         return output
 
     @staticmethod
-    def _brief_record(round_id: str, outcome: WebResearchOutcome, requests) -> dict[str, Any]:
+    def _round_record(round_id: str, outcome: WebResearchOutcome, requests) -> dict[str, Any]:
         return {"round_id": round_id, "status": outcome.status, "run_id": outcome.run_id, "billing": outcome.billing,
                 "sources": len(outcome.source_refs), "request_ids": [request.request_id for request in requests]}
 
