@@ -16,3 +16,4 @@ today. The first real responses are recorded at local step L2 (D125 test key).
 | `agent_missing_usage.json` | Agent API turn with output but no `usage` |
 | `search_results.json` | Search API response with three results |
 | `search_malformed.json` | Search API response whose `results` is not a list |
+| `search_injection.json` | Search API response with one clean result and one written to steer the reader (T37 injection fixture) |

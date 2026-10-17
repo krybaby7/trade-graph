@@ -23,10 +23,12 @@ from typing import Any
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.day_plans import DayPlans
 from trade_graph.application.events import EngineOptions, EventEngine, TaskSettings
+from trade_graph.application.perplexity_switch import perplexity_enabled_for
 from trade_graph.application.scheduler import Scheduler, TaskLease
 from trade_graph.application.secretary import Secretary
 from trade_graph.application.service_controller import service_finished, service_heartbeat, service_started
 from trade_graph.application.worker import RoleWorker
+from trade_graph.contracts.perplexity_switch import PERPLEXITY_DEPARTMENTS
 from trade_graph.contracts.wakes import DEPARTMENTS
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import StaleState, ValidationFailure
@@ -382,9 +384,15 @@ class PaperService:
         return frozenset(departments)
 
     def _wake_task(self, portfolio_id: str, role: str) -> TaskSettings:
-        """A wake's task gets the same allocation, attempt bound and version pin as a scheduled task."""
+        """A wake's task gets the same allocation, attempt bound and version pin as a scheduled task.
+
+        A department the owner switched to Perplexity (T37, T38) is billed per call, not by the subscription, so
+        its wake tasks get the owner's paid root allocation even when the service runs on a subscription.
+        """
         policy = self.execution.authority.active_policy()
-        allocation = Decimal("0") if self.subscription_provider is not None else policy.root_paid_limit.amount
+        paid = role in PERPLEXITY_DEPARTMENTS and perplexity_enabled_for(self.database, role)
+        allocation = (Decimal("0") if self.subscription_provider is not None and not paid
+                      else policy.root_paid_limit.amount)
         bundle = self.artifact_runtime.versions.load_active(portfolio_id) if self.artifact_runtime else None
         return TaskSettings(allocated_spend=allocation, max_attempts=policy.ordinary_max_paid_attempts,
                             expected_version=bundle["artifact_hash"] if bundle else None)
