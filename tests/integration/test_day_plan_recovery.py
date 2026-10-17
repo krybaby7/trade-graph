@@ -76,7 +76,10 @@ def test_a_crash_while_sending_is_reconciled_and_never_resent(tmp_path) -> None:
     assert account.state(installed.entries[0].intent_id) == "SUBMITTING"
     restarted = _restart(account)
     _startup(restarted)
-    assert restarted.state(installed.entries[0].intent_id) == "UNKNOWN"  # unknown is not rejection
+    # Unknown is not rejection: the startup reconciliation finds the order resting at the broker, with no fill
+    # missing, and records it open with its venue order id (W8-B, D248; before, it stayed UNKNOWN and blocked the coin).
+    assert restarted.state(installed.entries[0].intent_id) == "OPEN"
+    assert restarted.execution._payload(installed.entries[0].intent_id)["venue_order_id"].startswith("paper-")
     restarted.dispatch()
     assert _buys_at_broker(restarted) == 1 and inner.submit_count == 1 and restarted.broker.submit_count == 0
     # The order really is resting: it fills, and its fill is protected like any other.
