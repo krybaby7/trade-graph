@@ -84,6 +84,11 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/news_wakes.py",
     "src/trade_graph/application/news_wake_switch.py",
     "src/trade_graph/market_data_cli/news_wakes.py",
+    # W8-A (D244): Perplexity in the installed service (key, price cards, the route's money rule, which wakes go where);
+    # and the price collector, which feeds the coin rule's hourly scan and the price alarms (W6-D left it open).
+    "src/trade_graph/application/perplexity_installation.py",
+    "src/trade_graph/application/price_collector.py",
+    "src/trade_graph/application/service_market_data.py",
 )
 
 
