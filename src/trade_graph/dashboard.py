@@ -10,13 +10,15 @@ from types import SimpleNamespace
 from trade_graph.adapters.brokers.paper import PaperBroker
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.api.auth import issue_session, role_for_token
+from trade_graph.api.hq_chart import ChartCandleFile
 from trade_graph.application.execution import Execution
 from trade_graph.application.ledger import Ledger
 from trade_graph.domain.clock import SystemClock
 
 
 def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_path: Path | None = None,
-                      mode: str = "paper", protected_owner: Path | None = None):
+                      mode: str = "paper", protected_owner: Path | None = None, market_database: Path | None = None):
+    """``market_database`` is the candle file HQ's price charts read (T41); it is only ever opened read-only."""
     from trade_graph.application.service_controller import ServiceController
 
     if mode == "live":
@@ -92,7 +94,8 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_pat
     runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
                               portfolio_id=row["portfolio_id"], deployment_id="deployment", config=config,
                               subscription_provider=subscription().get("selected_provider")
-                                  if protected_owner is not None else None)
+                                  if protected_owner is not None else None,
+                              chart_candles=ChartCandleFile(market_database))
     if protected_owner is not None:
         runtime.recovery_history = lambda: _recovery_history_projection(runtime, manifest, capability_key)
         runtime.subscription_readonly_status = lambda: subscription(refresh=False)

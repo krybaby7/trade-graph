@@ -11,9 +11,11 @@ from trade_graph.api import hq_contract
 WEB = Path(__file__).resolve().parents[1] / "src" / "trade_graph" / "web"
 STATIC = WEB / "static"
 TEMPLATE = WEB / "templates" / "hq.html"
-SCRIPTS = ["hq-core.js", "hq-glossary.js", "hq-render.js", "hq-prompts.js", "hq-decide.js", "hq-checkins.js", "hq.js"]
+SCRIPTS = ["hq-core.js", "hq-glossary.js", "hq-render.js", "hq-prompts.js", "hq-decide.js", "hq-checkins.js",
+           "hq-charts.js", "hq.js"]
 FETCH_ALLOWLIST = {
-    "/api/v1/hq", "/api/v1/hq/story", "/api/v1/owner/config", "/api/v1/owner/pause", "/api/v1/owner/resume",
+    "/api/v1/hq", "/api/v1/hq/story", "/api/v1/hq/chart", "/api/v1/owner/config", "/api/v1/owner/pause",
+    "/api/v1/owner/resume",
     "/api/v1/owner/start-trading", "/api/v1/owner/start-optimisation", "/api/v1/owner/stop-service",
     "/api/v1/owner/expenses", "/api/v1/owner/checkins",
 }
@@ -75,7 +77,10 @@ def test_no_external_urls_in_scripts_or_styles(name):
 
 
 def test_markup_has_no_external_urls_except_the_svg_namespace():
-    assert not re.search(r"https?://", TEMPLATE.read_text(encoding="utf-8"))
+    # T41 (D196): the one exception is the plain TradingView attribution link that Lightweight Charts' licence asks
+    # for beside every chart (tests/test_hq_charts_static.py checks where it sits).
+    page = TEMPLATE.read_text(encoding="utf-8")
+    assert re.findall(r"https?://[^\s\"'<>]*", page) == ["https://www.tradingview.com/"]
     icons = _read("hq-icons.svg")
     assert icons.count(SVG_NAMESPACE) == 1
     assert not re.search(r"https?://", icons.replace(SVG_NAMESPACE, ""))

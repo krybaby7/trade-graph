@@ -58,9 +58,9 @@ departments wrote themselves; HQ never rewrites them. "Load earlier" goes furthe
 may stop short of 3 days and the next page continues from there, so nothing is skipped.
 
 **Money**: the scoreboard (practice money, what changed it, what is held), whether the run "pays for itself",
-"Is my money at risk?", the AI allowance gauge, **AI spending** (below) and the market weather (price and
-20-hour / 50-hour averages). Practice money and real costs are always shown apart and never added together.
-Anything not known yet says "not known yet"; it is never shown as zero.
+"Is my money at risk?", the AI allowance gauge, **AI spending** (below), the market weather (price and
+20-hour / 50-hour averages) and **Price charts** (below). Practice money and real costs are always shown apart and
+never added together. Anything not known yet says "not known yet"; it is never shown as zero.
 
 **Decide**: the buttons. See below.
 
@@ -92,6 +92,37 @@ Two owner commands go with it (run them on your PC, or ask the local session to)
 - `trade-graph ai-spending-record --service perplexity --prepaid-credit 25 --checked-at 2026-10-17T09:00:00Z`
   records the balance you read on your Perplexity account page; `--testing-alert 30` records another alert
   amount. Both preview first and write only with `--confirm`. The newest record counts; older ones stay as history.
+
+## Price charts (the Money tab)
+
+The **Price charts** panel draws one coin at a time from the system's own saved records (T41, decisions D195–D199):
+
+- **Coin**: the coins of today's day plans, coins the account holds, coins with an alarm set, the scanner's newest
+  shortlist (if it is less than a day old) and BTC/USD and ETH/USD for reference. The list says why each coin is there.
+- **Candle size**: 1 min, 5 min, 15 min or 1 hour. A chart shows the last 300 candles (5 hours at 1 minute, about
+  12 days at 1 hour). Drag sideways to look further back; pinch, or drag the time axis, to zoom. Scrolling the
+  page over the chart scrolls the page.
+- **Candles**: hollow when the price rose, filled when it fell. A candle that was never saved stays an empty gap;
+  nothing is filled in. Tap or hover a candle for its exact open, high, low and close under the chart.
+- **Indicators**: the ones the Trader chose in the coin's day plan for this candle size, and the ones its alarms
+  watch. Averages and bands sit on the prices; RSI, MACD and the like get a panel of their own below. An indicator
+  that can't be worked out yet (too little history, or a missing candle it needs) is not drawn, and the list under
+  the chart says why. Indicators chosen for another candle size are named, with the size to pick.
+- **Lines**: alarms (dashed, amber), resting buys (solid, blue), safety exits: stop (dashed, red) and target (dashed,
+  green), and any other open order (dotted). The price scale stretches to show buys and exits within a tenth of the
+  price; an alarm line appears when the price comes near it. Every line is also written out under the chart, so you
+  never need the colours. An order whose status is being checked says so.
+- **Marks**: an arrow for each buy or sell that filled, and a dot where an alarm went off, listed under "Marked on the
+  chart".
+- The chart refreshes every minute while it is on screen. Looking at it never starts anything or changes anything.
+
+Charts are drawn with TradingView Lightweight Charts™ (Apache License 2.0), a copy kept inside Trade Graph: the page
+never loads anything from TradingView or anywhere else. The line under every chart names TradingView, links to its
+website and to the licence and notice, as the licence asks.
+
+If the panel says price history isn't connected, the dashboard was started without the candle file
+(`runtime/market_data.sqlite`, or the file given with `trade-graph dashboard --market-database <file>`). HQ only reads
+that file; it never creates or changes it. Alarm and order levels are still listed.
 
 ## Decisions (the Decide tab)
 
@@ -168,6 +199,20 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   fingerprint of those tables (`api/hq_spending.py`) and sent as the additive `ai_spending` key. A part with no call
   is `null`, never `0`; it reads no practice-money table. The block is left out, not invented, if the records
   can't be read.
+- **Price charts** (T41, D195–D199) come from `GET /api/v1/hq/chart` (`trade-graph.hq.chart.v1`,
+  `api/hq_chart_contract.py`), never from the snapshot, so the snapshot's size is unchanged; the page asks for a chart
+  only while the panel is on screen. Candles are read point in time as of now from the candle file
+  (`kraken_public_ohlc`), opened read-only (`adapters/persistence/market_data_readonly.py`: never created or
+  upgraded, private folder and file, every write refused). Indicators are the T27 engine's numbers over the same
+  candles (D118; a gap withholds an indicator, as for the Trader); `hq_chart.PLACEMENT` only says where each menu entry
+  is drawn. Lines come from `price_alarms`, `order_intents`, `day_plan_entries` and `day_plan_exits`; marks from
+  `fills` and `price_alarm_events`. Prices and levels are exact decimal text; indicator values are rounded to eight
+  significant digits for drawing. A busy synthetic chart (8 indicators, 59 lines) is about 69 KB, within the
+  endpoint's own 80 KB budget. The vendored library (`web/static/vendor/lightweight-charts/`, pinned by
+  `VENDOR.json` and `scripts/vendor_lightweight_charts.py --check`) is fetched from HQ's own origin with a pinned
+  integrity the first time a chart is shown; its built-in logo is off because it would inject a `<style>` element
+  (refused by the policy) and send HQ's address to TradingView. The plain attribution link beside every chart is the
+  page's only outside address.
 - **Owner check-ins** (migration `0025`, D108) are owner-only and append-only, are not in the review export, the
   financial checkpoint, the activity feed or any agent context, and never bump the owner revision. A process sharing
   the SQLite file is not stopped by a module boundary; that residual risk is accepted for non-financial notes.
@@ -182,6 +227,7 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 | `GET /journal` | any signed-in role | The previous home page, unchanged; accepts `?end_at=` |
 | `GET /api/v1/hq` | any signed-in role | HQ snapshot JSON (`trade-graph.hq.v1`); `calendar_days` 1–14, default 7 |
 | `GET /api/v1/hq/story` | any signed-in role | Earlier story; `before` (timezone-aware ISO, required), `limit` 1–60 |
+| `GET /api/v1/hq/chart` | any signed-in role | One price chart (`trade-graph.hq.chart.v1`); `symbol` (for example `SOL/USD`) and `interval` 1, 5, 15 or 60, both optional |
 | `GET /api/v1/owner/checkins` | owner | Check-ins between `from` and `to` (default 7 days back to 30 days ahead) |
 | `POST /api/v1/owner/checkins` | owner (cookie sessions also need the CSRF header) | Plan, reschedule, done, skip or cancel a check-in |
 

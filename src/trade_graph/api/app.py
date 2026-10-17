@@ -18,6 +18,7 @@ from trade_graph.api import (
     evidence,
     financial,
     hq,
+    hq_chart,
     live,
     owner_checkins,
     owner_expenses,
@@ -346,6 +347,7 @@ def create_app(runtime) -> FastAPI:
     owner_expenses.register(app, runtime, identity, owner_write)
     owner_checkins.register(app, runtime, identity, owner_write)
     hq.register(app, runtime, identity)
+    hq_chart.register(app, runtime, identity)
     return app
 
 

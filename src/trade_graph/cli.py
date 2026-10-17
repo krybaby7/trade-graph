@@ -57,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1"])
     dashboard.add_argument("--port", type=int, default=8000)
     dashboard.add_argument("--session-file", default="runtime/owner-session.json")
+    dashboard.add_argument("--market-database", default="runtime/market_data.sqlite",
+                           help="the candle file HQ's price charts read; opened read-only, never created")
     kraken = sub.add_parser("kraken-read-only", help="owner-local bounded native account observation")
     kraken.add_argument("--database", default="runtime/trade_graph.sqlite")
     kraken.add_argument("--owner-directory", default="~/.local/share/trade-graph-owner/kraken")
@@ -393,7 +395,8 @@ def _main(argv: list[str] | None = None) -> int:
         try:
             runtime = dashboard_runtime(Path(args.database), args.portfolio_id,
                                         config_path=Path(args.config) if args.config else None, mode=args.mode,
-                                        protected_owner=Path(args.protected_owner) if args.protected_owner else None)
+                                        protected_owner=Path(args.protected_owner) if args.protected_owner else None,
+                                        market_database=Path(args.market_database))
         except (ValueError, OSError, TradeGraphError) as exc:
             parser.error(f"dashboard startup refused ({type(exc).__name__}); verify the configured mode and scope")
         try:
@@ -430,6 +433,9 @@ def _main(argv: list[str] | None = None) -> int:
         except (ValueError, OSError, TradeGraphError) as exc:
             parser.error(f"dashboard serving refused ({type(exc).__name__}); protected admission is required")
         finally:
+            charts = getattr(runtime, "chart_candles", None)
+            if charts is not None:
+                charts.close()
             runtime.database.close()
         return 0
     if args.command == "demo":
