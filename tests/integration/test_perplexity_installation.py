@@ -302,3 +302,23 @@ def test_an_unreadable_switch_counts_as_off(tmp_path, monkeypatch):
     wake = {"task_id": "t-3", "input": {"wake": {"purpose": "focus"}}}
     wake["snapshot"] = result["research"].context(wake)
     assert result["research"](wake) == {"summary": "subscription answer"}
+
+
+def test_the_owners_monthly_limit_pauses_only_the_round_and_nothing_is_sent(tmp_path, monkeypatch):
+    """D138 item 4: once the owner records a monthly limit, reaching it pauses Perplexity rounds only."""
+    from trade_graph.application.web_research import PerplexityWebResearch, WebResearchAsk
+    from trade_graph.contracts.web_research import PerplexitySpendPolicy
+
+    account = _account(tmp_path)
+    transport = ScriptedPerplexity(account.database)
+    route, _reads, _built = _assemble(account, monkeypatch, transport=transport)
+    task = _leased_task(account)
+    policy = PerplexitySpendPolicy(revision_id="synthetic-limit/spend", mode="monthly_limit",
+                                   monthly_limit_usd=Decimal("0.0001"), decision_ref="D138-4")
+    outcome = PerplexityWebResearch(route.gateway, route=route.route, policy=policy).run(WebResearchAsk(
+        role="research", portfolio_id=account.portfolio, task_id=task, root_task_id=task, system_version_id="v",
+        question="Synthetic: anything new on BTC?", max_searches=1, max_input_tokens=4000, max_output_tokens=500))
+    assert outcome.status == "paused_at_limit" and "owner Perplexity limit" in outcome.reason
+    assert transport.calls == [] and outcome.billing == "none"
+    assert account.database.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
+    assert account.execution.pause(account.portfolio) is None  # no system pause: the Trader and protection go on

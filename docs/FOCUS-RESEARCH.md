@@ -139,12 +139,11 @@ evidence in `web_search_sources`, findings in `findings`.
 - **W6-C (T39, HQ wake log).** The focus step's state is in `day_cycle_steps` and in each Trader wake's
   `focus_step`; Research's rounds are in `focus_research_rounds` and `focus_research_outcomes`; the switch in
   `perplexity_department_settings` (`perplexity_setting` works on a read-only connection).
-- **W6-D or a follow-up before L3: installing it.** The installed subscription service does not run the event
-  engine yet and refuses separately billed API configuration. To run Research on Perplexity it needs: the event
-  engine switched on; a `FocusResearch` built from a `ModelGateway` with `paid_calls_enabled`, a pinned transport
-  holding both Perplexity endpoints, the key from your private file (`read_private_key`), the dated price cards
-  seeded and a `PerplexityRoute` for the deployment; and the deployment's EUR allowance sized for research.
-  Price cards must be re-verified within 30 days (the 2026-10-12 agent card goes stale on 2026-11-11).
+- **Installing it: built by W8-A (C3).** With the event engine on and the switch on, the installed subscription
+  service runs `FocusResearch` for Research's engine wakes in the protected process, on the reviewed `paid_research`
+  route with the key and dated price cards from your owner folder; see
+  [PERPLEXITY-IN-SERVICE.md](PERPLEXITY-IN-SERVICE.md). A card goes stale 30 days after it was checked (the
+  2026-10-12 agent card on 2026-11-11) and then refuses paid calls.
 - **Step L3.** After installing: `trade-graph perplexity-departments --confirm`.
 
 ## Known limits
