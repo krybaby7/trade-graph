@@ -89,14 +89,14 @@ The integrator updates this table each time it merges a wave.
 | W5-A | T35 | Event engine: wake on alarms, fills, exits and check-ins | Merged 2026-10-17 (#14); off in your installed service until the AI Trader answers wakes (W6-D) and you install at L3 |
 | W5-B | T41 | Price charts in HQ | Merged 2026-10-17 (#12); you look at the charts on your phone and iPad at L2 or L3 |
 | W5-C | T42 | Scorecard: result after fees vs. cash and Bitcoin | Merged 2026-10-17 (#13); first real scorecard after L3 (`trade-graph scorecard --format text`) |
-| W6-A | T37 | Research picks daily focus coins on Perplexity | Not started |
-| W6-B | T38 | Leader news rounds and wake notes | Not started |
-| W6-C | T39 | HQ wake log and next check-ins | Not started |
-| W6-D | C2 | Code ready to install: one price collector, new data store wired in | Not started |
+| W6-A | T37 | Research picks daily focus coins on Perplexity | Merged 2026-10-17 (#16); ships switched off: you switch Research and the Leader on at L3 (`trade-graph perplexity-departments --confirm`) once the installed-service wiring exists ([L3 checklist](L3-INSTALL-CHECKLIST.md), step 12) |
+| W6-B | T38 | Leader news rounds and wake notes | Merged 2026-10-17 (#18); the same switch and wiring as W6-A at L3 |
+| W6-C | T39 | HQ wake log and next check-ins | Merged 2026-10-17 (#15); you look at the Calendar and Story tabs on your phone and iPad after L3 |
+| W6-D | C2 | Code ready to install: one price collector, new data store wired in | Merged 2026-10-17 (#17); the real image build and the first collector pass are L3 steps ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | W7-A | T45 | News alarms really wake the Leader and Trader | Not started |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
-| L3 | — | New engine installed on your PC (your approval) | Not started |
+| L3 | — | New engine installed on your PC (your approval) | Not started; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
@@ -647,6 +647,11 @@ paper account in MANAGE_ONLY (docs/FINANCIAL-TRANSITION.md); run
 `trade-graph mandate-cleanup`; record the D138 policy revision (W3-A's
 command); switch Research and the Leader to Perplexity (W6-A, W6-B); confirm
 the new collector runs, then remove the Windows scheduled tasks; resume.
+The commands, in order, with what each should show, are in
+[L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). Its step 12
+(Research and the Leader on Perplexity) waits for the installed-service wiring
+listed there; until it exists, skip that step and both stay on the
+subscription.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final

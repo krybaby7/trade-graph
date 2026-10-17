@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-17T09:17:34.000000Z",
+  "updated_at": "2026-10-17T14:10:04.000000Z",
   "tasks": [
     {
       "id": "T00",
@@ -494,7 +494,7 @@
     {
       "id": "T37",
       "title": "Pick daily focus coins and refresh research on Perplexity",
-      "status": "todo",
+      "status": "done",
       "description": "Pick daily focus coins and refresh research on Perplexity",
       "phase": "D5",
       "dependencies": [
@@ -502,12 +502,12 @@
         "T35",
         "T36"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T38",
       "title": "Run Leader news rounds and Trader wake notes",
-      "status": "todo",
+      "status": "done",
       "description": "Run Leader news rounds and Trader wake notes",
       "phase": "D5",
       "dependencies": [
@@ -515,19 +515,19 @@
         "T35",
         "T36"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T39",
       "title": "Show every wake, its reason and next check-ins in HQ",
-      "status": "todo",
+      "status": "done",
       "description": "Show every wake, its reason and next check-ins in HQ",
       "phase": "D6",
       "dependencies": [
         "T15",
         "T35"
       ],
-      "evidence_summary": "Task acceptance remains pending."
+      "evidence_summary": "Scoped implementation recorded complete; this is not a live or profitability certification."
     },
     {
       "id": "T40",

@@ -1824,3 +1824,391 @@ head; W5-B's 0036 and W5-C's 0037 are unused.
   showing it in HQ is later work (mind the 80 KB payload budget). Reason: the
   T42 acceptance, AGENTS.md (acceptance gates not agent-editable) and keeping
   the wave's packages apart.
+
+Cloud wave 6 (D205–D224, 2026-10-17). The wave 6 integration copied these
+implementation defaults from `planning/handoffs/W6-A.md` (D205–D209), `W6-B.md`
+(D210–D214), `W6-C.md` (D215–D219) and `W6-D.md` (D220–D224), where each
+package's evidence is kept. State migration 0038 (W6-A) follows 0035 and 0039
+(W6-B) follows 0038, and Alembic runs 0035 → 0038 → 0039 with one head; W6-C's
+0040 and W6-D's 0041 are unused.
+
+- **D205 (2026-10-17, implementation default for T37 and T38): the owner's
+  Perplexity switch.** Moving Research or the Leader to Perplexity is one
+  protected owner setting for both departments, shipped off. It is stored as
+  append-only revisions in the state database (migration 0038, `set_by` = owner
+  in SQL, each naming the revision it replaced, hash-checked on read) and
+  recorded only by `trade-graph perplexity-departments`, in the style of
+  `mandate-cleanup` and `money-limits`: preview by default, `--confirm`
+  records, refused while the paper service runs, `--expect-revision`. Its
+  defaults are the owner's decisions so step L3 is one `--confirm`: both
+  departments on, with the D125 testing spend rule (no money limit; every call
+  reserved and receipted; HQ's USD20 alert, D131); `--monthly-limit-usd`
+  records D138 item 4's later monthly limit, which pauses only
+  Perplexity-backed rounds. The typed read `perplexity_enabled_for(database,
+  department)` fails closed (no record, an older database, an edited record).
+  The Leader is forbidden `switch_perplexity_departments`; the Trader cannot be
+  switched (D124). A department switched on is billed per call, so its wake
+  tasks get the owner's paid root allocation even under a subscription service.
+  Reason: the plan's "protected setting, shipped off, with an owner command at
+  L3", D124, D125, D138 item 4, AGENTS.md (protected owner policy; paid work
+  has reservations and receipts).
+
+- **D206 (2026-10-17, implementation default for T37): focus coins come only
+  from the shortlist inside the owner's coin list, enforced twice.** The
+  shortlist is the one the day start recorded: the newest live scan in
+  `CoinScanStore` or the day start's own live scan, never a replay (a replay, a
+  failed scan or none means no shortlist). Candidates are the shortlisted coins
+  the owner's coin list covers (`focus_scope`: a listed mandate's coins inside
+  the owner policy's list, or under the owner's coin rule any spot pair in its
+  quote currency; riba products never, D127). Research's workflow offers only
+  candidates, with the scanner's numbers, and rejects a reply naming anything
+  else. The engine (`EventEngine._focus`) now also refuses a coin outside the
+  owner's coin list and any coin on a day without a shortlist; this tightens
+  D192, which accepted coins on a day with no scan, and W5-A's test was updated
+  to the stricter rule. Refreshes use the same day's shortlist, the one the
+  engine checks against. Reason: T37's acceptance "focus coins come only from
+  the shortlist and the owner symbol scope", D120, D138 item 3.
+
+- **D207 (2026-10-17, implementation default for T37): the focus step,
+  refreshes and how long research lasts.** Research's `focus` wake names the
+  day's focus coins; any other Research wake is a refresh that either keeps
+  today's focus (no new revision, no Trader wake) or names a new selection (a
+  new revision, which wakes the Trader, D192). Every turn names Research's next
+  check-in (none means the next day start, D123); nothing limits how often it
+  refreshes (D116). Findings of these rounds last until the trading day ends,
+  the day plan's lifetime, set by software
+  (`WebResearchAsk.findings_expire_at`); the reply has no lifetime field, so
+  the first run's 47-minute expiry cannot recur. A pick's evidence is its cited
+  references plus the ids of the findings saved for that coin. The round's size
+  bounds (10 searches at the focus step, 6 at a refresh, 60,000 input and 4,000
+  output tokens) are a reservation envelope for one call, not a limit on
+  activity. The old subscription `ResearchHandler` keeps its model-chosen
+  lifetimes; it is not the Perplexity Research. Reason: the T37 deliverables,
+  D121, D123, D116.
+
+- **D208 (2026-10-17, implementation default for T37): empty is an answer,
+  failure is visible, nothing is paid twice.** An empty selection is a valid
+  answer, recorded as a focus with Research's summary: chosen by Research, or
+  without a paid call when the shortlist is empty (`no_candidates`) or none of
+  it is inside the coin list (`outside_owner_scope`). Every other outcome fails
+  the turn with a plain reason (`no_shortlist`, `switched_off`, `disabled`,
+  `paused_at_limit`, `rejected`, `failed`, `uncertain`, `interrupted`,
+  `refused`): the engine records the focus step as failed with it and still
+  wakes the Trader, whose wake carries `focus_step` (status and reason). No
+  status exists for a hold, so an error can never be saved as "nothing today".
+  A round is recorded before anything is sent and a task runs at most one
+  round: a restarted turn returns its saved answer, or `interrupted` (its calls
+  stay unresolved and held) instead of a second paid round. Reason: T37's
+  acceptance "empty or failed research is visible and the Trader can still
+  decide; errors are not disguised as holds", AGENTS.md (persist before
+  effects; unknown usage is unresolved, not free).
+
+- **D209 (2026-10-17, implementation default for T37): web content is data,
+  never authority.** The reply contract forbids any field but the summary,
+  findings, keep, focus and next check-in, so it cannot carry wake requests,
+  plans, orders, approvals or confidence. Software checks every pick against
+  the candidates, every reference against the day's scan id and the round's
+  stored results (else D150's "outside the persisted snapshot"), and rejects
+  the whole reply when a pick rests only on results flagged as instruction-like
+  (T36's markers); such results stay stored and labelled, and a finding citing
+  one is kept as `untrusted-page`, never offered as fresh research. Wake notes,
+  including the Leader's, reach the model as data. Nothing in a reply can
+  change the switch, a setting or an order. Reason: T37's acceptance "web
+  content is data, never authority; injection fixtures are handled", D124,
+  D150, AGENTS.md.
+
+- **D210 (2026-10-17, implementation default for T38): one wake, one round.**
+  The Leader's news round is its event-engine wake handler: each engine wake of
+  the Leader (the day start unless it named a time, its own check-ins, wake
+  requests, news alarms) runs one Perplexity round through W1-C's
+  `PerplexityWebResearch` with role `leader`. The question is fixed by
+  software: what is new in crypto market news and news about AI trading agents
+  since the last round; the Leader's guidance follows the protected T36
+  instructions. The brief is built from saved records only (the wake and its
+  notes, the day's focus coins and plan coins, each department's next check-in,
+  the latest 12 of today's wakes, which departments software wakes, the
+  previous round) and persisted with the task's snapshot and the round. One
+  round's envelope is 6 searches, 32,000 input and 3,000 output tokens and 120
+  seconds; it sizes the reservations of one round and never limits how often
+  rounds run (D116: the Leader may name a check-in a minute away, tested).
+  Leader tasks the engine did not make go to the configured Leader handler.
+  Reason: T38's deliverables, D121, D124, D123, W5-A's wake contract.
+
+- **D211 (2026-10-17, implementation default for T38): what the Leader may
+  return, and where it goes.** A `LeaderNewsReply`: a summary, up to 12
+  headlines, up to 8 deep dives for Research, at most one Trader note, up to 4
+  strategy ideas for Research or Optimisation, and a required next check-in (a
+  time, or none for the next day start). `findings` stays empty: findings with
+  counterevidence are Research's, the Leader asks for a deep dive, and the
+  Leader's skim does not enter the findings the Trader reads. There is no field
+  for orders, approvals, vetoes, plans, pauses, mandates, settings, prompts or
+  code, and extra fields are refused, so a reply that tries is rejected whole.
+  Every request becomes a wake request through the engine (applied after the
+  task is saved), with a note of at most 500 characters that starts with its
+  request id and sources; the full request is stored. The Trader reads its note
+  as data and decides; day plans come only from the Trader's answer and
+  `DayPlans.install` reads no Leader record. A strategy idea goes to
+  Optimisation when software wakes Optimisation, otherwise to Research (both
+  recorded), marked for the practice range before any use; it changes no
+  strategy, artifact, mandate or setting. Reason: T38's acceptance ("cannot
+  place, approve or block individual trades"), D121, D192.
+
+- **D212 (2026-10-17, implementation default for T38): every round has receipts
+  and stored sources.** Every agent step and search reserves and receipts
+  through T36 (an unknown bill stays unresolved, never free). A reply is
+  accepted only if every source it cites (headlines, deep dives, the Trader
+  note, ideas) was stored for this round and the round stored at least one;
+  otherwise the round is `rejected` whole before anything is kept or routed,
+  its receipts and stored results stay, and the wake fails as one turn: no
+  system pause, the day step is recorded as failed, and event triggers (a news
+  alarm, a wake request) are carried to the Leader's next wake. A completed
+  round always carries the Leader's named next check-in. The round's billing,
+  receipts and sources are read live from T36's records, so a later
+  reconciliation shows. Reason: T38's acceptance, D124, D150, D152.
+
+- **D213 (2026-10-17, implementation default for T38): the switch and money.**
+  The protected switch that moves the Leader to Perplexity is W6-A's (one owner
+  setting for both departments, off until step L3); here it is an injected
+  function `enabled`, with the owner's spend rule that travels with it as
+  `spend_policy`, both read fresh for every task; a switch that cannot be read
+  counts as off and a spend rule that cannot be read as none. Switched off, the
+  configured Leader handler keeps the Leader's wakes; without one the wake
+  completes with a `switched_off` round and no call. Without an owner spending
+  policy or with paid calls off the round is `disabled` (nothing reserved or
+  sent). The owner's money limit, the deployment allowance or the wake task's
+  allocation gives `paused_at_limit`: only news rounds pause; the wake
+  completes and the Leader looks again at the next day start (D123); the
+  Trader, protection and records continue (tested). Reason: D125, D138 item 4,
+  D153, CLOUD-BUILD-PLAN W6-B.
+
+- **D214 (2026-10-17, implementation default for T38): the records and a
+  restart.** State migration 0039 holds `leader_news_rounds` (one per wake
+  task, written `started` before any paid call, finished once, brief immutable)
+  and `leader_round_requests` (written with their open round, append-only);
+  they are orchestration records with no trade decision in them. After a
+  restart in the middle of a round, the next claim of its task records the
+  round `interrupted` and fails the turn: its calls keep their receipts, an
+  unknown bill stays held at its maximum, and no second paid round runs for
+  that wake; a finished round's saved answer is returned before any snapshot or
+  paid call. The contract and the round's code are protected paths. Reason:
+  AGENTS.md (persist before effects, unknown usage is unresolved, durable
+  results recover before another paid call; protected acceptance gates), D193.
+
+- **D215 (2026-10-17, implementation default for T39): the wake log is its own
+  read endpoint, paged.** `GET /api/v1/hq/wakes` returns
+  `trade-graph.hq.wakes.v1`; the HQ snapshot, its contract and the nine
+  snapshot fixtures are unchanged (W2-C's `ai_spending` and W5-B's chart keys
+  stay as they are), so the snapshot's 80 KB budget is untouched. Pages hold 20
+  wakes (at most 30), newest first by the wake's sequence (`before=<cursor>`
+  continues below it); the first page also carries today's block. Per wake at
+  most 6 events are written out and the rest counted, at most 3 notes handed to
+  it are quoted at 120 characters, its summary at 280; at most 20 alarms are
+  listed and all counted. These are page bounds like a page size, never limits
+  on wakes, triggers or alarms (D116); totals and counts are exact `COUNT(*)`.
+  A busy synthetic day (600 wakes of 12 reasons each with long distinct notes
+  and summaries, 45 alarms, 16 focus coins) is 51.2 KB per default page and
+  70.7 KB at 30 wakes (budget 80 KB, `PAYLOAD_BUDGET_BYTES`), about 0.06 s per
+  page. Reason: T39's acceptance ("a busy synthetic day stays within the HQ
+  payload budget"), the night lead's note on the snapshot's budget, D116.
+
+- **D216 (2026-10-17, implementation default for T39): where the owner sees
+  it.** The deliverable's "story and calendar entries" are three panels in
+  those tabs rather than new items in the snapshot's calendar and story lists:
+  in the Calendar tab "Next check-ins" (with "Today's routine") and "Today's
+  focus coins and alarms", in the Story tab the "Wake log" (grouped by local
+  day like the Story, a department filter, "Load earlier"). The page reads them
+  only while a panel is on screen (on a phone: the Calendar or Story tab is
+  open) and again with HQ's own poll, at most every 25 s. Older pages are kept
+  only while the newest page still meets them, so a burst of new wakes can
+  never leave a gap. Every time is a tappable time in the viewer's time zone;
+  allowance and alarm times use the short day-and-clock form, because the
+  longer relative form made a phone scroll sideways (found in the Chromium
+  check). No glossary key was added (the snapshot contract stays untouched);
+  "AI allowance" and "stop line" use the existing terms. Reason: T39's
+  deliverables with the payload budget, phone layout without horizontal scroll
+  (acceptance).
+
+- **D217 (2026-10-17, implementation default for T39): what each wake says.**
+  Its reasons are the trigger kinds in the contract's order with how many of
+  each; the headline joins them in plain words ("40 price alarms went off and a
+  waiting buy filled"). Each trigger becomes one event line from what the wake
+  was handed: an alarm's coin and condition (from the alarm delivery in the
+  wake's context, else the alarm record), a fill's exact saved quantity and
+  price, a safety exit's leg (stop or target), the requester of a wake request,
+  the time of a check-in, the day of a day-end review. The allowance line is
+  the reading saved with the wake: how much was left and when it was read,
+  "paused" (new AI work waited; prices and protection went on), or "not known;
+  unknown is never counted as plenty". The result says what came of it: waiting
+  to start (or "Awake and working on it" when its task is leased or running),
+  being put in place, done after how long, the next time it chose, the focus
+  coins it named, the day plans put in place, refused by the software's checks
+  or too late, whom it asked to look; a failed or too-late wake says that what
+  it was woken for waits for its next wake-up. Failed and obsolete wakes are
+  marked for attention, a wake that put a plan in place as good. The
+  department's summary and the notes it was handed (wake requests, news alarms,
+  its own check-in note) appear only as labelled quotes, redacted and cut; raw
+  codes only behind "Show technical names". Reason: D116 ("HQ shows per wake,
+  reason and department allowance"), HQ's model-text rule (D105–D110).
+
+- **D218 (2026-10-17, implementation default for T39): check-ins, today, focus
+  coins, alarms and counts.** Each of the five departments' next check-in is
+  read as `EventEngine.next_check_ins` reads it (D123): its newest check-in
+  when it named a time whose trigger was not yet recorded, otherwise the next
+  day start; HQ cannot know which departments are running, so all five are
+  listed and the panel says wake-ups happen only while the team runs. Status:
+  `awake` when it has an open wake, `due` when its chosen time has passed, else
+  `planned`; `waiting` counts its pending triggers. Today is the trading day
+  whose day start was recorded, else the owner policy's
+  `trading_day_start_utc`, else 00:00 UTC (D138 item 6). The focus coins are
+  the newest revision of today in `focus_selections` (W5-A's record, which
+  W6-A's Research answer is written into), checked against the record's saved
+  SHA-256 like the store does; no coins is shown as a valid answer, a failed or
+  skipped focus step says so. Alarms are the armed alarms of this portfolio or
+  of none (the charts' rule), sorted by coin; alarms that went off and wait are
+  the pending `alarm_fired` deliveries. Counts are the wakes of today and of
+  the last 7 days per department and today's reasons, the figures the owner
+  reviews before changing the allowance floor (D138 item 8). Reason: T39's
+  second deliverable, D123, D138.
+
+- **D219 (2026-10-17, implementation default for T39): reading starts nothing;
+  no migration.** The projection runs plain SQL inside `Database.snapshot()` (a
+  transaction that ends in a rollback) and imports nothing from
+  `trade_graph.application`, the model or broker adapters, or the authority
+  kernel (a test parses its imports); a test hashes the whole state database
+  before and after repeated reads and through the route and finds it unchanged,
+  also with a check-in that is due. A database from before migration 0035
+  answers `available: false` with a plain sentence; a wake record that can't be
+  read is left out and counted, never invented. State migration 0040 is not
+  used; no dependency is added. Reason: T39's acceptance ("built only from
+  persisted records; reading HQ starts no inference or order"), D107, D110.
+
+- **D220 (2026-10-17, implementation default for C2): the hourly features read
+  the candle store.** In an installation with the price collector (public data
+  on, `price_collector.enabled`), the Trader's and Research's hourly features
+  are computed from the candle store's 60-minute series (`kraken_public_ohlc`;
+  `synthetic` for scripted quotes), read point in time through
+  `CandleStore.window`, for every coin of the mandate and, on a wake, the
+  wake's coins, not only BTC/USD and ETH/USD. The fields, TA-Lib functions,
+  windows, anchor rule, statuses, rounding and the snapshot hash rule stay
+  `hourly-price-features-v3` and are computed by the same code from either
+  store, so the feature version does not change; a snapshot names its store
+  (`history_store: "candle_store"`) and each candle by its store revision
+  (`candle-store:<source>:<symbol>:60:<open>:r<n>`, with its run). Kraken's
+  flat quiet hours are read as Kraken sent them, as the scanner and the
+  indicator engine read them. The decision candle wait and `expected_candle`
+  read the same store; HQ's trend label reads the candle file when HQ has it
+  (display only, D136). Without the collector everything reads `hourly_candles`
+  as before, and every stored v1, v2 and v3 snapshot stays readable and is
+  never recomputed; with it, the hourly BTC/ETH refresh into `hourly_candles`
+  stops. Reason: D136 "later work"; the collector's 60-minute series is the
+  same Kraken OHLC data, kept for every coin.
+
+- **D221 (2026-10-17, implementation default for C2): one Kraken request
+  limiter.** There is one implementation, `rate_limit.KrakenRestLimiter`, with
+  the collector's counter model and the backfill's spacing and penalty rules;
+  the backfill's `RequestLimiter` is that class with its own documented
+  settings (15, 0.33 a second, headroom 2, 1-second spacing, 5 to 120 seconds
+  of penalty, millisecond waits), so the backfill command's numbers are
+  unchanged. The limiter is safe to share between threads and never sleeps
+  holding its lock. In the service one instance (`service_limiter`: ceiling 10,
+  drain 0.30 a second, 1-second spacing, starting at the ceiling, on a
+  monotonic clock, throttle times read on the wall clock) carries every request
+  of the price collector, the hourly scan's Ticker request and any Trades
+  backfill, so together they never pass the ceiling (tested against Kraken's
+  own counter). The 10-second quote feed keeps its existing cadence outside it
+  (0.1 requests a second, 0.2 with the event engine's day coins); the headroom
+  of 5 below Kraken's 15 is for it, as T25 designed, but during the hourly
+  ranking pass the sum is above the 0.33 a second Kraken documents for a key's
+  counter. Kraken documents its counter for API keys and not for keyless calls;
+  if the service sees rate-limit answers, the reports show them and
+  `ranking_every_hours: 2` halves the largest share (a check at step L3).
+  Reason: the 2026-10-15 status entry ("unify them when one service process
+  runs both").
+
+- **D222 (2026-10-17, implementation default for C2): the price collector in
+  the service.** One collector runs in the paper service whenever public data
+  is on (`price_collector.enabled`, default true) and replaces the two Windows
+  tasks (removed at L3 once it is seen working). Each step does the most urgent
+  due work, at most 30 requests, recorded as one `public_collect` run with a
+  compact report (`collector: service-collector-v1`): first the pair list
+  (daily; also when none is stored); then the coins the team works with now,
+  from saved records only (BTC/USD and ETH/USD, the quote feed's coins, the
+  newest live shortlist, today's focus coins, held coins, coins with an armed
+  alarm or a day plan not yet ended) at 5, 15 and 60 minutes, and at 1 minute
+  for BTC/USD, ETH/USD, focus coins and coins with a 1-minute alarm, each
+  series when a newer candle has closed and settled (30 seconds; 180 for an
+  hour, D129), a 1-minute series at most every 5 minutes, an answer without the
+  newer candle again after 60 seconds; then every eligible pair's hourly
+  candles once per hour (the scanner reads them, D170) and the hourly coin scan
+  as soon as that pass is done or 50 minutes into the hour (it does not wait
+  for the wide pass); then every eligible pair at 5 and 15 minutes once a day.
+  A rate-limit answer stops the chunk, waits the counter out and pauses
+  collection 60 seconds; a clock behind a recorded run pauses it until the
+  clock passes that run (the T25 guard); a stop interrupts its waiting at once.
+  The service runs one step at a time in its own thread and never waits for it;
+  a failed step is reported as `collector:<error>` and management goes on. The
+  activity log records every pair-list refresh and hourly scan (with the pass's
+  counts), every gap or failure and every change of status, not ordinary
+  chunks. The hourly scans keep the coin rule's answer fresh (W2-B's two-hour
+  bound); the day's focus still comes from the day start's shortlist. These are
+  cadences of public data collection, set in the configuration, not caps on
+  anyone's work (D116). 1-minute candles for every pair stay an owner decision
+  (D133). Reason: the W6-D package ("one price collector inside the service ...
+  for the shortlist and focus coins"), W2-B's and W5-A's handoffs (the hourly
+  scan), T33's candle alarms (a candle more than 10 minutes late is a lost
+  feed).
+
+- **D223 (2026-10-17, implementation default for C2): the subscription Trader
+  on wakes, and the switch.** A department chooses its reply contract per task
+  (`GatewayRole.reply_type_for`, default its usual reply). The Trader's is
+  `TraderWakeReply` for a wake task and `TraderReply` for any other. A wake
+  turn is handed `wake` (the wake as W5-A recorded it, showing the newest 40
+  triggers and 20 alarm items with their totals, so one turn stays inside the
+  subscription's 128 KiB request bound; every trigger stays in the wake
+  record), `practice_range` (up to 6 strategy versions with a confirmation
+  report and their 2 newest reports in plain words: D138 item 5, the Trader
+  reads them and decides) and market data for up to 6 of the wake's coins (its
+  triggers', the day's focus coins and active plans, or the shortlist when
+  Research named none). Both keys are added to the protected
+  `ROLE_CONTEXT_KEYS["trader"]` and must be added to the owner's pinned
+  subscription profile at L3. The answer is recorded under `wake_outcome` with
+  a Secretary report and no order; the event engine installs the plans through
+  `DayPlans.install` and its checks. `event_engine` in the protected
+  `paper-config.json` ships `false`; `true` (step L3) gives
+  `run_subscription_operation` `EngineOptions` with T33's price watcher on the
+  collector's candle file (read-only) and no day-start scan step (the day start
+  uses the collector's newest hourly scan, so the service step makes no
+  request). The engine is refused without public data and the collector. The
+  owner's `graph.py` must pass a wake answer through `apply_role_result` (one
+  that edits a Trader reply's `rationale` fails every wake turn, set aside
+  without effects; the reference graph passes answers through). With the engine
+  on, the paper feed also quotes the day's coins (today's focus coins, coins
+  with a day plan, an armed alarm or a position, filtered by the owner's coin
+  scope) in one extra Ticker request per poll, because `DayPlans.install`
+  refuses a coin without a quote and the paper broker fills and protects only
+  on quotes; that request's failure is recorded and never fails the configured
+  coins. A Trader wake for an event (alarm, fill, exit, request) is answered at
+  once; only `day_plan` and `check_in` wakes wait, as the fixed timer's
+  decisions did, for the closed hour (`decision_candle_wait_seconds`). Research
+  and the Leader keep their usual subscription replies; their wake answers on
+  Perplexity are W6-A's and W6-B's. Reason: W5-A's handoff (D192, D194), rule 7
+  (no silent change of the running system), AGENTS.md (protected owner
+  configuration).
+
+- **D224 (2026-10-17, implementation default for C2): the runtime layout, the
+  image and the checklist.** An installation's candle file is
+  `market_data.sqlite` beside the financial database (`/var/lib/trade-graph` in
+  the image, `runtime/` in a checkout), in the same private state mount, so the
+  container launch keeps its two mounts. The collector is its only writer (it
+  creates it private when missing); the service's hourly features, the price
+  watcher and the dashboard (`--market-database`, set by
+  `boot-subscription-dashboard`) open it read-only. It is public price data and
+  not part of the financial books or their recovery unit (D132); at L3 the
+  existing WSL candle file is copied in with SQLite's backup command. The image
+  builder refuses, before any download, an export that does not pin NumPy and
+  TA-Lib with the hash of the lock's CPython 3.12 Linux x86-64 wheel, and the
+  image imports both before it is sealed; the real build is step L3.
+  `docs/L3-INSTALL-CHECKLIST.md` names every L3 command in order, matching the
+  plan's L3 order, with the Perplexity prerequisites as explicit conditions of
+  its step 12. Reason: the W6-D package bullets and W5-B's note (the dashboard
+  reads the candle file).
