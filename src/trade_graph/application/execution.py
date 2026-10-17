@@ -431,9 +431,11 @@ class Execution:
                 self._pilot_lifecycle.reserve_increase(self._pilot_authorization_id, intent_id)
         return intent_id
 
-    async def dispatch(self, *, protection_only: bool = False) -> int:
+    async def dispatch(self, *, protection_only: bool = False, intent_ids: Iterable[str] | None = None) -> int:
         """Send pending intents. ``protection_only`` sends only protective exits of filled day-plan entries (T34),
-        which reduce risk and may go out as soon as their fill is recorded, under any pause that keeps protection."""
+        which reduce risk and may go out as soon as their fill is recorded, under any pause that keeps protection.
+        ``intent_ids`` sends only these (the Trader's close sends its sell right after the cancel, W8-B); every
+        other rule of dispatch applies to them unchanged."""
         rows = self.database.execute(
             """SELECT o.payload_ref FROM outbox o JOIN order_intents i ON i.intent_id = o.payload_ref
             WHERE o.kind = 'submit' AND o.status = 'pending'
@@ -442,6 +444,11 @@ class Execution:
             AND json_extract(i.payload_json, '$.mode') = ?""",
             (self.venue, self.account_id, self.mode),
         ).fetchall()
+        if intent_ids is not None:
+            wanted = set(intent_ids)
+            rows = [row for row in rows if row["payload_ref"] in wanted]
+            if not rows:
+                return 0
         if protection_only:
             rows = [row for row in rows if self._payload(row["payload_ref"]).get("protective_exit")]
             if not rows:
