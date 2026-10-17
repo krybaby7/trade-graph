@@ -93,7 +93,7 @@ def test_the_wake_keys_are_in_the_protected_allowlist_and_an_owner_profile_witho
         assert "practice_range" not in ROLE_CONTEXT_KEYS[role]
     older = {role: sorted(keys - {"wake", "practice_range"}) for role, keys in ROLE_CONTEXT_KEYS.items()}
     config = SubscriptionRuntimeConfig(subscription=SubscriptionConfig(
-        provider="claude_subscription", model="claude-sonnet-5-5", enabled=True, allowed_context_keys=older))
+        provider="claude_subscription", model="scripted", enabled=True, allowed_context_keys=older))
     assert "wake" not in config.subscription.allowed_context_keys["trader"]  # what step L3 adds to the profile
 
 

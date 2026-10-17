@@ -338,11 +338,11 @@ per source: synthetic test runs and live runs never hold each other back.
 ## In the service
 
 Since W6-D (decisions D221, D222 and D224) one collector runs inside the paper service and replaces the two Windows
-scheduled tasks (`scripts/register_candle_schedule.ps1`, removed at step L3, [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md)).
-Code: `application/price_collector.py` (`PriceCollector`), `application/service_market_data.py` (the candle file, the
-read-only handle and the coins the team works with). Tests: `tests/integration/test_price_collector.py`,
-`test_price_collector_service.py`, `test_install_wiring.py`, `test_shared_rate_limit.py`,
-`tests/unit/test_shared_kraken_limiter.py`.
+scheduled tasks (`scripts/register_candle_schedule.ps1`, removed at step L3,
+[L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md)). Code: `application/price_collector.py` (`PriceCollector`),
+`application/service_market_data.py` (the candle file, the read-only handle and the coins the team works with).
+Tests: `tests/integration/test_price_collector.py`, `test_price_collector_service.py`, `test_install_wiring.py`,
+`test_shared_rate_limit.py`, `tests/unit/test_shared_kraken_limiter.py`.
 
 - **Where.** The candle file is `market_data.sqlite` beside the financial database (`/var/lib/trade-graph` in the
   image). The collector is its only writer; the dashboard, the hourly features (D220) and the price watcher open it
@@ -364,7 +364,8 @@ read-only handle and the coins the team works with). Tests: `tests/integration/t
   go through one `KrakenRestLimiter` (D221): it starts at the ceiling of 10, drains 0.30 a second and spaces calls one
   second apart. A rate-limit or throttle answer stops the chunk, the counter is taken to be full and waited out, and
   collection pauses another 60 seconds. The 10-second quote feed keeps its own cadence beside it, as before (the
-  headroom of 5 below Kraken's 15 is for it). Kraken does not document whether keyless calls share one counter per
+  headroom of 5 below Kraken's 15 is for it); with the event engine on it makes one more request per poll for the
+  day's coins. Kraken does not document whether keyless calls share one counter per
   address; if the service sees rate-limit answers, the reports say so and `ranking_every_hours: 2` halves the
   largest share.
 - **Records.** Each chunk (at most 30 requests) is one `public_collect` run with the parameters `collector:
@@ -373,9 +374,14 @@ read-only handle and the coins the team works with). Tests: `tests/integration/t
   scan (with the ranking pass's counts), every gap or failure, and every change of status; an ordinary chunk is not
   logged. The clock guard of the command applies too: a clock behind a recorded run pauses collection until it has
   passed that run again.
-- **Expected cost (computed, not measured).** About 591 requests an hour for the ranking pass, about 1,180 a day for the wide pass and a few
-  hundred an hour for the coins the team works with: about 0.23 requests a second on average, under the limiter's
-  0.30. The store grows by about 30 MB a day for this scope (Storage, above); a chunk's report is under 4 KB.
+- **Expected cost (computed, not measured).** About 591 requests an hour for the ranking pass, about 1,180 a day
+  for the wide pass and a few hundred an hour for the coins the team works with: about 0.23 requests a second on
+  average, under the limiter's 0.30. The quote feed adds 0.1 a second outside the limiter (0.2 with the event engine
+  on). Together that is above the 0.33 a second Kraken documents for a key's counter: if keyless calls from one
+  address shared such a counter, the sum would pass it during the ranking pass. The limiter keeps the collector's own
+  share under its ceiling, not the sum, so step L3 watches the collector's reports and the feed's health for
+  rate-limit answers; `ranking_every_hours: 2` then halves the largest share. The store grows by about 30 MB a day for
+  this scope (Storage, above); a chunk's report is under 4 KB.
 
 ## Known limits
 

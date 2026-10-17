@@ -217,7 +217,10 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
   with at most the newest 40 triggers and 20 alarm items shown and their totals) and `practice_range` (strategy
   versions with a confirmation report, their newest reports in plain words), plus market data for the wake's coins;
   both keys are in the protected `ROLE_CONTEXT_KEYS["trader"]` and must be in the owner's subscription profile (step
-  L3). Its answer goes under `wake_outcome` with a Secretary report; the engine installs the plans. Research and the
+  L3). Its answer goes under `wake_outcome` with a Secretary report; the engine installs the plans. With the engine on,
+  the paper feed also quotes the day's coins (focus, plans, alarms, held; within the owner's coin scope) in one extra
+  request per poll, so a plan on any of them can rest and fill; only `day_plan` and `check_in` wakes wait for the
+  closed hour (`decision_candle_wait_seconds`), event wakes never. Research and the
   Leader answer wakes on Perplexity through W6-A and W6-B; their subscription handlers still answer their usual reply.
   The hourly scan and the candle file come from the price collector (KRAKEN-CANDLE-COLLECTION.md, "In the service").
 
