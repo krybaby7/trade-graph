@@ -150,6 +150,16 @@ panels never wakes anyone, starts any work or places any order.
   counts today's wake-ups and the last 7 days' per department, which is what you look at before deciding on the AI
   allowance floor after the first week (D138 item 8).
 
+- **News alarms** (T45): a news wake-up reads "A news alarm about SOL/USD from Kraken blog.", with the headline as a
+  quote. The top line of the Wake log also says whether news alarms wake people or, in shadow mode (the setting until
+  you switch them on with `trade-graph news-wakes` after step L3), how many wake-ups they would have made today and in
+  the last 7 days; that is what you look at before switching them on.
+- **Rooms and the calendar with the event engine on** (T45, W6-C's follow-up): each department's "next turn" on its
+  room tile and in the calendar is its own next check-in (the time it chose, or the next day start), the same as in
+  "Next check-ins", instead of the old fixed timers, which stop moving once the engine runs. The calendar then lists
+  one exact next turn per department and no estimated later ones, because each department picks its next time itself.
+  With the engine off, rooms and calendar keep the fixed timers.
+
 Nothing limits how often a department is woken (D116); the log lists every wake-up the records hold, a page at a
 time. Until the event engine is switched on in your installation (step L3), the panels say that no wake-up has been
 recorded yet.
@@ -256,7 +266,18 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   the rest; at most 20 alarms are listed and all are counted; notes are quoted at 120 characters and summaries at 280.
   These are page bounds, never limits on wake-ups or alarms. A busy synthetic day (600 wakes of 12 reasons with long
   notes, 45 alarms, 16 focus coins) is about 51 KB per default page and 71 KB at 30 wakes, within the endpoint's own
-  80 KB budget. A database from before migration `0035` says it has no wake-up records.
+  80 KB budget. A database from before migration `0035` says it has no wake-up records. T45 adds two reads: a news
+  wake-up's source is the publisher of the headline behind its saved route (`news_alarm_wake_routes`, migration
+  `0042`, joined to `news_headlines`), and the day's counts add the news routes of today and the last 7 days by mode
+  (`live` wake-ups made, `shadow` wake-ups only recorded) with the owner policy's `news_wakes` switch. A busy day of
+  600 wakes of 12 news alarms each with 500-character notes and 80-character sources is about 44 KB per default page
+  and 65 KB at 30 wakes.
+- **Next turns with the event engine on** (T45, W6-C's follow-up): when the dashboard's configuration has
+  `event_engine: true`, the snapshot's room tiles and calendar take each department's next turn from
+  `department_check_ins` by the same rule as the wake log (`hq_wakes.engine_check_ins`, which follows
+  `EventEngine.next_check_ins`): one exact `dept_turn` item per department (`turn:check-in:<dept>:<time>`), no
+  estimated successors and no `schedules` rows. Without the switch nothing changes, so the snapshot fixtures are as
+  before; with it the snapshot is smaller, because the estimates are gone.
 - **Owner check-ins** (migration `0025`, D108) are owner-only and append-only, are not in the review export, the
   financial checkpoint, the activity feed or any agent context, and never bump the owner revision. A process sharing
   the SQLite file is not stopped by a module boundary; that residual risk is accepted for non-financial notes.
