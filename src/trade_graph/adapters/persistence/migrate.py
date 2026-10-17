@@ -13,6 +13,7 @@ from trade_graph.adapters.persistence.engineering_schema import STATEMENTS as EN
 from trade_graph.adapters.persistence.financial_checkpoint_schema import STATEMENTS as FINANCIAL_CHECKPOINT_STATEMENTS
 from trade_graph.adapters.persistence.financial_recovery_schema import STATEMENTS as FINANCIAL_RECOVERY_STATEMENTS
 from trade_graph.adapters.persistence.financial_transition_schema import STATEMENTS as FINANCIAL_TRANSITION_STATEMENTS
+from trade_graph.adapters.persistence.money_limit_schema import migration as money_limit_migration
 from trade_graph.adapters.persistence.native_fee_reservation_schema import (
     STATEMENTS as NATIVE_FEE_RESERVATION_STATEMENTS,
 )
@@ -472,6 +473,7 @@ STATEMENTS.append(("0029", PRICE_ALARM_STATEMENTS))
 STATEMENTS.append(("0030", PRACTICE_RANGE_STATEMENTS))
 STATEMENTS.append(("0031", COIN_SCAN_STATEMENTS))
 STATEMENTS.append(ai_spending_migration())  # 0032, W2-C (T40)
+STATEMENTS.append(money_limit_migration())  # 0033, W3-A (T32)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

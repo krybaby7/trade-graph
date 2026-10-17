@@ -9,9 +9,10 @@ from collections.abc import Callable
 from decimal import ROUND_CEILING, Context, Decimal, Inexact, localcontext
 
 from trade_graph.adapters.persistence.db import Database, atomic
-from trade_graph.application.authority import AuthorityRecord
+from trade_graph.application.authority import AuthorityRecord, CoinRule
 from trade_graph.application.incident_resolution import ProtectedNativeIncidentResolver
 from trade_graph.application.ledger import Ledger
+from trade_graph.application.money_limits import MoneyLimitGuard
 from trade_graph.contracts.models import (
     AuthorizedOrderIntent,
     BrokerCapabilities,
@@ -38,6 +39,8 @@ from trade_graph.domain.money import canonical_decimal, parse_decimal
 from trade_graph.domain.precision import floor_to_increment, new_client_id
 from trade_graph.domain.protocols import Broker
 from trade_graph.kernel.authority import pause_allows_increase, pause_allows_reduction
+from trade_graph.kernel.money_limits import EntryValue, check_entry, entry_value
+from trade_graph.kernel.riba import refuse_riba_symbol
 from trade_graph.live_gate import LivePilotScope
 from trade_graph.live_pilot import ProtectedPilotLifecycle
 
@@ -78,6 +81,7 @@ class Execution:
         pilot_lifecycle: ProtectedPilotLifecycle | None = None,
         pilot_authorization_id: str | None = None,
         native_incident_resolver: ProtectedNativeIncidentResolver | None = None,
+        coin_rule: CoinRule | None = None,
     ) -> None:
         self.database = database
         self.ledger = ledger
@@ -106,7 +110,9 @@ class Execution:
         # A cold live adapter must still support read-only crash reconciliation.
         # Readiness is mandatory before an intent/reservation or submission.
         self._validate_fee_reserve_rate(require_ready=False)
-        self.authority = AuthorityRecord(database, clock)
+        # ``coin_rule`` replaces the scanner store's answer (tests); the default reads the newest live scan.
+        self.authority = AuthorityRecord(database, clock, coin_rule=coin_rule)
+        self.money_limits = MoneyLimitGuard(database, ledger, clock)
 
     def now(self) -> str:
         return utc_iso(self.clock.now())
@@ -243,11 +249,19 @@ class Execution:
         return [Observation.model_validate_json(row["document_json"]) for row in rows]
 
     @atomic
-    def authorize(self, portfolio_id: str, decision: Decision) -> str:
+    def authorize(self, portfolio_id: str, decision: Decision, *, day_plan: bool = False) -> str:
+        """Persist one authorized intent with its reservation and outbox row, or refuse before writing.
+
+        ``day_plan`` marks an entry installed from a Trader day plan (T34): refused until the owner has recorded
+        money limits (D138). Every entry, from a plan or not, meets the owner's coin list, the per-coin and total
+        shares counting resting entries as if filled, the daily loss limit once recorded, and D127.
+        """
         if self.mode == "live":
             self._validate_fee_reserve_rate()
         if decision.action not in {"enter", "exit"}:
             raise ValidationFailure("authorize requires enter/exit; resize and adjustment need explicit semantics")
+        if decision.action == "enter" and decision.symbol is not None:
+            refuse_riba_symbol(decision.symbol)
         if decision.action == "enter" and self._reconciliation_blocked():
             raise StaleState("incomplete account reconciliation blocks new exposure")
         if decision.action == "enter":
@@ -270,10 +284,17 @@ class Execution:
         profile = self.profile(portfolio_id)
         increase = decision.action == "enter"
         side = "buy" if increase else "sell"
+        if increase and day_plan:
+            self.money_limits.require_day_plan_orders(policy)
         if increase and not pause_allows_increase(profile):  # type: ignore[arg-type]
             raise AuthorityDenied(f"pause {profile} blocks new exposure")
         if not increase and not pause_allows_reduction(profile):  # type: ignore[arg-type]
             raise AuthorityDenied(f"pause {profile} blocks reduction")
+        if increase and policy.money_limits is not None:
+            # Reads only: the management step records the stop (enforce_money_limits) within its next tick.
+            refusal = self.money_limits.status(portfolio_id, policy).entry_refusal()
+            if refusal is not None:
+                raise refusal
         venue = self.venue
         if increase and self.blocks_increase is not None and self.blocks_increase(decision.symbol):
             raise StaleState("market feed blocks new exposure")
@@ -307,6 +328,17 @@ class Execution:
             raise ValidationFailure("below venue minimum; size was not increased")
         books = self.ledger.books(portfolio_id)
         base, quote = rules.base_asset, rules.quote_asset
+        fee_reserve = notional * self.fee_reserve_rate
+        if side == "buy":
+            need_asset, need_amount = quote, notional + fee_reserve
+            available = books.cash_amount(quote) - self._reserved(portfolio_id, quote)
+        else:
+            # Spot only (D127): an exit sells what is held and unreserved; nothing is borrowed or sold short.
+            owned = self._owned(books, base)
+            need_asset, need_amount = base, quantity
+            available = owned - self._reserved(portfolio_id, base)
+        if need_amount > available:
+            raise ValidationFailure("insufficient available balance")
         if increase:
             self._assert_increase_exposure(
                 portfolio_id,
@@ -318,16 +350,6 @@ class Execution:
                 gross_cap,
                 asset_cap,
             )
-        fee_reserve = notional * self.fee_reserve_rate
-        if side == "buy":
-            need_asset, need_amount = quote, notional + fee_reserve
-            available = books.cash_amount(quote) - self._reserved(portfolio_id, quote)
-        else:
-            owned = self._owned(books, base)
-            need_asset, need_amount = base, quantity
-            available = owned - self._reserved(portfolio_id, base)
-        if need_amount > available:
-            raise ValidationFailure("insufficient available balance")
         intent_id = str(uuid.uuid4())
         client_order_id = new_client_id()
         order_type = "limit" if decision.limit_price else "market"
@@ -750,6 +772,26 @@ class Execution:
             return achieved_state(achieved)
         raise ValidationFailure("unsupported pause profile")
 
+    async def enforce_money_limits(self, portfolio_id: str) -> dict:
+        """The management step for the owner's money limits; run on every service tick (T32).
+
+        Flags interest-like postings (D127). Under recorded money limits it records the day-start value and,
+        at the daily loss limit, the day's stop, then cancels every resting or unsent entry (buy) of the
+        portfolio. Protective exits, exits and reconciliation are untouched; nothing is sold off.
+        """
+        flagged = self.money_limits.flag_interest_postings(portfolio_id)
+        try:
+            policy = self.authority.active_policy()
+        except AuthorityDenied:
+            return {"portfolio_id": portfolio_id, "money_limits": None, "flagged": flagged, "cancelled": []}
+        status = self.money_limits.status(portfolio_id, policy, record=True)
+        cancelled: list[str] = []
+        if status is not None and status.stopped and self._has_outstanding(portfolio_id, sides={"buy"}):
+            cancelled = await self._cancel_for_pause(portfolio_id, sides={"buy"}, keep_flatten_exits=False,
+                                                     reason="daily_loss_limit")
+        return {"portfolio_id": portfolio_id, "money_limits": None if status is None else status.document(),
+                "flagged": flagged, "cancelled": cancelled}
+
     async def cancel(self, intent_id: str) -> None:
         payload = self._assert_current_scope(intent_id)
         self._set_state(intent_id, "CANCEL_PENDING", {})
@@ -972,7 +1014,9 @@ class Execution:
         *,
         sides: set[str] | None,
         keep_flatten_exits: bool,
-    ) -> None:
+        reason: str = "pause",
+    ) -> list[str]:
+        acted: list[str] = []
         for row in self._order_rows(portfolio_id):
             if row["state"] not in self._OUTSTANDING:
                 continue
@@ -982,12 +1026,15 @@ class Execution:
             if keep_flatten_exits and payload.get("flatten_exit"):
                 continue
             if row["state"] == "SUBMISSION_PENDING":
-                self._abandon_unsent(row["intent_id"], "pause")
+                self._abandon_unsent(row["intent_id"], reason)
+                acted.append(row["intent_id"])
                 continue
             if row["state"] == "CANCEL_PENDING":
                 continue
             await self.cancel(row["intent_id"])
+            acted.append(row["intent_id"])
         await self.reconcile()
+        return acted
 
     def _queue_flatten_exits(self, portfolio_id: str) -> None:
         policy = self.authority.active_policy()
@@ -1083,14 +1130,25 @@ class Execution:
             return "reject"
         if self.authority.mandate_expired(mandate):
             return "reject"
-        if intent.symbol not in mandate.symbols or intent.symbol not in policy.allowed_symbols:
+        try:
+            refuse_riba_symbol(intent.symbol)
+        except AuthorityDenied:
             return "reject"
+        scope = self.authority.entry_scope(policy, mandate, intent.symbol)
+        if scope != "submit":
+            return scope
         if intent.venue not in policy.allowed_venues or intent.mode != self.mode:
             return "reject"
         if intent.mode == "live" and not policy.live_enabled:
             return "reject"
         if intent.order_type not in mandate.allowed_order_types:
             return "reject"
+        if policy.money_limits is not None:
+            limit = self.money_limits.status(intent.portfolio_id, policy)
+            if limit.reached:
+                return "reject"
+            if limit.unknown is not None:
+                return "hold"
         gross_cap, asset_cap, max_age = self.authority.limits(policy, mandate)
         if not self.quote_fresh(intent.symbol, max_age, intent.venue):
             return "hold"
@@ -1109,6 +1167,7 @@ class Execution:
                 gross_cap,
                 asset_cap,
                 exclude_intent_id=intent.intent_id,
+                venue=intent.venue,
             )
         except AuthorityDenied:
             return "reject"
@@ -1177,7 +1236,15 @@ class Execution:
         asset_cap: Decimal,
         *,
         exclude_intent_id: str | None = None,
+        venue: str | None = None,
     ) -> None:
+        """The per-coin and total shares, counting every resting entry and this one as if filled (T32).
+
+        Each entry is valued at the highest of its price, the buy quote and the coin's mark, and the caps are
+        compared with the equity left after every counted entry paid the reserve fee rate and any loss against
+        the mark (``kernel.money_limits.check_entry``), so no sequence of their fills can breach a cap.
+        """
+        venue = venue or self.venue
         books = self.ledger.books(portfolio_id)
         # Caps compare matching units (D16) in the instruction's native quote
         # currency. Reporting-FX staleness only flags EUR views (D114); a
@@ -1189,16 +1256,17 @@ class Execution:
             raise StaleState(f"stale native {quote_asset} valuation")
         if native.equity <= 0:
             raise AuthorityDenied("no equity")
-        pending_gross, pending_asset = self._pending_exposure(
-            portfolio_id, base_asset, quote_asset, exclude_intent_id=exclude_intent_id
-        )
-        proposed = price * quantity
-        projected_asset = self._position_value(books, symbol, price) + pending_asset + proposed
-        projected_gross = native.inventory + pending_gross + proposed
-        if projected_asset / native.equity > asset_cap:
-            raise AuthorityDenied("single asset exposure")
-        if projected_gross / native.equity > gross_cap:
-            raise AuthorityDenied("gross exposure")
+        entries = self._pending_entries(portfolio_id, quote_asset, exclude_intent_id=exclude_intent_id)
+        reference = self._reference_price(symbol, "buy", venue)
+        mark = self._native_mark(portfolio_id, base_asset, quote_asset)
+        proposed = entry_value(base_asset, quantity, order_price=price, reference=reference,
+                               mark=mark if mark is not None else self._reference_price(symbol, "sell", venue))
+        held = self._held_values(portfolio_id, books, quote_asset)
+        owned = self._owned(books, base_asset)
+        if owned > 0:
+            held[base_asset] = owned * max(value for value in (price, reference, mark) if value is not None)
+        check_entry(equity=native.equity, inventory=native.inventory, held=held, entries=entries,
+                    proposed=proposed, fee_rate=self.fee_reserve_rate, coin_cap=asset_cap, gross_cap=gross_cap)
 
     @atomic
     def _mark_submitting(self, intent_id: str) -> bool:
@@ -1316,15 +1384,15 @@ class Execution:
     def _owned(self, books, asset: str) -> Decimal:
         return sum((lot.open_quantity() for lot in books.lots if lot.asset == asset), Decimal("0"))
 
-    def _pending_exposure(
+    def _pending_entries(
         self,
         portfolio_id: str,
-        asset: str,
         native: str,
         *,
         exclude_intent_id: str | None = None,
-    ) -> tuple[Decimal, Decimal]:
-        gross = single = Decimal("0")
+    ) -> list[EntryValue]:
+        """Every authorized buy not yet filled or ended, valued as if filled, in the native currency."""
+        entries: list[EntryValue] = []
         rows = self.database.execute(
             """SELECT intent_id, payload_json FROM order_intents WHERE portfolio_id = ?
             AND state NOT IN ('FILLED', 'CANCELLED', 'REJECTED')""", (portfolio_id,)
@@ -1339,20 +1407,42 @@ class Execution:
             remaining = max(Decimal("0"), Decimal(intent["quantity"]) - self._filled_quantity(row["intent_id"]))
             if not remaining:
                 continue
-            price = self._reference_price(intent["symbol"], "buy", intent["venue"])
-            if intent.get("limit_price") is not None:
-                price = max(price or Decimal("0"), Decimal(intent["limit_price"]))
-            if price is None:
+            reference = self._reference_price(intent["symbol"], "buy", intent["venue"])
+            limit = Decimal(intent["limit_price"]) if intent.get("limit_price") is not None else None
+            if reference is None and limit is None:
                 raise StaleState("pending order has no price for exposure valuation")
-            value = self.ledger.native_value(remaining * price, rules.quote_asset, native)
-            gross += value
-            if rules.base_asset == asset:
-                single += value
-        return gross, single
+            mark = self._native_mark(portfolio_id, rules.base_asset, rules.quote_asset)
+            if mark is None:
+                mark = self._reference_price(intent["symbol"], "sell", intent["venue"])
+            entry = entry_value(rules.base_asset, remaining, order_price=limit, reference=reference, mark=mark)
+            entries.append(EntryValue(
+                entry.coin,
+                self.ledger.native_value(entry.value, rules.quote_asset, native),
+                self.ledger.native_value(entry.shortfall, rules.quote_asset, native) if entry.shortfall else
+                Decimal("0"),
+            ))
+        return entries
 
-    def _position_value(self, books, symbol: str, price: Decimal) -> Decimal:
-        base = symbol.split("/")[0]
-        return self._owned(books, base) * price
+    def _native_mark(self, portfolio_id: str, asset: str, native: str) -> Decimal | None:
+        """The newest valuation mark of ``asset``, in ``native``; None when there is none yet."""
+        row = self.database.execute(
+            """SELECT mark, quote_currency FROM valuation_marks WHERE portfolio_id = ? AND asset = ?
+            AND observed_at <= ? ORDER BY observed_at DESC, rowid DESC LIMIT 1""",
+            (portfolio_id, asset, self.now()),
+        ).fetchone()
+        if row is None:
+            return None
+        return self.ledger.native_value(Decimal(row["mark"]), row["quote_currency"], native)
+
+    def _held_values(self, portfolio_id: str, books, native: str) -> dict[str, Decimal]:
+        """Each held coin at its mark, in ``native`` (the native valuation has already refused a missing mark)."""
+        held: dict[str, Decimal] = {}
+        for asset in sorted({lot.asset for lot in books.lots if lot.open_quantity() > 0}):
+            mark = self._native_mark(portfolio_id, asset, native)
+            if mark is None:
+                raise StaleState(f"native {native} valuation lacks a mark or FX for {asset}")
+            held[asset] = self._owned(books, asset) * mark
+        return held
 
     def _reference_price(self, symbol: str, side: str, venue: str | None = None) -> Decimal | None:
         latest = self.latest_observation(symbol, self.now(), venue)

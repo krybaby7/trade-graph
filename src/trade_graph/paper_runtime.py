@@ -30,6 +30,7 @@ from trade_graph.application.secretary import Secretary
 from trade_graph.contracts.models import PriceCard
 from trade_graph.domain.clock import SystemClock
 from trade_graph.domain.errors import AuthorityDenied
+from trade_graph.kernel.authority import owner_scope_covers
 
 
 class PaperRuntimeConfig(BaseModel):
@@ -176,7 +177,8 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             policy = execution.authority.active_policy()
         except AuthorityDenied:
             raise ValueError("persisted owner policy is required") from None
-        if not set(config.paper_symbols) <= set(policy.allowed_symbols):
+        # Under the owner's coin rule (T32) the feed may watch any pair the rule can include.
+        if not all(owner_scope_covers(policy, symbol) for symbol in config.paper_symbols):
             raise ValueError("public-data symbols exceed the persisted owner policy")
         feed = None
         if config.public_data_enabled:

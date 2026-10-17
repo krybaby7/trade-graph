@@ -424,6 +424,13 @@ REASON: Final = {
     "checking": "the account's balances were still being double-checked",
     "unknown_coin": "the exchange's rules for that coin aren't known",
     "paused": "a pause was on that doesn't allow this order",
+    # The owner's money limits and coin list (T32).
+    "loss_limit": "the day's loss limit was reached, so new buying waits until the next day starts",
+    "loss_limit_check": "the day's loss limit couldn't be checked at that moment",
+    "coin_list": "that coin isn't on the allowed coin list right now",
+    "coin_list_check": "the coin list couldn't be checked at that moment (no recent coin scan)",
+    "riba": "that kind of product isn't allowed (no futures, borrowing, short selling or earn products)",
+    "limits_missing": "your money limits aren't recorded yet, so plan orders stay off",
     # The Trader's answer arrived but could not be used; only that turn failed.
     "answer_checks": "its answer didn't pass the checks",
     "error": "a technical error",
@@ -475,6 +482,18 @@ def _reason_key(value: str) -> str:
         return "prices"
     if "unresolved execution blocks new exposure" in value:
         return "unresolved"
+    if "daily loss limit reached" in value:
+        return "loss_limit"
+    if "daily loss limit can't be checked" in value:
+        return "loss_limit_check"
+    if "outside the owner's coin rule" in value:
+        return "coin_list"
+    if "coin rule can't be checked" in value:
+        return "coin_list_check"
+    if "(D127)" in value:
+        return "riba"
+    if value.startswith("day-plan orders stay off"):
+        return "limits_missing"
     if _PAUSE_REFUSAL.search(value):
         return "paused"
     if "below venue minimum" in value or "rounding would exceed authorization" in value:
