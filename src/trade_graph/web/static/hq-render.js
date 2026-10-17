@@ -1104,6 +1104,11 @@
     return textEl("span", "", [{t: "money", amount: value.amount, currency: value.currency, display: value.display}]);
   }
   function term(key, words) { return textEl("span", "", [{t: "term", key, v: words}]); }
+  // A negative amount without its sign, for "short by …" sentences (the display's minus is U+2212).
+  function unsigned(value) {
+    if (!value || typeof value.display !== "string") return null;
+    return {...value, amount: str(value.amount).replace(/^-/, ""), display: value.display.replace(/^[\u2212-]/, "")};
+  }
   function stat(label, value, note) {
     const box = el("div", "hq-stat");
     const name = el("p", "hq-stat-label");
@@ -1192,13 +1197,18 @@
       const paysBox = el("section", "hq-pays");
       paysBox.dataset.status = str(pays.status);
       const heading = el("h3", "hq-subhead");
-      heading.append(term("pays_for_itself", "Pays for itself?"));
+      // W8-C (D254): on the paper account this is a comparison only. Paper money is simulated and never pays a real
+      // bill or refills the budget (AGENTS.md), so the box never says the run "pays for itself" or has money "left".
+      heading.append(term("pays_for_itself", live ? "Pays for itself?" : "Paper result against real costs"));
       paysBox.append(heading);
       const verdict = el("p", "hq-pays-verdict");
-      if (pays.status === "covered") verdict.append("Yes, for this period: ", money(pays.net), " left after costs.");
-      else if (pays.status === "not_covered") verdict.append("Not yet: ", money(pays.net), " after costs.");
+      if (live && pays.status === "covered") verdict.append("Yes, for this period: ", money(pays.net), " left after costs.");
+      else if (live && pays.status === "not_covered") verdict.append("Not yet: ", money(pays.net), " after costs.");
+      else if (pays.status === "covered") verdict.append("On paper, the result is ", money(pays.net), " above the real costs you entered.");
+      else if (pays.status === "not_covered") verdict.append("On paper, the result is ", money(unsigned(pays.net)), " short of the real costs you entered.");
       else verdict.append("Not known yet");
       paysBox.append(verdict);
+      if (!live) paysBox.append(el("p", "hq-muted", "A comparison only: paper money is simulated, never pays a real bill and never refills your budget."));
       const missing = list(pays.missing);
       if (missing.length) {
         const rows = el("ul", "hq-missing");
@@ -1410,6 +1420,129 @@
       if (hasText(block.paper_note)) root.append(textEl("p", "hq-spend-note", block.paper_note));
       const more = obj(block.link);
       if (more.href) root.append(link(more.href, `${str(more.label)} ›`, "hq-more-link"));
+    },
+  });
+
+  // --- Today's trading (W8-C): the daily loss limit, the scorecard and the price collector ----------------------
+  // Every figure and sentence comes from the server (contract trading); an older server leaves the block out. A state
+  // always has a word and a shape, never colour alone.
+
+  const tradingBlock = snapshot => snapshot.trading && typeof snapshot.trading === "object" ? snapshot.trading : null;
+  const LOSS_CHIP = Object.freeze({
+    within: ["Within the limit", "hq-chip-soft"], reached: ["Limit reached", "hq-chip-warn"],
+    stopped: ["No new buying today", "hq-chip-warn"], unknown: ["Can't be checked now", "hq-chip-warn"],
+    not_recorded: ["Not recorded yet", "hq-chip-soft"], not_applied: ["Not measured here", "hq-chip-soft"],
+  });
+  function notServed(root, what) {
+    root.append(el("p", "hq-muted", `${what} isn't available from the server right now.`));
+  }
+  function lossMeter(loss) {
+    const used = Math.max(0, Math.min(100, loss.used_percent));
+    const wrap = el("div", "hq-loss-meter");
+    const meter = el("meter", "hq-meter hq-meter-loss", `${percentText(used)}`);
+    meter.min = 0;
+    meter.max = 100;
+    meter.low = 50;
+    meter.high = 80;
+    meter.optimum = 0;
+    meter.value = used;
+    meter.setAttribute("aria-label", `${percentText(used)} of today's loss limit used`);
+    wrap.append(meter, el("p", "hq-muted hq-loss-used", `${percentText(used)} of the limit used`));
+    return wrap;
+  }
+  HQ.view("loss", {
+    deps: snapshot => [tradingBlock(snapshot)?.loss ?? null],
+    render(root, snapshot) {
+      const loss = obj(tradingBlock(snapshot)?.loss);
+      if (!loss.state) return notServed(root, "Today's loss limit");
+      const head = el("p", "hq-loss-head");
+      head.dataset.state = str(loss.state);
+      const [label, tone] = LOSS_CHIP[loss.state] || ["", "hq-chip-soft"];
+      if (label) head.append(el("span", `hq-chip ${tone}`, label), " ");
+      renderText(head, loss.headline);
+      root.append(head);
+      if (typeof loss.used_percent === "number" && Number.isFinite(loss.used_percent)) root.append(lossMeter(loss));
+      if (loss.day_start_value) {
+        const grid = el("div", "hq-stats hq-loss-stats");
+        grid.append(stat("At the day start", money(loss.day_start_value)), stat("Now", money(loss.value)));
+        if (loss.limit_amount) grid.append(stat(term("loss_limit", "Daily loss limit"), money(loss.limit_amount)));
+        if (parseIso(loss.resumes_at) !== null) grid.append(stat("Next day start", time(loss.resumes_at, "day_clock")));
+        root.append(grid);
+      }
+      if (hasText(loss.detail)) root.append(textEl("p", "hq-muted hq-loss-detail", loss.detail));
+    },
+  });
+
+  function beatsChip(beats, ahead, behind, unknown) {
+    if (beats === true) return el("span", "hq-chip hq-chip-safe hq-chip-soft", `✓ ${ahead}`);
+    if (beats === false) return el("span", "hq-chip hq-chip-warn", `✗ ${behind}`);
+    return el("span", "hq-chip hq-chip-soft", `? ${unknown}`);
+  }
+  HQ.view("scorecard", {
+    deps: snapshot => [tradingBlock(snapshot)?.scorecard ?? null],
+    render(root, snapshot) {
+      const card = obj(tradingBlock(snapshot)?.scorecard);
+      if (typeof card.available !== "boolean") return notServed(root, "The scorecard");
+      const head = el("p", "hq-scorecard-head");
+      if (card.status === "provisional") head.append(el("span", "hq-chip hq-chip-warn", "Provisional"), " ");
+      renderText(head, card.headline);
+      root.append(head);
+      if (!card.available) {
+        if (hasText(card.unavailable_reason)) root.append(textEl("p", "hq-muted", card.unavailable_reason));
+      } else {
+        const beats = el("p", "hq-scorecard-beats");
+        beats.append(beatsChip(card.beats_cash, "Beats cash", "Behind cash", "Cash"), " ",
+          beatsChip(card.beats_btc, "Beats holding Bitcoin", "Behind holding Bitcoin", "Bitcoin can't be compared"));
+        root.append(beats);
+        const facts = list(card.facts);
+        if (facts.length) {
+          const grid = el("div", "hq-stats hq-scorecard-facts");
+          for (const fact of facts) grid.append(stat(str(fact.label), textEl("span", "", fact.value)));
+          root.append(grid);
+        }
+        const lines = list(card.lines);
+        if (lines.length) {
+          const rows = el("ul", "hq-plain-list hq-scorecard-lines");
+          for (const line of lines) rows.append(textEl("li", "", line));
+          root.append(rows);
+        }
+        const reasons = list(card.provisional);
+        if (reasons.length) {
+          const why = HQ.keepOpen(el("details", "hq-scorecard-why"), "scorecard-provisional");
+          why.append(el("summary", "", "Why it's provisional"));
+          const rows = el("ul", "hq-plain-list");
+          for (const reason of reasons) rows.append(textEl("li", "", reason));
+          const more = HQ.count(card.more_provisional) || 0;
+          if (more > 0) rows.append(el("li", "hq-muted", `And ${plural(more, "more reason")}.`));
+          why.append(rows);
+          root.append(why);
+        }
+      }
+      if (hasText(card.note)) root.append(textEl("p", "hq-scorecard-note", card.note));
+    },
+  });
+
+  const COLLECTOR_CHIP = Object.freeze({
+    ok: ["Working", "hq-chip-soft"], attention: ["Needs a look", "hq-chip-warn"], off: ["Switched off", "hq-chip-soft"],
+    no_records: ["No records", "hq-chip-soft"],
+  });
+  HQ.view("collector", {
+    deps: snapshot => [tradingBlock(snapshot)?.collector ?? null],
+    render(root, snapshot) {
+      const collector = obj(tradingBlock(snapshot)?.collector);
+      if (!collector.state) return notServed(root, "The price collector's status");
+      const head = el("p", "hq-collector-head");
+      head.dataset.state = str(collector.state);
+      const [label, tone] = COLLECTOR_CHIP[collector.state] || ["", "hq-chip-soft"];
+      if (label) head.append(el("span", `hq-chip ${tone}`, label), " ");
+      renderText(head, collector.headline);
+      root.append(head);
+      const lines = list(collector.lines);
+      if (lines.length) {
+        const rows = el("ul", "hq-plain-list hq-collector-lines");
+        for (const line of lines) rows.append(textEl("li", "", line));
+        root.append(rows);
+      }
     },
   });
 

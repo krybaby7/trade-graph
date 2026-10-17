@@ -2,8 +2,8 @@
 
 ``snapshot()`` builds one ``trade-graph.hq.v1`` document (``api/hq_contract.py``)
 inside a single database snapshot. It reads only bounded records (``hq_facts``) and
-the 60-second money and AI spending caches (``hq_money``, ``hq_spending``); it never calls the activity, live or
-health projections, the service controller, or a provider (spec §B.9).
+the 60-second money, AI spending and trading caches (``hq_money``, ``hq_spending``, ``hq_trading``); it never calls
+the activity, live or health projections, the service controller, or a provider (spec §B.9).
 
 Wiring (WP4, ``api/app.py``)::
 
@@ -24,7 +24,17 @@ from typing import Annotated
 
 from fastapi import HTTPException, Query, Request
 
-from trade_graph.api import controls, hq_calendar, hq_facts, hq_money, hq_spending, hq_state, hq_story, live
+from trade_graph.api import (
+    controls,
+    hq_calendar,
+    hq_facts,
+    hq_money,
+    hq_spending,
+    hq_state,
+    hq_story,
+    hq_trading,
+    live,
+)
 from trade_graph.api.auth import csrf_for_token
 from trade_graph.api.hq_contract import (
     CALENDAR_DAYS_DEFAULT,
@@ -106,6 +116,10 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
         }
         if spending is not None:  # T40: additive; left out (never invented) when the records can't be read
             result["ai_spending"] = hq_spending.block(spending, paper=p.paper)
+        # W8-C: today's loss against the limit, the scorecard and the price collector (cached like the money facts)
+        trading = hq_trading.facts(runtime, now)
+        result["trading"] = hq_trading.block(trading)
+        result["notices"] = [*result["notices"], *hq_trading.notices(trading)]
         return result
 
 

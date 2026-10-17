@@ -109,8 +109,8 @@ container.
 
 ## Known limits
 
-- The scorecard is not shown in HQ yet; T43's final report and a later HQ package can show it (mind HQ's 80 KB
-  payload budget, W2-C).
+- HQ's Money tab shows the scorecard since the account opened (W8-C, D252), cached for a minute; T43's final
+  report passes the scored test's own start and end.
 - A fee in a third asset is valued at its identified rate in the trade, while the equity curve values that asset at
   its own mark; the paper broker charges every fee in USD, so paper scorecards are not affected.
 - `valuation_marks` has no index, so each price query scans the table; at the size above it stays a few seconds.

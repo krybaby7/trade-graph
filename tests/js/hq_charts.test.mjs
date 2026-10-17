@@ -152,7 +152,7 @@ test("the library is loaded once from HQ itself, with its pinned integrity, afte
   assert.equal(chartCalls(page).length, 1);
   assert.equal(chartCalls(page)[0].url, "/api/v1/hq/chart");
   assert.equal(page.scripts.length, 1);
-  assert.equal(page.scripts[0].src, "/static/vendor/lightweight-charts/lightweight-charts.standalone.production.js");
+  assert.equal(page.scripts[0].src, "/static/vendor/lightweight-charts/lightweight-charts.standalone.production.js?v=5.2.1");
   assert.match(page.scripts[0].integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
   assert.equal(page.log.charts.length, 1);
   const options = page.log.charts[0].options;

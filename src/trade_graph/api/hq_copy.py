@@ -860,6 +860,16 @@ PROBLEM_PREFIX: Final = {
     "pause:": ("couldn't apply the pause setting", "The previous setting stays in force."),
     "dispatch:": ("couldn't send practice orders", "Orders wait until this works."),
     "scheduler:": ("the timetable step is failing", "Departments later in the timetable get no new turns."),
+    # W8-C (D250): the money-limit, day-plan and price-collector steps (``paper_service._management``,
+    # ``_collect_prices``). None of these words says "practice", so a live account can use them unchanged.
+    "money_limits:": ("couldn't check your money limits (today's loss limit)",
+                      "New buys wait until the limit can be checked; safety exits and sales keep working."),
+    "day_plans:": ("couldn't look after the day plans",
+                   "Waiting buys may not be cancelled or protected on time until this works; safety exits already "
+                   "in place stay."),
+    "collector:": ("the price collector's last step failed",
+                   "Charts, alarms and the coin scanner may use older candles until it works again; the quotes "
+                   "used for trading come from the separate price feed."),
     "other": ("a routine step is failing", "Some background work is not happening."),
 }
 
@@ -890,8 +900,9 @@ MONEY: Final = {
     "prices_old": ("Prices are ", " old; the total is an estimate."),
     "no_prices": "No prices are recorded yet for something held; the total is an estimate.",
     "pays_unknown": NOT_KNOWN_YET,
-    "pays_covered": "Yes, for this period: {net} left after costs.",
-    "pays_not_covered": "Not yet: {net} after costs.",
+    # W8-C (D254): a comparison only; paper money never pays a real bill (AGENTS.md).
+    "pays_covered": "On paper, the result is {net} above the real costs you entered.",
+    "pays_not_covered": "On paper, the result is {net} short of the real costs you entered.",
     "honest_gap": ("Because of the history gap, this can't be answered for the whole time since {day}, even after "
                    "you enter bills."),
     "honest_unverified": ("Because early history couldn't be verified, this can't be answered for the whole time "
@@ -1215,8 +1226,11 @@ PROMPT: Final = {
     "allowance_none_rule_unknown": "No allowance reading yet; the reserve rule couldn't be read",
     "allowance_unreported": "; a shorter limit isn't reported",
     "safety_setting": "Automatic safety stop ({profile})",
-    "pays_covered": "Yes: {net} left after costs",
-    "pays_not_covered": "Not yet: {net} after costs",
+    # W8-C (D254): on the paper account a comparison only, never "left after costs"; a live account keeps its words.
+    "pays_covered": "on paper {net} above the real costs (a comparison only; paper money pays no bills)",
+    "pays_not_covered": "on paper {net} short of the real costs (a comparison only; paper money pays no bills)",
+    "pays_covered_live": "Yes: {net} left after costs",
+    "pays_not_covered_live": "Not yet: {net} after costs",
 }
 WINDOW_PHRASE: Final = {"weekly": "this week", "5-hour": "in the 5-hour limit", "other": "in its limit"}
 ALLOWANCE_LEFT: Final = {
@@ -1456,6 +1470,215 @@ WAKES: Final = {
     },
 }
 
+# --- Today's trading: the loss limit, the scorecard and the price collector (W8-C, D250-D253) --------------
+# Words for ``api/hq_trading.py``. Amounts and times are segments; nothing here says "practice", so a live account
+# reads the same words (its loss limit and scorecard say they aren't applied there).
+
+TRADING: Final = {
+    "loss": {
+        "not_recorded": ("Your money limits aren't recorded yet, so there is no daily loss limit and the Trader's "
+                         "day plans stay off.",
+                         "You record them once at step L3 with trade-graph money-limits --confirm (run it without "
+                         "--confirm first to see what it records)."),
+        "not_applied": ("The daily loss limit runs in the paper service; this live account isn't measured here.",
+                        "A live account's own controls are on the Owner controls page."),
+        "loss": ("Today's ", " so far: ", " of the ", " limit (", " of ", " at the day start)."),
+        "gain": ("Up ", " today. The ", "daily loss limit", " is ", " (", " of ", " at the day start)."),
+        "even": ("No loss today. The ", "daily loss limit", " is ", " (", " of ", " at the day start)."),
+        "within": ("If the loss reaches the limit, new buying stops until the next day start at ",
+                   ". Safety exits and sales keep working. Fees and coins held at their latest prices count."),
+        "reached": ("Today's loss of ", " reached the ", " limit (", "). No new buying until ", "."),
+        "reached_detail": ("The next routine step records the stop and cancels waiting buys. Safety exits and sales "
+                           "keep working; nothing is sold because of the limit."),
+        "stopped": ("The ", "daily loss limit", " was reached: no new buying until ", "."),
+        "stopped_figures": (" Today's loss: ", " (limit ", ")."),
+        "stopped_detail": ("Waiting buys were cancelled. Safety exits and sales keep working, and nothing was sold "
+                           "because of the limit. At the next day start buying resumes, measured from a new "
+                           "day-start value."),
+        "unknown": "Today's loss can't be checked right now, so new buying waits until it can.",
+        "unknown_reason": {
+            "start": "The day-start value isn't known yet: it is taken from the first valuation with fresh prices.",
+            "missing": "A coin held has no price yet.",
+            "stale": "The account's valuation is out of date.",
+            "old": "A coin held has no price from the last 15 minutes (its price is too old).",
+            "error": "HQ couldn't work it out just now.",
+            "other": "The records needed to check it aren't complete yet.",
+        },
+        "unknown_tail": " Safety exits and sales keep working.",
+        "first_valuation": (" The day-start value is the first valuation after the day began (",
+                            "), because the account opened later or prices were missing at the day start."),
+        "notice_title": "Today's loss limit was reached",
+        "notice_text": ("No new buying until ", ". Safety exits and sales keep working; nothing was sold because "
+                                                "of it."),
+    },
+    "scorecard": {
+        "unavailable_title": "The scorecard can't be worked out yet.",
+        "error": "HQ couldn't work it out just now. It tries again within a minute.",
+        "live": "The scorecard covers the paper account only.",
+        "live_title": "No scorecard for a live account.",
+        "since": ("Since ", ": "),
+        "up": ("up ", " (", ") after every fee."),
+        "down": ("down ", " (", ") after every fee."),
+        "even": "even after every fee.",
+        "after_fees": " after every fee.",
+        "trades": ("{n} ({won} won, {lost} lost)", "{n} ({won} won, {lost} lost, {even} even)"),
+        "no_trades": "None completed yet",
+        "run": ("1 trade", "{n} trades"),
+        "none": "None",
+        "held": ("1 position, valued as if sold now with its fee", "{n} positions, valued as if sold now with "
+                                                                   "their fees"),
+        "labels": {"trades": "Trades", "won": "Won", "average_win": "Average win", "average_loss": "Average loss",
+                   "fees": "Fees paid", "fall": "Worst fall", "streak": "Longest losing run", "held": "Still held"},
+        "cash_ahead": ("Against keeping the cash: ahead by ", ". Cash earns nothing here (no interest), so any "
+                                                             "result above zero beats it."),
+        "cash_behind": ("Against keeping the cash: behind by ", ". Cash earns nothing here, so this is the whole "
+                                                               "loss."),
+        "cash_even": "Against keeping the cash: even. Cash earns nothing here.",
+        "btc_ahead": ("Against buying Bitcoin at the start and selling it at the end with the same fees: ahead by ",
+                      "; holding Bitcoin made ", "."),
+        "btc_behind": ("Against buying Bitcoin at the start and selling it at the end with the same fees: behind by ",
+                       "; holding Bitcoin made ", "."),
+        "btc_missing": "Against holding Bitcoin: can't be compared: {reason}.",
+        "eur": ("In euros: ", " (", " of it is the dollar's own move against the euro; ",
+                " against holding the dollars)."),
+        "eur_stale": " The euro rate used is out of date.",
+        "eur_missing": "In euros: not available: {reason}.",
+        "ai": ("Real AI spending in these days: ", " from receipts and estimates", ", plus up to ",
+               " not known yet", ". It is real money; the paper result never pays for it."),
+        "ai_unvalued": (", plus {n} call whose cost can't be worked out yet",
+                        ", plus {n} calls whose cost can't be worked out yet"),
+        "ai_none": "Real AI spending in these days: none recorded. The paper result never pays for AI.",
+        "under_a_cent": "under $0.01",
+        "rule": ("Your test rule (D138 item 7) needs at least {days} days and {trades} completed trades; so far "
+                 "{so_far_days} and {so_far_trades}."),
+        "rule_early": " It's too early to judge.",
+        "rule_keep": " By your rule the test would keep going.",
+        "rule_stop": " By your rule the test would not keep going.",
+        "rule_beats": " Beats cash: {cash}. Beats holding Bitcoin: {btc}. Information only, not a pass mark.",
+        "yes": "yes",
+        "no": "no",
+        "cant_tell": "can't tell",
+        "days": ("1 day", "{n} days"),
+        "days_unknown": "an unknown number of days",
+        "completed": ("1 trade", "{n} trades"),
+        "more_provisional": ("1 more reason", "{n} more reasons"),
+    },
+    "collector": {
+        "off": ("The price collector is switched off in this installation's settings, so charts, alarms and the "
+                "coin scanner get no new candles from it."),
+        "no_records": ("No price collector records in the last 24 hours. It runs inside the paper service and "
+                       "records its coin scans, pair-list updates and problems here."),
+        "working_scan": ("The price collector is working: the newest hourly coin scan was ", "."),
+        "working": ("The price collector is working: its newest record is from ", "."),
+        "problem": "The price collector has a problem: {problem}.",
+        "scan_ok": ("Newest coin scan at ", ": done."),
+        "scan_empty": ("Newest coin scan at ", ": no coin passed its checks."),
+        "scan_failed": ("Newest coin scan at ", ": it couldn't finish (it tries again next hour)."),
+        "scan_old": "No coin scan in the last 2 hours, so new buys under your coin rule wait for a fresh one.",
+        "candles_ok": ("Candles: saved normally since ", "."),
+        "candles_partial": ("Candles: some couldn't be fetched at ", "; it tries again."),
+        "candles_failed": ("Candles: none could be fetched at ", "; it tries again."),
+        "candles_clock": ("Paused at ", ": this computer's clock is behind the newest saved record."),
+        "catalog_ok": ("Kraken's pair list: updated ", "."),
+        "catalog_failed": ("Kraken's pair list: the update at ", " failed; the one before stays in use."),
+        "rate_limited": ("Kraken asked it to slow down once in the last 24 hours (a rate limit); it waited and "
+                         "went on.",
+                         "Kraken asked it to slow down {n} times in the last 24 hours (a rate limit); it waited and "
+                         "went on."),
+        "gaps": ("1 gap in saved candles was found in the last 24 hours. Gaps stay empty; nothing is filled in.",
+                 "{n} gaps in saved candles were found in the last 24 hours. Gaps stay empty; nothing is filled in."),
+        "problems": ("1 problem recorded in the last 24 hours.", "{n} problems recorded in the last 24 hours."),
+        "problems_many": "At least {n} problems recorded in the last 24 hours.",
+        "no_problems": "No problems recorded in the last 24 hours.",
+        "problem_words": {
+            "scan": "the newest coin scan couldn't finish",
+            "candles_partial": "some candles couldn't be fetched",
+            "candles_failed": "no candles could be fetched",
+            "clock": "this computer's clock is behind the newest saved record",
+            "catalog": "Kraken's pair list couldn't be updated",
+            "scan_old": "there was no coin scan in the last 2 hours",
+        },
+    },
+}
+
+# --- Today's day plans (W8-C, D251) -------------------------------------------------------------------------
+# Words for ``api/hq_plans.py``. Prices and quantities are exact decimal text with the coin's quote currency.
+
+PLANS: Final = {
+    "unavailable": "This database has no day-plan records yet (they come with the new engine's install).",
+    "limits_off": ("Day plans are off until you record your money limits at step L3 "
+                   "(trade-graph money-limits --confirm)."),
+    "none_today": "No day plan today.",
+    "today": ("1 day plan today ({coins})", "{n} day plans today ({coins})"),
+    "refused_today": ("1 plan refused today.", "{n} plans refused today."),
+    "unknown_amount": "an unknown amount",
+    "buy": "Buy {quantity} {base} at {price} {quote} or lower (stop {stop}{target})",
+    "target": ", target {target}",
+    "until": ", until ",
+    "entry_status": {"sending": "being sent", "waiting": "waiting at the exchange",
+                     "partly_filled": "partly filled: {filled} of {quantity}", "filled": "filled",
+                     "cancelled": "cancelled", "rejected": "refused", "being_checked": "its status is being checked"},
+    "cancel_reason": {"pause": " because a pause was on", "expired": " at the end of its time",
+                      "replaced": " because the plan was replaced by a newer plan"},
+    "cancelled_after": " after {filled} {base} filled",
+    "unprotected": (" {quantity} {base} bought here has no safety exit right now: software puts one on at its next "
+                    "step, unless your cancel-all setting is on."),
+    "bought": "Bought {quantity} {base} at {price} {quote}",
+    "sold": "Sold {quantity} {base} at {price} {quote}",
+    "at_time": " at ",
+    "fee": " (fee {fee} {asset})",
+    "exit": "Safety exit for {quantity} {base}: stop {stop}{either}",
+    "exit_either": ", or target {target}, whichever comes first",
+    "exit_status": {"sending": ": being sent", "waiting": ": in place, waiting for the price",
+                    "partly_filled": ": partly sold", "filled": ": sold", "cancelled": ": cancelled",
+                    "rejected": ": refused", "being_checked": ": its status is being checked"},
+    "event": {"installed": "Put in place at ", "superseded": "Replaced by a newer plan at ",
+              "cancelled": "Buy {n} cancelled at ", "deferred": "A safety exit for buy {n} couldn't be placed yet at ",
+              "deferred_tail": "; software tries again at every step.", "other": "Recorded at "},
+    "interval": " ({n}-minute candles)",
+    "watching": "Watching {names}",
+    "alarms": ("1 price alarm", "{n} price alarms"),
+    "strategy": "Strategy {name}, version {version}, as tested on the practice range.",
+    "no_buys": "no buys, alarms only",
+    "earlier_day": " (a plan from an earlier day, still protecting coins)",
+    "count": {
+        "waiting": ("1 waiting buy", "{n} waiting buys"), "sending": ("1 buy being sent", "{n} buys being sent"),
+        "partly_filled": ("1 buy partly filled", "{n} buys partly filled"),
+        "filled": ("1 buy filled", "{n} buys filled"),
+        "being_checked": ("1 buy being checked", "{n} buys being checked"),
+        "cancelled": ("1 buy cancelled", "{n} buys cancelled"), "rejected": ("1 buy refused", "{n} buys refused"),
+        "protected": ("1 with its safety exit", "{n} with their safety exits"),
+        "unprotected": ("1 without a safety exit right now", "{n} without a safety exit right now"),
+        "bought": ("1 buy filled or partly filled", "{n} buys filled or partly filled"),
+    },
+    "refused": "A plan for {symbol} was refused: {why}.",
+    "a_coin": "a coin",
+    # Day-plan checks (``application/day_plans.py``) in plain words; HQ's usual order refusals cover the money rules.
+    "refusal_markers": (
+        ("rests below the market", "above_price"), ("trading day", "day"), ("must be in the future", "day"),
+        ("price increment", "steps"), ("quantity increment", "steps"), ("below the venue minimum", "minimum"),
+        ("not a registered practice-range strategy", "strategy"), ("no practice-range confirmation report", "report"),
+        ("no quote yet to tell", "no_price"), ("refuses new day plans", "paused"), ("paper account only", "paper_only"),
+        ("need a paper portfolio", "paper_only"), ("is not settled yet", "unsettled"),
+        ("already installed a different plan", "duplicate"),
+    ),
+    "refusal": {
+        "above_price": ("a waiting buy was at or above the current price, so it would have bought at once instead "
+                        "of waiting"),
+        "day": "a waiting buy's end time was outside today's trading day",
+        "steps": "a price or amount wasn't on the exchange's steps",
+        "minimum": "a buy was smaller than the exchange's minimum",
+        "strategy": "its strategy isn't registered on the practice range",
+        "report": "its strategy has no practice-range confirmation report yet",
+        "no_price": "there was no price for that coin yet",
+        "paused": "a pause was on (waiting buys are cancelled and safety exits kept while paused)",
+        "paper_only": "day plans work on the paper account only",
+        "unsettled": "the coin's earlier plan still had a buy being checked; it is double-checked first",
+        "duplicate": "the same request had already put a different plan in place",
+        "unknown": "a problem HQ can't describe in plain words",
+    },
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {
@@ -1478,6 +1701,15 @@ SECTION_HELP: Final = {
                  "only while the team is running."),
     "watchlist": ("Today's focus coins from Research and the price alarms the departments set. Looking never changes "
                   "anything."),
+    # W8-C: the loss limit, the day plans, the scorecard and the price collector (Money tab).
+    "loss": ("Today's loss against the daily loss limit you recorded, with fees and coins held at their latest prices. "
+             "Reaching it stops new buying until the next day start; safety exits and sales keep working."),
+    "plans": ("The Trader's plans for today, coin by coin: waiting buys, the safety exit software puts on every "
+              "filled part, fills and refusals. Looking never changes anything."),
+    "scorecard": ("The result after every fee since the account opened, against keeping the cash and holding Bitcoin. "
+                  "It is evidence only: it never proves a profit or allows real money."),
+    "collector": ("The price collector saves candles and runs the hourly coin scan inside the paper service. This "
+                  "shows its newest records and any problems."),
     "wakes": ("Every wake-up from the saved records, with its reasons and the AI allowance at that moment. Nothing "
               "limits how often a department is woken."),
 }

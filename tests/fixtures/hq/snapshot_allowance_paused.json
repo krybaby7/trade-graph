@@ -1717,6 +1717,427 @@
       "label": "Costs"
     }
   },
+  "trading": {
+    "as_of": "2026-10-11T19:05:00.000Z",
+    "loss": {
+      "currency": "USD",
+      "limit_percent": "3",
+      "day_start": "2026-10-11T00:00:00.000Z",
+      "resumes_at": "2026-10-12T00:00:00.000Z",
+      "state": "within",
+      "day_start_value": {
+        "amount": "10020",
+        "currency": "USD",
+        "display": "$10,020.00"
+      },
+      "day_start_basis": "at_day_start",
+      "value": {
+        "amount": "9971.64",
+        "currency": "USD",
+        "display": "$9,971.64"
+      },
+      "loss": {
+        "amount": "48.36",
+        "currency": "USD",
+        "display": "$48.36"
+      },
+      "limit_amount": {
+        "amount": "300.6",
+        "currency": "USD",
+        "display": "$300.60"
+      },
+      "used_percent": 16.087824351297407,
+      "headline": [
+        {
+          "t": "text",
+          "v": "Today's "
+        },
+        {
+          "t": "term",
+          "key": "loss_limit",
+          "v": "loss"
+        },
+        {
+          "t": "text",
+          "v": " so far: "
+        },
+        {
+          "t": "money",
+          "amount": "48.36",
+          "currency": "USD",
+          "display": "$48.36"
+        },
+        {
+          "t": "text",
+          "v": " of the "
+        },
+        {
+          "t": "money",
+          "amount": "300.6",
+          "currency": "USD",
+          "display": "$300.60"
+        },
+        {
+          "t": "text",
+          "v": " limit (3% of "
+        },
+        {
+          "t": "money",
+          "amount": "10020",
+          "currency": "USD",
+          "display": "$10,020.00"
+        },
+        {
+          "t": "text",
+          "v": " at the day start)."
+        }
+      ],
+      "detail": [
+        {
+          "t": "text",
+          "v": "If the loss reaches the limit, new buying stops until the next day start at "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-12T00:00:00.000Z",
+          "style": "day_clock"
+        },
+        {
+          "t": "text",
+          "v": ". Safety exits and sales keep working. Fees and coins held at their latest prices count."
+        }
+      ]
+    },
+    "scorecard": {
+      "available": true,
+      "unavailable_reason": null,
+      "status": "complete",
+      "period_start": "2026-10-05T17:17:19.483Z",
+      "period_end": "2026-10-11T19:05:00.000Z",
+      "currency": "USD",
+      "result": {
+        "amount": "210.14",
+        "currency": "USD",
+        "display": "$210.14"
+      },
+      "versus_btc": {
+        "amount": "40.82783616",
+        "currency": "USD",
+        "display": "$40.83"
+      },
+      "beats_cash": true,
+      "beats_btc": true,
+      "headline": [
+        {
+          "t": "text",
+          "v": "Since "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-05T17:17:19.483Z",
+          "style": "date"
+        },
+        {
+          "t": "text",
+          "v": ": up "
+        },
+        {
+          "t": "money",
+          "amount": "210.14",
+          "currency": "USD",
+          "display": "$210.14"
+        },
+        {
+          "t": "text",
+          "v": " (2.1%) after every fee."
+        }
+      ],
+      "facts": [
+        {
+          "label": "Trades",
+          "value": [
+            {
+              "t": "text",
+              "v": "2 (1 won, 1 lost)"
+            }
+          ]
+        },
+        {
+          "label": "Won",
+          "value": [
+            {
+              "t": "text",
+              "v": "50%"
+            }
+          ]
+        },
+        {
+          "label": "Average win",
+          "value": [
+            {
+              "t": "money",
+              "amount": "220.64",
+              "currency": "USD",
+              "display": "$220.64"
+            }
+          ]
+        },
+        {
+          "label": "Average loss",
+          "value": [
+            {
+              "t": "money",
+              "amount": "-66.6",
+              "currency": "USD",
+              "display": "−$66.60"
+            }
+          ]
+        },
+        {
+          "label": "Fees paid",
+          "value": [
+            {
+              "t": "money",
+              "amount": "102.06",
+              "currency": "USD",
+              "display": "$102.06"
+            }
+          ]
+        },
+        {
+          "label": "Worst fall",
+          "value": [
+            {
+              "t": "text",
+              "v": "1.6% ("
+            },
+            {
+              "t": "money",
+              "amount": "165.26",
+              "currency": "USD",
+              "display": "$165.26"
+            },
+            {
+              "t": "text",
+              "v": ")"
+            }
+          ]
+        },
+        {
+          "label": "Longest losing run",
+          "value": [
+            {
+              "t": "text",
+              "v": "1 trade"
+            }
+          ]
+        },
+        {
+          "label": "Still held",
+          "value": [
+            {
+              "t": "text",
+              "v": "1 position, valued as if sold now with its fee"
+            }
+          ]
+        }
+      ],
+      "lines": [
+        [
+          {
+            "t": "text",
+            "v": "Against keeping the cash: ahead by "
+          },
+          {
+            "t": "money",
+            "amount": "210.14",
+            "currency": "USD",
+            "display": "$210.14"
+          },
+          {
+            "t": "text",
+            "v": ". Cash earns nothing here (no interest), so any result above zero beats it."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Against buying Bitcoin at the start and selling it at the end with the same fees: ahead by "
+          },
+          {
+            "t": "money",
+            "amount": "40.82783616",
+            "currency": "USD",
+            "display": "$40.83"
+          },
+          {
+            "t": "text",
+            "v": "; holding Bitcoin made "
+          },
+          {
+            "t": "money",
+            "amount": "169.31216384",
+            "currency": "USD",
+            "display": "$169.31"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "In euros: "
+          },
+          {
+            "t": "money",
+            "amount": "393.3288",
+            "currency": "EUR",
+            "display": "€393.33"
+          },
+          {
+            "t": "text",
+            "v": " ("
+          },
+          {
+            "t": "money",
+            "amount": "200",
+            "currency": "EUR",
+            "display": "€200.00"
+          },
+          {
+            "t": "text",
+            "v": " of it is the dollar's own move against the euro; "
+          },
+          {
+            "t": "money",
+            "amount": "193.3288",
+            "currency": "EUR",
+            "display": "€193.33"
+          },
+          {
+            "t": "text",
+            "v": " against holding the dollars)."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Real AI spending in these days: "
+          },
+          {
+            "t": "money",
+            "amount": "0.032502",
+            "currency": "USD",
+            "display": "$0.03"
+          },
+          {
+            "t": "text",
+            "v": " from receipts and estimates, plus up to "
+          },
+          {
+            "t": "money",
+            "amount": "0.02346",
+            "currency": "USD",
+            "display": "$0.02"
+          },
+          {
+            "t": "text",
+            "v": " not known yet. It is real money; the paper result never pays for it."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Your test rule (D138 item 7) needs at least 28 days and 30 completed trades; so far 6.1 days and 2 trades. It's too early to judge. Beats cash: yes. Beats holding Bitcoin: yes. Information only, not a pass mark."
+          }
+        ]
+      ],
+      "provisional": [],
+      "more_provisional": 0,
+      "note": [
+        {
+          "t": "text",
+          "v": "Working software, economic evidence and permission to trade real money are three separate gates. This scorecard is evidence about simulated paper trading over one period: it does not show that the software works, a good result does not prove that the Trader is profitable, and nothing here allows trading real money or spending a real budget."
+        }
+      ]
+    },
+    "collector": {
+      "state": "ok",
+      "headline": [
+        {
+          "t": "text",
+          "v": "The price collector is working: the newest hourly coin scan was "
+        },
+        {
+          "t": "time",
+          "at": "2026-10-11T19:00:00.000Z",
+          "style": "relative"
+        },
+        {
+          "t": "text",
+          "v": "."
+        }
+      ],
+      "last_at": "2026-10-11T19:00:00.000Z",
+      "last_scan_at": "2026-10-11T19:00:00.000Z",
+      "problems_24h": 0,
+      "lines": [
+        [
+          {
+            "t": "text",
+            "v": "Newest coin scan at "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-11T19:00:00.000Z",
+            "style": "clock"
+          },
+          {
+            "t": "text",
+            "v": ": done."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Candles: saved normally since "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-11T15:55:00.000Z",
+            "style": "clock"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "Kraken's pair list: updated "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-11T06:00:00.000Z",
+            "style": "day_clock"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        [
+          {
+            "t": "text",
+            "v": "No problems recorded in the last 24 hours."
+          }
+        ]
+      ]
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",

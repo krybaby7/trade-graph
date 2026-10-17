@@ -39,8 +39,9 @@ FINISHED_QUESTS_PER_DEPT = 5  # finished jobs listed per department (payload bud
 STALE_AFTER = timedelta(seconds=90)
 OVERDUE_GRACE = 120
 QUOTA_DEFERRAL_RECENT = 120
-PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:")
-ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:")
+PROBLEM_PREFIXES = ("feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "money_limits:", "day_plans:",
+                    "collector:")
+ACCOUNT_PROBLEM_PREFIXES = ("reconciliation:", "dispatch:", "pause:", "money_limits:", "day_plans:")
 OWNER_PAUSE_RECOMMENDERS = ("repeat_problems", "prices_old", "orders_unclear")
 # Leader pauses that protect more than the owner's "Pause AI" (protect-only); HQ never offers to weaken them.
 STRONGER_PAUSES = ("CANCEL_ALL", "FLATTEN", "STOPPED")
@@ -1804,12 +1805,14 @@ def _pays(p: Projection, cache: dict) -> dict:
     return {"status": status, "net": net, "missing": missing, "honest_note": honest}
 
 
-def pays_plain(block: dict) -> str:
+def pays_plain(block: dict, *, live: bool = False) -> str:
     pays = block["pays_for_itself"]
+    suffix = "_live" if live else ""
     if pays["status"] == "covered":
-        return c.PROMPT["pays_covered"].format(net=pays["net"]["display"])
+        return c.PROMPT["pays_covered" + suffix].format(net=pays["net"]["display"])
     if pays["status"] == "not_covered":
-        return c.PROMPT["pays_not_covered"].format(net=pays["net"]["display"])
+        net = pays["net"]["display"] if live else pays["net"]["display"].lstrip("\u2212-")
+        return c.PROMPT["pays_not_covered" + suffix].format(net=net)
     return c.NOT_KNOWN_YET
 
 
@@ -1885,7 +1888,7 @@ def prompt_facts(p: Projection, attention_items: list, story_items: list, money:
                   "completed_trades": counts["completed_trades"], "problems": counts["problems"],
                   "research_notes": counts["research_notes"]},
         "flagged": flagged, "practice_value": value["display"] if value else None,
-        "value_final": money["value_final"], "pays_for_itself": pays_plain(money),
+        "value_final": money["value_final"], "pays_for_itself": pays_plain(money, live=not p.paper),
     }
 
 

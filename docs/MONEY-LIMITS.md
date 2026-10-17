@@ -140,4 +140,5 @@ refused afterwards, as before. The defaults are the owner's D138 settings; tests
   after price updates (the paper service already does on every tick). Its result says whether the day is stopped
   (`money_limits.stopped`) and which intents it cancelled; a stop is a natural wake reason for the Trader.
 - **HQ.** `MoneyLimitGuard.status(portfolio_id, policy).document()` gives the day-start value, the loss so far,
-  the limit, whether it is reached and why it can't be checked. Refusal reasons already read in plain words.
+  the limit, whether it is reached and why it can't be checked. Refusal reasons already read in plain words. HQ's
+  Money tab shows it as "Today's loss limit" (W8-C, D250).

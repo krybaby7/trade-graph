@@ -116,6 +116,7 @@ def decision(env, decision_id, action="no_action", *, created: float = -180, tas
 def snap(env, viewer=OWNER, **kwargs) -> dict:
     env.runtime._hq_money = None  # each scenario recomputes the 60 s money cache
     env.runtime._hq_spending = None  # and the 60 s AI spending cache (T40)
+    env.runtime._hq_trading = None  # and the 60 s trading cache (W8-C)
     data = hq.snapshot(env.runtime, viewer, **kwargs)
     validate_snapshot(data)
     for value in _strings(data):

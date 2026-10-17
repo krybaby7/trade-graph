@@ -2154,6 +2154,80 @@
       "label": "Costs"
     }
   },
+  "trading": {
+    "as_of": "2026-10-09T13:59:10.506Z",
+    "loss": {
+      "state": "not_applied",
+      "currency": null,
+      "limit_percent": null,
+      "day_start": null,
+      "resumes_at": null,
+      "day_start_value": null,
+      "day_start_basis": null,
+      "value": null,
+      "loss": null,
+      "limit_amount": null,
+      "used_percent": null,
+      "headline": [
+        {
+          "t": "text",
+          "v": "The daily loss limit runs in the paper service; this live account isn't measured here."
+        }
+      ],
+      "detail": [
+        {
+          "t": "text",
+          "v": "A live account's own controls are on the Owner controls page."
+        }
+      ]
+    },
+    "scorecard": {
+      "available": false,
+      "unavailable_reason": [
+        {
+          "t": "text",
+          "v": "The scorecard covers the paper account only."
+        }
+      ],
+      "status": null,
+      "period_start": null,
+      "period_end": null,
+      "currency": null,
+      "result": null,
+      "versus_btc": null,
+      "beats_cash": null,
+      "beats_btc": null,
+      "headline": [
+        {
+          "t": "text",
+          "v": "No scorecard for a live account."
+        }
+      ],
+      "facts": [],
+      "lines": [],
+      "provisional": [],
+      "more_provisional": 0,
+      "note": [
+        {
+          "t": "text",
+          "v": "Working software, economic evidence and permission to trade real money are three separate gates. This scorecard is evidence about simulated paper trading over one period: it does not show that the software works, a good result does not prove that the Trader is profitable, and nothing here allows trading real money or spending a real budget."
+        }
+      ]
+    },
+    "collector": {
+      "state": "no_records",
+      "headline": [
+        {
+          "t": "text",
+          "v": "No price collector records in the last 24 hours. It runs inside the paper service and records its coin scans, pair-list updates and problems here."
+        }
+      ],
+      "last_at": null,
+      "last_scan_at": null,
+      "problems_24h": 0,
+      "lines": []
+    }
+  },
   "market": [
     {
       "symbol": "BTC/USD",

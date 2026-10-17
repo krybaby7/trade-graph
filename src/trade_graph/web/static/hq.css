@@ -772,6 +772,68 @@ body.hq-page .hq-wake-item .hq-story-headline, body.hq-page .hq-wake-item .hq-st
 body.hq-page .hq-wake-allowance { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.875rem; overflow-wrap: anywhere; }
 body.hq-page .hq-wake-events { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
 
+/* --- Today's trading (W8-C): the loss limit, the day plans, the scorecard and the price collector ------------- */
+
+body.hq-page .hq-loss-head, body.hq-page .hq-scorecard-head, body.hq-page .hq-collector-head {
+  margin: 0 0 0.5rem; font-weight: 600; overflow-wrap: anywhere;
+}
+body.hq-page .hq-loss-head[data-state="stopped"], body.hq-page .hq-loss-head[data-state="reached"],
+body.hq-page .hq-loss-head[data-state="unknown"], body.hq-page .hq-collector-head[data-state="attention"] {
+  padding: 0.5rem 0.7rem; border-left: 4px solid var(--warning); border-radius: var(--hq-radius-small);
+  background: var(--warning-soft);
+}
+body.hq-page .hq-loss-meter { margin: 0.25rem 0 0.5rem; }
+body.hq-page .hq-loss-used { margin: 0.25rem 0 0; font-size: 0.875rem; }
+body.hq-page .hq-loss-detail { margin: 0.5rem 0 0; font-size: 0.9375rem; overflow-wrap: anywhere; }
+body.hq-page .hq-scorecard-beats { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.25rem; }
+body.hq-page .hq-scorecard-beats .hq-chip { white-space: normal; }
+body.hq-page .hq-scorecard-facts .hq-stat-value { font-size: 1rem; overflow-wrap: anywhere; }
+body.hq-page .hq-scorecard-lines, body.hq-page .hq-collector-lines { overflow-wrap: anywhere; }
+body.hq-page .hq-scorecard-why { margin: 0.6rem 0 0; }
+body.hq-page .hq-scorecard-why > summary, body.hq-page .hq-plan-history > summary {
+  display: flex; align-items: center; min-height: 2.75rem; font-weight: 600; cursor: pointer;
+}
+body.hq-page .hq-scorecard-note {
+  margin: 0.75rem 0 0; padding: 0.55rem 0.75rem; border-left: 4px solid var(--accent);
+  border-radius: var(--hq-radius-small); background: var(--surface-soft); color: var(--muted); font-size: 0.875rem;
+}
+body.hq-page .hq-plan-lead { margin: 0 0 0.6rem; font-weight: 600; overflow-wrap: anywhere; }
+body.hq-page .hq-plan {
+  min-width: 0; margin: 0 0 0.75rem; padding: 0.65rem 0.75rem; border: 1px solid var(--border);
+  border-radius: var(--hq-radius-small); background: var(--surface);
+}
+body.hq-page .hq-plan.is-earlier { background: var(--surface-soft); }
+body.hq-page .hq-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0; font-size: 1rem; }
+body.hq-page .hq-plan-headline { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+body.hq-page .hq-plan-about { margin: 0.2rem 0 0.4rem; font-size: 0.875rem; overflow-wrap: anywhere; }
+body.hq-page .hq-plan-entries, body.hq-page .hq-plan-exits {
+  display: grid; gap: 0.4rem; margin: 0.35rem 0 0; padding: 0; list-style: none;
+}
+body.hq-page .hq-plan-exits { padding-left: 0.4rem; border-left: 2px solid var(--border); }
+body.hq-page .hq-plan-entry, body.hq-page .hq-plan-exit {
+  display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); gap: 0.35rem; align-items: start; min-width: 0;
+}
+body.hq-page .hq-plan-entry.is-attention, body.hq-page .hq-plan-exit.is-attention {
+  padding: 0.35rem 0.45rem; border-left: 4px solid var(--warning); border-radius: var(--hq-radius-small);
+  background: var(--warning-soft);
+}
+body.hq-page .hq-plan-mark { color: var(--muted); font-weight: 700; text-align: center; }
+body.hq-page .hq-plan-entry[data-status="filled"] > .hq-plan-mark,
+body.hq-page .hq-plan-exit[data-status="filled"] > .hq-plan-mark { color: var(--success); }
+body.hq-page .hq-plan-entry[data-status="waiting"] > .hq-plan-mark,
+body.hq-page .hq-plan-exit[data-status="waiting"] > .hq-plan-mark { color: var(--accent); }
+body.hq-page .hq-plan-entry.is-attention > .hq-plan-mark, body.hq-page .hq-plan-exit.is-attention > .hq-plan-mark {
+  color: var(--warning);
+}
+body.hq-page .hq-plan-body { min-width: 0; }
+body.hq-page .hq-plan-text { margin: 0; overflow-wrap: anywhere; }
+body.hq-page .hq-plan-fills { margin-top: 0.15rem; font-size: 0.9375rem; overflow-wrap: anywhere; }
+body.hq-page .hq-plan .hq-quote > summary { min-height: 2.25rem; font-size: 0.875rem; }
+body.hq-page .hq-plan-history { margin-top: 0.3rem; }
+body.hq-page .hq-plan-events { overflow-wrap: anywhere; }
+body.hq-page .hq-plan-refusals { margin: 0.75rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+body.hq-page .hq-plan-refusal { overflow-wrap: anywhere; }
+
 /* --- Phones: one section at a time --------------------------------------------------------------------- */
 
 @media (max-width: 767px) {

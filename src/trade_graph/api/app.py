@@ -19,6 +19,7 @@ from trade_graph.api import (
     financial,
     hq,
     hq_chart,
+    hq_plans,
     hq_wakes,
     live,
     owner_checkins,
@@ -26,6 +27,7 @@ from trade_graph.api import (
     progress,
     progress_runs,
     review_export,
+    static_cache,
 )
 from trade_graph.api.auth import csrf_for_token, role_for_token
 from trade_graph.api.controls import configuration, register_controls
@@ -48,11 +50,14 @@ def create_app(runtime) -> FastAPI:
     # Construction starts no scheduler, provider, broker or background worker.
     if (WEB / "static").exists():
         app.mount("/static", StaticFiles(directory=str(WEB / "static")), name="static")
+    vendored = static_cache.vendor_versions(WEB / "static" / "vendor")  # W8-C (D253): pinned library versions
 
     @app.middleware("http")
     async def private_headers(request: Request, call_next):
         response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store"
+        # no-store, except a pinned vendored script asked for by its version (api/static_cache.py)
+        response.headers["Cache-Control"] = static_cache.cache_control(
+            request.url.path, request.query_params.multi_items(), response.status_code, vendored)
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -350,6 +355,7 @@ def create_app(runtime) -> FastAPI:
     hq.register(app, runtime, identity)
     hq_chart.register(app, runtime, identity)
     hq_wakes.register(app, runtime, identity)
+    hq_plans.register(app, runtime, identity)
     return app
 
 

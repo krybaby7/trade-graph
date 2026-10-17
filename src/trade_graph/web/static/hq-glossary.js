@@ -40,8 +40,8 @@
       why: "It moves even when nobody trades.", example: "", href: "/journal"},
     team_effect: {term: "The team's trading", meaning: "Change caused by the team's trades.", why: "This is what the Trader controls.",
       example: "", href: "/journal"},
-    pays_for_itself: {term: "Pays for itself?", meaning: "Whether trading results cover the real costs you entered.",
-      why: "The real test, later.", example: "", href: "/costs"},
+    pays_for_itself: {term: "Result against real costs", meaning: "Compares the trading result with the real costs you entered. On the paper account the result is simulated: paper money never pays a real bill or refills your budget.",
+      why: "It shows whether results of this size would cover the costs; it is not proof of profit.", example: "", href: "/costs"},
     bill_share: {term: "Trade Graph's share", meaning: "The part of a bill that belongs to Trade Graph.", why: "Only that part counts.",
       example: "50% of a $20 bill.", href: "/costs"},
     bills_complete: {term: "I've entered every bill", meaning: "Your statement that every bill for a month is entered.",
@@ -71,6 +71,19 @@
     prepaid_credit: {term: "Prepaid credit", meaning: "Money you loaded on an AI provider's account in advance.",
       why: "HQ shows spending since you last checked it; the provider's own page has the exact balance.", example: "",
       href: "/costs"},
+    loss_limit: {term: "Daily loss limit", meaning: "The most the account may lose in one trading day, as a share of its value at the day start (fees and coins held count).",
+      why: "Reaching it stops new buying until the next day start; safety exits and sales keep working.", example: "3% of $10,000 is $300.",
+      href: "/trading"},
+    day_plan: {term: "Day plan", meaning: "The Trader's plan for one coin today: waiting buys below the price, each with a safety exit.",
+      why: "Software checks every plan against your limits before anything is sent.", example: "", href: "/trading"},
+    safety_exit: {term: "Safety exit", meaning: "A sell order software puts on coins as soon as a planned buy fills: a stop below, and a target above if the plan set one.",
+      why: "A position is never left unprotected while the Trader sleeps.", example: "Stop at 97, target at 104.",
+      href: "/trading"},
+    scorecard: {term: "Scorecard", meaning: "The result after every fee, compared with keeping the cash and with holding Bitcoin over the same days.",
+      why: "It is evidence about one period, not proof of profit and never permission for real money.", example: "",
+      href: "/journal"},
+    price_collector: {term: "Price collector", meaning: "The part of the service that saves price candles from Kraken and runs the hourly coin scan.",
+      why: "Charts, alarms and the coin scanner read what it saves.", example: "", href: "/progress"},
   });
 
   // Room id → why the room matters (§D.12). Job lines come from the server.
@@ -105,6 +118,10 @@
     wakeplan: {title: "Next check-ins", text: "When each department looks next: the time it chose itself, or the next day start. Wake-ups happen only while the team is running."},
     watchlist: {title: "Today's focus coins and alarms", text: "Today's focus coins from Research and the price alarms the departments set. Looking never changes anything."},
     wakes: {title: "Wake log", text: "Every wake-up from the saved records, with its reasons and the AI allowance at that moment. Nothing limits how often a department is woken."},
+    loss: {title: "Today's loss limit", text: "Today's loss against the daily loss limit you recorded, with fees and coins held at their latest prices. Reaching it stops new buying until the next day start; safety exits and sales keep working."},
+    plans: {title: "Today's day plans", text: "The Trader's plans for today, coin by coin: waiting buys, the safety exit software puts on every filled part, fills and refusals. Looking never changes anything."},
+    scorecard: {title: "Scorecard", text: "The result after every fee since the account opened, against keeping the cash and holding Bitcoin. It is evidence only: it never proves a profit or allows real money."},
+    collector: {title: "Price collector", text: "The price collector saves candles and runs the hourly coin scan inside the paper service. This shows its newest records and any problems."},
   });
   const SECTION_HELP_LIVE = Object.freeze({
     ...SECTION_HELP,

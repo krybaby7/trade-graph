@@ -58,7 +58,9 @@ def test_the_licence_and_notice_are_the_upstream_texts() -> None:
 
 def test_the_library_is_loaded_lazily_from_hq_itself_with_a_pinned_integrity() -> None:
     code = _code((STATIC / "hq-charts.js").read_text(encoding="utf-8"))
-    assert re.findall(r'"(/static/vendor/[^"]+)"', code) == [f"/static/vendor/lightweight-charts/{SCRIPT}"]
+    # W8-C (D253): asked for by its pinned version, the one address HQ lets a browser keep.
+    assert re.findall(r'"(/static/vendor/[^"]+)"', code) == [
+        f"/static/vendor/lightweight-charts/{SCRIPT}?v={_record()['version']}"]
     assert f'"{_record()["script_integrity"]}"' in code
     assert "attributionLogo: false" in code
     assert "createElement(\"script\")" in code and ".integrity = " in code

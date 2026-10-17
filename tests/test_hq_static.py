@@ -12,9 +12,10 @@ WEB = Path(__file__).resolve().parents[1] / "src" / "trade_graph" / "web"
 STATIC = WEB / "static"
 TEMPLATE = WEB / "templates" / "hq.html"
 SCRIPTS = ["hq-core.js", "hq-glossary.js", "hq-render.js", "hq-prompts.js", "hq-decide.js", "hq-checkins.js",
-           "hq-charts.js", "hq-wakes.js", "hq.js"]
+           "hq-charts.js", "hq-wakes.js", "hq-plans.js", "hq.js"]
 FETCH_ALLOWLIST = {
-    "/api/v1/hq", "/api/v1/hq/story", "/api/v1/hq/chart", "/api/v1/hq/wakes", "/api/v1/owner/config",
+    "/api/v1/hq", "/api/v1/hq/story", "/api/v1/hq/chart", "/api/v1/hq/wakes", "/api/v1/hq/plans",
+    "/api/v1/owner/config",
     "/api/v1/owner/pause",
     "/api/v1/owner/resume",
     "/api/v1/owner/start-trading", "/api/v1/owner/start-optimisation", "/api/v1/owner/stop-service",
@@ -205,7 +206,7 @@ def test_gauge_positions_have_a_class_for_every_five_percent():
 
 def test_copy_never_uses_banned_jargon_in_static_strings():
     banned = ["container", "worker process", "reconciliation", "inference", "quota admission", "MANAGE_ONLY", "SMA"]
-    for name in ["hq-glossary.js", "hq-render.js", "hq-checkins.js", "hq-wakes.js"]:
+    for name in ["hq-glossary.js", "hq-render.js", "hq-checkins.js", "hq-wakes.js", "hq-plans.js"]:
         strings = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', _code(_read(name)))
         for text in strings:
             if " " not in text:
