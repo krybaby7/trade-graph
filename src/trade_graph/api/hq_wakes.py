@@ -606,6 +606,33 @@ def _item(row, lookups: _Lookups) -> dict:
 # --- today -----------------------------------------------------------------------------------------------------
 
 
+def _next_check_in(reader: _Reader, department: str, day: TradingDay) -> tuple[Any, datetime | None, bool]:
+    """A department's newest check-in, the named time still to come (None: the next day start) and whether that named
+    time's trigger was recorded: ``EventEngine.next_check_ins``'s rule (D123), read from saved records."""
+    latest = reader.latest_check_in(department)
+    named = latest is not None and latest["basis"] == "named"
+    fired = named and reader.check_in_fired(latest["check_in_id"])
+    return latest, _parse(latest["due_at"]) if named and not fired else None, bool(fired)
+
+
+def engine_check_ins(database, portfolio_id: str, now: datetime) -> dict[str, dict] | None:
+    """Each department's next check-in for HQ's rooms and calendar when the event engine runs (W6-C's follow-up,
+    built in T45): its named time still to come, else the next day start. None before migration 0035.
+
+    Plain SQL on the caller's read snapshot, by the wake log's "Next check-ins" rule; reading starts nothing.
+    """
+    reader = _Reader(database, portfolio_id, now)
+    if not reader.available:
+        return None
+    day = reader.day()
+    result = {}
+    for department in DEPARTMENTS:
+        latest, due, _fired = _next_check_in(reader, department, day)
+        result[department] = {"at": due or day.end, "basis": "named" if due is not None else "day_start",
+                              "check_in_id": latest["check_in_id"] if latest is not None else None}
+    return result
+
+
 def _check_ins(reader: _Reader, day: TradingDay) -> list[dict]:
     """Each department's next check-in, as ``EventEngine.next_check_ins`` reads it (D123), with whether it is awake."""
     waiting = reader.waiting()
@@ -615,10 +642,7 @@ def _check_ins(reader: _Reader, day: TradingDay) -> list[dict]:
     tasks = reader.task_states(row["task_id"] for row in awake.values())
     result = []
     for department in DEPARTMENTS:
-        latest = reader.latest_check_in(department)
-        named = latest is not None and latest["basis"] == "named"
-        fired = named and reader.check_in_fired(latest["check_in_id"])
-        due = _parse(latest["due_at"]) if named and not fired else None
+        latest, due, fired = _next_check_in(reader, department, day)
         if due is None:
             at, basis = day.end, "day_start"
             words = W["check_in"]["never"] if latest is None else (

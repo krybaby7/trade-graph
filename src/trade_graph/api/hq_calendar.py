@@ -76,7 +76,7 @@ def calendar(p: Projection, days: int, checkins: list[dict]) -> dict:
         add(item)
     if p.quota and not refills:
         notes.append(c.says(c.CALENDAR["refill_unknown"]))
-    if not p.facts["schedules"]:
+    if not p.facts["schedules"] and p.facts.get("check_ins") is None:
         notes.insert(0, c.says(c.CALENDAR["no_turns"]))
     unique: dict[str, dict] = {}
     for item in items:
@@ -112,6 +112,8 @@ def _future_turns(p: Projection, role, end: datetime) -> tuple[list, dict | None
     Estimates up to 48 hours ahead are listed as items; later ones (within the same
     ``SERIES_MAX_PROJECTIONS`` cap) come back as one summarised series, or None.
     """
+    if role.check_in is not None and role.next_at is not None:
+        return [_check_in_turn(p, role)], None
     if role.schedule is None or role.next_at is None:
         return [], None
     schedule_id = role.schedule["schedule_id"]
@@ -148,6 +150,17 @@ def _future_turns(p: Projection, role, end: datetime) -> tuple[list, dict | None
     return items, {"schedule_id": schedule_id, "dept": role.dept, "title": _turn_title(role.dept),
                    "first_at": iso_ms(later[0]), "every_seconds": role.every, "count": len(later),
                    "conditional": conditional, "detail": detail}
+
+
+def _check_in_turn(p: Projection, role) -> dict | None:
+    """With the event engine on, a department's one exact next turn: its own check-in (D123). No later turns are
+    estimated, because the department picks each next time itself (W6-C's follow-up, built in T45)."""
+    gate = role.blocking_gate
+    upcoming = not role.overdue
+    detail = c.says(FIRST_TURN_CONDITION[gate]) if upcoming and gate in FIRST_TURN_CONDITION else None
+    return _item(f"turn:check-in:{role.dept}:{iso_ms(role.next_at)}", "dept_turn", role.dept, role.next_at,
+                 _turn_title(role.dept), "planned" if upcoming else "overdue", p, detail=detail,
+                 conditional=gate in CONDITIONAL_GATES and upcoming, waiting=None if upcoming else role.gate_text)
 
 
 def _task_status(p: Projection, task: dict) -> tuple[str, list | None]:

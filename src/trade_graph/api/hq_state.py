@@ -102,6 +102,7 @@ class Role:
     light: str = "resting"
     light_key: str = "resting"
     had_problem: bool = False
+    check_in: dict | None = None  # with the event engine on: the check-in that sets ``next_at`` (D123)
 
 
 class Projection:
@@ -290,7 +291,10 @@ class Projection:
             role.due = next((task for task in role.active if task["status"] == "QUEUED"
                              and task is not role.deferred and self._due(task)), None)
             if dept in SCHEDULED_ROLES:
-                self._schedule(role)
+                if self.facts.get("check_ins") is not None:
+                    self._check_in_turn(role)
+                else:
+                    self._schedule(role)
             elif dept == "engineer":
                 deadlines = [moment for task in role.active if (moment := _dt(task.get("deadline_at")))]
                 role.next_at = min(deadlines, default=None)
@@ -322,6 +326,21 @@ class Projection:
             else None
         role.next_at = _dt(chosen["next_due_at"])
         role.overdue = role.next_at is not None and role.next_at <= self.now
+
+    def _check_in_turn(self, role: Role) -> None:
+        """With the event engine on, a department's next turn is its own check-in (D123): the time it named, else the
+        next day start, as ``EventEngine.next_check_ins`` reads it. The fixed schedule rows stop moving then, so they
+        are not read (W6-C's follow-up, built in T45). Optimisation is woken only when it is not owner-requested-only.
+        """
+        if role.dept == "optimisation" and not self.auto_optimisation:
+            return
+        item = (self.facts.get("check_ins") or {}).get(role.dept)
+        moment = _dt(item["at"]) if item else None
+        if moment is None:
+            return
+        role.check_in = item
+        role.next_at = moment
+        role.overdue = item["basis"] == "named" and moment <= self.now
 
     def _lease_live(self, task: dict) -> bool:
         expiry = _dt(task.get("lease_expires_at"))
