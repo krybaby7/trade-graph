@@ -256,10 +256,17 @@ class PriceCollector:
             if records is None:
                 return StepReport("idle")
         wanted = self._wanted(now, records)
+        # The hourly scan comes as soon as the ranking pass of its hour is done (or late in the hour with what is
+        # stored); it never waits for the wide pass. Due work for the hot coins still goes first.
+        ranking_left = any(item.kind == "ranking" for item in wanted)
+        late = now >= self._ranking_hour(now) + timedelta(minutes=self.settings.scan_after_minutes)
+        if (not ranking_left or late) and self._scan_due(now):
+            hot = [item for item in wanted if item.kind == "hot"]
+            if hot:
+                return self._collect(now, hot[:self.settings.chunk_requests], len(wanted))
+            return self._scan(now)
         if wanted:
             return self._collect(now, wanted[:self.settings.chunk_requests], len(wanted))
-        if self._scan_due(now):
-            return self._scan(now)
         return StepReport("idle")
 
     # --- the pair list ----------------------------------------------------------------------------------------

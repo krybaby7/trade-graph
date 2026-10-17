@@ -34,7 +34,7 @@ from trade_graph.application.price_collector import (
     InterruptibleSleeper,
     PriceCollector,
 )
-from trade_graph.application.service_market_data import service_hot_coins
+from trade_graph.application.service_market_data import quoted_day_coins, service_hot_coins
 from trade_graph.contracts.wakes import FocusSelection
 from trade_graph.domain.clock import FrozenClock
 
@@ -129,9 +129,10 @@ def rig(tmp_path):
     made.close()
 
 
-def test_the_pair_list_comes_first_then_the_hot_coins_then_the_ranking_and_wide_passes_then_one_scan(rig) -> None:
+def test_the_pair_list_comes_first_then_the_hot_coins_the_ranking_pass_the_scan_and_the_wide_pass(rig) -> None:
     reports = rig.until_idle()
-    assert [report.kind for report in reports] == ["catalog", "candles", "candles", "scan"]
+    # The scan follows the ranking pass at once; it does not wait for the rest of the wide pass.
+    assert [report.kind for report in reports] == ["catalog", "candles", "scan", "candles"]
     requested = rig.exchange.ohlc_requests()
     hot = {(symbol, interval) for symbol in ("BTC/USD", "ETH/USD", "SOL/USD") for interval in (1, 5, 15, 60)}
     assert set(requested[:12]) == hot  # BTC and ETH at 1 minute by default, SOL as a focus coin
@@ -139,14 +140,15 @@ def test_the_pair_list_comes_first_then_the_hot_coins_then_the_ranking_and_wide_
     assert set(requested[12:22]) == {(symbol, 60) for symbol in others}  # the ranking pass for the hourly scan
     assert set(requested[22:]) == {(symbol, interval) for symbol in others for interval in (5, 15)}
     assert len(requested) == len(set(requested)) == 42  # every series once
-    assert [kind for kind, _symbol, _interval in rig.exchange.log].count("ticker") == 1
-    assert rig.exchange.log[0][0] == "catalog" and rig.exchange.log[-1][0] == "ticker"
+    kinds = [kind for kind, _symbol, _interval in rig.exchange.log]
+    assert kinds.count("ticker") == 1 and kinds[0] == "catalog"
+    assert kinds.index("ticker") == 1 + 30  # right after the first chunk, which finished the ranking pass
     scan = rig.scans.latest()
     assert scan is not None and scan.mode == "live" and scans_in(rig) == 1
     assert rig.collector.requests_total == 1 + 42 + 1 == rig.limiter.calls
-    kinds = [event["job"] for event in rig.events]
-    assert kinds[0] == "catalog" and kinds[-1] == "scan"
-    assert rig.events[-1]["ranking_pass"]["attempted"] == 10
+    jobs = [event["job"] for event in rig.events]
+    assert jobs[0] == "catalog" and "scan" in jobs
+    assert next(event for event in rig.events if event["job"] == "scan")["ranking_pass"]["attempted"] == 10
 
 
 def scans_in(rig: Rig) -> int:
@@ -271,6 +273,14 @@ def test_the_hot_coins_come_from_saved_records(tmp_path) -> None:
                               paper_symbols=["BTC/USD", "LTC/USD"])
     assert coins.symbols >= {"BTC/USD", "ETH/USD", "LTC/USD", "LINK/USD", "ADA/USD", "SOL/USD", "DOT/USD", "XRP/USD"}
     assert coins.one_minute == {"DOT/USD", "XRP/USD"}  # today's focus coin and the coin with a 1-minute alarm
+    # With the event engine on, the feed also quotes the day's coins (not the shortlist) that the owner's scope covers.
+    quoted = quoted_day_coins(account.database, account.clock, [account.portfolio], execution=account.execution,
+                              ledger=account.ledger)()
+    from trade_graph.kernel.authority import owner_scope_covers
+
+    policy = account.execution.authority.active_policy()
+    assert "SOL/USD" in quoted and not {"LINK/USD", "ADA/USD"} & set(quoted)
+    assert set(quoted) == {symbol for symbol in ("SOL/USD", "DOT/USD", "XRP/USD") if owner_scope_covers(policy, symbol)}
 
 
 @pytest.mark.parametrize("bad", [{"chunk_requests": 0}, {"one_minute_every_seconds": 10}, {"hourly_scan": 1},
@@ -301,3 +311,17 @@ def test_an_answer_without_the_newer_candle_is_asked_again_only_after_the_retry_
     rig.clock.advance(45)
     rig.until_idle()
     assert rig.exchange.ohlc_requests().count(("BTC/USD", 5)) == 1
+
+
+def test_a_slow_ranking_pass_still_gives_a_scan_late_in_the_hour(tmp_path) -> None:
+    made = Rig(tmp_path, settings=CollectorSettings(chunk_requests=2))
+    try:
+        made.collector.step()  # the pair list
+        made.collector.step()  # two hot series; the ranking pass has hardly begun
+        assert scans_in(made) == 0
+        made.clock.advance((datetime(2026, 10, 17, 9, 50, 30, tzinfo=UTC) - made.clock.now()).total_seconds())
+        reports = [made.collector.step() for _ in range(12)]
+        assert "scan" in [report.kind for report in reports] and scans_in(made) == 1
+        assert any(kind == "ranking" for report in reports for kind in report.detail.get("by_kind", {}))
+    finally:
+        made.close()
