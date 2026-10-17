@@ -28,7 +28,8 @@ boundary and its receipts, which agents cannot edit.
 
 ## One wake, one round
 
-`LeaderNewsRounds(research, enabled=..., engine=..., fallback=..., settings=...)` is the Leader department's handler.
+`LeaderNewsRounds(research, enabled=..., spend_policy=..., engine=..., fallback=..., settings=...)` is the Leader
+department's handler.
 For a task the event engine made (input `{"wake": WakeContext}`):
 
 1. **Brief** (`context`, before the task runs): the wake (purpose, reasons, trading day), every note left for the
@@ -108,16 +109,20 @@ reading starts nothing.
 ## Switch, money and the paper service
 
 - **The switch.** `enabled` is the protected owner switch that moves the Leader to Perplexity (W6-A owns it for both
-  departments; it ships off and the owner turns it on at step L3). It is read fresh for each task; an unreadable
-  switch counts as off. Switched off, the `fallback` Leader handler (the existing subscription Leader) keeps the
-  Leader's wakes; with no fallback the round is recorded `switched_off`.
+  departments; it ships off and the owner turns it on at step L3 with `trade-graph perplexity-departments
+  --confirm`). `spend_policy` reads the owner's spend rule that travels with it. Both are functions, read fresh for
+  each task, and fail closed: an unreadable switch counts as off, an unreadable spend rule as none. Once W6-A is
+  merged they are `enabled=lambda: perplexity_enabled_for(database, "leader")` and `spend_policy=lambda:
+  perplexity_setting(database).spend_policy` (`trade_graph.application.perplexity_switch`). Switched off, the
+  `fallback` Leader handler (the existing subscription Leader) keeps the Leader's wakes; with no fallback the round
+  is recorded `switched_off`.
 - **Other Leader tasks.** A Leader task the engine did not make (Secretary routing, an owner request) goes to the
   `fallback` handler; without one it fails as a turn.
 - **Money.** The owner's `PerplexitySpendPolicy` decides (D125 testing mode, or a monthly USD limit, D138 item 4).
   Reaching the limit pauses only Research and Leader news rounds. A wake task's allocation also bounds a round: in
-  the paper service it is the owner root limit, but a subscription installation allocates EUR0 to wake tasks today,
-  so a round there stops at `paused_at_limit` before any request until the wake allocation is changed with the
-  switch (see the W6-B handoff).
+  the paper service it is the owner root limit. A subscription installation allocated EUR0 to every wake task
+  (W5-A), which stops a round at `paused_at_limit` before any request (tested); W6-A gives departments switched to
+  Perplexity the owner root limit instead.
 - **The paper service.** Pass the handler as `handlers["leader"]` and set `rounds.engine = service.event_engine`
   after the service is made (the service builds its engine). Under an owner or system halt the service defers the
   Leader's wake, so nothing is sent; the AI allowance floor holds it too.
