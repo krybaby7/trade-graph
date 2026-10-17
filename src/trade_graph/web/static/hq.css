@@ -737,6 +737,41 @@ body.hq-page .hq-swatch[data-tone="muted"] { border-color: var(--muted); }
 body.hq-page .hq-chart-attribution { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.8125rem; line-height: 1.45; }
 body.hq-page .hq-chart-attribution a { color: var(--accent); }
 
+/* --- Wake-ups (T39): next check-ins, today's routine, focus coins, alarms and the wake log ----------------- */
+
+body.hq-page .hq-wake-checkin .hq-next-text { overflow-wrap: anywhere; }
+body.hq-page .hq-wake-checkin .hq-quote > summary { min-height: 2.25rem; font-size: 0.875rem; }
+body.hq-page .hq-wake-note { margin: 0.6rem 0 0; font-size: 0.875rem; }
+body.hq-page .hq-wake-block { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--border); min-width: 0; }
+body.hq-page .hq-wake-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+body.hq-page .hq-wake-day { margin: 0 0 0.4rem; font-size: 0.9375rem; }
+body.hq-page .hq-wake-lead { margin: 0 0 0.4rem; }
+body.hq-page .hq-wake-steps, body.hq-page .hq-wake-coins, body.hq-page .hq-wake-alarms {
+  display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none;
+}
+body.hq-page .hq-wake-step { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); gap: 0.35rem; align-items: start; }
+body.hq-page .hq-wake-step-mark { color: var(--muted); font-weight: 700; text-align: center; }
+body.hq-page .hq-wake-step[data-status="done"] .hq-wake-step-mark { color: var(--success); }
+body.hq-page .hq-wake-step[data-status="started"] .hq-wake-step-mark { color: var(--accent); }
+body.hq-page .hq-wake-step[data-status="failed"] .hq-wake-step-mark { color: var(--warning); }
+body.hq-page .hq-wake-step-body { min-width: 0; overflow-wrap: anywhere; }
+body.hq-page .hq-wake-coin, body.hq-page .hq-wake-alarm {
+  min-width: 0; padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: var(--hq-radius-small);
+  background: var(--surface);
+}
+body.hq-page .hq-wake-coin-head, body.hq-page .hq-wake-alarm-head { margin: 0; overflow-wrap: anywhere; }
+body.hq-page .hq-wake-alarm-who {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin: 0.15rem 0 0; font-size: 0.875rem;
+}
+body.hq-page .hq-wake-coin .hq-quote > summary, body.hq-page .hq-wake-alarm .hq-quote > summary {
+  min-height: 2.25rem; font-size: 0.875rem;
+}
+body.hq-page .hq-wake-counts { margin: 0 0 0.75rem; }
+body.hq-page .hq-wake-counts > .hq-muted { margin: 0; font-size: 0.9375rem; }
+body.hq-page .hq-wake-item .hq-story-headline, body.hq-page .hq-wake-item .hq-story-consequence { overflow-wrap: anywhere; }
+body.hq-page .hq-wake-allowance { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.875rem; overflow-wrap: anywhere; }
+body.hq-page .hq-wake-events { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
+
 /* --- Phones: one section at a time --------------------------------------------------------------------- */
 
 @media (max-width: 767px) {

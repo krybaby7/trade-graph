@@ -411,13 +411,13 @@ def _allowance(document: dict) -> dict:
                        W["allowance_paused"][2])
         if percent is not None and observed is not None:
             words = c.says(*words, W["allowance_paused_left"][0].format(percent=c.pct(c.decimal_or_none(percent))),
-                           c.time(observed, "relative_clock"), W["allowance_paused_left"][1])
+                           c.time(observed, "day_clock"), W["allowance_paused_left"][1])
     elif status == "available" and observed is not None:
         if percent is not None:
             words = c.says(*head, W["allowance_left"][0].format(percent=c.pct(c.decimal_or_none(percent))),
-                           c.time(observed, "relative_clock"), W["allowance_left"][1])
+                           c.time(observed, "day_clock"), W["allowance_left"][1])
         else:
-            words = c.says(*head, W["allowance_no_amount"][0], c.time(observed, "relative_clock"),
+            words = c.says(*head, W["allowance_no_amount"][0], c.time(observed, "day_clock"),
                            W["allowance_no_amount"][1])
     else:
         status, percent, observed = "unknown", None, None
@@ -590,7 +590,7 @@ def _check_ins(reader: _Reader, day: TradingDay) -> list[dict]:
             forms = W["check_in"]["awake" if tasks.get(row["task_id"] or "") in RUNNING_TASKS else "awake_waiting"]
             woken = _parse(row["created_at"])
             reason_words = c.plain(_headline(reasons, context)).lower() if reasons else W["reason"]["check_in"][0]
-            text = c.says(forms[0], c.time(woken, "relative_clock") if woken else None, forms[1], reason_words,
+            text = c.says(forms[0], c.time(woken, "day_clock") if woken else None, forms[1], reason_words,
                           forms[2])
             status = "awake"
         keep_note = latest is not None and not fired
@@ -675,7 +675,7 @@ def _focus(reader: _Reader, day: TradingDay, steps: dict[str, dict], reasons: li
         else:
             words = c.says(copy["none_named"])
         if revision > 1 and recorded is not None:
-            words = c.says(*words, copy["revised"][0].format(revision=revision), c.time(recorded, "relative_clock"),
+            words = c.says(*words, copy["revised"][0].format(revision=revision), c.time(recorded, "day_clock"),
                            copy["revised"][1])
         return {"status": "named" if coins else "none_named", "text": words, "coins": coins,
                 "quote": _quote(document.get("summary")), "revision": revision,

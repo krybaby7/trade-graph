@@ -102,6 +102,9 @@
     decide: {title: "Decide", text: "Every button shows what will happen first and asks you to confirm. HQ never acts on its own."},
     spending: {title: "AI spending", text: "Real costs of paid AI from receipts, kept apart from practice money. Costs not known yet are never shown as zero. Alerts never pause anything."},
     charts: {title: "Price charts", text: "Saved candles with the indicators, alarms and orders the team chose. Missing candles stay as gaps. Looking at a chart never changes anything."},
+    wakeplan: {title: "Next check-ins", text: "When each department looks next: the time it chose itself, or the next day start. Wake-ups happen only while the team is running."},
+    watchlist: {title: "Today's focus coins and alarms", text: "Today's focus coins from Research and the price alarms the departments set. Looking never changes anything."},
+    wakes: {title: "Wake log", text: "Every wake-up from the saved records, with its reasons and the AI allowance at that moment. Nothing limits how often a department is woken."},
   });
   const SECTION_HELP_LIVE = Object.freeze({
     ...SECTION_HELP,

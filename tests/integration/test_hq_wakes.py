@@ -33,7 +33,7 @@ from trade_graph.api.hq_wakes_contract import (
 from trade_graph.api.security import redact
 from trade_graph.application.alarms.book import AlarmBook
 from trade_graph.application.events.store import sha256_of
-from trade_graph.contracts.wakes import DEPARTMENTS, ScanReference
+from trade_graph.contracts.wakes import DEPARTMENTS, TRIGGER_KINDS, ScanReference
 from trade_graph.domain.clock import FrozenClock, parse_utc
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -122,6 +122,7 @@ def test_a_database_from_before_the_event_engine_has_no_wake_log(tmp_path) -> No
     ("check_in", "research", {}, "Its own check-in time", "Its own check-in time came"),
     ("alarm_fired", "trader", {}, "A price alarm went off", "A price alarm went off"),
     ("feed_lost", "trader", {}, "Prices stopped arriving", "Prices stopped arriving"),
+    ("feed_restored", "trader", {}, "Prices are arriving again", "Prices are arriving again"),
     ("entry_filled", "trader", {}, "A waiting buy filled", "Waiting buy filled: 5 SOL at 99.5 USD each (SOL/USD)"),
     ("exit_filled", "trader", {}, "A safety exit filled", "Safety exit filled at its target: sold 5 SOL at 104 USD"),
     ("exit_filled", "trader", {"exit_leg": "stop", "price": "97"}, "A safety exit filled",
@@ -142,6 +143,13 @@ def test_each_reason_reads_in_plain_words(account, kind, department, fields, hea
     assert _words(item["headline"]).startswith(headline)
     assert event in _words(item["events"][0])
     assert item["more_events"] == 0
+
+
+def test_every_trigger_kind_has_its_words() -> None:
+    # A new trigger kind (contracts/wakes.py) needs its plain words here before HQ can show it.
+    assert set(hq_copy.WAKES["reason"]) == set(TRIGGER_KINDS)
+    events = hq_copy.WAKES["event"]
+    assert all(kind in events or f"{kind}_unknown" in events for kind in TRIGGER_KINDS)
 
 
 def test_an_alarm_wake_names_the_coin_and_the_condition_it_was_handed(account) -> None:

@@ -36,6 +36,7 @@
   <script src="/static/hq-decide.js" defer></script>
   <script src="/static/hq-checkins.js" defer></script>
   <script src="/static/hq-charts.js" defer></script>
+  <script src="/static/hq-wakes.js" defer></script>
   <script src="/static/hq.js" defer></script>
 {% endblock %}
 {% block eyebrow %}Trade Graph{% endblock %}
@@ -120,6 +121,22 @@
       </div>
       <div data-hq="checkins" data-hq-hide-empty></div>
     </article>
+    {#- T39: each department's next check-in, today's steps, focus coins and alarms, read from GET /api/v1/hq/wakes
+        while the panel is on screen (hq-wakes.js); reading starts nothing. -#}
+    <article class="hq-panel hq-wakeplan" aria-labelledby="hq-h-wakeplan">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-wakeplan" class="hq-panel-title">Next check-ins</h2>
+        {{ help('wakeplan', 'Next check-ins') }}
+      </div>
+      <div data-hq="wakeplan"><p class="hq-muted">Wake-ups load when you open this part of HQ.</p></div>
+    </article>
+    <article class="hq-panel hq-watchlist" aria-labelledby="hq-h-watchlist">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-watchlist" class="hq-panel-title">Today's focus coins and alarms</h2>
+        {{ help('watchlist', "Today's focus coins and alarms") }}
+      </div>
+      <div data-hq="watchlist"><p class="hq-muted">Focus coins and alarms load when you open this part of HQ.</p></div>
+    </article>
   </section>
 
   <section id="story" class="hq-section" data-hq-section aria-label="Story">
@@ -129,6 +146,15 @@
         {{ help('story', 'Story') }}
       </div>
       <div data-hq="story"></div>
+    </article>
+    {#- T39: every wake-up with its reasons and the AI allowance at that moment (GET /api/v1/hq/wakes). -#}
+    <article class="hq-panel hq-wakes" aria-labelledby="hq-h-wakes">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-wakes" class="hq-panel-title">Wake log</h2>
+        {{ help('wakes', 'Wake log') }}
+      </div>
+      <div data-hq="wakes"><p class="hq-muted">The wake log loads when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">The wake log needs JavaScript, which is switched off here.</p></noscript>
     </article>
   </section>
 
