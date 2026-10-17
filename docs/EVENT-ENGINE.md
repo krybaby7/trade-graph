@@ -51,7 +51,7 @@ restart or a repeated read never records an event twice.
 | `loss_limit_reached` | Trader | the `daily_loss_limit_reached` activity event (T32) | `activity:<event_id>` |
 | `focus_updated` | Trader | Research recorded a focus revision outside the day-start step | `focus:<focus_id>` |
 | `wake_request` | any but the requester | `EventEngine.request_wake` or a department's `wake_requests` | `wake-request:<requester>:<id>` or `wake-request:<wake_id>:<n>` |
-| `news_alarm` | any | `EventEngine.notify` (T45, W7-A) | `software:<source_ref>` |
+| `news_alarm` | Leader, Trader | T44's would-wake verdicts, routed by `NewsWakeRouter` through `EventEngine.notify` when the owner's switch is live (T45, W7-A) | `software:news-alarm:<route id>` |
 | `task_created` | the task's role | a department root task made outside the engine | `task:<task_id>` |
 
 Fields: `trigger_id`, `kind`, `department`, `portfolio_id`, `source_ref`, `occurred_at`, and, by kind,
@@ -70,7 +70,8 @@ wakes nobody by itself; `feed_lost` wakes (W1-D left this choice to W5-A, D190).
 ## Wakes
 
 `EventEngine.step(portfolio_ids, dispatch=True, ai_paused=None)` runs, in order: the price watcher's `tick`, closing
-the wakes whose task ended, collecting triggers, the daily cycle, and dispatch. Dispatch gives every department with
+the wakes whose task ended, collecting triggers, routing news alarms (T45; its own part, so a failure there is reported
+as `news:<error>` and holds back nothing else), the daily cycle, and dispatch. Dispatch gives every department with
 a fresh pending trigger and no open wake **one** wake holding all its pending triggers; triggers that arrive while
 it is open wait. One open engine wake per department and portfolio is enforced in SQL. The wake, its claim of
 the triggers, its claim of the T33 alarm batch (`AlarmQueue.claim(department, wake_id)`) and its scheduler task
@@ -127,7 +128,8 @@ optional:
 ```
 
 - **`check_in`**: `at_utc` an aware time, or none for the next day start (D123). Leaving `check_in` out also means
-  the next day start. The newest check-in of a department is in force; `EventEngine.next_check_ins(portfolio_id)`
+  the next day start, except after a wake made only of news alarms: then the department's check-in in force stays as
+  it was (T45, D228: a news alarm only adds wake-ups and never moves a department's own next look). The newest check-in of a department is in force; `EventEngine.next_check_ins(portfolio_id)`
   gives each department's next time as HQ shows it (`due_at`, `basis` `named` or `day_start`, `note`,
   `set_by_wake_id`). A time in the past is due at once. Nothing limits how soon or how often.
 - **`focus`** (Research only): `FocusSelection`, at most 16 coins, each named once, with a note and evidence ids;
@@ -222,8 +224,13 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
   Built by W6-C: `GET /api/v1/hq/wakes` (`api/hq_wakes.py`) reads these tables directly in a read snapshot,
   without the engine, and words each trigger kind for the owner; a new trigger kind needs its words in
   `hq_copy.WAKES` (a test fails otherwise). See [HQ-DASHBOARD.md](HQ-DASHBOARD.md#wake-ups-the-calendar-and-story-tabs).
-- **W7-A (T45, news wake-ups).** `EventEngine.notify(portfolio_id, department, kind="news_alarm",
-  source_ref=<headline id>, note=..., symbol=...)` adds one trigger per headline; it only adds wakes.
+- **W7-A (T45, news wake-ups), built.** `NewsWakeRouter` (`application/news_wakes.py`) is a trigger source of every
+  engine (`EventEngine(news_wakes=True)`, the default): each step it routes T44's would-wake verdicts once per
+  portfolio and department into `news_alarm_wake_routes` (state migration 0042), the Leader always and the Trader when
+  the coin is held. The owner's switch (`OwnerPolicy.news_wakes`, `trade-graph news-wakes`) decides: shadow (shipped)
+  records whom it would wake; live adds one `news_alarm` trigger per route through `EventEngine.notify(portfolio_id,
+  department, kind="news_alarm", source_ref="news-alarm:<route id>", note=..., symbol=...)`. A wake made only of news
+  alarms keeps the department's check-in when its answer names none. See [NEWS-ALARM.md](NEWS-ALARM.md#wake-ups-t45).
 - **W6-D (C2), built.** A department chooses its reply per task (`GatewayRole.reply_type_for(task)`); the Trader's
   is `TraderWakeReply` when the task is a wake and `TraderReply` otherwise. Its wake turn is handed `wake` (the wake,
   with at most the newest 40 triggers and 20 alarm items shown and their totals) and `practice_range` (strategy

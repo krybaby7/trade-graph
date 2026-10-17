@@ -427,6 +427,9 @@ def config(runtime) -> dict:  # R29
     settings = getattr(runtime, "config", None)
     return {
         "automatic_schedule": getattr(settings, "automatic_schedule", True),
+        # The owner's protected switch (D223): with the event engine on, departments wake on events and their own
+        # check-ins, and the fixed schedule rows stop moving (W6-C's follow-up, built in T45).
+        "event_engine": getattr(settings, "event_engine", False) is True,
         "optimisation_manual_only": getattr(settings, "optimisation_manual_only", False),
         "schedule_intervals": getattr(settings, "schedule_intervals", None),
         "optimisation_deadline_seconds": getattr(settings, "optimisation_deadline_seconds", None),
@@ -435,6 +438,18 @@ def config(runtime) -> dict:  # R29
     }
 
 
+
+
+def engine_check_ins(database, pid: str, now: datetime, settings: dict) -> dict | None:  # R31
+    """Each department's next check-in when the event engine runs (D123), else None (the fixed timers are read)."""
+    if not settings["event_engine"]:
+        return None
+    from trade_graph.api.hq_wakes import engine_check_ins as read
+
+    try:
+        return read(database, pid, now)
+    except sqlite3.DatabaseError:
+        return None  # HQ keeps working on the fixed timers rather than failing the page
 
 
 def period_counts(database, pid: str, since: datetime, until: datetime) -> dict:  # R30
@@ -486,6 +501,7 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
     fill_rows = fills(database, pid, story_start)
     floor = story_floor(story_start, (recent, TASK_CAP), (decision_rows, DECISION_CAP), (events, EVENT_CAP),
                         (fill_rows, DECISION_CAP))
+    settings = config(runtime)
     return {
         "now": now, "now_iso": now_iso,
         "portfolio": portfolio(database, pid),
@@ -518,7 +534,8 @@ def collect(runtime, now: datetime, *, story_start: datetime, prompt_from: datet
         "owner_revision": owner_revision(runtime) if owner else None,
         "cycle": optimisation_cycle(database, pid),
         "resources": resource_observation(runtime),
-        "config": config(runtime),
+        "config": settings,
+        "check_ins": engine_check_ins(database, pid, now, settings),
     }
 
 

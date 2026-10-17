@@ -2,7 +2,8 @@
 
 Status: written 2026-10-17 by cloud package W6-D (C2, decisions D220–D224) for local step L3 of the
 [cloud build plan](CLOUD-BUILD-PLAN.md#local-steps--on-the-owners-pc). Nothing in it has been run: the cloud has no
-Docker, no installation, no key and no private data. Paper only. **Every step runs only with your yes.**
+Docker, no installation, no key and no private data. Paper only. **Every step runs only with your yes.** Cloud package
+W7-A (T45, D225–D229) added step 17, the after-L3 owner switch for news wake-ups, and the Leader's `wake` key in step 3.
 
 In plain words: on your PC a local build session builds the new protected image from the merged code, puts your paper
 account on hold, copies your price history into the installation, moves the books to the new release, records your
@@ -33,7 +34,7 @@ bypasses the launcher.
 |---|---|---|---|
 | 1 | Get the code and run the full suite | `git fetch origin && git checkout <commit>`, then `uv sync --frozen --group dev --python 3.12` and `uv run pytest -p no:cacheprovider -rf` (trusted checkout on the PC; or read GitHub's `test` job on `<commit>`) | No failure. Compare with "Known failures" in the cloud build plan. |
 | 2 | Build the protected image | `uv run python scripts/build_protected_image.py --output <new-build-dir> --subscription-tools <reviewed-native-inputs>` then `uv run python scripts/verify_protected_image.py --build-directory <new-build-dir> --output <new-proof-dir>` (trusted checkout, [PROTECTED-DEPLOYMENT.md](PROTECTED-DEPLOYMENT.md)) | An image pin. The builder first checks that NumPy and TA-Lib are pinned with the hash of a Python 3.12 Linux wheel (it stops before any download if not), and the build imports both before it seals the image (D224). |
-| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"` and `"practice_range"` added to `allowed_context_keys.trader`; `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
+| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"` and `"practice_range"` added to `allowed_context_keys.trader` and `"wake"` added to `allowed_context_keys.leader` (T45: the Leader reads why it was woken, news alarms included); `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
 | 4 | Hold the account and stop the service | HQ: **Pause AI** / the authenticated owner pause to MANAGE_ONLY, then **Stop safely** (the dashboard, old image) | HQ shows the account on hold and the service stopped; `paper-service` and `role-worker` leases cleared. |
 | 5 | Stop the old Windows price tasks | `Get-ScheduledTask -TaskName 'TradeGraph-Candles-*' \| Disable-ScheduledTask` (PowerShell on the PC) | Both tasks `Disabled`. They are removed in step 14, once the new collector is seen working. Two collectors at once are not coordinated (D133). |
 | 6 | Back up | `trade-graph backup --database /var/lib/trade-graph/trade_graph.sqlite --destination <private-backup>` (inside the old image, service stopped); keep a copy of the WSL candle file `~/.local/share/trade-graph-market/market_data.sqlite` | A backup file; the candle file copy. The candle file is public data and not part of the financial recovery unit (D132). |
@@ -47,6 +48,7 @@ bypasses the launcher.
 | 14 | Remove the old Windows price tasks | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register_candle_schedule.ps1 -Remove` (PowerShell on the PC) | `removed TradeGraph-Candles-Short`, `removed TradeGraph-Candles-Full`. If step 13 showed no fresh candles, re-enable them instead (`Enable-ScheduledTask`) and stop here. |
 | 15 | Lift the hold | HQ **Resume** (authenticated owner resume with the current revision, [NORMAL-PAPER-OPERATION.md](NORMAL-PAPER-OPERATION.md)) | The service runs. With `event_engine` on, the next 00:00 UTC day start takes the collector's newest hourly scan as the day's shortlist and runs Research's focus step and the Trader's day plans; HQ's wake log (W6-C) shows the wakes. |
 | 16 | About two weeks later | Set the Perplexity monthly limit at about 1.5 times what HQ shows (D138 item 4) | — |
+| 17 | After L3, once the shadow log shows real news alarms: decide on news wake-ups (T45, D227) | Keep the 5-minute news poll running with your Jev key (`trade-graph news-alarm-poll`, [NEWS-ALARM.md](NEWS-ALARM.md); see "News wake-ups" below). Look at `trade-graph news-alarm-report --format text`, HQ's Wake log top line ("would have happened") and `python -I -B -m trade_graph.cli news-wakes --database /var/lib/trade-graph/trade_graph.sqlite` (shows the evidence, writes nothing). To switch on: stop the service, run the same with `--live on` (preview), then `--live on --confirm --expect-revision <revision shown>`, then start the service again. `--live off --confirm` goes back to shadow at any time. | A new owner-policy revision with `news_wakes: "live"` and an audit row with the evidence you saw. Refused while the service runs, and refused while the shadow log holds no alarm from a live feed with a real Jev answer. From then on a news alarm wakes the Leader, and the Trader when the coin is held; HQ's Wake log shows "A news alarm about … from …". |
 
 If any step fails: keep the hold, do not resume, and leave the old image's files in place. Restoring the candle file
 is never needed for the books (it is rebuilt from Kraken); the financial rules for an interrupted transition are in
@@ -85,6 +87,18 @@ The hourly scans of the price collector (D222) keep the newest live scan at most
 of your money limits needs (W2-B's `coin_rule` treats a scan older than two hours as unknown). The day's focus coins
 still come from the day start's shortlist; the hourly scans do not widen it during the day (W6-A's engine check is
 unchanged), they only keep the coin rule and the collected coins current.
+
+## News wake-ups: what step 17 needs
+
+News alarms ship in shadow mode (T45): with the event engine on, the engine records, for every headline Jev rated
+urgent, whom it would wake (the Leader, and the Trader when the coin is held) and wakes nobody. Nothing is recorded
+without verdicts, and verdicts need two things no wave built into the installed service: (1) the news poll running
+every 5 minutes next to the service, writing into the same state database (a scheduled task, or a later in-service
+poll), with a reviewed network route to the five feed hosts and to TypeSafe (the subscription market proxy admits only
+Kraken and Frankfurter, as for Perplexity above); (2) your Jev key installed through the private-file route and
+`jev.calls_enabled` in your private news alarm settings (W1-A). Until both exist, skip step 17: switching on is refused
+without real shadow evidence, and it would wake nobody anyway. The Leader's news-alarm wake works on the subscription
+Leader (it reads the alarm in its `wake` context key, step 3) and on the Perplexity Leader of step 12 (in its brief).
 
 ## The configuration (`<owner>/paper-config.json`)
 
@@ -138,6 +152,9 @@ graph in `scripts/verify_protected_image.py` passes answers through unchanged.
   that request never stops the configured coins' quotes and is recorded as `public_feed_day_coins`. A wake for an
   alarm, a fill or an exit is answered at once; only the day's plans and the Trader's own check-ins wait, at most
   `decision_candle_wait_seconds`, for the hour that just closed.
+- **News alarms, shadow mode** (T45): with the engine on, every would-wake news alarm is recorded with whom it would
+  wake and why (`news_alarm_wake_routes`), and nobody is woken until step 17. HQ's Wake log counts them. HQ's room
+  tiles and calendar show each department's next turn from its own check-in, not from the old fixed timers.
 
 ## Afterwards (L4)
 

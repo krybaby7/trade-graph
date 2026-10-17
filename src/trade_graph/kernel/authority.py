@@ -79,6 +79,11 @@ PROTECTED_PATH_PREFIXES = (
     # T38 Leader news rounds: the Leader's authority boundary (no trade, approval or block), routing and receipts.
     "src/trade_graph/contracts/leader_news.py",
     "src/trade_graph/application/leader_news/",
+    # T45 news wake-ups: the owner's shadow/live switch with its evidence gate, and how news alarms become wakes.
+    "src/trade_graph/contracts/news_wakes.py",
+    "src/trade_graph/application/news_wakes.py",
+    "src/trade_graph/application/news_wake_switch.py",
+    "src/trade_graph/market_data_cli/news_wakes.py",
 )
 
 

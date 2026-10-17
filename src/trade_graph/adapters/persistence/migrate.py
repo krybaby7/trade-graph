@@ -22,6 +22,7 @@ from trade_graph.adapters.persistence.native_fee_reservation_schema import (
 )
 from trade_graph.adapters.persistence.native_incident_schema import STATEMENTS as NATIVE_INCIDENT_STATEMENTS
 from trade_graph.adapters.persistence.news_alarm_schema import NEWS_ALARM_STATEMENTS
+from trade_graph.adapters.persistence.news_wake_schema import migration as news_wake_migration
 from trade_graph.adapters.persistence.owner_checkin_schema import OWNER_CHECKIN_STATEMENTS
 from trade_graph.adapters.persistence.owner_expense_schema import STATEMENTS as OWNER_EXPENSE_STATEMENTS
 from trade_graph.adapters.persistence.pilot_schema import STATEMENTS as PILOT_STATEMENTS
@@ -482,6 +483,7 @@ STATEMENTS.append(day_plan_migration())  # 0034, W4-A (T34)
 STATEMENTS.append(wake_migration())  # 0035, W5-A (T35)
 STATEMENTS.append(focus_research_migration())  # 0038, W6-A (T37)
 STATEMENTS.append(leader_news_migration())  # 0039, W6-B (T38)
+STATEMENTS.append(news_wake_migration())  # 0042, W7-A (T45)
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(
