@@ -541,3 +541,17 @@ def test_an_unfinished_close_whose_sell_was_never_sent_never_sells_once_it_is_ab
     account.dispatch()  # the service's next dispatch has nothing of it to send
     assert market_sells(account) == [] and live_exits(account) == [(D("97"), D("104"), D("5"))]
     assert account.held("SOL") == D("5")
+
+
+def test_the_daily_loss_stop_never_blocks_closing_or_protecting_a_position(tmp_path) -> None:
+    account = day_plan_account(tmp_path)
+    filled(account)  # 5 SOL from the plan, protected
+    account.authorize("enter", "BTC/USD", "0.05")  # an older-path BTC buy that will lose more than 4%
+    account.dispatch()
+    fill_quote(account, symbol="BTC/USD", bid="49990", ask="50010", volume=None)
+    fill_quote(account, symbol="BTC/USD", bid="41000", ask="41010", volume=None)
+    assert account.enforce()["money_limits"]["stopped"] is True  # new buying is stopped for the day
+    moved = act(account, position_action("move_exit", stop_price="98", take_profit_price=None))
+    assert moved.status == "done" and live_exits(account) == [(D("98"), None, D("5"))]
+    closed = act(account, position_action("close"), request_id="action-2")
+    assert closed.status == "done" and len(market_sells(account)) == 1  # selling is not new exposure
