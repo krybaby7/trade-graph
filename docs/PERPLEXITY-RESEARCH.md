@@ -4,7 +4,8 @@ Status: built and tested in source on 2026-10-16 (T36, cloud package W1-C,
 decisions D150–D154). Not deployed. No real Perplexity call has been made: every
 test plays synthetic responses. Research and the Leader still use their current
 models; switching them to Perplexity is a protected owner setting at step L3
-(T37, T38).
+(T37, T38): `trade-graph perplexity-departments --confirm`, built by W6-A with
+Research's focus-coin workflow (see [FOCUS-RESEARCH.md](FOCUS-RESEARCH.md)).
 
 ## In one minute
 
@@ -129,6 +130,12 @@ result fields, and both prices.
 
 - **T37 / T38 (W6-A, W6-B):** call
   `PerplexityWebResearch(gateway, route=..., policy=...).run(WebResearchAsk(...), reply_type=...)`.
+  Since W6-A, `WebResearchAsk.findings_expire_at` makes every accepted finding
+  last until a set moment (Research uses the trading day's end), and
+  `run(..., check=...)` sees a valid reply with the round's stored sources before
+  anything is kept; a `ValidationFailure` there rejects the whole reply. The
+  owner's switch and spend rule come from `perplexity_setting(database)`;
+  `perplexity_enabled_for(database, "leader")` is the Leader's read (W6-B).
   A reply type must extend `WebResearchReply`, whose findings cite
   `source_ref`. Treat `paused_at_limit` as "this round pauses", never as a
   system pause. The owner policy and route come from protected configuration.

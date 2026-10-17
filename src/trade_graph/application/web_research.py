@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -117,10 +117,16 @@ class WebResearchAsk:
     max_input_tokens: int = 24_000
     max_output_tokens: int = 2_000
     timeout_seconds: int = 120
+    # T37 (D207): when set, every accepted finding lasts until this moment (the day plan's end), whatever lifetime
+    # the reply suggests; software sets it, never the model.
+    findings_expire_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.role not in {"research", "leader"}:
             raise ValueError("Perplexity rounds belong to Research or the Leader")
+        if self.findings_expire_at is not None and (self.findings_expire_at.tzinfo is None
+                                                    or self.findings_expire_at.utcoffset() is None):
+            raise ValueError("a findings lifetime is an aware time")
         if not 1 <= len(self.question) <= 2000:
             raise ValueError("question must be 1 to 2000 characters")
         if not (0 <= self.max_searches <= 32 and 1 <= self.max_output_tokens <= 32_000
@@ -187,7 +193,11 @@ class PerplexityWebResearch:
 
     # ----- round -----
 
-    def run(self, ask: WebResearchAsk, *, reply_type: type[WebResearchReply] = WebResearchReply) -> WebResearchOutcome:
+    def run(self, ask: WebResearchAsk, *, reply_type: type[WebResearchReply] = WebResearchReply,
+            check: Callable[[WebResearchReply, Mapping[str, StoredSource]], None] | None = None,
+            ) -> WebResearchOutcome:
+        """Run one round. ``check`` sees a valid reply with the round's stored sources before anything from it is
+        kept; a ``ValidationFailure`` there rejects the whole reply, as a citation outside the snapshot does."""
         if not issubclass(reply_type, WebResearchReply):
             raise ValueError("reply type must extend WebResearchReply")
         run_id = str(uuid.uuid4())
@@ -233,6 +243,8 @@ class PerplexityWebResearch:
             return self._finish(run_id, "failed", reason="reply does not match its contract", failure="validation",
                                 steps=steps, search=search)
         try:
+            if check is not None:
+                check(reply, self.sources(run_id))
             finding_ids = self._accept(run_id, ask, reply)
         except ValidationFailure as exc:
             return self._finish(run_id, "rejected", reason=str(exc), failure="validation", steps=steps,
@@ -311,6 +323,13 @@ class PerplexityWebResearch:
             hit = source.hit
             published = None if hit.published_on is None else datetime(
                 hit.published_on.year, hit.published_on.month, hit.published_on.day, tzinfo=UTC)
+            seconds = getattr(analysis, "expires_after_seconds", None)
+            if ask.findings_expire_at is not None:
+                expires = ask.findings_expire_at
+            elif seconds is not None:
+                expires = now + timedelta(seconds=seconds)
+            else:
+                raise ValidationFailure("a finding needs a lifetime")
             findings.append(ResearchFinding(
                 record_id=str(uuid.uuid4()), created_at_utc=now, run_id=run_id, task_id=ask.task_id,
                 root_task_id=ask.root_task_id, portfolio_id=ask.portfolio_id, mode="paper",
@@ -323,7 +342,7 @@ class PerplexityWebResearch:
                 instruments=list(analysis.instruments or ask.instruments),
                 relevance="untrusted-page" if hit.untrusted_text else "web-search",
                 counterevidence=analysis.counterevidence,
-                expires_at_utc=now + timedelta(seconds=analysis.expires_after_seconds),
+                expires_at_utc=expires,
                 invalidation=analysis.invalidation))
         store = ResearchStore(self.database, self.clock)
         with self.database.immediate():

@@ -40,6 +40,7 @@ from trade_graph.application.events.allowance import read_allowance
 from trade_graph.application.events.cycle import DayCycle
 from trade_graph.application.events.sources import TriggerSources
 from trade_graph.application.events.store import OpenWake, StoredTrigger, WakeStore, new_id
+from trade_graph.application.focus_scope import focus_scope_refusals
 from trade_graph.application.scheduler import Scheduler
 from trade_graph.contracts.alarms import REFERENCE_PATTERN
 from trade_graph.contracts.wakes import (
@@ -49,6 +50,7 @@ from trade_graph.contracts.wakes import (
     ActivePlan,
     AppliedPlan,
     FocusRecord,
+    FocusStepState,
     ScanReference,
     WakeContext,
     WakeOutcome,
@@ -326,11 +328,20 @@ class EventEngine:
             return None, "the trading day ended before this answer arrived"
         day = TradingDay(wake.trading_day_start, wake.trading_day_end)
         scan = self.day_scan(wake.portfolio_id, day.start)
-        if scan is not None and scan.status in {"ok", "no_candidates"}:
+        shortlist = scan is not None and scan.status in {"ok", "no_candidates"}
+        if selection.coins and not shortlist:
+            status = "none was recorded" if scan is None else f"its scan is {scan.status}"
+            return None, (f"there is no shortlist for this trading day ({status}); focus coins come only from the "
+                          "scanner's shortlist (D120, T37)")[:500]
+        if shortlist:
             outside = [symbol for symbol in selection.symbols() if symbol not in scan.symbols()]
             if outside:
                 return None, (f"{', '.join(outside)} is not on the scanner's shortlist this day start handed over; "
                               "focus coins come from the shortlist (D120)")[:500]
+        refusals = focus_scope_refusals(self.execution.authority, wake.portfolio_id, selection.symbols())
+        if refusals:
+            named = "; ".join(f"{symbol} is {reason}" for symbol, reason in refusals.items())
+            return None, f"{named}; focus coins come only from the owner's coin list (T37)"[:500]
         record = self.store.record_focus(portfolio_id=wake.portfolio_id, day_start=day.start, day_end=day.end,
                                          scan_id=scan.scan_id if scan else None, selection=selection,
                                          wake_id=wake.wake_id, task_id=wake.task_id)
@@ -449,6 +460,8 @@ class EventEngine:
                 else None,
                 focus=self.store.focus(portfolio_id, day.start) if department in {"trader", "learning"} or
                 purpose == "day_end_review" else None,
+                focus_step=self._focus_step(portfolio_id, day.start) if department in {"trader", "learning"} or
+                purpose == "day_end_review" else None,
                 plans=self._plans(portfolio_id, day) if department in {"trader", "learning"} else (),
                 check_in=self.store.latest_check_in(portfolio_id, department), allowance=allowance,
                 instruction=INSTRUCTION)
@@ -476,6 +489,16 @@ class EventEngine:
             (portfolio_id, utc_iso(day.start))).fetchall()
         return tuple(ActivePlan(plan_id=row["plan_id"], symbol=row["symbol"], installed_at=row["installed_at"],
                                 trading_day_end=row["trading_day_end"]) for row in rows)
+
+    def _focus_step(self, portfolio_id: str, day_start: datetime) -> FocusStepState | None:
+        """How the day's focus step ended (or that it is still running), so a failure is never mistaken for none."""
+        step = self.store.step(portfolio_id, day_start, "focus")
+        if step is None:
+            return None
+        detail = step["detail"]
+        reason = detail.get("reason")
+        return FocusStepState(status=step["status"], reason=None if reason is None else str(reason)[:500],
+                              focus_id=detail.get("focus_id"))
 
     def day_scan(self, portfolio_id: str, day_start: datetime) -> ScanReference | None:
         step = self.store.step(portfolio_id, day_start, "scan")

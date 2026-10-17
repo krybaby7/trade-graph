@@ -21,6 +21,8 @@ LEADER_FORBIDDEN = frozenset(
         # T32: the owner's money limits, day start and coin list are owner policy; a mandate may only narrow.
         "edit_owner_policy",
         "raise_money_limits",
+        # T37: moving departments to Perplexity is the owner's protected switch (D205).
+        "switch_perplexity_departments",
     }
 )
 ENGINEER_FORBIDDEN = frozenset(
@@ -64,6 +66,16 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/events/",
     # T42 scorecard: how the paper result is valued and compared is a scoring definition, like the kernel sums.
     "src/trade_graph/application/scorecard.py",
+    # T37 focus coins on Perplexity: the owner's switch, the spend rule and receipt collection of research rounds,
+    # and Research's focus workflow, which checks picks against the shortlist and the owner's coin list.
+    "src/trade_graph/contracts/perplexity_switch.py",
+    "src/trade_graph/application/perplexity_switch.py",
+    "src/trade_graph/market_data_cli/perplexity_departments.py",
+    "src/trade_graph/contracts/web_research.py",
+    "src/trade_graph/application/web_research.py",
+    "src/trade_graph/contracts/focus_research.py",
+    "src/trade_graph/application/focus_research.py",
+    "src/trade_graph/application/focus_scope.py",
 )
 
 

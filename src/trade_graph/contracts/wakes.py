@@ -337,6 +337,18 @@ class FocusSelection(_Frozen):
         return tuple(coin.symbol for coin in self.coins)
 
 
+class FocusStepState(_Frozen):
+    """How the day's focus step ended, as the Trader and Learning are handed it (T37, D208).
+
+    ``failed`` with its reason means Research's research failed or its answer was refused: there is no focus, and
+    that is not Research choosing nothing (an empty selection is ``done``). The Trader still decides.
+    """
+
+    status: CycleStatus
+    reason: str | None = Field(default=None, max_length=500)
+    focus_id: str | None = None
+
+
 class FocusRecord(_Frozen):
     """A recorded focus selection. Each revision of a trading day is kept; the newest is the one in force."""
 
@@ -445,6 +457,7 @@ class WakeContext(_Frozen):
     alarms: tuple[AlarmDelivery, ...] = ()
     scan: ScanReference | None = None
     focus: FocusRecord | None = None
+    focus_step: FocusStepState | None = None
     plans: tuple[ActivePlan, ...] = ()
     check_in: CheckIn | None = None
     allowance: AllowanceReading
@@ -529,8 +542,8 @@ __all__ = [
     "RIDE_ALONG_KINDS", "SOFTWARE_KINDS", "TRIGGER_KINDS", "TRIGGER_STATUSES", "WAKE_CONTRACT_VERSION",
     "WAKE_PURPOSES", "WAKE_STATUSES", "ActivePlan", "AllowanceReading", "AllowanceWindow", "AppliedPlan", "CheckIn",
     "CheckInBasis", "CheckInRequest", "CycleStatus", "CycleStep", "Department", "ExitLeg", "FocusCoin",
-    "FocusRecord", "FocusSelection", "ProviderAllowance", "ResearchFocusReply", "ScanReference", "ShortlistCoin",
-    "TraderWakeReply", "TriggerKind", "TriggerStatus", "WakeContext", "WakeOrigin", "WakeOutcome",
+    "FocusRecord", "FocusSelection", "FocusStepState", "ProviderAllowance", "ResearchFocusReply", "ScanReference",
+    "ShortlistCoin", "TraderWakeReply", "TriggerKind", "TriggerStatus", "WakeContext", "WakeOrigin", "WakeOutcome",
     "WakeOutcomeRecord", "WakePurpose", "WakeRecord", "WakeRequest", "WakeStatus", "WakeTrigger", "is_obsolete",
     "purpose_of", "reasons_of",
 ]

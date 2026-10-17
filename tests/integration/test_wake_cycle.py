@@ -121,7 +121,17 @@ def test_a_failed_scan_is_recorded_and_the_day_goes_on_without_a_shortlist(tmp_p
     seen: list = []
     run_one(scheduler, engine, {"research": scripted(_focus("SOL/USD"), seen=seen)})
     assert wake_input(seen[0])["scan"]["status"] == "failed"
-    assert engine.focus(account.portfolio).scan_id is None  # recorded, and labelled as chosen without a scan
+    # T37 (D206): focus coins come only from a shortlist, so without one the answer is refused and recorded; the
+    # Trader is still woken for its day plans and sees why there is no focus.
+    (research,) = engine.wakes(account.portfolio, department="research")
+    assert "no shortlist" in research.outcome.focus_refused
+    assert engine.focus(account.portfolio) is None
+    assert engine.cycle(account.portfolio, DAY)["focus"]["status"] == "failed"
+    engine.step([account.portfolio])
+    trader: list = []
+    run_one(scheduler, engine, {"trader": scripted(seen=trader)})
+    assert wake_input(trader[0])["purpose"] == "day_plan" and wake_input(trader[0])["focus"] is None
+    assert wake_input(trader[0])["focus_step"]["status"] == "failed"
 
 
 def test_without_research_the_trader_plans_from_the_scan_and_without_a_trader_the_step_is_skipped(tmp_path) -> None:

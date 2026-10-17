@@ -94,6 +94,7 @@ reviewed day for a day-end review.
 | `alarms` | the T33 `AlarmDelivery` items of the claimed batch |
 | `scan` | `ScanReference` (focus, day plan and review wakes): status, source, scan id, as-of, ranking version, evidence label, shortlist (`symbol`, `position`, `flags`) |
 | `focus` | the newest `FocusRecord` of the day (Trader and Learning wakes, reviews) |
+| `focus_step` | `FocusStepState` (Trader and Learning wakes, reviews, T37): how the day's focus step ended (`done`, `failed`, `skipped`, `started`), with the reason, so a failed step is never mistaken for Research choosing nothing |
 | `plans` | `ActivePlan` items: the day's latest plans of the portfolio (Trader and Learning) |
 | `check_in` | the department's check-in in force before this wake |
 | `allowance` | `AllowanceReading` (below) |
@@ -130,8 +131,10 @@ optional:
   gives each department's next time as HQ shows it (`due_at`, `basis` `named` or `day_start`, `note`,
   `set_by_wake_id`). A time in the past is due at once. Nothing limits how soon or how often.
 - **`focus`** (Research only): `FocusSelection`, at most 16 coins, each named once, with a note and evidence ids;
-  no coins is a valid answer. Coins must be on the shortlist of the day's scan when there is one (D120); otherwise
-  the selection is refused and recorded as such. Each answer is a new revision of the day (`FocusRecord`:
+  no coins is a valid answer. Coins must be on the shortlist of the day's scan (D120) and inside the owner's coin
+  list (T37, D206: a listed mandate's coins, or spot pairs under the owner's coin rule; never riba products);
+  with no shortlist that day (no scan, or a failed one) no coin can be named. Otherwise the selection is refused
+  and recorded as such. Each answer is a new revision of the day (`FocusRecord`:
   `focus_id`, `revision`, `scan_id`, `selection`, `wake_id`, `task_id`, `recorded_at`); a revision outside the
   day-start step wakes the Trader (`focus_updated`).
 - **`day_plans`** (the Trader only): one `DayPlan` per coin. Each goes through `DayPlans.install(portfolio, plan,
@@ -201,10 +204,11 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
 
 ## For the next packages
 
-- **W6-A (T37, focus coins on Perplexity).** Research's focus wake has `purpose` `focus`, `scan` with the shortlist
-  and `reasons` `["focus_step"]`. Return `ResearchFocusReply.outcome()` (or a `WakeOutcome` with `focus`) under
-  `wake_outcome`. Cite evidence ids in `FocusCoin.evidence_refs`. Later refreshes are wakes of other purposes whose
-  `focus` answer becomes a new revision and wakes the Trader.
+- **W6-A (T37, focus coins on Perplexity), built.** Research's handler is `FocusResearch`
+  (`application/focus_research.py`, [FOCUS-RESEARCH.md](FOCUS-RESEARCH.md)): the focus wake (`purpose` `focus`,
+  `reasons` `["focus_step"]`, `scan` with the shortlist) runs one Perplexity round and answers with the focus and
+  Research's next check-in; refreshes are its other wakes (the Leader's requests, its own check-ins). A failed round
+  fails the turn with its reason, so the focus step is `failed` and the Trader still plans, seeing `focus_step`.
 - **W6-B (T38, Leader news rounds).** The Leader wakes at the day start (unless it named a time) and at its named
   check-ins. It wakes the Trader or Research with `wake_requests` (or `EventEngine.request_wake(..., requested_by=
   "leader")`); the note is data and it cannot install plans (only the Trader's answer can).
