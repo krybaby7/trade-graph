@@ -130,6 +130,7 @@ up as not reproduced, with the parts that differ.
 
 Sums are exact; ratios and averages are rounded half-even to ten decimal places. The golden tests in
 `tests/unit/test_trade_metrics.py` and `tests/integration/test_practice_range_replay.py` are checked by hand.
+The paper scorecard (T42) uses the same sums on the ledger's fills: [SCORECARD.md](SCORECARD.md).
 
 ## For day plans (T34)
 
