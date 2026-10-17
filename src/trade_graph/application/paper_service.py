@@ -22,10 +22,12 @@ from typing import Any
 
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.day_plans import DayPlans
+from trade_graph.application.events import EngineOptions, EventEngine, TaskSettings
 from trade_graph.application.scheduler import Scheduler, TaskLease
 from trade_graph.application.secretary import Secretary
 from trade_graph.application.service_controller import service_finished, service_heartbeat, service_started
 from trade_graph.application.worker import RoleWorker
+from trade_graph.contracts.wakes import DEPARTMENTS
 from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import StaleState, ValidationFailure
 
@@ -78,6 +80,7 @@ class PaperService:
         subscription_provider: str | None = None,
         automatic_schedule: bool = True,
         optimisation_manual_only: bool = False,
+        event_engine: EngineOptions | None = None,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
@@ -106,6 +109,8 @@ class PaperService:
         self.artifact_runtime, self.public_feed = artifact_runtime, public_feed
         # T34: resting day-plan entries, their expiry and pause cancellation, and protective exits for fills.
         self.day_plans = DayPlans(execution)
+        if event_engine is not None and not isinstance(event_engine, EngineOptions):
+            raise ValidationFailure("event_engine takes EngineOptions")
         if artifact_runtime:
             if optimisation_manual_only:
                 artifact_runtime.disabled_schedule_roles.add("optimisation")
@@ -155,6 +160,16 @@ class PaperService:
         self._feed_last_diagnostic_at = None
         self._feed_last_failure = None
         self._reference_fx_error = None
+        # T35: with the event engine, departments wake on events and their own check-ins instead of fixed timers.
+        self.event_engine: EventEngine | None = None
+        self.price_watcher = None
+        self._wake_failures: list[str] = []
+        if event_engine is not None:
+            self.price_watcher = event_engine.watcher
+            self.event_engine = EventEngine(
+                execution, self.scheduler, departments=(), scan=event_engine.scan, watcher=event_engine.watcher,
+                task_settings=self._wake_task, execution_lock=self._execution_lock, day_plans=self.day_plans,
+                daily_cycle=event_engine.daily_cycle)
 
     def _blocks_increase(self, symbol: str) -> bool:
         gate = getattr(self.public_feed, "blocks_increase", None)
@@ -360,9 +375,52 @@ class PaperService:
         return bool(self.database.execute(
             "SELECT 1 FROM subscription_provider_state WHERE ai_paused = 1 LIMIT 1").fetchone())
 
+    def _wake_departments(self) -> frozenset[str]:
+        departments = {role for role in self.handlers if role in DEPARTMENTS}
+        if self.optimisation_manual_only:
+            departments.discard("optimisation")
+        return frozenset(departments)
+
+    def _wake_task(self, portfolio_id: str, role: str) -> TaskSettings:
+        """A wake's task gets the same allocation, attempt bound and version pin as a scheduled task."""
+        policy = self.execution.authority.active_policy()
+        allocation = Decimal("0") if self.subscription_provider is not None else policy.root_paid_limit.amount
+        bundle = self.artifact_runtime.versions.load_active(portfolio_id) if self.artifact_runtime else None
+        return TaskSettings(allocated_spend=allocation, max_attempts=policy.ordinary_max_paid_attempts,
+                            expected_version=bundle["artifact_hash"] if bundle else None)
+
+    def _wake_step(self) -> int:
+        """The event engine's step: wakes, check-ins and the daily cycle replace the fixed role timers (T35).
+
+        It runs whether or not new AI work is allowed: under the allowance floor the wakes are recorded with their
+        allowance reading and wait as queued tasks, while management and protection go on in ``_management``.
+        """
+        paused = self._ai_paused() or (self.runtime_ready is not None and not self.runtime_ready())
+        for pid in self.portfolio_ids:
+            profile = self.execution.profile(pid)
+            pause = self.execution.pause(pid)
+            own_leader_pause = bool(pause and pause["originator"] == "leader")
+            # Secretary remains software even when discretionary tasks are paused.
+            self.secretary.process(pid, route=not paused and (profile == "RUNNING" or own_leader_pause)
+                                   and "leader" in self.handlers)
+        self.event_engine.departments = self._wake_departments()
+        report = self.event_engine.step(self.portfolio_ids, dispatch=self.automatic_schedule, ai_paused=paused)
+        self._wake_failures.extend("wakes:" + failure for failure in report.failures)
+        return report.created
+
+    def _finish_wake(self, task_id: str) -> None:
+        if self.event_engine is None:
+            return
+        try:
+            self.event_engine.finish_task(task_id)
+        except Exception as exc:  # noqa: BLE001 - the next step closes the wake from the saved task result
+            self._wake_failures.append("wakes:finish:" + type(exc).__name__)
+
     def _schedules(self) -> int:
         if self.artifact_runtime:
             self.artifact_runtime.maintain(reconcile=self._reconcile, consumer_id=self.owner)
+        if self.event_engine is not None:
+            return self._wake_step()
         if self._ai_paused() or not self.automatic_schedule:
             for pid in self.portfolio_ids:
                 self.secretary.process(pid, route=False)
@@ -459,7 +517,15 @@ class PaperService:
         row = self.scheduler.leased_row(lease)
         if row["deadline_at"] and row["deadline_at"] <= self.scheduler.now():
             self.scheduler.skip(lease, {"reason": "Bounded task deadline expired; no new inference"})
+            self._finish_wake(lease.task_id)
             return 0
+        if self.event_engine is not None:
+            # An obsolete wake (its trading day ended before it ran) runs nothing, so it can never become a trade.
+            verdict = self.event_engine.before_run(row, reclaimed=lease.reclaimed)
+            if verdict is not None:
+                self.scheduler.skip(lease, {"reason": verdict, "obsolete_wake": True})
+                self._finish_wake(lease.task_id)
+                return 0
         if row["role"] == "optimisation" and self.optimisation_manual_only:
             requested = self.database.execute("""SELECT 1 FROM service_control_requests
                 WHERE action = 'start_optimisation'
@@ -530,6 +596,7 @@ class PaperService:
                     self.execution.set_pause(
                         row["portfolio_id"], profile, "system", "role unavailable; manage positions",
                     )
+        self._finish_wake(lease.task_id)
         self._completed_total += 1
         return 1
 
@@ -550,6 +617,12 @@ class PaperService:
                         asyncio.run(self.execution.dispatch(protection_only=True))
                     except Exception:  # noqa: BLE001 - reported by the management step's own dispatch
                         pass
+                if self.price_watcher is not None:
+                    # T33 quote alarms see every public price update; a watcher failure is no feed failure.
+                    try:
+                        self.price_watcher.observe_quote(observation)
+                    except Exception as exc:  # noqa: BLE001 - reported with the next tick
+                        self._wake_failures.append("wakes:watcher:" + type(exc).__name__)
                 self._observations_total += 1
         return len(observations)
 
@@ -704,6 +777,8 @@ class PaperService:
                 scheduled = await self._offload(self._schedules)
             except Exception as exc:
                 failures.append("scheduler:" + type(exc).__name__)
+            wake_failures, self._wake_failures = self._wake_failures, []
+            failures.extend(dict.fromkeys(wake_failures))
             if self._role_task is None and not management_failures:
                 self._role_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self._run_role))
                 if wait_roles:

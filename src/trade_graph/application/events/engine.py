@@ -82,6 +82,20 @@ class TaskSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class EngineOptions:
+    """How the paper service runs the event engine: an optional day-start scan step and price watcher.
+
+    ``scan`` runs the coin scanner at the day start (``events.scan.CoinScanStep``); without one the day start uses the
+    newest recorded live scan. ``watcher`` is T33's ``PriceWatcher``: it sees every quote the feed delivers and its
+    ``tick`` runs with each step. ``daily_cycle`` False leaves out the day start and day end (tests of single events).
+    """
+
+    scan: Any = None
+    watcher: Any = None
+    daily_cycle: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class StepReport:
     created: int = 0
     closed: int = 0
@@ -107,7 +121,7 @@ class EventEngine:
         self.scheduler = scheduler
         self.database = execution.database
         self.clock = scheduler.clock
-        self.departments = frozenset(wanted)
+        self._departments = frozenset(wanted)
         self.store = WakeStore(self.database, self.clock)
         self.queue = queue or AlarmQueue(self.database, self.clock)
         self.watcher = watcher
@@ -118,6 +132,18 @@ class EventEngine:
         self.sources = TriggerSources(self)
         self.cycle_runner = DayCycle(self, scan=scan) if daily_cycle else None
         self._lock = threading.RLock()
+
+    @property
+    def departments(self) -> frozenset[str]:
+        """The departments this engine wakes (those with a running handler)."""
+        return self._departments
+
+    @departments.setter
+    def departments(self, value: Iterable[str]) -> None:
+        wanted = frozenset(value)
+        if not wanted <= set(DEPARTMENTS):
+            raise ValidationFailure(f"the event engine wakes {', '.join(DEPARTMENTS)} only")
+        self._departments = wanted
 
     # --- time ---------------------------------------------------------------------------------------------------
 
@@ -527,4 +553,4 @@ def _reference(value: str) -> bool:
     return isinstance(value, str) and re.fullmatch(REFERENCE_PATTERN, value) is not None
 
 
-__all__ = ["INSTRUCTION", "EventEngine", "StepReport", "TaskSettings"]
+__all__ = ["INSTRUCTION", "EngineOptions", "EventEngine", "StepReport", "TaskSettings"]
