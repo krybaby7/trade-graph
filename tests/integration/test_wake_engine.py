@@ -346,3 +346,31 @@ def test_an_alarm_that_fires_between_collection_and_dispatch_still_reaches_the_w
     (wake,) = _wakes(engine, account)
     assert wake.reasons == ("alarm_fired", "wake_request") and len(wake.alarm_delivery_ids) == 1
     assert AlarmQueue(account.database, account.clock).waiting() == {}
+
+
+def test_delegation_bounds_apply_inside_a_wake_and_never_to_the_number_of_wakes(tmp_path) -> None:
+    from trade_graph.domain.errors import AuthorityDenied
+
+    account, scheduler, engine = engine_account(tmp_path, departments={"leader"}, daily_cycle=False)
+    refused: list = []
+
+    def delegate(task):
+        for number in range(scheduler.max_descendants + 1):
+            try:
+                scheduler.add_task(role="research", objective=f"synthetic consultation {number}",
+                                   portfolio_id=account.portfolio, parent_id=task["task_id"])
+            except AuthorityDenied as error:
+                refused.append(str(error))
+        return {}
+
+    engine.request_wake(account.portfolio, "leader", "first", requested_by="software")
+    engine.step([account.portfolio])
+    run_one(scheduler, engine, {"leader": delegate})
+    assert refused == ["descendant limit"]  # the root's own bound, inside this one wake
+    for number in range(scheduler.max_descendants + 3):  # more wakes than one root may have descendants
+        engine.request_wake(account.portfolio, "leader", f"wake {number}", requested_by="software")
+        engine.step([account.portfolio])
+        run_one(scheduler, engine, {"leader": scripted()})
+    assert len(_wakes(engine, account)) == scheduler.max_descendants + 4
+    roots = account.database.execute("SELECT COUNT(*) FROM tasks WHERE role = 'leader' AND parent_id IS NULL")
+    assert roots.fetchone()[0] == scheduler.max_descendants + 4  # every wake is its own root task
