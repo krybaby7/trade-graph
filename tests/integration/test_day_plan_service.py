@@ -69,3 +69,24 @@ def test_a_failing_day_plan_step_is_reported_and_never_holds_back_dispatch(tmp_p
     _management, failures = service._management()
     assert failures == ("day_plans:RuntimeError",)
     assert len(broker_orders(account, side="buy", live=True)) == 1
+
+
+def test_a_failed_prompt_exit_dispatch_is_not_a_feed_failure_and_management_sends_it(tmp_path, monkeypatch) -> None:
+    account = day_plan_account(tmp_path)
+    install(account, plan(entries=[entry("5", "99.5", "97")]))
+    service = _service(account)
+    service._management()
+    original = account.execution.dispatch
+
+    async def failing(*, protection_only: bool = False) -> int:
+        if protection_only:
+            raise RuntimeError("synthetic: the broker binding is unavailable")
+        return await original(protection_only=protection_only)
+
+    monkeypatch.setattr(account.execution, "dispatch", failing)
+    account.clock.advance(1)
+    assert service._ingest([_quote(account, "fill", "99.4", "99.5", volume="100")]) == 1
+    assert account.held("SOL") == D("5") and protected_quantity(account) == D("0")
+    monkeypatch.setattr(account.execution, "dispatch", original)
+    _management, failures = service._management()
+    assert failures == () and protected_quantity(account) == D("5")

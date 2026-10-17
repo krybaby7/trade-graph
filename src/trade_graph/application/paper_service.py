@@ -544,8 +544,12 @@ class PaperService:
                 })
                 if self.execution.on_observation(observation):
                     # A fill of a day-plan entry persisted its protective exit with it (T34); send it now, so the
-                    # next quote of this same poll can already trigger it.
-                    asyncio.run(self.execution.dispatch(protection_only=True))
+                    # next quote of this same poll can already trigger it. A failure here is not a feed failure:
+                    # the exit stays persisted, and the management step sends it and reports what went wrong.
+                    try:
+                        asyncio.run(self.execution.dispatch(protection_only=True))
+                    except Exception:  # noqa: BLE001 - reported by the management step's own dispatch
+                        pass
                 self._observations_total += 1
         return len(observations)
 
