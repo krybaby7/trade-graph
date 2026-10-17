@@ -12,6 +12,8 @@ like it but never part of the financial books or their recovery (D132). The serv
 ``service_hot_coins`` names the coins the team works with now, read from saved records only: BTC/USD and ETH/USD
 (reference and HQ's charts), the quote feed's coins, the newest live shortlist, today's focus coins, held coins,
 coins with an armed alarm and coins with a day plan that has not ended. The collector reads them before each chunk.
+With the event engine on, ``quoted_day_coins`` gives the paper feed the day's coins (focus, plans, alarms, held) the
+owner's coin scope covers, so they are quoted too (D223).
 """
 
 from __future__ import annotations
@@ -64,14 +66,22 @@ def _quietly(read: Callable[[], Any], default: Any) -> Any:
 def service_hot_coins(database: Database, clock: Clock, portfolio_ids: Sequence[str], *, ledger=None,
                       paper_symbols: Sequence[str] = ()) -> HotCoins:
     """The coins the team works with now, from saved records only (no request, no model)."""
-    now = clock.now()
-    at = utc_iso(now)
-    symbols: set[str] = set(REFERENCE_COINS) | set(paper_symbols)
-    one_minute: set[str] = set()
+    at = utc_iso(clock.now())
     shortlist = _quietly(lambda: [row["symbol"] for row in database.execute(
         "SELECT symbol FROM coin_shortlist_entries WHERE scan_sequence = "
         "(SELECT MAX(sequence) FROM coin_scans WHERE mode = 'live' AND as_of <= ?)", (at,)).fetchall()], [])
-    symbols.update(shortlist)
+    day = day_coins(database, clock, portfolio_ids, ledger=ledger)
+    symbols = set(REFERENCE_COINS) | set(paper_symbols) | set(shortlist) | day.symbols
+    return HotCoins(symbols=frozenset(symbol for symbol in symbols if symbol.endswith("/USD")),
+                    one_minute=day.one_minute)
+
+
+def day_coins(database: Database, clock: Clock, portfolio_ids: Sequence[str], *, ledger=None) -> HotCoins:
+    """The coins the Trader plans, holds or watches today: today's focus coins, coins with a day plan that has not
+    ended, coins with an armed alarm, held coins. ``one_minute``: focus coins and coins with a 1-minute alarm."""
+    at = utc_iso(clock.now())
+    symbols: set[str] = set()
+    one_minute: set[str] = set()
     focus_rows = _quietly(lambda: database.execute(
         "SELECT document_json FROM focus_selections WHERE trading_day_start <= ? AND trading_day_end > ? "
         "ORDER BY sequence DESC LIMIT 16", (at, at)).fetchall(), [])
@@ -171,5 +181,18 @@ def activity_recorder(ledger, portfolio_ids: Sequence[str]) -> Callable[[dict[st
     return record
 
 
-__all__ = ["MARKET_DATABASE_NAME", "REFERENCE_COINS", "ServiceMarketData", "activity_recorder",
-           "market_database_beside", "open_service_market_data", "service_hot_coins"]
+def quoted_day_coins(database: Database, clock: Clock, portfolio_ids: Sequence[str], *, execution,
+                     ledger=None) -> Callable[[], list[str]]:
+    """The paper feed's extra coins with the event engine on (D223): the day's coins the owner's coin scope covers."""
+    from trade_graph.kernel.authority import owner_scope_covers
+
+    def coins() -> list[str]:
+        policy = execution.authority.active_policy()
+        return sorted(symbol for symbol in day_coins(database, clock, portfolio_ids, ledger=ledger).symbols
+                      if owner_scope_covers(policy, symbol))
+
+    return coins
+
+
+__all__ = ["MARKET_DATABASE_NAME", "REFERENCE_COINS", "ServiceMarketData", "activity_recorder", "day_coins",
+           "market_database_beside", "open_service_market_data", "quoted_day_coins", "service_hot_coins"]

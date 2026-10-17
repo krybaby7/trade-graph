@@ -252,10 +252,16 @@ def assemble_paper_runtime(path: Path, *, portfolio_id: str | None = None,
             maintenance_ids = [item[0] for item in database.execute(
                 "SELECT portfolio_id FROM portfolios WHERE mode = 'paper'",
             )]
+            extra = None
+            if config.event_engine:
+                # D223: day plans rest on the day's coins, so the feed quotes them too (one extra request a poll).
+                from trade_graph.application.service_market_data import quoted_day_coins
+
+                extra = quoted_day_coins(database, clock, maintenance_ids, execution=execution, ledger=ledger)
             feed = PublicPaperFeed(execution, maintenance_ids, config.paper_symbols,
                                    interval_seconds=config.public_poll_interval_seconds,
                                    transport=subscription_market_transport(protected_owner)
-                                   if protected_owner is not None else None)
+                                   if protected_owner is not None else None, extra_symbols=extra)
         if market_database is not None and config.public_data_enabled and config.price_collector.enabled:
             from trade_graph.application.service_market_data import activity_recorder, open_service_market_data
 

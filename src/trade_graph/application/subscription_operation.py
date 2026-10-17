@@ -97,6 +97,11 @@ class _HistoryRefreshingFeed:
         return self.feed.close()
 
 
+# Wakes whose turn waits, boundedly, for the hour that just closed, like the fixed timer's decisions did: the day's
+# plans and the Trader's own check-ins. Event wakes (alarms, fills, exits, requests) never wait.
+_WAITING_WAKES = frozenset({"wake:day_plan", "wake:check_in"})
+
+
 class _NormalSubscriptionService(PaperService):
     def __init__(self, *args, candle_wait_seconds: int = DEFAULT_DECISION_CANDLE_WAIT_SECONDS,
                  candle_history=None, history_symbols: tuple[str, ...] = (), **kwargs):
@@ -113,6 +118,8 @@ class _NormalSubscriptionService(PaperService):
         # Started or reclaimed tasks keep their pinned snapshot and recovery path.
         if row["role"] != "trader" or lease.reclaimed or row["attempts_used"] != 0:
             return None
+        if row["objective"].startswith("wake:") and row["objective"] not in _WAITING_WAKES:
+            return None  # an alarm, fill or exit wake is answered at once, with the hours that are stored (D223)
         if isinstance(self.public_feed, _HistoryRefreshingFeed):
             history, candidates = self.database, self.public_feed.history_symbols
         elif self.candle_history is not None:

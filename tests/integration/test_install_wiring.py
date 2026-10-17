@@ -166,3 +166,68 @@ def test_the_subscription_operation_keeps_its_fixed_timers_while_the_engine_is_o
     assert result["event_engine"] is False
     assert h.database.execute("SELECT COUNT(*) FROM day_cycle_steps").fetchone()[0] == 0
     h.database.close()
+
+
+def test_with_the_collector_the_day_plan_wake_waits_for_the_closed_hour_and_an_event_wake_does_not(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from tests.integration.test_execution import _stack
+
+    from trade_graph.adapters.persistence.market_data import MarketDataDatabase
+    from trade_graph.adapters.persistence.market_data_readonly import ReadOnlyMarketData
+    from trade_graph.application.candle_store import CandleStore
+    from trade_graph.application.subscription_operation import _NormalSubscriptionService
+
+    clock, ledger, execution, _broker, pid = _stack(tmp_path)
+    clock.advance(3600 - clock.now().minute * 60 + 60)  # one minute after a whole hour, nothing stored yet
+    writer = MarketDataDatabase(tmp_path / "market" / "market_data.sqlite")
+    reader = ReadOnlyMarketData(writer.path)
+    try:
+        service = _NormalSubscriptionService(ledger.database, execution, clock=clock, portfolio_ids=[pid],
+                                             handlers={}, candle_history=CandleStoreHistory(CandleStore(reader)),
+                                             history_symbols=("BTC/USD",))
+        lease = SimpleNamespace(reclaimed=False)
+
+        def row(objective: str) -> dict:
+            return {"role": "trader", "attempts_used": 0, "objective": objective, "portfolio_id": pid,
+                    "output_json": None}
+
+        mandate = execution.authority.active_mandate(pid)
+        assert "BTC/USD" in mandate.symbols
+        waits = {objective: service._input_wait(lease, row(objective))
+                 for objective in ("wake:day_plan", "wake:check_in", "wake:event", "trader-review")}
+    finally:
+        reader.close()
+        writer.close()
+    assert waits["wake:day_plan"] is not None and waits["wake:check_in"] is not None
+    assert waits["trader-review"] is not None  # the fixed timer's decision, as before
+    assert waits["wake:event"] is None
+
+
+def test_with_the_engine_on_the_feed_also_quotes_the_days_coins_the_owners_scope_covers(tmp_path, capsys,
+                                                                                         monkeypatch) -> None:
+    from tests.alarm_support import quote_request
+
+    from trade_graph.application.alarms.book import AlarmBook
+
+    path, clock = _account(tmp_path, capsys, monkeypatch)
+    exchange = Exchange(clock)
+    transports = CollectorTransports(catalog=exchange, ohlc=exchange, ticker=exchange)
+    for engine in (False, True):
+        runtime = assemble_paper_runtime(
+            path, config=PaperRuntimeConfig(public_data_enabled=True, event_engine=engine), clock=clock,
+            market_database=market_database_beside(path), market_transports=transports,
+            market_limiter=KrakenRestLimiter(clock, AdvancingSleeper(clock)), market_evidence_label="synthetic_fixture")
+        try:
+            AlarmBook(runtime.database, clock).create(quote_request("150", symbol="SOL/USD"))
+            provider = runtime.public_feed.extra_symbols
+            if engine:
+                policy = runtime.execution.authority.active_policy()
+                from trade_graph.kernel.authority import owner_scope_covers
+
+                assert provider() == (["SOL/USD"] if owner_scope_covers(policy, "SOL/USD") else [])
+            else:
+                assert provider is None  # the default installation quotes only its configured coins
+        finally:
+            runtime.market_data.close()
+            runtime.database.close()
