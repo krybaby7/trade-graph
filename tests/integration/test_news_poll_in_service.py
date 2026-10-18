@@ -10,12 +10,15 @@ called; without the route, nothing is fetched and the reason is recorded; a feed
 Everything is synthetic: the account, a recorded live scan, the owner's folder (``tests/news_service_support``), the
 Jev card re-dated for the test clock under a synthetic id, scripted feeds labelled ``synthetic_fixture`` and scripted
 Jev answers with a made-up key. No network, real key, paid call or order; a scripted run is never a feed, Jev or
-paid-provider test. The clock is frozen, so exactly one poll is due in a run, and the service waits for a news step in
-flight before it stops: the outcome never depends on how fast this machine runs.
+paid-provider test. The clock is frozen, so exactly one poll is due in a run. The service's stop ends a poll between
+feeds and headlines (D255; ``test_news_poll_service.py`` tests that stop), so the scripted day lasts until the poll that
+was due at start has finished: the service's stop first waits for the news step in flight, on the step itself with a
+generous deadline. The outcome never depends on how fast this machine runs or which thread finishes first.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -41,8 +44,11 @@ from tests.perplexity_service_support import trust_owner_files
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application import news_installation as installed
 from trade_graph.application import subscription_operation as operation
+from trade_graph.application.paper_service import PaperService
 from trade_graph.application.service_market_data import open_service_market_data
 from trade_graph.paper_runtime import PaperRuntimeConfig
+
+DEADLINE = 60  # seconds the due news step may take on a slow machine; the outcome never depends on it
 
 ROUNDS = {"coindesk": [[(*HACK, 4)]], "decrypt": [[(*QUIET, 6)]], "cointelegraph": [[(*OLD, 180)]],
           "kraken-blog": [[(*ORDERS, 2)]]}
@@ -84,6 +90,19 @@ def day(tmp_path, monkeypatch):
     market, close_database, close_market = runtime.market_data, flow.db.close, runtime.market_data.close
     monkeypatch.setattr(flow.db, "close", lambda: None)
     monkeypatch.setattr(market, "close", lambda: None)
+    # The day ends after the poll that was due at start: without this wait, a machine that finishes the 30 ticks before
+    # the news thread finishes its poll would stop the poll between feeds (found by the wave 9 integration with slower
+    # scripted feeds). Every later step finds nothing due and returns at once.
+    stop = PaperService.stop
+
+    async def stop_after_the_due_poll(service) -> None:
+        task = service._news_task
+        if task is not None and not task.done():
+            done, _pending = await asyncio.wait({task}, timeout=DEADLINE)
+            assert done, "the news step did not finish"
+        await stop(service)
+
+    monkeypatch.setattr(PaperService, "stop", stop_after_the_due_poll)
     state = SimpleNamespace(flow=flow, cli=cli, owner=tmp_path / "owner", feeds=feeds, jev=jev, built=built)
     state.serve = lambda **kwargs: trust_owner_files(monkeypatch, owner_files(**kwargs))
     yield state
