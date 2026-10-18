@@ -81,6 +81,11 @@ order the account cannot pay for says so.
 - **The limit.** Reached when the day-start value less the current value is at least the fraction of the
   day-start value (at the limit is the limit). Values are equity, so fees paid and open positions at their marks
   count. The current value needs every held coin's mark to be at most 15 minutes old.
+- **Which mark (W10-B, D269 and D271).** A coin's mark is the ledger's: the newest observed at or before the
+  moment, and of two marks stamped with the very same time the first recorded (`Ledger.newest_mark`). The
+  valuation, the freshness check and a coin's cap in `Execution.authorize` all use it, and each reads one row per
+  coin held (through the index `valuation_marks_newest`), so the step on every tick stays as quick after weeks of
+  prices as on the first day.
 - **At the limit.** `Execution.authorize` refuses every new entry (`AuthorityDenied`, "daily loss limit
   reached") as soon as the value is at the limit; it only reads. The management step,
   `Execution.enforce_money_limits`, run by `PaperService._management` on every tick, records the stop for the

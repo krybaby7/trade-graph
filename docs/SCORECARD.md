@@ -104,8 +104,10 @@ trade-graph scorecard [--database runtime/trade_graph.sqlite] [--portfolio-id ID
 
 It opens the state database read-only, never creates one, and scores the newest paper portfolio unless one is named.
 A period that cannot be scored prints `{"available": false, "reason": ...}` and exits with code 1. On four weeks of
-10-second prices for four coins (967,684 marks) and 60 trades, one scorecard took about 3.5 seconds in the build
-container.
+10-second prices for four coins (967,684 marks) and 60 trades of about four hours each, one scorecard reads 81,383
+marks and took about 0.8 seconds in the build container (W10-B, D272); before W10-B it read all 967,687 and took
+about 3.5 to 5.5 seconds. It reads each coin's prices only while the coin is held (every one of them is a point of
+the curve), plus the newest price when a coin becomes held, at the start and at the end; the result is the same.
 
 ## Known limits
 
@@ -113,4 +115,8 @@ container.
   report passes the scored test's own start and end.
 - A fee in a third asset is valued at its identified rate in the trade, while the equity curve values that asset at
   its own mark; the paper broker charges every fee in USD, so paper scorecards are not affected.
-- `valuation_marks` has no index, so each price query scans the table; at the size above it stays a few seconds.
+- Newest-price reads go through the index `valuation_marks_newest` (migration 0044). One check still passes over
+  every price of the coins held in the period inside the database, the one that refuses a price recorded in another
+  currency: it returns nothing to Python but is about 0.3 of the 0.8 seconds above. An index with the currency would
+  remove it; it was not added (D272). A coin held for the whole period has every one of its prices read, because
+  each is a point of the curve.
