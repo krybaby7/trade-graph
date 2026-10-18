@@ -2593,3 +2593,131 @@ says when a buy or safety exit was cancelled at the Trader's request.
   keys and states (`pays_for_itself`, `covered`, `not_covered`) are unchanged.
   Reason: AGENTS.md ("USD10,000 paper equity and resets cannot replenish the
   real operating budget") and W2-C's open question.
+
+Cloud wave 9 (D255–D259, 2026-10-18). The wave 9 integration copied these
+implementation defaults from `planning/handoffs/W9-A.md`, where the package's
+evidence is kept. W9-A needed no state migration: its reserved 0046 stays
+unused, like 0043 and 0045, and Alembic still has one head, 0044. D230–D239 stay
+reserved for the local steps L1–L4; new owner decisions start at D260. The
+integration made the acceptance day's test wait for the poll that was due at
+start before the service stops, so its outcome no longer depends on which thread
+finishes first (D255's stop ends a poll between feeds), and made the synthetic
+image probe (`kernel/deployment_probe.py`, L3 step 2) accept D248's settlement of
+a lost acknowledgement, `UNKNOWN` or `OPEN` after the entry cycle, so the image
+check no longer depends on how fast the machine runs.
+
+- **D255 (2026-10-18, implementation default for C6): the news check is a thread
+  of the installed service.** T44's poll runs inside the installed subscription
+  service, in the protected parent process, as its own thread beside the price
+  collector (D222), not as a companion process: one process owns the database
+  lease, the launcher stays as it is, and the protected budget origins of Jev
+  checks (D258) need that process's protected financial service. The paper
+  service keeps one news step running at a time; a tick never waits for it; a
+  failed step is reported as `news_poll:<error>` (HQ: "the news check's last
+  step failed"); a stop ends a poll between feeds and headlines, and the service
+  waits for a request in flight. A poll is due `poll_interval_seconds` (300)
+  after the previous poll started, by the service's clock and the stored polls,
+  so a restart never polls twice within five minutes (a clock that stepped back
+  polls once). It writes T44's tables in the installation's state database, so
+  the event engine's news router (T45) routes its verdicts. It runs under every
+  pause (it places no order and wakes nobody itself) and with the event engine
+  off (verdicts are then stored and routed once the engine runs). It is built
+  only when the owner's network profile lists the reviewed `news_feeds` route;
+  otherwise a `news_route` activity says why and nothing is fetched. Reason: the
+  package's first bullet, D137 (a software check every 5 minutes), D222, the
+  wave 8 lesson (tests drive it by an injected clock and explicit ticks).
+
+- **D256 (2026-10-18, implementation default for C6): the second reviewed route,
+  `news_feeds`.** One catalogue entry in `REVIEWED_ROUTE_HOSTS`: exactly the
+  five feed hosts of `RECOMMENDED_FEEDS` and `api.typesafe.ai`. The owner's
+  profile lists its port (8083 suggested) and hosts (a subset), and the proxy
+  gets
+  `--route news_feeds=8083:api.typesafe.ai,blog.kraken.com,cointelegraph.com,decrypt.co,status.kraken.com,www.coindesk.com`.
+  Feeds are fetched only through that port, only at addresses the profile
+  admits, with no environment proxy, no redirects and no local DNS lookup (the
+  reviewed proxy resolves, admits only public addresses and checks the TLS
+  name); a feed whose host is not listed is refused before anything is sent and
+  reported as lost (`route_not_listed`). Jev goes only to its one official
+  endpoint through the same port. One route for feeds and Jev, as the package
+  says ("a second reviewed host list"). A feed that moves to a host outside the
+  catalogue needs a reviewed code change before the route admits it. Reason: the
+  package's second bullet, D241, D142, D140.
+
+- **D257 (2026-10-18, implementation default for C6): owner files and the Jev
+  switch inside the image.** The owner's news alarm settings are
+  `<owner>/news-alarm.json` (optional, a copy of
+  `config/news-alarm.example.json`, `root:10001` mode `0440`; absent means the
+  recommended defaults with Jev off); the Jev switch is its `jev.calls_enabled`.
+  The key is `<owner>/typesafe.key` (`root:10001`, mode `0440`, like
+  `perplexity.key`), read only when Jev is switched on, through the protected
+  owner-file reader (D140's "owned by the reading user" rule cannot hold for a
+  root-owned read-only mount; the protected reader's root-owned,
+  not-other-readable, no-link rule replaces it, as D242 did), held as `JevKey`
+  and sent only in the request header. Inside the image `jev.key_directory` and
+  `jev.deployment_id` are not used. Jev checks run only when the switch is on,
+  the key reads, the dated card is fresh (at most 30 days since it was verified;
+  the 2026-10-15 card refuses real calls from 2026-11-15), the route admits the
+  endpoint and the protected controller runs; otherwise headlines are collected,
+  nothing is sent to TypeSafe and the reason is in the activity log. The watch
+  list adds today's focus coins (T37) to the held, mandate and extra coins;
+  beyond the 253 a Jev question can name, held, focus and extra coins come first
+  and the number left out is reported. Reason: the package's third bullet, D137
+  ("the owner installs the key through the private-file route"), D140, D143,
+  D154, D242.
+
+- **D258 (2026-10-18, implementation default for C6): Jev checks bound to
+  protected budget origins; money.** Each Jev reservation of the in-service
+  check carries the route's own deployment id, `<deployment>:news_alarm`, and
+  gets an authenticated protected budget origin
+  (`protected_financial_budget_origins`: the protected financial service's MAC,
+  the admitted manifest and controller instance, the paper portfolio, the exact
+  reservation) in the same transaction as the reservation and the attempt row,
+  before anything is sent; dispatch and settlement validate it, a receipt seals
+  a commitment with its 100% allocation, and a changed or missing record stops
+  Jev checks with the reason (headlines continue). Verification is per
+  reservation (at reserve, dispatch and settlement) plus a bounded route audit
+  each poll (completeness of all, the open and today's reservations, and a
+  rolling sweep of 500 of this month's), so it never re-verifies the whole
+  history on each call; this answers W8-A's note that binding a route to
+  protected origins needs a verifier that does not re-scan every reservation on
+  each call (D243). The route's reservations stay outside the subscription
+  deployment's financial witness, so trading and protection never wait for, or
+  fail on, Jev's records; the same scoped origins could bind W8-A's Perplexity
+  route later (not changed here). The money rule is the owner policy's paid-call
+  limits over the route's real reservations: `daily_paid_limit` per UTC day and
+  `monthly_operating` per UTC month, held amounts counting until they settle,
+  synthetic ones excluded; a check with no room is `budget_refused` and nothing
+  is sent. It limits money only, never how often the news check runs or how many
+  alarms it records (D116). The USD5 testing alert stays an alert (D138 item
+  10); the deployment's EUR allowance, which a subscription installation does
+  not use, is not consulted (as D243). Unknown usage stays unresolved at the
+  full hold; interrupted attempts are recovered as unresolved at each poll.
+  `news-alarm-poll` refuses Jev checks (scripted or real) on a protected
+  installation's database, and feeds-only polls still run there: its
+  reservations would carry the installed deployment's id without an origin, and
+  the witness re-verifies every reservation of its deployment. Reason: the
+  package's third bullet, W1-A's open item ("`ProtectedBudgetGateway.reserve`
+  requires a task row, and Jev checks have none"), D141, AGENTS.md (every paid
+  call reserved and receipted; unknown usage unresolved; validate amounts
+  deterministically).
+
+- **D259 (2026-10-18, implementation default for C6): the runtime evidence
+  collector, lost feeds and protected paths.** The runtime evidence collector
+  does not read `news_jev_attempts`: it authenticates model-provider runs of the
+  deployment it is bound to (OpenAI and Anthropic invocations and transport
+  attempts with their request hashes); Jev is not a model provider (D140), and
+  its in-service reservations carry the route's deployment id, so they are
+  outside the collector's scope, as W8-A's Perplexity reservations are. Jev's
+  evidence is its own append-only log (`news_jev_attempts`,
+  `news_jev_outcomes`), the receipts and now the protected origins; a new table
+  in the collector's inventory would invalidate every retained collection
+  binding, which pins the exact table set. HQ's AI spending and the scorecard
+  still count every Jev call (by role and purpose; any card). Lost feeds: every
+  request's outcome is stored; the `news_poll` activity names lost feeds with
+  the reason and when each was last read, at the start and end of an outage;
+  `news-alarm-report` lists each feed's polls; a lost feed is never "no news".
+  Protected paths: `application/news_installation.py` (key, route, money rule,
+  origins), `application/jev_checks.py` (receipt collection) and
+  `adapters/decisions/` (the key reader and the pinned transport). Reason: the
+  package's third and fourth bullets, the wave 1 integration's open question,
+  AGENTS.md (receipt collection is not agent-editable).

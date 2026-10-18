@@ -1,10 +1,10 @@
 # Cloud build plan for the day-trader engine
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
-cloud waves 1 to 8 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the night
-shift of 2026-10-16/17; wave 8 by the night shift of 2026-10-17/18;
-D140–D254). Waves 8 and 9, added on 2026-10-17, close the gaps between
-"built" and "installed" that the night shift found.
+all nine cloud waves are merged (wave 1 on 2026-10-16; waves 2 to 7 by the
+night shift of 2026-10-16/17; waves 8 and 9 by the night shift of
+2026-10-17/18; D140–D259). Waves 8 and 9, added on 2026-10-17, closed the gaps
+between "built" and "installed" that the night shift found.
 The local steps L1–L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
@@ -18,8 +18,8 @@ from it and returns to it through pull requests.
 ### In one minute
 
 - The work is split into **22 cloud packages in 9 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. Waves 1 to 8
-  are done; wave 9 is the last follow-up before the install.
+  steps** on your PC and a short list of things only you can do. All nine
+  waves are done; the local steps L1 to L4 remain.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
@@ -104,10 +104,10 @@ The integrator updates this table each time it merges a wave.
 | W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Merged 2026-10-18 (#21); ships switched off: at L3 you put the Perplexity key and the price file in your owner folder and add the Perplexity route to your network profile and proxy (step 3), then switch Research and the Leader on (step 12, `trade-graph perplexity-departments --confirm`); the prices are re-checked at L2, because today's price card goes stale on 2026-11-11 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-18 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
 | W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-18 (#20); you look at the Money tab on your phone and iPad after L3 |
-| W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Not started |
+| W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Merged 2026-10-18 (#23); ships with Jev off: at L3 you add the news route to your network profile and proxy (step 3), and for Jev your `news-alarm.json` with `calls_enabled` and your `typesafe.key`; the Jev price is re-checked at L2, because today's price card goes stale on 2026-11-15; after L3 the shadow log fills and you decide on news wake-ups at step 17 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
-| L3 | — | New engine installed on your PC (your approval) | Not started; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
+| L3 | — | New engine installed on your PC (your approval) | Not started; waves 1–9 are merged, so it can start with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
@@ -799,9 +799,10 @@ paper account in MANAGE_ONLY (docs/FINANCIAL-TRANSITION.md); run
 command); switch Research and the Leader to Perplexity (W6-A, W6-B); confirm
 the new collector runs, then remove the Windows scheduled tasks; resume.
 The commands, in order, with what each should show, are in
-[L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). Its step 12
-(Research and the Leader on Perplexity) waits for W8-A, and its step 17 (news
-wake-ups) for W9-A; until each exists, skip that step.
+[L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). W8-A and W9-A are
+merged, so its step 12 (Research and the Leader on Perplexity) and its step 17
+(news wake-ups, once the shadow log shows real alarms) no longer wait for a
+cloud package.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final
