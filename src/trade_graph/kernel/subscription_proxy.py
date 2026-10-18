@@ -6,7 +6,7 @@ Only native, subscription-authenticated Codex/Claude clients belong on the provi
 The market port admits Kraken/Frankfurter domains, never inference domains.
 Each separately reviewed route (W8-A, D241) has its own port and admits only the hosts the
 owner listed for it, from the reviewed catalogue ``REVIEWED_ROUTE_HOSTS``; paid research
-(Perplexity) is the first, and further lists (W9-A's news feeds) are added the same way.
+(Perplexity) is the first and the news feeds with TypeSafe (W9-A) the second.
 
 Encrypted HTTP paths and billing cannot be inspected here. The protected caller
 must separately enforce public market paths, official subscription authentication,
@@ -32,12 +32,18 @@ PROVIDER_HOSTS = frozenset({"api.anthropic.com", "claude.ai", "platform.claude.c
 MARKET_HOSTS = frozenset({"api.kraken.com", "api.frankfurter.dev"})
 # Separately reviewed routes (W8-A, D241): each names the only hosts one kind of protected work may ever reach, on its
 # own listener, apart from the provider and market hosts above. The owner's network profile and the proxy command list
-# the hosts a route admits (a subset). To add a route (W9-A: the news feeds and TypeSafe), add one entry here with its
-# reviewed hosts, then the owner adds it to the profile and the proxy command; nothing else changes.
+# the hosts a route admits (a subset). To add a route (as W9-A did for the news feeds and TypeSafe), add one entry here
+# with its reviewed hosts, then the owner adds it to the profile and the proxy command; nothing else changes.
 PAID_RESEARCH = "paid_research"
+NEWS_FEEDS = "news_feeds"
 REVIEWED_ROUTE_HOSTS: Mapping[str, frozenset[str]] = MappingProxyType({
     # Perplexity's Agent API (/v1/agent) and Search API (/search), D124, D150.
     PAID_RESEARCH: frozenset({"api.perplexity.ai"}),
+    # W9-A (D256): the five free public news feeds of T44 (contracts/news.py RECOMMENDED_FEEDS, D138 item 10, D142:
+    # Kraken's status page and blog, CoinDesk, Cointelegraph, Decrypt) and TypeSafe's one Jev endpoint
+    # (adapters/decisions/jev.py JEV_ENDPOINT, D137, D140, source S40). The in-service news check reaches nothing else.
+    NEWS_FEEDS: frozenset({"status.kraken.com", "blog.kraken.com", "www.coindesk.com", "cointelegraph.com",
+                           "decrypt.co", "api.typesafe.ai"}),
 })
 
 Resolver = Callable[[str], Awaitable[Sequence[str]]]
