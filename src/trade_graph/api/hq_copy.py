@@ -870,6 +870,10 @@ PROBLEM_PREFIX: Final = {
     "collector:": ("the price collector's last step failed",
                    "Charts, alarms and the coin scanner may use older candles until it works again; the quotes "
                    "used for trading come from the separate price feed."),
+    # W9-A (D255): the 5-minute news check beside the service (``paper_service._poll_news``).
+    "news_poll:": ("the news check's last step failed",
+                   "New headlines may be missing until it works again; a missing feed is never taken as \"no news\". "
+                   "Trading, protection and your records are not affected."),
     "other": ("a routine step is failing", "Some background work is not happening."),
 }
 
