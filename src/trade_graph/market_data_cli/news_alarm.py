@@ -69,6 +69,10 @@ def _settings(path: str | None, parser: argparse.ArgumentParser):
         return NewsAlarmSettings()
     try:
         return NewsAlarmSettings.model_validate_json(Path(path).read_text())
+    except ArithmeticError:
+        # A number the settings can't read (``decimal.InvalidOperation`` from a decimal field's own check) is refused
+        # in words, like the in-service reader (``news_installation``) does, never shown as a traceback (W10-C).
+        parser.error("news alarm settings refused (a malformed number); nothing was read or sent")
     except (OSError, ValidationError, ValueError) as error:
         fields = sorted({".".join(map(str, item["loc"])) for item in error.errors()}) if isinstance(
             error, ValidationError) else [type(error).__name__]
