@@ -478,7 +478,10 @@ def _curve(connection, portfolio_id: str, books: _Books, marks: dict[str, _Mark 
            end_iso: str, starting_equity: Decimal, assets: list[str]) -> tuple[list[EquityPoint], int]:
     """Equity at the start, after every posting and at every new price of a coin held; the end point comes later.
 
-    Applies the period's postings to ``books`` and leaves the newest marks in ``marks``.
+    Applies the period's postings to ``books`` and leaves the newest marks in ``marks``. Only the prices that can
+    move the curve are read (W10-B, D272): each coin's prices while it is held, its newest price when a posting makes
+    it held, and every coin's newest price at the end. A price of a coin not held never made a point, so the curve,
+    its points and the marks left behind are the same as when every price of every coin held was read.
     """
     prices: dict[str, list[tuple[str, Decimal, bool]]] = {}
     if assets:
@@ -490,10 +493,12 @@ def _curve(connection, portfolio_id: str, books: _Books, marks: dict[str, _Mark 
         if other is not None:
             raise ScorecardUnavailable(f"the {other['asset']} price is recorded in {other['quote_currency']}, not "
                                        f"{currency}; the scorecard does not guess a rate")
-        for asset, mark, observed_at, stale in connection.execute(
-                f"""SELECT asset, mark, observed_at, stale FROM valuation_marks
-                WHERE portfolio_id = ? AND observed_at > ? AND observed_at <= ? AND asset IN ({holes})
-                ORDER BY observed_at, rowid""", (portfolio_id, start_iso, end_iso, *assets)):
+    windows, entries = _held(books, moments, start_iso, end_iso)
+    for asset, since, until in windows:
+        for mark, observed_at, stale in connection.execute(
+                """SELECT mark, observed_at, stale FROM valuation_marks
+                WHERE portfolio_id = ? AND asset = ? AND observed_at > ? AND observed_at <= ?
+                ORDER BY observed_at, rowid""", (portfolio_id, asset, since, until)):
             prices.setdefault(observed_at, []).append((asset, Decimal(mark), bool(stale)))
     held = books.holdings()
     points = [EquityPoint(start, starting_equity)]
@@ -511,6 +516,8 @@ def _curve(connection, portfolio_id: str, books: _Books, marks: dict[str, _Mark 
                         else:
                             held.pop(asset, None)
                 books.only_cash_in(currency, moment)
+                for asset in entries.get(moment, ()):  # held from now: its price is the newest one by now
+                    marks[asset] = _latest_mark(connection, portfolio_id, asset, moment)
             priced = False
             for asset, price, stale in prices.get(moment, ()):
                 current = marks[asset]
@@ -531,7 +538,35 @@ def _curve(connection, portfolio_id: str, books: _Books, marks: dict[str, _Mark 
                 unvalued += 1
                 continue
             points.append(EquityPoint(datetime.fromisoformat(moment), value))
+    for asset in assets:
+        marks[asset] = _latest_mark(connection, portfolio_id, asset, end_iso)
     return points, unvalued
+
+
+def _held(books: _Books, moments: dict[str, list[tuple[str, str, Decimal]]], start_iso: str,
+          end_iso: str) -> tuple[list[tuple[str, str, str]], dict[str, list[str]]]:
+    """When each coin is held in the period, from the books at the start and the period's postings, as the curve
+    applies them: windows ``(coin, since, until)`` (from the start or the moment a posting made the coin held, to the
+    moment one emptied it or the end) and, for each moment, the coins it makes held."""
+    quantities = dict(books.held)
+    since = {asset: start_iso for asset, quantity in sorted(quantities.items()) if quantity}
+    windows: list[tuple[str, str, str]] = []
+    entries: dict[str, list[str]] = {}
+    with localcontext(_EXACT):
+        for moment in sorted(moments):
+            touched: dict[str, None] = {}
+            for account, asset, amount in moments[moment]:
+                if account == "inventory":
+                    quantities[asset] = quantities.get(asset, Decimal("0")) + amount
+                    touched[asset] = None
+            for asset in touched:
+                if quantities[asset] and asset not in since:
+                    since[asset] = moment
+                    entries.setdefault(moment, []).append(asset)
+                elif not quantities[asset] and asset in since:
+                    windows.append((asset, since.pop(asset), moment))
+    windows.extend((asset, began, end_iso) for asset, began in since.items())
+    return windows, entries
 
 
 def _fills(events, start: datetime, start_iso: str, end_iso: str, currency: str) -> list[TradeFill]:
