@@ -55,6 +55,7 @@ from trade_graph.domain.errors import (
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.domain.precision import floor_to_increment
 from trade_graph.kernel.authority import pause_allows_new_decisions, pause_allows_protection
+from trade_graph.kernel.day_plan_coverage import coin_unprotected
 from trade_graph.kernel.riba import refuse_riba_symbol
 
 _REFERENCE = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
@@ -555,7 +556,8 @@ class DayPlanActions:
                       for (stop, target), quantity in list(terms.items())[:MAX_TERMS_SHOWN])
         return DayPlanPosition(
             symbol=symbol, held=held, protected=protected,
-            unprotected=min(exposure, max(Decimal("0"), held - protected)), exits=exits, resting_entries=resting,
+            unprotected=coin_unprotected(exposure, held=held, protected=protected), exits=exits,
+            resting_entries=resting,
             last_action=self._last_action(portfolio_id, symbol) if last_action else None)
 
     def _last_action(self, portfolio_id: str, symbol: str) -> PositionActionSummary | None:

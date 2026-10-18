@@ -11,7 +11,8 @@ never leads to a second exit for the same coins (it is reconciled first); a fill
 that ended without filling (cancelled by the owner's cancel-all, or refused) covers only what it sold. The Trader's
 close (W8-B) counts the same way: its market sell covers each entry's part while it is outstanding, unknown or
 filled, and only what it sold once it ended unfilled. An exit never asks to sell more than is held and not already
-reserved, so spot stays spot (D127).
+reserved, so spot stays spot (D127). The arithmetic itself is ``kernel/day_plan_coverage.py``, shared with HQ's day
+plans panel and its "no safety exit" card (W10-C), so the three never disagree.
 
 Terms (W8-B, D246): a fill's exit uses the entry's own stop and take-profit (the bracket the Trader wrote). When the
 Trader moved the position's exit, re-protecting that entry later (the sweep, after the owner's cancel-all) uses the
@@ -32,12 +33,13 @@ from trade_graph.contracts.models import FillRecord
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.domain.precision import floor_to_increment
+from trade_graph.kernel import day_plan_coverage
 from trade_graph.kernel.authority import pause_allows_protection
+from trade_graph.kernel.day_plan_coverage import OUTSTANDING, Cover
 
 if TYPE_CHECKING:
     from trade_graph.application.execution import Execution
 
-OUTSTANDING = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING"})
 TERMINAL = frozenset({"FILLED", "CANCELLED", "REJECTED"})
 ACTION_TABLE = "day_plan_action_orders"  # migration 0044 (W8-B): the Trader's closes and moved exits
 _ENTRY = """SELECT e.*, p.portfolio_id, p.symbol FROM day_plan_entries e JOIN day_plans p ON p.plan_id = e.plan_id"""
@@ -72,38 +74,35 @@ class DayPlanProtection:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (ACTION_TABLE,)).fetchone() is not None
 
     def coverage(self, entry: sqlite3.Row) -> tuple[Decimal, Decimal]:
-        """(filled by the entry, covered by its exits and the Trader's close), in the coin's own units."""
+        """(filled by the entry, covered by its exits and the Trader's close), in the coin's own units.
+
+        The arithmetic is ``kernel/day_plan_coverage.py``'s, shared with HQ (W10-C); what an order sold is read only
+        when the rule needs it (an order that ended unsold).
+        """
         execution = self.execution
         filled = execution._filled_quantity(entry["intent_id"])
-        covered = Decimal("0")
+        orders = []
         for item in self.exits(entry["entry_id"]):
             state = execution.intent_state(item["intent_id"])
-            if state in OUTSTANDING or state == "FILLED":
-                covered += Decimal(item["quantity"])
-            else:
-                covered += execution._filled_quantity(item["intent_id"])
+            whole = day_plan_coverage.counts_whole(state)
+            sold = Decimal("0") if whole else execution._filled_quantity(item["intent_id"])
+            orders.append(Cover(state, Decimal(item["quantity"]), sold))
         if self.actions_available():
             for part in self.database.execute(
                     f"SELECT * FROM {ACTION_TABLE} WHERE entry_id = ? AND role = 'sell' ORDER BY sequence",
                     (entry["entry_id"],)).fetchall():
                 state = execution.intent_state(part["intent_id"])
-                if state in OUTSTANDING or state == "FILLED":
-                    covered += Decimal(part["quantity"])
-                else:
-                    covered += self._sold_part(part)
-        return filled, covered
+                sold = Decimal("0") if day_plan_coverage.counts_whole(state) else self._sold_part(part)
+                orders.append(Cover(state, Decimal(part["quantity"]), sold))
+        return filled, day_plan_coverage.covered(orders)
 
     def _sold_part(self, part: sqlite3.Row) -> Decimal:
         """What an ended close sell sold for this part: its fills shared out over its parts in their order."""
-        left = self.execution._filled_quantity(part["intent_id"])
-        for item in self.database.execute(
-                f"SELECT sequence, quantity FROM {ACTION_TABLE} WHERE intent_id = ? AND role = 'sell' "
-                "ORDER BY sequence", (part["intent_id"],)).fetchall():
-            share = min(left, Decimal(item["quantity"]))
-            if item["sequence"] == part["sequence"]:
-                return share
-            left -= share
-        return Decimal("0")
+        parts = [(item["sequence"], Decimal(item["quantity"])) for item in self.database.execute(
+            f"SELECT sequence, quantity FROM {ACTION_TABLE} WHERE intent_id = ? AND role = 'sell' ORDER BY sequence",
+            (part["intent_id"],)).fetchall()]
+        return day_plan_coverage.shared_part(self.execution._filled_quantity(part["intent_id"]), parts,
+                                             part["sequence"])
 
     def terms(self, entry: sqlite3.Row) -> tuple[Decimal, Decimal | None]:
         """The exit terms in force for re-protecting ``entry``: its newest exit the Trader moved (W8-B), else its own.
