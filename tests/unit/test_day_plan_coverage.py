@@ -113,7 +113,7 @@ def test_an_order_without_a_placing_time_cannot_be_put_on_the_timeline() -> None
 
 
 @pytest.mark.parametrize("module", ["src/trade_graph/application/day_plan_protection.py",
-                                    "src/trade_graph/api/hq_plans.py"])
+                                    "src/trade_graph/api/hq_plans.py", "src/trade_graph/api/hq_protection.py"])
 def test_every_reader_uses_the_shared_arithmetic(module) -> None:
     source = (ROOT / module).read_text(encoding="utf-8")
     assert "day_plan_coverage" in source
@@ -122,7 +122,8 @@ def test_every_reader_uses_the_shared_arithmetic(module) -> None:
     assert '.get("state") == "FILLED"' not in source
 
 
-@pytest.mark.parametrize("module", ["src/trade_graph/application/day_plan_actions.py"])
+@pytest.mark.parametrize("module", ["src/trade_graph/application/day_plan_actions.py",
+                                    "src/trade_graph/api/hq_protection.py"])
 def test_the_traders_position_view_and_hqs_card_cap_a_coin_the_same_way(module) -> None:
     source = (ROOT / module).read_text(encoding="utf-8")
     assert "coin_unprotected(" in source and "min(exposure, max(" not in source

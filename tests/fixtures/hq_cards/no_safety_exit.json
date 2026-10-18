@@ -1,0 +1,265 @@
+{
+ "as_of": "2026-10-09T13:59:10.506Z",
+ "paper": [
+  {
+   "id": "no_safety_exit:SOL/USD",
+   "sev": "act",
+   "title": [
+    {
+     "t": "text",
+     "v": "SOL/USD: 5 SOL has no "
+    },
+    {
+     "t": "term",
+     "key": "safety_exit",
+     "v": "safety exit"
+    }
+   ],
+   "why": [
+    {
+     "t": "text",
+     "v": "Software puts a safety exit on every buy as it fills; this one has had none since "
+    },
+    {
+     "t": "time",
+     "at": "2026-10-09T13:34:10.506Z",
+     "style": "clock"
+    },
+    {
+     "t": "text",
+     "v": "."
+    }
+   ],
+   "consequence": [
+    {
+     "t": "text",
+     "v": "Until it has one, nothing sells these coins by itself if the price falls."
+    }
+   ],
+   "can_fix_here": false,
+   "how": [
+    {
+     "t": "text",
+     "v": "Software tries again at every step of the team's service. The last try failed: "
+    },
+    {
+     "t": "text",
+     "v": "a problem HQ can't describe in plain words",
+     "code": "StaleState: synthetic: the exchange refused the stop"
+    },
+    {
+     "t": "text",
+     "v": ". HQ has no button for this; Owner controls has the account-wide settings."
+    }
+   ],
+   "decision": null,
+   "checkin_id": null,
+   "link": {
+    "href": "/trading",
+    "label": "Trading records"
+   },
+   "in_next_prompt": true,
+   "since": "2026-10-09T13:34:10.506Z"
+  },
+  {
+   "id": "no_safety_exit:ETH/USD",
+   "sev": "act",
+   "title": [
+    {
+     "t": "text",
+     "v": "ETH/USD: 0.5 ETH has no "
+    },
+    {
+     "t": "term",
+     "key": "safety_exit",
+     "v": "safety exit"
+    }
+   ],
+   "why": [
+    {
+     "t": "text",
+     "v": "Software puts a safety exit on every buy as it fills; this one has had none since "
+    },
+    {
+     "t": "time",
+     "at": "2026-10-09T13:41:10.506Z",
+     "style": "clock"
+    },
+    {
+     "t": "text",
+     "v": "."
+    }
+   ],
+   "consequence": [
+    {
+     "t": "text",
+     "v": "Until it has one, nothing sells these coins by itself if the price falls."
+    }
+   ],
+   "can_fix_here": false,
+   "how": [
+    {
+     "t": "text",
+     "v": "Software tries again at every step of the team's service. The last try failed: "
+    },
+    {
+     "t": "text",
+     "v": "a problem HQ can't describe in plain words",
+     "code": "StaleState: synthetic: the exchange refused the stop"
+    },
+    {
+     "t": "text",
+     "v": ". HQ has no button for this; Owner controls has the account-wide settings."
+    }
+   ],
+   "decision": null,
+   "checkin_id": null,
+   "link": {
+    "href": "/trading",
+    "label": "Trading records"
+   },
+   "in_next_prompt": true,
+   "since": "2026-10-09T13:41:10.506Z"
+  },
+  {
+   "id": "no_safety_exit:ADA/USD",
+   "sev": "act",
+   "title": [
+    {
+     "t": "text",
+     "v": "ADA/USD: 1500 ADA has no "
+    },
+    {
+     "t": "term",
+     "key": "safety_exit",
+     "v": "safety exit"
+    }
+   ],
+   "why": [
+    {
+     "t": "text",
+     "v": "Software puts a safety exit on every buy as it fills; this one has had none since "
+    },
+    {
+     "t": "time",
+     "at": "2026-10-09T13:44:10.506Z",
+     "style": "clock"
+    },
+    {
+     "t": "text",
+     "v": "."
+    }
+   ],
+   "consequence": [
+    {
+     "t": "text",
+     "v": "Until it has one, nothing sells these coins by itself if the price falls."
+    }
+   ],
+   "can_fix_here": false,
+   "how": [
+    {
+     "t": "text",
+     "v": "Software tries again at every step of the team's service. The last try failed: "
+    },
+    {
+     "t": "text",
+     "v": "a problem HQ can't describe in plain words",
+     "code": "StaleState: synthetic: the exchange refused the stop"
+    },
+    {
+     "t": "text",
+     "v": ". HQ has no button for this; Owner controls has the account-wide settings."
+    }
+   ],
+   "decision": null,
+   "checkin_id": null,
+   "link": {
+    "href": "/trading",
+    "label": "Trading records"
+   },
+   "in_next_prompt": true,
+   "since": "2026-10-09T13:44:10.506Z"
+  },
+  {
+   "id": "no_safety_exit:more",
+   "sev": "act",
+   "title": [
+    {
+     "t": "text",
+     "v": "2 more coins have no safety exit: XRP/USD, DOGE/USD"
+    }
+   ],
+   "why": [
+    {
+     "t": "text",
+     "v": "Each has had none for at least 10 minutes. Trading records lists every order."
+    }
+   ],
+   "consequence": [],
+   "can_fix_here": false,
+   "how": null,
+   "decision": null,
+   "checkin_id": null,
+   "link": {
+    "href": "/trading",
+    "label": "Trading records"
+   },
+   "in_next_prompt": true,
+   "since": "2026-10-09T13:47:10.506Z"
+  }
+ ],
+ "live": [
+  {
+   "id": "no_safety_exit:SOL/USD",
+   "sev": "act",
+   "title": [
+    {
+     "t": "text",
+     "v": "SOL/USD: 5 SOL has no "
+    },
+    {
+     "t": "term",
+     "key": "safety_exit",
+     "v": "safety exit"
+    }
+   ],
+   "why": [
+    {
+     "t": "text",
+     "v": "Software puts a safety exit on every buy as it fills; this one has had none since "
+    },
+    {
+     "t": "time",
+     "at": "2026-10-09T13:34:10.506Z",
+     "style": "clock"
+    },
+    {
+     "t": "text",
+     "v": "."
+    }
+   ],
+   "consequence": [
+    {
+     "t": "text",
+     "v": "Until it has one, nothing sells these coins by itself if the price falls."
+    }
+   ],
+   "can_fix_here": false,
+   "how": [
+    {
+     "t": "text",
+     "v": "Software puts none on while the cancel-all setting is on, because that setting removes every order; it puts one on when the setting ends. HQ has no button for this; Owner controls has the account-wide settings."
+    }
+   ],
+   "decision": null,
+   "checkin_id": null,
+   "link": {
+    "href": "/trading",
+    "label": "Trading records"
+   },
+   "in_next_prompt": true,
+   "since": "2026-10-09T13:34:10.506Z"
+  }
+ ]
+}
