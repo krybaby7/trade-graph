@@ -92,6 +92,13 @@ def _card_fresh(card, today: date) -> bool:
     return verified <= today and effective <= today and (today - verified).days <= 30
 
 
+def _protected_installation(database) -> bool:
+    if not database.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'protected_runtime_instances'"
+                            ).fetchone():
+        return False
+    return database.execute("SELECT 1 FROM protected_runtime_instances LIMIT 1").fetchone() is not None
+
+
 def _poll(args, parser) -> int:
     from trade_graph.adapters.decisions.jev import (
         JEV_PRICE_CARD,
@@ -139,6 +146,13 @@ def _poll(args, parser) -> int:
     summaries = []
     try:
         database = Database(path)
+        if transport is not None and _protected_installation(database):
+            # W9-A (D258): this command's reservations have no protected budget origin, and the installation's
+            # financial witness re-verifies every reservation of its deployment; inside an installation the news check
+            # runs in the service, where each Jev check gets its origin.
+            parser.error("this database belongs to a protected installation, whose news check runs inside the "
+                         "installed service (NEWS-ALARM.md, \"In the installed service\"); Jev checks are refused here "
+                         "and nothing was sent")
         budget = BudgetGateway(database, clock)
         budget.seed_card(card)
         row = database.execute("SELECT portfolio_id FROM portfolios WHERE mode = 'paper' ORDER BY created_at DESC "
