@@ -224,10 +224,10 @@ class MoneyLimitGuard:
         books = self.ledger.books(portfolio_id, utc_iso(at))
         held = sorted({lot.asset for lot in books.lots if lot.open_quantity() > 0})
         for asset in held:
-            row = self.database.execute(
-                "SELECT observed_at FROM valuation_marks WHERE portfolio_id = ? AND asset = ? AND observed_at <= ? "
-                "ORDER BY observed_at DESC, rowid DESC LIMIT 1", (portfolio_id, asset, utc_iso(at))).fetchone()
-            if row is None or at - parse_utc(row["observed_at"]) > MARK_MAX_AGE:
+            # The ledger's own newest mark, the one the valuation used (W10-B, D271: the newest observed, the first
+            # recorded of equal times): one indexed row per coin held.
+            mark = self.ledger.newest_mark(portfolio_id, asset, utc_iso(at))
+            if mark is None or at - parse_utc(mark.at) > MARK_MAX_AGE:
                 return False
         return True
 
