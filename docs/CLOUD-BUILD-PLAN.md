@@ -1,9 +1,10 @@
 # Cloud build plan for the day-trader engine
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
-cloud waves 1 to 7 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the night
-shift of 2026-10-16/17; D140–D229). Waves 8 and 9, added on 2026-10-17,
-close the gaps between "built" and "installed" that the night shift found.
+cloud waves 1 to 8 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the night
+shift of 2026-10-16/17; wave 8 by the night shift of 2026-10-17/18;
+D140–D254). Waves 8 and 9, added on 2026-10-17, close the gaps between
+"built" and "installed" that the night shift found.
 The local steps L1–L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
@@ -17,8 +18,8 @@ from it and returns to it through pull requests.
 ### In one minute
 
 - The work is split into **22 cloud packages in 9 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. Waves 1 to 7
-  are done; waves 8 and 9 are the follow-up before the install.
+  steps** on your PC and a short list of things only you can do. Waves 1 to 8
+  are done; wave 9 is the last follow-up before the install.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
@@ -100,9 +101,9 @@ The integrator updates this table each time it merges a wave.
 | W6-C | T39 | HQ wake log and next check-ins | Merged 2026-10-17 (#15); you look at the Calendar and Story tabs on your phone and iPad after L3 |
 | W6-D | C2 | Code ready to install: one price collector, new data store wired in | Merged 2026-10-17 (#17); the real image build and the first collector pass are L3 steps ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
 | W7-A | T45 | News alarms really wake the Leader and Trader | Merged 2026-10-17 (#19); ships in shadow mode (it records whom an alarm would wake and wakes nobody): after L3 you decide from the shadow log and HQ's wake counts (`trade-graph news-wakes`, [L3 checklist](L3-INSTALL-CHECKLIST.md) step 17), once the news poll runs next to the installed service with your Jev key |
-| W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Merged 2026-10-17 (#21); ships switched off: at L3 you put the Perplexity key and the price file in your owner folder and add the Perplexity route to your network profile and proxy (step 3), then switch Research and the Leader on (step 12, `trade-graph perplexity-departments --confirm`); the prices are re-checked at L2, because today's price card goes stale on 2026-11-11 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
-| W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-17 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
-| W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-17 (#20); you look at the Money tab on your phone and iPad after L3 |
+| W8-A | C3 | Research and the Leader can run on Perplexity inside the installed system | Merged 2026-10-18 (#21); ships switched off: at L3 you put the Perplexity key and the price file in your owner folder and add the Perplexity route to your network profile and proxy (step 3), then switch Research and the Leader on (step 12, `trade-graph perplexity-departments --confirm`); the prices are re-checked at L2, because today's price card goes stale on 2026-11-11 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
+| W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-18 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
+| W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-18 (#20); you look at the Money tab on your phone and iPad after L3 |
 | W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Not started |
 | L1 | — | Price data kept current on your PC | Not started |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
@@ -215,8 +216,9 @@ skipped. The night integrations ran it as GitHub's test job: wave 2 at
 passed, 0 failed, 18 skipped; wave 4 at `b09cae4`, 7,189 passed, 0 failed, 18
 skipped; wave 5 at `e1008e5`, 7,347 passed, 0 failed, 18 skipped; wave 6 at
 `0595d98`, 7,600 passed, 0 failed, 18 skipped; wave 7 at `3008446`, 7,665
-passed, 0 failed, 18 skipped. Any failure now counts and must be reported. The container run took
-105 minutes (W1-E measured 54); GitHub's test job takes 50 to 73 minutes and
+passed, 0 failed, 18 skipped; wave 8 at `f90bda1`, 7,915 passed, 0 failed, 18
+skipped. Any failure now counts and must be reported. The container run took
+105 minutes (W1-E measured 54); GitHub's test job takes 50 to 75 minutes and
 may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
