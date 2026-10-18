@@ -101,6 +101,15 @@ D250-D254). Looking at them never starts, sends, cancels or changes anything.
 When the money-limit, day-plan or price-collector step of the service fails, "Right now" and "Needs you" now name it
 in plain words (for example "couldn't check your money limits") instead of "a routine step is failing".
 
+**A coin without a safety exit (the HQ tab, W10-C).** Software puts a safety exit on every buy the moment it fills.
+If a bought coin has had none for 10 minutes (the exit was refused, your cancel-all setting removed it, or the team
+is off), "Needs you" shows a "For you to do" card per coin: which coin and how much ("SOL/USD: 5 SOL has no safety
+exit"), since when, what the system is doing about it (software tries again at every step; nothing while cancel-all
+is on or the team is off) and why the last try failed. It clears on the next refresh once the exit is in place or
+the position is closed. The card has no button: HQ never trades for you. Today's day plans and Trading records show
+the details, and Owner controls has the account-wide settings. Up to three coins get a card each; more are named in
+one more card.
+
 ## AI spending (the Money tab)
 
 The **AI spending** panel shows what paid AI has really cost, in US dollars, from the receipts the system keeps
@@ -300,6 +309,19 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
   paper limit and scorecard aren't applied there. The fullest block is about 6 KB; the busy week with it stays
   under 80 KB. A reached or recorded loss stop adds the notice `loss_limit_reached`. The service's
   `money_limits:`, `day_plans:` and `collector:` failures are problem prefixes with plain words of their own.
+- **No safety exit** (W10-C, D274-D277): the `attention` card `no_safety_exit:<coin>` (severity `act`; at most three,
+  then `no_safety_exit:more`), projected by `api/hq_protection.py` and added to the snapshot's attention list, so no
+  snapshot key changes. How much of a filled day-plan buy is covered is the one arithmetic of
+  `kernel/day_plan_coverage.py`, shared with `DayPlanProtection.coverage` and the day plans panel; a coin's bare part
+  is capped as the Trader's position view caps it (never more than is held and not already protected, so coins sold
+  another way get no card). Since when is that arithmetic on a timeline: the fill whose exit was never placed, or the
+  moment an exit or close sell that covered it ended unsold (the first `protection_deferred` event when the times
+  can't be read). A card shows once a coin has been bare for 10 minutes on HQ's clock. The records (`day_plans`,
+  `day_plan_entries`, `day_plan_exits`, `day_plan_events`, `day_plan_action_orders`, `order_intents`, `fills`) are read
+  fresh on every poll with plain SQL in the snapshot; the coins held come from the ledger's books only when something
+  is bare, cached behind the newest ledger event. Nothing is placed, sent or written (tested). The most cards (three
+  coins and the "more" card, long reasons) on the busy week are about 71 KB, and about 75 KB with W8-C's fullest
+  trading block.
 - **Day plans** (W8-C, D251) come from `GET /api/v1/hq/plans` (`trade-graph.hq.plans.v1`,
   `api/hq_plans_contract.py`), never from the snapshot; the page asks only while the panel is on screen and again
   with HQ's 30-second poll. The projection (`api/hq_plans.py`) reads `day_plans`, `day_plan_entries`,
