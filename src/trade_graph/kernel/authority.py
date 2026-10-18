@@ -96,6 +96,13 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/news_installation.py",
     "src/trade_graph/application/jev_checks.py",
     "src/trade_graph/adapters/decisions/",
+    # W10-A (D261, D264): the files that record every paid AI call (reservations, receipts and allocations, and the
+    # gateway that reserves before each call and settles it after), and the domain primitives the protected budget
+    # imports (the clock of every timestamp, the typed refusals, the Decimal amounts), so kernel/protected_budget.py
+    # imports only protected code.
+    "src/trade_graph/application/budget.py",
+    "src/trade_graph/application/gateway.py",
+    "src/trade_graph/domain/",
 )
 
 
