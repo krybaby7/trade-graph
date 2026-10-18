@@ -147,7 +147,8 @@ WindowLabel = Literal["weekly", "5-hour", "other"]
 AttentionCode = Literal["team_off", "team_silent", "safety_stop", "model_unavailable", "timetable_failing",
                         "turn_stuck", "checkin_due", "orders_unclear", "routine_failing", "repeat_problems",
                         "notes_expire_early", "prices_old", "allowance_near", "command_interrupted", "resources",
-                        "owner_paused", "costs_unconfirmed", "trial_rollback_likely", "spending_alert"]
+                        "owner_paused", "costs_unconfirmed", "trial_rollback_likely", "spending_alert",
+                        "no_safety_exit"]
 ATTENTION_CODES: Final = get_args(AttentionCode)
 Severity = Literal["act", "watch", "info"]
 SEVERITY_ORDER: Final = ("act", "watch", "info")
@@ -162,6 +163,9 @@ ATTENTION_SEVERITY: Final[Mapping[str, str]] = {
     "owner_paused": "info", "costs_unconfirmed": "info", "trial_rollback_likely": "info",
     # T40 (D176): the owner's testing spending alert. An alert only: it pauses nothing.
     "spending_alert": "watch",
+    # W10-C (D274, D275): a filled day-plan buy without full safety-exit cover for 10 minutes; one card per coin
+    # (``no_safety_exit:<symbol>``, at most three, then ``no_safety_exit:more``). It offers no button that trades.
+    "no_safety_exit": "act",
 }
 
 LastOutcome = Literal["done", "problem", "skipped", "stuck", "decided"]

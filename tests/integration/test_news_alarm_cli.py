@@ -116,6 +116,26 @@ def test_scripted_replies_cannot_be_mixed_with_real_jev_calls(paper, tmp_path, c
     assert "scripted" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("command", ["news-alarm-poll", "news-alarm-report"])
+@pytest.mark.parametrize("settings", [{"testing_alert_usd": "5,00"}, {"jev": {"fx_rate": "one"}},
+                                      {"jev": {"fx_buffer": "1.02.1"}}, {"rule": {"urgent_threshold": "half"}}],
+                         ids=["alert", "fx_rate", "fx_buffer", "threshold"])
+def test_a_malformed_number_in_the_settings_is_refused_plainly(paper, tmp_path, capsys, command, settings):
+    # W10-C: decimal.InvalidOperation used to escape as a traceback; it is refused like the in-service reader does.
+    path = tmp_path / "news-alarm.json"
+    path.write_text(json.dumps({"schema_version": 1, **settings}))
+    options = ["--fixture-feeds", str(FIXTURES)] if command == "news-alarm-poll" else []
+    with pytest.raises(SystemExit) as raised:
+        main([command, "--database", str(paper), "--config", str(path), *options])
+    assert raised.value.code == 2
+    error = capsys.readouterr().err
+    assert "news alarm settings refused (a malformed number); nothing was read or sent" in error
+    assert "Traceback" not in error and "InvalidOperation" not in error
+    connection = sqlite3.connect(paper)
+    assert connection.execute("SELECT COUNT(*) FROM news_headlines").fetchone()[0] == 0
+    connection.close()
+
+
 def test_a_moving_alias_cannot_be_configured(paper, tmp_path, capsys):
     with pytest.raises(SystemExit) as raised:
         main(["news-alarm-poll", "--database", str(paper), "--config", str(_settings(tmp_path, model="jev-latest")),

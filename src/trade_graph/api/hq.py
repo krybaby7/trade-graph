@@ -3,7 +3,9 @@
 ``snapshot()`` builds one ``trade-graph.hq.v1`` document (``api/hq_contract.py``)
 inside a single database snapshot. It reads only bounded records (``hq_facts``) and
 the 60-second money, AI spending and trading caches (``hq_money``, ``hq_spending``, ``hq_trading``); it never calls
-the activity, live or health projections, the service controller, or a provider (spec §B.9).
+the activity, live or health projections, the service controller, or a provider (spec §B.9). The day-plan records
+behind the "no safety exit" card (``hq_protection``, W10-C) are read fresh on every poll, so the card clears as soon
+as the exit is in place.
 
 Wiring (WP4, ``api/app.py``)::
 
@@ -29,6 +31,7 @@ from trade_graph.api import (
     hq_calendar,
     hq_facts,
     hq_money,
+    hq_protection,
     hq_spending,
     hq_state,
     hq_story,
@@ -93,7 +96,9 @@ def snapshot(runtime, viewer: Viewer, *, calendar_days: int = CALENDAR_DAYS_DEFA
         p, checkins = _projection(runtime, viewer, now, calendar_days)
         items = checkins["items"] if checkins["available"] else []
         spending = hq_spending.report(runtime, now)
-        attention = hq_state.attention(p, items, hq_spending.attention(spending))
+        # T40's spending alerts and W10-C's "no safety exit" cards are projected outside ``hq_state``.
+        extra = [*hq_spending.attention(spending), *hq_protection.attention(p, runtime, now)]
+        attention = hq_state.attention(p, items, extra)
         checkin_block = hq_state.checkins_block(p)
         barriers = []
         if p.can_act and p.profile != "RUNNING":

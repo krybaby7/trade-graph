@@ -18,9 +18,10 @@ plan events, as ``trade-graph.hq.plans.v1`` (``api/hq_plans_contract.py``) from 
 Which plans: each coin's newest plan whose trading day has not ended, and any older plan that still has an order open
 (a safety exit protecting coins bought on an earlier day, a buy being checked, or a Trader's close sell still out),
 newest first. How much of a filled buy has no safety exit right now is the same arithmetic as
-``DayPlanProtection.coverage``: an exit still open or being checked covers its whole quantity, a sold exit what it
-sold, an exit that ended unfilled only what it sold; a Trader's close sell counts the same way for each buy's part
-(W8-B, D246: its part while outstanding, unknown or filled, else what it sold, shared out in order).
+``DayPlanProtection.coverage``, from the one shared module ``kernel/day_plan_coverage.py`` (W10-C): an exit still
+open or being checked covers its whole quantity, a sold exit what it sold, an exit that ended unfilled only what it
+sold; a Trader's close sell counts the same way for each buy's part (W8-B, D246: its part while outstanding, unknown
+or filled, else what it sold, shared out in order).
 
 Reading starts nothing: plain SQL inside ``Database.snapshot()``, which ends in a rollback; no execution, broker,
 scheduler, engine or provider is imported or called, so reading HQ never sends, cancels or places an order. A table
@@ -55,6 +56,8 @@ from trade_graph.contracts.alarms import SYMBOL_PATTERN
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError
 from trade_graph.domain.money import canonical_decimal
+from trade_graph.kernel import day_plan_coverage
+from trade_graph.kernel.day_plan_coverage import Cover
 from trade_graph.kernel.money_limits import TradingDay, trading_day
 
 P = c.PLANS
@@ -67,7 +70,6 @@ REFUSAL_REASON_CHARS = 200
 STATUS = {"SUBMISSION_PENDING": "sending", "SUBMITTING": "sending", "OPEN": "waiting",
           "PARTIALLY_FILLED": "partly_filled", "FILLED": "filled", "CANCELLED": "cancelled", "REJECTED": "rejected",
           "UNKNOWN": "being_checked", "CANCEL_PENDING": "being_checked"}
-OUTSTANDING = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN", "CANCEL_PENDING"})
 ZERO = Decimal("0")
 _SYMBOL = re.compile(SYMBOL_PATTERN)
 
@@ -235,13 +237,8 @@ def _add_trader_actions(database, portfolio_id: str, symbol: str, entries: list[
                 every.setdefault(row["intent_id"], []).append(dict(row))
             for part in parts:
                 intent_fills = fills.get(part["intent_id"], [])
-                left, sold = _sold(intent_fills), ZERO
-                for other in every.get(part["intent_id"], []):
-                    share = min(left, _amount(other["quantity"]))
-                    if other["sequence"] == part["sequence"]:
-                        sold = share
-                        break
-                    left -= share
+                shares = [(other["sequence"], _amount(other["quantity"])) for other in every.get(part["intent_id"], [])]
+                sold = day_plan_coverage.shared_part(_sold(intent_fills), shares, part["sequence"])
                 by_entry[part["entry_id"]]["sells"].append(
                     {**part, "state": states.get(part["intent_id"]), "fills": intent_fills, "sold": sold,
                      "total": sum((_amount(other["quantity"]) for other in every.get(part["intent_id"], [])), ZERO)})
@@ -378,10 +375,11 @@ def _sell_view(item: dict, base: str, quote: str) -> dict:
             "_at": item.get("created_at") or ""}
 
 
-def _sell_covers(item: dict) -> Decimal:
-    """What a close sell's part covers: all of it while outstanding, unknown or filled, else what it sold (D246)."""
-    state = item.get("state")
-    return _amount(item["quantity"]) if state in OUTSTANDING or state == "FILLED" else _amount(item.get("sold"))
+def covers_of(exits: list[dict], sells: list[dict]) -> list[Cover]:
+    """A buy's safety exits and its parts of Trader's close sells as read by ``read_plan``, for the shared arithmetic
+    (``kernel/day_plan_coverage.py``): an exit sold what its fills sold, a close's part its share of the sale."""
+    return ([Cover(item.get("state"), _amount(item["quantity"]), _sold(item.get("fills") or [])) for item in exits]
+            + [Cover(item.get("state"), _amount(item["quantity"]), _amount(item.get("sold"))) for item in sells])
 
 
 def _cancel_reasons(events: list[dict]) -> dict[str, str]:
@@ -393,13 +391,8 @@ def entry_view(item: dict, base: str, quote: str, cancelled: dict[str, str]) -> 
     fills = item.get("fills") or []
     filled = _sold(fills)
     exits = item.get("exits") or []
-    covered = ZERO
-    for exit_ in exits:
-        covered += _amount(exit_["quantity"]) if exit_.get("state") in OUTSTANDING or exit_.get("state") == "FILLED" \
-            else _sold(exit_.get("fills") or [])
     sells = item.get("sells") or []
-    covered += sum((_sell_covers(sell) for sell in sells), ZERO)
-    unprotected = max(ZERO, filled - covered)
+    unprotected = day_plan_coverage.uncovered(filled, covers_of(exits, sells))
     status = STATUS.get(item.get("state"), "being_checked")
     target = P["target"].format(target=_words(item["take_profit_price"])) if item.get("take_profit_price") else ""
     words = [P["buy"].format(quantity=_words(item["quantity"]), base=base, price=_words(item["limit_price"]),
@@ -586,5 +579,5 @@ def register(app, runtime, identity) -> None:
         return redact(plans(runtime))
 
 
-__all__ = ["document", "entry_view", "plan_view", "plans", "read_plan", "refusal_view", "refusal_words", "register",
-           "trading_day_of"]
+__all__ = ["covers_of", "document", "entry_view", "plan_view", "plans", "read_plan", "refusal_view", "refusal_words",
+           "register", "trading_day_of"]

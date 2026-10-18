@@ -1692,6 +1692,30 @@ PLANS: Final = {
     },
 }
 
+# --- A bought coin without a safety exit (W10-C, D274-D278) --------------------------------------------------
+# Words for the "Needs you" card of ``api/hq_protection.py``. It never says "practice" or "paper", so a live account
+# reads it too, and it offers no button: what the owner can do is on Owner controls.
+
+PROTECTION: Final = {
+    "title": "{symbol}: {quantity} {base} has no ",
+    "safety_exit": "safety exit",
+    "why": "Software puts a safety exit on every buy as it fills; this one has had none since ",
+    "why_unknown": "Software puts a safety exit on every buy as it fills; HQ can't tell since when this one has none.",
+    "consequence": "Until it has one, nothing sells these coins by itself if the price falls.",
+    "doing": {
+        "retrying": "Software tries again at every step of the team's service.",
+        "cancel_all": ("Software puts none on while the cancel-all setting is on, because that setting removes every "
+                       "order; it puts one on when the setting ends."),
+        "flatten": "The sell-everything setting is selling the account's coins, so software puts no safety exit on.",
+        "stopped": "The account is stopped, so software puts no safety exit on.",
+        "team_off": "Nothing happens while the team is off; software puts the safety exit on once the team runs again.",
+    },
+    "last_try": " The last try failed: ",
+    "how": " HQ has no button for this; Owner controls has the account-wide settings.",
+    "more_title": ("1 more coin has no safety exit: {coins}", "{n} more coins have no safety exit: {coins}"),
+    "more_why": "Each has had none for at least 10 minutes. Trading records lists every order.",
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {

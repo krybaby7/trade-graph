@@ -215,7 +215,9 @@ The Trader answers with `position_actions` (`PositionAction`, at most one per co
 
 They are execution controls and evidence: the intents, fills and ledger stay the books. They are not added to agent
 context, the financial checkpoint or the review export. HQ shows them in the Money tab's "Today's day plans" panel
-(`GET /api/v1/hq/plans`, W8-C, D251).
+(`GET /api/v1/hq/plans`, W8-C, D251), and a "Needs you" card when a bought coin has had no safety exit for 10 minutes
+(W10-C, D274-D277). `DayPlanProtection.coverage`, the panel and the card use the same arithmetic,
+`kernel/day_plan_coverage.py`.
 
 Migration 0044 (W8-B) adds the Trader's actions, all append-only:
 
