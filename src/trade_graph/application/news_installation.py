@@ -35,9 +35,8 @@ import stat
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from time import monotonic
 from typing import Any, Final
 
 from pydantic import ValidationError
@@ -60,9 +59,9 @@ from trade_graph.application.news_store import NewsStore
 from trade_graph.application.news_watchlist import service_watch_list
 from trade_graph.contracts.models import PriceCard
 from trade_graph.contracts.news import NewsAlarmSettings, WatchList
-from trade_graph.domain.clock import Clock, parse_utc, utc_iso
+from trade_graph.domain.clock import Clock, parse_utc
 from trade_graph.domain.errors import BudgetExhausted, StaleState, TradeGraphError
-from trade_graph.kernel.protected_budget import ProtectedBudgetOrigins
+from trade_graph.kernel.protected_budget import ProtectedBudgetOrigins, ProtectedRouteBudget
 from trade_graph.kernel.subscription_proxy import NEWS_FEEDS
 
 ROUTE: Final = NEWS_FEEDS
@@ -72,9 +71,6 @@ STALE_AFTER_DAYS: Final = 30  # as the command and the model router: a card veri
 ROUTE_KIND: Final = "news_route"
 POLL_KIND: Final = "news_poll"
 READ_OUTCOMES: Final = frozenset({"fetched", "not_modified"})
-AUDIT_SECONDS: Final = 5
-AUDIT_ROWS: Final = 500_000
-AUDIT_SWEEP: Final = 500  # this month's reservations checked per poll, in turn (about 0.5 ms each)
 _REASON_WORDS: Final = {
     "transport_error": "could not connect",
     "http_error": "the site answered with an error",
@@ -166,31 +162,22 @@ class NewsRouteRefused(BudgetExhausted):
     """The news route refused a Jev reservation before anything was sent; T44 records it as ``budget_refused``."""
 
 
-class NewsRouteBudget(BudgetGateway):
+class NewsRouteBudget(ProtectedRouteBudget):
     """Reservations of the in-service Jev checks, each bound to an authenticated protected budget origin (D258).
 
     Admitted only for the route's own deployment, role, purpose and fresh dated card, without a task, while the
     protected controller runs. The owner policy's paid-call limits are the money rule; the deployment's EUR allowance,
     which a subscription installation does not use, is not consulted. Verification is per reservation, so it never
-    grows with the history; ``audit`` checks the route's history, bounded."""
+    grows with the history; ``audit`` checks the route's history, bounded (``kernel.protected_budget``, shared with the
+    Perplexity route since W10-A)."""
+
+    label = "news route"
+    waiting = "Jev checks"
 
     def __init__(self, database, clock: Clock, *, deployment_id: str, price_card_id: str, portfolio_id: str,
                  origins: ProtectedBudgetOrigins, controller, authority) -> None:
-        super().__init__(database, clock)
-        if origins.deployment_id != deployment_id:
-            raise ValueError("the news route's origins must be scoped to its own deployment")
-        self.deployment_id, self.price_card_id, self.portfolio_id = deployment_id, price_card_id, portfolio_id
-        self.origins, self.controller, self.authority = origins, controller, authority
-        self._sweep_after = 0
-
-    def controller_problem(self) -> str | None:
-        try:
-            status = self.controller.status()
-        except Exception as error:  # noqa: BLE001 - an unreadable controller never admits a paid call
-            return f"the protected controller cannot be read ({type(error).__name__})"
-        if status.get("status") != "RUNNING":
-            return "the protected controller is not running (management only); Jev checks wait until it runs"
-        return None
+        super().__init__(database, clock, deployment_id=deployment_id, origins=origins, controller=controller)
+        self.price_card_id, self.portfolio_id, self.authority = price_card_id, portfolio_id, authority
 
     def admit(self, *, deployment_id: str, role: str, task_id: str | None, root_task_id: str | None,
               price_card_id: str, purpose: str, **_: Any) -> None:
@@ -206,8 +193,7 @@ class NewsRouteBudget(BudgetGateway):
         self.admit(**kwargs)
         reservation_id = super().reserve(**kwargs)
         # The original authority is retained in the same transaction as the reservation and the attempt row.
-        self.origins.record_origin(reservation_id, instance_id=self.controller.instance_id,
-                                   portfolio_id=self.portfolio_id)
+        self._bind_origin(reservation_id, self.portfolio_id)
         return reservation_id
 
     def _assert_room(self, conn, *, deployment_id: str, amount, now: str, **_: Any) -> None:
@@ -223,72 +209,6 @@ class NewsRouteBudget(BudgetGateway):
         if amount > room:
             raise NewsRouteRefused(f"the owner's paid-call limits leave EUR {room} for Jev checks; one check holds "
                                    f"EUR {amount}")
-
-    def protect_dispatch(self, reservation_id: str) -> None:
-        self.origins.validate(reservation_id)
-
-    def protect_settlement(self, reservation_id: str) -> None:
-        self.origins.validate(reservation_id)
-
-    @atomic
-    def commit(self, reservation_id, usage, **kwargs):
-        self.origins.validate(reservation_id)
-        receipt = super().commit(reservation_id, usage, **kwargs)
-        self.origins.record_receipt(reservation_id)
-        self.origins.validate(reservation_id, require_allocations=False)
-        return receipt
-
-    @atomic
-    def allocate(self, receipt_id, weights) -> None:
-        row = self.database.execute("SELECT reservation_id FROM usage_receipts WHERE receipt_id = ?",
-                                    (receipt_id,)).fetchone()
-        if row is None:
-            raise StaleState("a news route allocation lacks its receipt")
-        self.origins.validate(row["reservation_id"], require_allocations=False)
-        super().allocate(receipt_id, weights)
-        self.origins.validate(row["reservation_id"])
-
-    def audit(self, *, since: str | None = None, sweep_since: str | None = None) -> None:
-        """Check the route's history, bounded, without re-verifying all of it each time.
-
-        Every route reservation has its origin and every origin its reservation (two indexed queries); the open
-        reservations and those created ``since`` (today's, which today's limit sums) validate; and the next
-        ``AUDIT_SWEEP`` reservations created ``sweep_since`` (this month's, which the monthly limit sums) validate in
-        turn, so a changed amount anywhere in the month is found within a few polls. Bounded like the witness."""
-        database = self.database
-        if database.execute("""SELECT 1 FROM budget_reservations r WHERE r.deployment_id = ? AND NOT EXISTS (
-                SELECT 1 FROM protected_financial_budget_origins o WHERE o.reservation_id = r.reservation_id
-                AND o.event_kind = 'ORIGIN') LIMIT 1""", (self.deployment_id,)).fetchone():
-            raise StaleState("a news route reservation has no protected origin")
-        if database.execute("""SELECT 1 FROM protected_financial_budget_origins o LEFT JOIN budget_reservations r
-                ON r.reservation_id = o.reservation_id WHERE o.deployment_id = ? AND (r.reservation_id IS NULL
-                OR r.deployment_id != o.deployment_id) LIMIT 1""", (self.deployment_id,)).fetchone():
-            raise StaleState("a news route's protected budget authority disappeared")
-        clause, params = "state IN ('RESERVED', 'UNCERTAIN')", [self.deployment_id]
-        if since is not None:
-            clause, params = clause + " OR created_at >= ?", [self.deployment_id, since]
-        rows = database.execute(f"SELECT rowid, reservation_id FROM budget_reservations WHERE deployment_id = ? "
-                                f"AND ({clause}) ORDER BY rowid", params).fetchall()
-        if sweep_since is not None:
-            swept = database.execute("""SELECT rowid, reservation_id FROM budget_reservations WHERE deployment_id = ?
-                AND created_at >= ? AND rowid > ? ORDER BY rowid LIMIT ?""",
-                                     (self.deployment_id, sweep_since, self._sweep_after, AUDIT_SWEEP)).fetchall()
-            self._sweep_after = swept[-1]["rowid"] if len(swept) == AUDIT_SWEEP else 0  # from the start once through
-            rows = [*rows, *swept]
-        started, count = monotonic(), 0
-        for row in rows:
-            count += 1
-            if count > AUDIT_ROWS or monotonic() - started >= AUDIT_SECONDS:
-                raise StaleState("the news route's protected budget audit exceeds its bound")
-            self.origins.validate(row["reservation_id"])
-
-
-def _day_start(now: datetime) -> str:
-    return utc_iso(now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0))
-
-
-def _month_start(now: datetime) -> str:
-    return utc_iso(now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0))
 
 
 def recover_interrupted(database, budget: BudgetGateway, store: NewsStore) -> int:
@@ -378,7 +298,7 @@ class ServiceNewsPoll:
         problem = card_problem(checks.card, now.date()) or budget.controller_problem()
         if problem is None:
             try:
-                budget.audit(since=_day_start(now), sweep_since=_month_start(now))
+                budget.audit_at(now)
             except (StaleState, sqlite3.DatabaseError) as error:
                 problem = f"the news route's protected budget origins were refused ({error})"[:300]
         return (None, problem) if problem is not None else (checks, None)
@@ -473,7 +393,7 @@ def _jev_route(runtime, protected, owner_directory: Path, profile, settings: New
                                  authority=protected.financial.authority)
         with database.immediate():
             budget.seed_card(card)
-        budget.audit(since=_day_start(clock.now()), sweep_since=_month_start(clock.now()))
+        budget.audit_at(clock.now())
         transport = pinned_jev_transport(profile, timeout=jev.timeout_seconds)
         binding = JevBudgetBinding(deployment_id=deployment, price_card_id=card.price_card_id, fx_rate=jev.fx_rate,
                                    fx_buffer=jev.fx_buffer, synthetic=bool(getattr(transport, "synthetic", False)),
