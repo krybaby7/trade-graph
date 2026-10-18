@@ -137,11 +137,21 @@ def run_probe(manifest: ProtectedRuntimeManifest, *, state_directory: Path = Pat
 
         activate(PROBE_ENTER, "synthetic-entry")
         entered = asyncio.run(runtime.cycle(portfolio, "BTC/USD"))
-        if entered["status"] != "APPLIED" or execution.intent_state(entered["response"]["intent_id"]) != "UNKNOWN":
+        # The acknowledgement was lost: unknown, never rejection, and submitted once. Management reconciles, then
+        # dispatches, every 0.25 s while the candidate runs and once after it. When the candidate returns first, the
+        # submit goes out in the cycle's last step and stays UNKNOWN until the recovery; when a step ran after the
+        # decision, the last step already found the order resting at the paper broker with no fills and recorded it
+        # OPEN (W8-B, D248). Both are correct, and how fast the machine runs decides which (wave 9 integration).
+        intent_id = entered["response"]["intent_id"] if entered["status"] == "APPLIED" else None
+        if (intent_id is None or execution._payload(intent_id).get("error") != "timeout"
+                or execution.intent_state(intent_id) not in {"UNKNOWN", "OPEN"}
+                or db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] != 1):
             raise AssertionError("actual durable synthetic lost-ack paper order failed")
         asyncio.run(runtime.recover(portfolio))
         if db.execute("SELECT COUNT(*) FROM order_attempts").fetchone()[0] != 1:
             raise AssertionError("uncertain paper order was redispatched")
+        if execution.intent_state(intent_id) != "OPEN":
+            raise AssertionError("uncertain paper order was not reconciled at the paper broker")
         asyncio.run(runtime.ingest_observation(quote.model_copy(update={"observation_id": "image-probe-fill"})))
         asyncio.run(runtime.recover(portfolio))
         if execution.intent_state(entered["response"]["intent_id"]) != "FILLED":

@@ -1,5 +1,6 @@
 """Owner-image identities and pre-start configuration cannot be widened."""
 
+import asyncio
 import hashlib
 from copy import deepcopy
 from dataclasses import replace
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from trade_graph.application.protected_runtime import ProtectedPaperRuntime
 from trade_graph.kernel.deployment_image import (
     ENTRYPOINT,
     OWNER_MOUNT,
@@ -165,11 +167,56 @@ def test_owner_reader_cannot_expand_to_other_files(tmp_path, name):
         read_owner_file(tmp_path, name, 32768)
 
 
-def test_synthetic_installed_probe_requires_manifest_sources_and_recovery_preserves_history(tmp_path):
+def _shape_the_entry_cycle(monkeypatch, timing: str) -> list[str]:
+    """Shape only the probe's first cycle, its lost-acknowledgement entry; later cycles run as timed.
+
+    The protected runtime's management step reconciles, then dispatches: every 0.25 s while the candidate runs and once
+    after it. ``returns_before_first_tick`` (a fast machine, as GitHub's runner): the candidate returns before the first
+    step, so the submit goes out in the cycle's last step and is UNKNOWN until the recovery. ``tick_after_the_decision``
+    (a slow machine, as a loaded cloud container): one step runs after the candidate decided, so the submit goes out
+    there and the cycle's last step finds the order resting at the paper broker and records it OPEN (W8-B, D248).
+    Returns the entry intent's state right after the cycle."""
+    real_wait, real_cycle, states = asyncio.wait, ProtectedPaperRuntime.cycle, []
+
+    async def cycle(self, portfolio_id, symbol):
+        if states or timing == "as_timed":
+            result = await real_cycle(self, portfolio_id, symbol)
+        else:
+            waits = []
+
+            async def wait(tasks, timeout=None, **options):
+                done, pending = await real_wait(tasks, **options)  # until the candidate has returned
+                waits.append(timeout)
+                if timing == "tick_after_the_decision" and len(waits) == 1:
+                    return set(), set(tasks)  # as if the 0.25 s step came first: one management step runs
+                return done, pending
+
+            monkeypatch.setattr(asyncio, "wait", wait)
+            try:
+                result = await real_cycle(self, portfolio_id, symbol)
+            finally:
+                monkeypatch.setattr(asyncio, "wait", real_wait)
+        if not states:
+            states.append(self.financial.execution.intent_state(result["response"]["intent_id"]))
+        return result
+
+    monkeypatch.setattr(ProtectedPaperRuntime, "cycle", cycle)
+    return states
+
+
+@pytest.mark.parametrize("timing", ["as_timed", "returns_before_first_tick", "tick_after_the_decision"])
+def test_synthetic_installed_probe_requires_manifest_sources_and_recovery_preserves_history(tmp_path, monkeypatch,
+                                                                                             timing):
     manifest = ProtectedRuntimeManifest(schema_version=1, protected_package_sha256=protected_package_sha256(),
         deployment_id="deployment", approved_source_sha256=probe_source_sha256())
     key = b"synthetic-parent-probe-key-only-32-bytes-41"
+    entry = _shape_the_entry_cycle(monkeypatch, timing)
     first = run_probe(manifest, state_directory=tmp_path, capability_key=key)
+    # The lost acknowledgement is unknown or, once reconciled at the paper broker, open; never rejected or replayed
+    # (the probe checks one submission attempt, the recovery, the fill and the restart either way).
+    assert entry in (["UNKNOWN"], ["OPEN"])
+    if timing != "as_timed":
+        assert entry == (["UNKNOWN"] if timing == "returns_before_first_tick" else ["OPEN"])
     second = run_probe(manifest, state_directory=tmp_path, capability_key=key)
     assert first["os_attacks_blocked"] == 30 and first["management_calls_during_failure"] >= 3
     assert second["phase"] == "restart_verified" and second["restart_dispatched"] == 0
