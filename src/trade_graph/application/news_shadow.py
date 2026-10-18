@@ -51,9 +51,13 @@ class PollSummary:
 
 class NewsAlarmShadow:
     def __init__(self, *, store: NewsStore, fetcher: FeedFetcher, settings: NewsAlarmSettings, clock: Clock,
-                 checks: JevCheckRunner | None, watch: Callable[[], WatchList], jev_label: str | None = None) -> None:
+                 checks: JevCheckRunner | None, watch: Callable[[], WatchList], jev_label: str | None = None,
+                 should_stop: Callable[[], bool] | None = None) -> None:
         self.store, self.fetcher, self.settings, self.clock = store, fetcher, settings, clock
         self.checks, self.watch = checks, watch
+        # W9-A (D255): the installed service's stop ends a poll between feeds and between headlines; what was stored
+        # is kept, and no Jev call starts after the stop.
+        self.should_stop = should_stop or (lambda: False)
         self.jev_label = jev_label or ("off" if checks is None else "scripted" if checks.adapter.synthetic
                                        else "live")
 
@@ -63,6 +67,8 @@ class NewsAlarmShadow:
             summary.recovered = len(self.checks.recover())
         cutoff = self.clock.now() - timedelta(seconds=self.settings.check_window_seconds)
         for feed in self.settings.feeds:
+            if self.should_stop():
+                return summary
             started = self.clock.now()
             etag, last_modified = self.store.validators(feed.feed_id)
             fetched = self.fetcher.fetch(feed, etag=etag, last_modified=last_modified)
@@ -86,6 +92,8 @@ class NewsAlarmShadow:
         watch = self.watch()
         failures: Counter[str] = Counter()
         for headline in due:
+            if self.should_stop():
+                break
             record = self.checks.check(headline, watch, self.settings.rule)
             summary.checks += 1
             if record.status == "answered":
