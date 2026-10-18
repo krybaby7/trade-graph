@@ -1,8 +1,9 @@
 """The installed Perplexity route (W8-A, D240-D244): owner files, pinned transport, prices, money and the switch.
 
 The owner's protected folder is simulated (``tests/perplexity_service_support.py``); the account is the synthetic
-day-plan account; Perplexity answers are the T36 fixtures played by a scripted transport with a made-up key. No
-network, real key, paid call or order.
+day-plan account with the real protected runtime the installed service prepares (W10-A: the route's reservations are
+bound to its protected budget origins, ``test_perplexity_route_origins.py``); Perplexity answers are the T36 fixtures
+played by a scripted transport with a made-up key. No network, real key, paid call or order.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytest
 from tests.day_plan_support import day_plan_account
 from tests.focus_research_support import ScriptedPerplexity, switch
-from tests.perplexity_service_support import CARDS, KEY, owner_files, trust_owner_files
+from tests.perplexity_service_support import CARDS, KEY, owner_files, protected_runtime, trust_owner_files
 
 from trade_graph.adapters.models.perplexity import AGENT_ENDPOINT, search_tool_definition
 from trade_graph.adapters.models.transport import HttpxProviderHttp
@@ -46,7 +47,7 @@ def _assemble(account, monkeypatch, files=None, transport=None):
         return transport if transport is not None else ScriptedPerplexity(account.database)
 
     route = installed.assemble_perplexity_route(account.database, account.clock, OWNER, deployment_id="deployment",
-                                                transport_factory=factory)
+                                                protected=protected_runtime(account), transport_factory=factory)
     return route, reads, built
 
 
@@ -241,7 +242,8 @@ def _runtime(account):
     from types import SimpleNamespace
 
     return SimpleNamespace(database=account.database, clock=account.clock, execution=account.execution,
-                           ledger=account.ledger, portfolio_id=account.portfolio, deployment_id="deployment")
+                           ledger=account.ledger, portfolio_id=account.portfolio, deployment_id="deployment",
+                           protected_deployment=SimpleNamespace(protected=protected_runtime(account)))
 
 
 def test_with_the_switch_off_or_the_engine_off_nothing_changes_and_nothing_is_read(tmp_path, monkeypatch):

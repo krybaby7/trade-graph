@@ -4,7 +4,9 @@
 event engine on. With the owner's switch on, the day start's Research focus step and the Leader's news round run on
 Perplexity in the protected process through the reviewed route, with receipts and stored sources; the Trader stays on
 its subscription. With the switch off the same day runs exactly as before: both departments answer on the
-subscription and nothing Perplexity-related is read, seeded or sent.
+subscription and nothing Perplexity-related is read, seeded or sent. Each Perplexity reservation is bound to its
+protected budget origin and audited before each round (W10-A, D265): a forged origin stops the next round with the
+reason and nothing more is sent.
 
 Everything is synthetic: the account, a recorded live scan, the owner's folder (``tests/perplexity_service_support``),
 price cards re-dated for the test clock and labelled synthetic, Perplexity answers in the documented shapes played by
@@ -30,12 +32,15 @@ from tests.leadership_support import reply as leader_reply
 from tests.perplexity_service_support import CARDS, KEY, owner_files, trust_owner_files
 
 from trade_graph.adapters.models.perplexity import AGENT_ENDPOINT
+from trade_graph.adapters.persistence.budget_origin_schema import STATEMENTS as ORIGIN_SCHEMA
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.adapters.research.perplexity_search import SEARCH_ENDPOINT
 from trade_graph.application import perplexity_installation as installed
 from trade_graph.application import subscription_operation as operation
 from trade_graph.application.perplexity_switch import record_perplexity_departments
 from trade_graph.application.service_market_data import open_service_market_data
+from trade_graph.kernel.protected_budget import ProtectedBudgetOrigins
+from trade_graph.kernel.runtime_manifest import canonical_json
 from trade_graph.paper_runtime import PaperRuntimeConfig
 
 # The dated 2026 cards, re-dated for this account's clock (2026-01-01) under new synthetic ids; prices unchanged.
@@ -86,6 +91,7 @@ def day(tmp_path, monkeypatch):
                                 event_engine=True, decision_candle_wait_seconds=0)
     runtime.config, runtime.ledger, runtime.public_feed = config, runtime.execution.ledger, None
     runtime.prepare_runtime, runtime.runtime_ready = binding.prepare, binding.ready
+    runtime.protected_deployment = binding  # as assemble_paper_runtime does for an installed protected deployment
     runtime.market_data = open_service_market_data(tmp_path / "market" / "market_data.sqlite", database=flow.db,
                                                    clock=flow.clock, portfolio_ids=[flow.pid])
     runtime.price_collector = None
@@ -108,7 +114,7 @@ def day(tmp_path, monkeypatch):
 
     monkeypatch.setattr(installed, "pinned_transport", pinned)
     yield SimpleNamespace(flow=flow, runtime=runtime, cli=cli, owner=tmp_path / "owner", transport=transport,
-                          built=built, reads=reads)
+                          built=built, reads=reads, binding=binding)
 
 
 def _run(day, ticks=40) -> tuple[dict, Database]:
@@ -118,6 +124,14 @@ def _run(day, ticks=40) -> tuple[dict, Database]:
 
 def _rows(database, sql, *params):
     return [dict(row) for row in database.execute(sql, params).fetchall()]
+
+
+def _reopened_origins(day, database, scope: str | None) -> ProtectedBudgetOrigins:
+    """Protected origins of ``scope`` (the subscription deployment's own when None), checked again with the
+    installation's protected key on the reopened database file: the service closed its connection when it stopped."""
+    origins = ProtectedBudgetOrigins(day.binding.protected.financial, deployment_id=scope)
+    origins.database = database
+    return origins
 
 
 def test_with_the_switch_on_the_day_runs_research_and_a_leader_round_on_perplexity(day) -> None:
@@ -165,6 +179,27 @@ def test_with_the_switch_on_the_day_runs_research_and_a_leader_round_on_perplexi
         assert len(_rows(database, "SELECT * FROM web_search_sources")) == 1 + 5 + 1
         finals = [call for call in calls if call["url"] == AGENT_ENDPOINT]
         assert finals[-1]["stored_sources"] > 0  # results were stored before the model read them
+
+        # W10-A (D265): each reservation was bound to its authenticated protected origin before anything was sent, and
+        # each receipt sealed it with a full allocation to the portfolio; the route's records validate, and the
+        # subscription deployment's protected books are untouched by them and still verify.
+        reserved = {row["reservation_id"] for row in _rows(
+            database, "SELECT reservation_id FROM budget_reservations WHERE deployment_id = 'deployment:perplexity'")}
+        origins = _rows(database, "SELECT reservation_id, event_kind, portfolio_id FROM "
+                                  "protected_financial_budget_origins WHERE deployment_id = 'deployment:perplexity'")
+        assert len(reserved) == 11 and {(row["reservation_id"], row["event_kind"]) for row in origins} == {
+            (reservation, kind) for reservation in reserved for kind in ("ORIGIN", "RECEIPT")}
+        assert len(origins) == 22 and {row["portfolio_id"] for row in origins} == {day.flow.pid}
+        allocations = _rows(database, """SELECT a.portfolio_id, a.weight FROM cost_allocations a
+            JOIN usage_receipts r USING (receipt_id) JOIN budget_reservations b USING (reservation_id)
+            WHERE b.deployment_id = 'deployment:perplexity'""")
+        assert allocations == [{"portfolio_id": day.flow.pid, "weight": "1"}] * 11
+        route_origins = _reopened_origins(day, database, "deployment:perplexity")
+        for reservation in sorted(reserved):
+            route_origins.validate(reservation)
+        _reopened_origins(day, database, None).verify_all()
+        assert _rows(database, "SELECT * FROM activity_events WHERE kind = 'perplexity_route' AND "
+                               "json_extract(payload_json, '$.status') = 'refused'") == []
 
         # The Trader stayed on its subscription and was woken; Research and the Leader sent nothing to it.
         assert "trader" in [request.role for request in day.cli.requests]
@@ -222,6 +257,60 @@ def test_switched_on_without_the_owner_key_the_wakes_fail_visibly_and_nothing_is
         assert all("not ready: no Perplexity key" in json.loads(row["output_json"])["reason"] for row in wakes)
         assert all("wake" not in request.context for request in day.cli.requests
                    if request.role in {"research", "leader"})
+    finally:
+        database.close()
+
+
+def test_a_forged_origin_stops_the_next_round_with_the_reason_and_nothing_more_is_sent(day) -> None:
+    """While Research's focus round waits for its final answer, an earlier reservation's protected origin is rewritten
+    (its old authentication kept) by someone who can write the database file and drops the origins' immutability
+    triggers first. The rest of that round settles its own reservations; the next round's audit finds the forged
+    origin, so that wake fails with the reason, the refusal is in the activity log, and nothing more is sent. The Trader
+    is still woken; no record is erased."""
+    record_perplexity_departments(day.flow.db, day.flow.clock, research=True, leader=True, monthly_limit_usd=None,
+                                  revision_id="synthetic-owner-switch-forged")
+    script = _research_round()
+    answer, forged = script[2], {}
+
+    def forge_then_answer(body: dict) -> dict:
+        with day.flow.db.immediate() as connection:
+            row = connection.execute("""SELECT reservation_id, origin_json FROM protected_financial_budget_origins
+                WHERE deployment_id = 'deployment:perplexity' AND event_kind = 'ORIGIN'
+                ORDER BY rowid LIMIT 1""").fetchone()
+            document = json.loads(row["origin_json"])
+            document["reservation"]["amount"] = "0"  # a forged origin would let a smaller hold refill the owner's limit
+            connection.execute("DROP TRIGGER protected_financial_budget_origins_no_update")
+            connection.execute("UPDATE protected_financial_budget_origins SET origin_json = ? WHERE reservation_id = ? "
+                               "AND event_kind = 'ORIGIN'", (canonical_json(document), row["reservation_id"]))
+            connection.execute(next(statement for statement in ORIGIN_SCHEMA if "_no_update" in statement))
+        forged.update(reservation=row["reservation_id"], calls=len(day.transport.calls))
+        return answer(body)
+
+    script[2] = forge_then_answer
+    day.transport.scripts["research"] = script
+    result, database = _run(day)
+    try:
+        assert forged, "the forged answer was never requested"
+        # Nothing was sent after the forgery: the focus round's own final answer was the last request.
+        assert len(day.transport.calls) == forged["calls"]
+        steps = {row["step"]: row["status"] for row in _rows(database, "SELECT step, status FROM day_cycle_steps")}
+        assert steps["focus"] == "done" and steps["day_plan"] == "done", steps  # the Trader was still woken
+        refused = [json.loads(row["payload_json"]) for row in _rows(
+            database, "SELECT payload_json FROM activity_events WHERE kind = 'perplexity_route' ORDER BY rowid")
+            if json.loads(row["payload_json"])["status"] == "refused"]
+        assert refused and all("protected budget origins were refused" in item["reason"] for item in refused)
+        failed = _rows(database, "SELECT role, output_json FROM tasks WHERE role IN ('leader', 'research') AND "
+                                 "objective LIKE 'wake:%' AND status = 'FAILED'")
+        assert failed and all("protected budget origins were refused" in json.loads(row["output_json"])["reason"]
+                              for row in failed)
+        assert {item["department"] for item in refused} == {row["role"] for row in failed}
+        # The forged record and every receipt are kept as they are; nothing was settled as free.
+        [kept] = _rows(database, "SELECT origin_json FROM protected_financial_budget_origins WHERE reservation_id = ? "
+                                 "AND event_kind = 'ORIGIN'", forged["reservation"])
+        assert json.loads(kept["origin_json"])["reservation"]["amount"] == "0"
+        receipts = _rows(database, """SELECT r.status FROM usage_receipts r JOIN budget_reservations b
+            USING (reservation_id) WHERE b.deployment_id = 'deployment:perplexity'""")
+        assert len(receipts) == len(day.transport.calls) and {row["status"] for row in receipts} == {"committed"}
     finally:
         database.close()
 

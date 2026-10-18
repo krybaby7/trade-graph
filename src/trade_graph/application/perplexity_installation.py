@@ -21,7 +21,10 @@ The paid route has four protected parts, all from the owner's root-owned folder 
    Perplexity spend rule (D125 testing mode, or D138 item 4's monthly limit) is the money rule; the deployment's EUR
    allowance, which a subscription installation does not use, is not consulted. Each wake task keeps the owner's paid
    root allocation (W6-A). Reservations carry their own route deployment id, so they stay apart from the protected
-   subscription deployment's books.
+   subscription deployment's books, and each one is bound to an authenticated protected budget origin in its own
+   transaction (W10-A, D265, like the news route's Jev checks): dispatch, settlement, commit and allocation validate
+   it, a receipt seals it with a full allocation to the portfolio, and the route's history is audited, bounded,
+   before each round. A missing or forged origin refuses the round with the reason; its hold stays unresolved.
 
 If anything is missing, a switched-on department's engine wake fails visibly with the reason and nothing is sent; the
 Trader, protection and records continue.
@@ -31,10 +34,12 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
 
@@ -50,11 +55,13 @@ from trade_graph.application.perplexity_switch import perplexity_enabled_for, pe
 from trade_graph.application.web_research import PerplexityRoute
 from trade_graph.contracts.models import ModelRequest, ModelResult, PriceCard
 from trade_graph.contracts.perplexity_switch import PERPLEXITY_DEPARTMENTS
-from trade_graph.domain.errors import AuthorityDenied, PaidCallsDisabled, TradeGraphError
+from trade_graph.domain.errors import AuthorityDenied, PaidCallsDisabled, StaleState, TradeGraphError
+from trade_graph.kernel.protected_budget import ProtectedBudgetOrigins, ProtectedRouteBudget
 
 KEY_FILE: Final = "perplexity.key"
 PRICE_CARD_FILE: Final = "perplexity-price-cards.json"
 ROUTE: Final = "paid_research"
+ROUTE_KIND: Final = "perplexity_route"
 ENDPOINTS: Final = (AGENT_ENDPOINT, SEARCH_ENDPOINT)
 STALE_AFTER_DAYS: Final = 30
 TRANSPORT_TIMEOUT_SECONDS: Final = 120
@@ -146,34 +153,53 @@ def pinned_transport(profile) -> HttpxProviderHttp:
 
 # --- the route's money and requests ---------------------------------------------------------------------------------
 
-class PerplexityRouteBudget(BudgetGateway):
+class PerplexityRouteBudget(ProtectedRouteBudget):
     """Reservations of the installed route. Each one is admitted only for a leased engine task of a department the
-    owner switched on, on the route's fresh cards and deployment, never as a synthetic (unbilled) call."""
+    owner switched on, on the route's fresh cards and deployment, never as a synthetic (unbilled) call, while the
+    protected controller runs; and each one is bound to its authenticated protected budget origin in the same
+    transaction (W10-A, D265; ``kernel.protected_budget.ProtectedRouteBudget``, shared with the news route)."""
 
-    def __init__(self, database, clock, *, deployment_id: str) -> None:
-        super().__init__(database, clock)
-        self.deployment_id = deployment_id
+    label = "Perplexity route"
+    waiting = "Perplexity rounds"
+
+    def __init__(self, database, clock, *, deployment_id: str, origins: ProtectedBudgetOrigins, controller) -> None:
+        super().__init__(database, clock, deployment_id=deployment_id, origins=origins, controller=controller)
         self.card_ids: frozenset[str] = frozenset()
 
     @atomic
     def reserve(self, **kwargs: Any) -> str:
-        self.admit(**kwargs)
-        return super().reserve(**kwargs)
+        portfolio_id = self.admit(**kwargs)
+        reservation_id = super().reserve(**kwargs)
+        # The original authority is retained in the same transaction as the reservation and its journal rows.
+        self._bind_origin(reservation_id, portfolio_id)
+        return reservation_id
 
     def admit(self, *, deployment_id: str, role: str, task_id: str | None, price_card_id: str, synthetic: bool,
-              **_: Any) -> None:
+              **_: Any) -> str:
+        """Refuse before anything is reserved or sent; returns the leased task's portfolio."""
         if deployment_id != self.deployment_id or price_card_id not in self.card_ids:
             raise PaidCallsDisabled("only the installed Perplexity route's deployment and price cards may reserve")
         if synthetic:
             raise PaidCallsDisabled("the installed Perplexity route never records a call as synthetic")
         if role not in PERPLEXITY_DEPARTMENTS or not perplexity_enabled_for(self.database, role):
             raise PaidCallsDisabled(f"{role} is not switched to Perplexity by the owner")
-        task = self.database.execute("SELECT role, status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+        task = self.database.execute("SELECT role, status, portfolio_id FROM tasks WHERE task_id = ?",
+                                     (task_id,)).fetchone()
         if task is None or task["role"] != role or task["status"] not in _ACTIVE_TASKS:
             raise PaidCallsDisabled("a Perplexity call belongs to a leased task of its own department")
-        problem = card_problem(self.card(price_card_id), self.clock.now().date())
+        problem = card_problem(self.card(price_card_id), self.clock.now().date()) or self.controller_problem()
         if problem is not None:
             raise PaidCallsDisabled(problem)
+        return task["portfolio_id"]
+
+    @atomic
+    def commit(self, reservation_id, usage, **kwargs):
+        """The receipt seals the origin with a full allocation to the origin's portfolio, recorded here in the same
+        transaction: T36's rounds settle searches and agent steps without allocating them themselves."""
+        receipt = super().commit(reservation_id, usage, **kwargs)
+        origin = self.origins._load(reservation_id, "ORIGIN")
+        self.allocate(receipt, {origin["portfolio_id"]: Decimal("1")})
+        return receipt
 
     def _assert_room(self, conn, **_: Any) -> None:
         """The owner's Perplexity spend rule (D125 testing mode, D138 item 4's monthly limit, enforced per call by
@@ -225,6 +251,21 @@ class PerplexityInstallation:
                 return problem
         return None
 
+    def round_problem(self, now: datetime) -> str | None:
+        """Why the next round cannot run now: the reason from the start, a stale card, the protected controller, or
+        the route's bounded audit of its protected budget origins, run before each round (W10-A, D265)."""
+        problem = self.problem_now(now.date())
+        if problem is not None or self.gateway is None:
+            return problem or "the installed Perplexity route was not built"
+        budget = self.gateway.budget
+        problem = budget.controller_problem()
+        if problem is None:
+            try:
+                budget.audit_at(now)
+            except (StaleState, sqlite3.DatabaseError) as error:
+                problem = f"the Perplexity route's protected budget origins were refused ({error})"
+        return None if problem is None else problem[:500]
+
     def status(self, today: date) -> dict[str, Any]:
         problem = self.problem_now(today)
         return {"status": "ready" if problem is None else "not_ready", "reason": problem,
@@ -232,9 +273,12 @@ class PerplexityInstallation:
                 "price_card_ids": [card.price_card_id for card in self.cards]}
 
 
-def assemble_perplexity_route(database, clock, owner_directory: Path, *, deployment_id: str,
+def assemble_perplexity_route(database, clock, owner_directory: Path, *, deployment_id: str, protected=None,
                               transport_factory: Callable[[Any], Any] | None = None) -> PerplexityInstallation:
-    """Build the route from the owner's folder. Each missing prerequisite is a plain reason; no secret is in it."""
+    """Build the route from the owner's folder. Each missing prerequisite is a plain reason; no secret is in it.
+
+    ``protected`` is the protected runtime the installed service prepared at start (its financial service and
+    controller): the route's reservations are bound to its protected budget origins, so without it nothing is built."""
     from trade_graph.kernel import subscription_network
 
     try:
@@ -258,7 +302,15 @@ def assemble_perplexity_route(database, clock, owner_directory: Path, *, deploym
         return PerplexityInstallation(f"no Perplexity price cards: the owner folder has no {PRICE_CARD_FILE}")
     except (OSError, ValueError, ValidationError) as error:
         return PerplexityInstallation(f"the Perplexity price-card file is refused ({type(error).__name__})")
-    budget = PerplexityRouteBudget(database, clock, deployment_id=route_deployment(deployment_id))
+    if protected is None:
+        return PerplexityInstallation("the protected runtime is not prepared; Perplexity rounds need its protected "
+                                      "budget origins")
+    scope = route_deployment(deployment_id)
+    try:
+        budget = PerplexityRouteBudget(database, clock, deployment_id=scope, controller=protected.controller,
+                                       origins=ProtectedBudgetOrigins(protected.financial, deployment_id=scope))
+    except (ValueError, AttributeError) as error:
+        return PerplexityInstallation(f"the Perplexity route's protected budget origins are refused ({error})"[:500])
     try:
         with database.immediate():
             for card in cards:
@@ -267,6 +319,10 @@ def assemble_perplexity_route(database, clock, owner_directory: Path, *, deploym
     except (ValueError, TradeGraphError) as error:
         return PerplexityInstallation(f"the Perplexity price cards are refused: {error}"[:500])
     budget.card_ids = frozenset({agent.price_card_id, search.price_card_id})
+    try:
+        budget.audit_at(clock.now())
+    except (StaleState, sqlite3.DatabaseError) as error:
+        return PerplexityInstallation(f"the Perplexity route's protected budget origins were refused ({error})"[:500])
     transport = (transport_factory or pinned_transport)(profile)
     gateway = PerplexityRouteGateway(budget, transport=transport, key=key)
     route = PerplexityRoute(deployment_id=budget.deployment_id, agent_price_card_id=agent.price_card_id,
@@ -288,9 +344,9 @@ class SwitchedDepartment:
     manages_attempts = False
 
     def __init__(self, role: str, *, perplexity, subscription, installation: PerplexityInstallation,
-                 enabled: Callable[[], bool], clock) -> None:
+                 enabled: Callable[[], bool], clock, record: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.role, self.perplexity, self.subscription = role, perplexity, subscription
-        self.installation, self.enabled, self.clock = installation, enabled, clock
+        self.installation, self.enabled, self.clock, self.record = installation, enabled, clock, record
 
     def _paid(self, task: Mapping[str, Any]) -> bool:
         if not _is_wake(task):
@@ -302,6 +358,16 @@ class SwitchedDepartment:
 
     def _problem(self) -> str | None:
         return self.installation.problem_now(self.clock.now().date())
+
+    def _refused(self, task: Mapping[str, Any], problem: str) -> None:
+        """The activity log names a round refused at its start (the reason from the start is already there)."""
+        if self.record is None:
+            return
+        try:
+            self.record({"status": "refused", "reason": problem, "route": ROUTE, "department": self.role,
+                         "task_id": task.get("task_id")})
+        except Exception:  # noqa: BLE001 - recording the reason is best effort; the wake still fails with it
+            pass
 
     def recover(self, task: dict) -> dict | None:
         if _is_wake(task):
@@ -324,7 +390,11 @@ class SwitchedDepartment:
         snapshot = task.get("snapshot") or {}
         if snapshot.get("department_route") != "perplexity":
             return self.subscription(task)
-        problem = snapshot.get("perplexity_not_ready") or self._problem()
+        problem = snapshot.get("perplexity_not_ready")
+        if problem is None:
+            problem = self.installation.round_problem(self.clock.now())
+            if problem is not None:
+                self._refused(task, problem)
         if problem is not None:
             name = "Research" if self.role == "research" else "The Leader"
             return {"_status": "FAILED", "failure_scope": "turn",
@@ -351,9 +421,14 @@ def perplexity_departments(runtime, protected_owner: Path, handlers: Mapping[str
     switched = [role for role in PERPLEXITY_DEPARTMENTS if role in handlers and perplexity_enabled_for(database, role)]
     if not switched:
         return result
+    protected = getattr(getattr(runtime, "protected_deployment", None), "protected", None)
     installation = assemble_perplexity_route(database, runtime.clock, protected_owner,
-                                             deployment_id=runtime.deployment_id,
+                                             deployment_id=runtime.deployment_id, protected=protected,
                                              transport_factory=transport_factory)
+
+    def record(payload: dict[str, Any]) -> None:
+        runtime.ledger._activity(runtime.portfolio_id, ROUTE_KIND, payload)
+
     # Not ready: the handlers still recover rounds recorded earlier (an unfinished one becomes "interrupted"), but
     # their gateway has paid calls off and a wake fails with the reason before anything is built or sent.
     gateway = installation.gateway or ModelGateway(BudgetGateway(database, runtime.clock), paid_calls_enabled=False)
@@ -367,14 +442,13 @@ def perplexity_departments(runtime, protected_owner: Path, handlers: Mapping[str
                 enabled=lambda: perplexity_enabled_for(database, "leader"),
                 spend_policy=lambda: perplexity_setting(database).spend_policy, engine=engine)
         result[role] = SwitchedDepartment(role, perplexity=perplexity, subscription=handlers[role],
-                                          installation=installation, clock=runtime.clock,
+                                          installation=installation, clock=runtime.clock, record=record,
                                           enabled=lambda role=role: perplexity_enabled_for(database, role))
-    status = installation.status(runtime.clock.now().date())
-    runtime.ledger._activity(runtime.portfolio_id, "perplexity_route", {**status, "departments": switched})
+    record({**installation.status(runtime.clock.now().date()), "departments": switched})
     return result
 
 
-__all__ = ["ENDPOINTS", "KEY_FILE", "PRICE_CARD_FILE", "ROUTE", "STALE_AFTER_DAYS", "PerplexityInstallation",
-           "PerplexityRouteBudget", "PerplexityRouteGateway", "SwitchedDepartment", "assemble_perplexity_route",
-           "card_problem", "perplexity_departments", "pinned_transport", "read_owner_key", "read_owner_price_cards",
-           "route_deployment", "select_cards"]
+__all__ = ["ENDPOINTS", "KEY_FILE", "PRICE_CARD_FILE", "ROUTE", "ROUTE_KIND", "STALE_AFTER_DAYS",
+           "PerplexityInstallation", "PerplexityRouteBudget", "PerplexityRouteGateway", "SwitchedDepartment",
+           "assemble_perplexity_route", "card_problem", "perplexity_departments", "pinned_transport", "read_owner_key",
+           "read_owner_price_cards", "route_deployment", "select_cards"]
