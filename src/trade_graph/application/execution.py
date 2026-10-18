@@ -1502,15 +1502,12 @@ class Execution:
         return entries
 
     def _native_mark(self, portfolio_id: str, asset: str, native: str) -> Decimal | None:
-        """The newest valuation mark of ``asset``, in ``native``; None when there is none yet."""
-        row = self.database.execute(
-            """SELECT mark, quote_currency FROM valuation_marks WHERE portfolio_id = ? AND asset = ?
-            AND observed_at <= ? ORDER BY observed_at DESC, rowid DESC LIMIT 1""",
-            (portfolio_id, asset, self.now()),
-        ).fetchone()
-        if row is None:
+        """The newest valuation mark of ``asset``, in ``native``; None when there is none yet. It is the ledger's own
+        newest mark (W10-B, D271), so a coin's cap and the account's value use the same price."""
+        mark = self.ledger.newest_mark(portfolio_id, asset, self.now())
+        if mark is None:
             return None
-        return self.ledger.native_value(Decimal(row["mark"]), row["quote_currency"], native)
+        return self.ledger.native_value(mark.price, mark.quote, native)
 
     def _held_values(self, portfolio_id: str, books, native: str) -> dict[str, Decimal]:
         """Each held coin at its mark, in ``native`` (the native valuation has already refused a missing mark)."""
