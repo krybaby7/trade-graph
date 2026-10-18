@@ -35,6 +35,17 @@ from trade_graph.kernel.books import (
     withdraw,
 )
 
+# The mark the books use for one coin at one time (D269, D271): the newest observed then, the first recorded of equal
+# times. One row through ``valuation_marks_newest`` (migration 0044), however long the price history.
+NEWEST_MARK_SQL = """SELECT asset, quote_currency, mark, observed_at, stale, source FROM valuation_marks
+    WHERE portfolio_id = ? AND asset = ? AND observed_at <= ?
+    ORDER BY observed_at DESC, rowid ASC LIMIT 1"""
+# The rate ``kernel.books._convert`` chooses for one pair at one time (D270): the newest reference date known then,
+# then the newest retrieval, and of exact ties the last recorded, as ``_convert`` picks from ``_rates``' order.
+NEWEST_RATE_SQL = """SELECT rate_id, base, quote, rate, observed_at, valid_as_of, retrieved_at, stale, source
+    FROM fx_rates WHERE base = ? AND quote = ? AND observed_at <= ? AND valid_as_of <= ? AND retrieved_at <= ?
+    ORDER BY MAX(observed_at, valid_as_of) DESC, retrieved_at DESC, observed_at DESC, rowid DESC LIMIT 1"""
+
 
 def _json(payload: dict) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -80,6 +91,25 @@ def _source_manifest(rows) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def _fx_rate(row) -> FxRate:
+    return FxRate(
+        row["base"],
+        row["quote"],
+        Decimal(row["rate"]),
+        max(row["observed_at"], row["valid_as_of"]),
+        bool(row["stale"]),
+        row["source"],
+        row["rate_id"],
+        row["retrieved_at"],
+    )
+
+
+def _valued_currencies(books: Books, marks: list[Mark]) -> set[str]:
+    """Every currency a valuation of ``books`` at ``marks`` may convert: cash, prices, costs and flows (D270)."""
+    return (set(books.cash) | {mark.quote for mark in marks} | {lot.cost_currency for lot in books.lots}
+            | {flow.asset for flow in books.flows})
 
 
 def _native_totals(books: Books) -> dict[tuple[str, str], Decimal]:
@@ -384,39 +414,44 @@ class Ledger:
         at = at or self.now()
         books = self._books(portfolio_id, at)
         reporting = self._reporting(portfolio_id)
+        marks = self._marks(portfolio_id, at, books)
         return mark_equity(
             books,
             reporting=reporting,
-            marks=self._marks(portfolio_id, at),
-            rates=self._rates(at),
+            marks=marks,
+            rates=self._newest_rates(at, _valued_currencies(books, marks), reporting),
             at=at,
         )
 
     def reporting_value(self, portfolio_id: str, amount: Decimal, currency: str) -> Decimal:
         at = self.now()
-        value, stale = _convert(amount, currency, self._reporting(portfolio_id), self._rates(at), at)
+        reporting = self._reporting(portfolio_id)
+        value, stale = _convert(amount, currency, reporting, self._newest_rates(at, {currency}, reporting), at)
         if value is None or stale:
             raise StaleState(f"missing or stale reporting FX for {currency}")
         return value
 
     def native_equity(self, portfolio_id: str, currency: str, at: str | None = None) -> NativeEquityView:
         at = at or self.now()
+        books = self._books(portfolio_id, at)
+        marks = self._marks(portfolio_id, at, books)
         return native_equity(
-            self._books(portfolio_id, at),
+            books,
             currency=currency,
-            marks=self._marks(portfolio_id, at),
-            rates=self._rates(at),
+            marks=marks,
+            rates=self._newest_rates(at, _valued_currencies(books, marks), currency, inverse=True),
             at=at,
         )
 
     def fx_rate(self, base: str, quote: str, at: str) -> tuple[Decimal | None, bool]:
         """The rate the books would use to show ``base`` in ``quote`` at ``at``: ``(rate, stale)``, ``(None, True)``
         when no rate was available then. Read only (the paper scorecard's EUR reporting, T42)."""
-        return _convert(Decimal("1"), base, quote, self._rates(at), at)
+        return _convert(Decimal("1"), base, quote, self._newest_rates(at, {base}, quote), at)
 
     def native_value(self, amount: Decimal, currency: str, native: str) -> Decimal:
         at = self.now()
-        value, stale = convert_native(amount, currency, native, self._rates(at), at)
+        rates = self._newest_rates(at, {currency}, native, inverse=True)
+        value, stale = convert_native(amount, currency, native, rates, at)
         if value is None or stale:
             raise StaleState(f"missing or stale {currency} to {native} FX for native exposure")
         return value
@@ -425,29 +460,46 @@ class Ledger:
         reporting = self._reporting(portfolio_id)
         start_books = self._books(portfolio_id, start)
         end_books = self._books(portfolio_id, end)
+        # Flows inside the period are valued at their own times, so performance keeps every rate up to the end.
+        end_marks, end_rates = self._marks(portfolio_id, end, end_books), self._rates(end)
         start_view = mark_equity(
             start_books,
             reporting=reporting,
-            marks=self._marks(portfolio_id, start),
+            marks=self._marks(portfolio_id, start, start_books),
             rates=self._rates(start),
             at=start,
         )
         end_view = mark_equity(
             end_books,
             reporting=reporting,
-            marks=self._marks(portfolio_id, end),
-            rates=self._rates(end),
+            marks=end_marks,
+            rates=end_rates,
             at=end,
         )
         return performance(
             end_books,
             reporting=reporting,
-            marks=self._marks(portfolio_id, end),
-            rates=self._rates(end),
+            marks=end_marks,
+            rates=end_rates,
             start=start,
             end=end,
             start_view=start_view,
             end_view=end_view,
+        )
+
+    def newest_mark(self, portfolio_id: str, asset: str, at: str) -> Mark | None:
+        """The mark the books use for ``asset`` at ``at``: the newest observed then, the first recorded of equal
+        times (D271); None when there is none yet. One row, through ``valuation_marks_newest``."""
+        row = self.database.execute(NEWEST_MARK_SQL, (portfolio_id, asset, at)).fetchone()
+        if row is None:
+            return None
+        return Mark(
+            row["asset"],
+            Decimal(row["mark"]),
+            row["quote_currency"],
+            row["observed_at"],
+            bool(row["stale"]),
+            row["source"],
         )
 
     def journal_balanced(self, portfolio_id: str) -> bool:
@@ -689,44 +741,36 @@ class Ledger:
             raise KeyError(portfolio_id)
         return row["reporting_currency"]
 
-    def _marks(self, portfolio_id: str, at: str) -> list[Mark]:
-        rows = self.database.execute(
-            """SELECT asset, quote_currency, mark, observed_at, stale, source FROM valuation_marks
-            WHERE portfolio_id = ? AND observed_at <= ?""",
-            (portfolio_id, at),
-        ).fetchall()
-        return [
-            Mark(
-                row["asset"],
-                Decimal(row["mark"]),
-                row["quote_currency"],
-                row["observed_at"],
-                bool(row["stale"]),
-                row["source"],
-            )
-            for row in rows
-        ]
+    def _marks(self, portfolio_id: str, at: str, books: Books) -> list[Mark]:
+        """The newest mark at ``at`` of each coin ``books`` hold, the only marks a valuation looks at (D269).
+
+        One indexed row per coin held, instead of every mark of the portfolio: the same mark the kernel's
+        ``_latest_mark`` picked from the whole list, so every valuation is unchanged."""
+        held = sorted({lot.asset for lot in books.lots if lot.open_quantity() != 0})
+        marks = [self.newest_mark(portfolio_id, asset, at) for asset in held]
+        return [mark for mark in marks if mark is not None]
 
     def _rates(self, at: str) -> list[FxRate]:
+        """Every rate known at ``at``, oldest first: for values at other times (flows, fills) read at once."""
         rows = self.database.execute(
             """SELECT rate_id, base, quote, rate, observed_at, valid_as_of, retrieved_at, stale, source
             FROM fx_rates WHERE observed_at <= ? AND valid_as_of <= ? AND retrieved_at <= ?
             ORDER BY observed_at, retrieved_at, rowid""",
             (at, at, at),
         ).fetchall()
-        return [
-            FxRate(
-                row["base"],
-                row["quote"],
-                Decimal(row["rate"]),
-                max(row["observed_at"], row["valid_as_of"]),
-                bool(row["stale"]),
-                row["source"],
-                row["rate_id"],
-                row["retrieved_at"],
-            )
-            for row in rows
-        ]
+        return [_fx_rate(row) for row in rows]
+
+    def _newest_rates(self, at: str, currencies, target: str, *, inverse: bool = False) -> list[FxRate]:
+        """The one rate ``_convert`` would choose at ``at`` from each other currency to ``target`` (and back when
+        ``inverse``, as ``convert_native`` also tries), instead of every rate ever recorded (D270). Nothing is read
+        when every currency already is ``target``."""
+        rates = []
+        for currency in sorted(set(currencies) - {target}):
+            for base, quote in ((currency, target), (target, currency)) if inverse else ((currency, target),):
+                row = self.database.execute(NEWEST_RATE_SQL, (base, quote, at, at, at)).fetchone()
+                if row is not None:
+                    rates.append(_fx_rate(row))
+        return rates
 
     def _activity(self, portfolio_id: str | None, kind: str, payload: dict, *, created_at: str | None = None) -> None:
         body = _json(payload)
