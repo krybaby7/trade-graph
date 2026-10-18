@@ -1,11 +1,13 @@
 # Cloud build plan for the day-trader engine
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
-all nine cloud waves are merged (wave 1 on 2026-10-16; waves 2 to 7 by the
+all ten cloud waves are merged (wave 1 on 2026-10-16; waves 2 to 7 by the
 night shift of 2026-10-16/17; waves 8 and 9 by the night shift of
-2026-10-17/18; D140–D259). Waves 8 and 9, added on 2026-10-17, closed the gaps
-between "built" and "installed" that the night shift found.
-The local steps L1–L4 remain. Every
+2026-10-17/18; wave 10 on 2026-10-18; D140–D278). Waves 8 and 9, added on
+2026-10-17, closed the gaps between "built" and "installed" that the night
+shift found; wave 10, the owner's tidy-up before the install (D263), locked
+the AI-spending records, kept the money checks fast and added HQ's card for a
+coin without a safety exit. The local steps L1–L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -18,15 +20,16 @@ from it and returns to it through pull requests.
 ### In one minute
 
 - The work is split into **25 cloud packages in 10 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. Waves 1 to 9
-  are done. Wave 10, a short tidy-up you chose on 2026-10-18 (D263), runs
-  while L1 and L2 run on your PC; the install (L3) waits for it.
+  steps** on your PC and a short list of things only you can do. All 10 waves
+  are done: wave 10, the short tidy-up you chose on 2026-10-18 (D263), was
+  merged the same day. L1 and L2 run on your PC; the install (L3) no longer
+  waits for any cloud package and starts with your yes.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
   session, the **integrator**. It checks and merges that wave's work, then
   updates the status board below.
-- Then you start the next wave. Repeat until wave 9.
+- Then you start the next wave. Repeat until wave 10.
 - After that, a session on your PC installs the new engine (with your
   approval) and starts the scored practice test.
 
@@ -107,12 +110,12 @@ The integrator updates this table each time it merges a wave.
 | W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-18 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
 | W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-18 (#20); you look at the Money tab on your phone and iPad after L3 |
 | W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Merged 2026-10-18 (#23); ships with Jev off: at L3 you add the news route to your network profile and proxy (step 3), and for Jev your `news-alarm.json` with `calls_enabled` and your `typesafe.key`; the Jev price is re-checked at L2, because today's price card goes stale on 2026-11-15; after L3 the shadow log fills and you decide on news wake-ups at step 17 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
-| W10-A | C7 | The files that record AI spending are locked, and Perplexity's spending gets the same protected checks as Jev's | Not started |
-| W10-B | C8 | Money checks, HQ and the scorecard stay fast as weeks of prices pile up | Not started |
-| W10-C | C9 | HQ shows a "Needs you" card when a bought coin is left without a safety exit | Not started |
+| W10-A | C7 | The files that record AI spending are locked, and Perplexity's spending gets the same protected checks as Jev's | Merged 2026-10-18 (#25); nothing new for you: the protected package fingerprint changes, which the normal re-pin at L3 steps 2 and 3 covers; Perplexity rounds (step 12) now also check the protected runtime the installed service prepares at start, and a missing or altered spending record refuses the next round with the reason in HQ's activity log |
+| W10-B | C8 | Money checks, HQ and the scorecard stay fast as weeks of prices pile up | Merged 2026-10-18 (#26); nothing new for you: it is part of the normal install at L3, with no new database step; the first real scorecard after L3 (`trade-graph scorecard --format text`) uses it |
+| W10-C | C9 | HQ shows a "Needs you" card when a bought coin is left without a safety exit | Merged 2026-10-18 (#24); after L3 you look at the HQ tab once on your phone and iPad (it was checked only in a test browser with made-up numbers); the card appears only if a bought coin has had no safety exit for 10 minutes |
 | L1 | — | Price data kept current on your PC | Started 2026-10-18 with your yes (D263): the April–June archive download began; the Windows tasks and the first collection pass are next |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
-| L3 | — | New engine installed on your PC (your approval) | Not started; waits for wave 10 (D263), then starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
+| L3 | — | New engine installed on your PC (your approval) | Not started; wave 10 is merged (2026-10-18, D263), so it starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
@@ -879,7 +882,7 @@ the Trader's position actions; the runtime evidence collector's 10,000-row
 bound filling with Jev records in about 50 days. Decided by the owner and
 waiting for a package: the live pilot (T19) applies D248's settlement of a
 lost acknowledgement to live orders through its own lifecycle (D260). D261
-(protected spending files) is packaged in W10-A.
+(protected spending files) was built by W10-A (merged 2026-10-18).
 
 ### Local steps — on the owner's PC
 
@@ -919,7 +922,8 @@ The commands, in order, with what each should show, are in
 [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). W8-A and W9-A are
 merged, so its step 12 (Research and the Leader on Perplexity) and its step 17
 (news wake-ups, once the shadow log shows real alarms) no longer wait for a
-cloud package.
+cloud package; wave 10 is merged too (2026-10-18), so L3 waits for no cloud
+package.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final

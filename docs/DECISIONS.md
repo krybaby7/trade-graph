@@ -2778,3 +2778,220 @@ owner accepted its three recommendations for how the local steps start.
   owner's yes at L3. None of this authorizes live trading, real orders or
   paid calls. Reason: the recommendations in the 2026-10-18 owner briefing;
   D261; `planning/handoffs/NIGHT-2026-10-17.md`, "Left for later".
+
+Cloud wave 10 (D264–D278, 2026-10-18). The wave 10 integration copied these
+implementation defaults from `planning/handoffs/W10-A.md` (D264–D266),
+`W10-B.md` (D269–D273) and `W10-C.md` (D274–D278), where each package's evidence
+is kept. W10-A used three of its five numbers: D267 and D268 are unused. No
+package needed a state migration: the reserved 0047, 0048 and 0049 stay unused,
+like 0043, 0045 and 0046, and Alembic still has one head, 0044. D230–D239 stay
+reserved for the local steps L1–L4; new owner decisions start at D280. Two
+integration notes. D271 goes slightly beyond the package's request (align
+`money_limits.py` with the ledger): it also makes `Execution._native_mark`, a
+coin's value in the per-coin cap, take the first of two marks with an identical
+timestamp, as the ledger does, where it took the last. The integration kept this
+change, because one tie rule across the system is the point of D271, and it can
+matter only for two marks of one coin stamped with the same microsecond. D264
+protects the whole `domain/` package as well as the two files D261 names,
+because `kernel/protected_budget.py` imports `domain.clock` and `domain.errors`;
+that is stricter than D261, not looser, and the integration accepted it.
+
+- **D264 (2026-10-18, implementation default for C7): protected paths for the
+  AI-spending records.** `application/budget.py` and `application/gateway.py`
+  (reservations, receipts, allocations, and the gateway that reserves before
+  every paid call and settles it after; D261) and the whole `domain/` package
+  are added to `PROTECTED_PATH_PREFIXES`. `domain/` is included because the
+  package's acceptance says `kernel/protected_budget.py` imports only protected
+  code afterwards, and it imports `domain.clock` and `domain.errors` (the two
+  spending files import `domain.money` and `domain.protocols`); the package is
+  five small primitives (the clock behind every timestamp, the typed refusals
+  protected code raises and catches, the Decimal helpers, precision, the
+  provider protocols; 293 lines) that 20 of the 31 kernel modules already
+  import. The R1 Engineer's write allowlist (`artifacts/`, `prompts/`,
+  `strategies/templates/`) never covered `src/`, so no Engineer workflow
+  changes; the list is defence in depth and the statement of what broader code
+  authority may never edit. The test checks direct imports; package initialisers
+  above them (docstrings, and the paper-mode constants in
+  `trade_graph/__init__.py`) are not counted, and the protected package hash
+  pins all source anyway. Not added (not named by D261; listed in W10-A's
+  handoff for a later decision): `contracts/models.py`,
+  `application/model_invocations.py`, `application/transport_evidence.py`.
+  Reason: D261, the package bullet, AGENTS.md (accounting and receipt collection
+  are not agent-editable).
+
+- **D265 (2026-10-18, implementation default for C7): the Perplexity route bound
+  to protected budget origins.** As D258 did for Jev: each reservation of the
+  installed route (`<deployment>:perplexity`) gets an authenticated protected
+  budget origin (the protected financial service's MAC, the admitted manifest
+  and controller instance, the leased task's paper portfolio and scope, the
+  exact reservation) in the same transaction as the reservation, before anything
+  is sent; if the origin cannot be recorded, the reservation is rolled back with
+  it. Dispatch and settlement validate it; `commit` validates, writes the
+  receipt, seals the commitment and records its 100% allocation to the origin's
+  portfolio in the same transaction (T36's rounds settle searches and agent
+  steps without allocating them); `allocate` validates both sides. Before each
+  round, and at start, the route checks fresh cards, a running protected
+  controller and a bounded audit (every reservation has its origin and every
+  origin its reservation, the open and today's reservations, 500 of this month's
+  in turn). A refusal fails the wake with the reason (D240's visible failure,
+  never a silent fallback to the subscription), records a `perplexity_route`
+  activity `refused`, and sends nothing; an origin that fails during a round
+  raises `StaleState`, which W6-A's and W6-B's rounds record as a failed round
+  with the reason. A hold whose origin fails stays `RESERVED` or `UNCERTAIN` at
+  its maximum (counted by the spend guard and HQ), never settled as free. The
+  records stay outside the subscription deployment's financial witness (D243,
+  D258), so trading and protection never wait for or fail on them. The route
+  needs the protected runtime the service prepares at start
+  (`runtime.protected_deployment.protected`); without it the route is not ready
+  and nothing is built. D125, D138 item 4 and D243 are unchanged: the owner's
+  Perplexity spend rule is the money rule, the monthly limit pauses only these
+  rounds, the EUR allowance is not consulted, each wake task's allocation still
+  bounds a round. Route reservations recorded before this change without an
+  origin are not adopted (none exist: the route has never been installed); the
+  audit refuses them and the route stays not ready with the reason (fail
+  closed). Reason: the package bullets, W9-A's note, W8-A's finding, AGENTS.md
+  (every paid call reserved and receipted; unknown usage unresolved, not free).
+
+- **D266 (2026-10-18, implementation default for C7): one protected route budget
+  in the kernel.** `kernel/protected_budget.ProtectedRouteBudget` holds what
+  both reviewed routes share; `NewsRouteBudget` and `PerplexityRouteBudget` keep
+  their admission and money rules. W9-A's audit moved without change (its
+  constants are now `ROUTE_AUDIT_SECONDS`, `ROUTE_AUDIT_ROWS`,
+  `ROUTE_AUDIT_SWEEP`). The news route behaves as before except that a dispatch
+  or settlement without an origin now says so ("a news route dispatch lacks its
+  protected budget origin") and a route budget refuses origins bound to another
+  database or clock (the news route reports it as "Jev checks are refused
+  (ValueError)"). Reason: no second copy of security code; the news route's
+  tests pass unchanged.
+
+- **D269 (2026-10-18, implementation default for C8): a valuation reads only the
+  newest mark of each coin held.** `Ledger.equity`, `native_equity` and
+  `performance` read one mark per coin the books hold at the moment
+  (`Ledger.newest_mark`, `LIMIT 1` through `valuation_marks_newest`), not every
+  mark of the portfolio. The kernel (`kernel/books.py`) is unchanged and chooses
+  the same mark it chose from the whole list, so every value is the same.
+  Callers that gain: the paper service's money-limit step on every tick, HQ's
+  today's loss, the per-order checks in `Execution.authorize`, the Trader
+  workflow's and the Secretary's equity, and the forward producer. On a database
+  without the index (the forward producer's in-memory copy of retained records)
+  each coin is one scan of that small copy. Reason: the night report's "Left for
+  later" and the C8 package; AGENTS.md (no change to money arithmetic).
+
+- **D270 (2026-10-18, implementation default for C8): a valuation reads only the
+  newest rate of each pair it may need.** For every currency a valuation may
+  convert (cash, prices, costs, flows), the ledger reads the one rate `_convert`
+  would have chosen from every rate (newest of `max(observed_at, valid_as_of)`,
+  then newest `retrieved_at`, and of exact ties the last recorded), and for
+  exposure checks the opposite pair too; a USD account valued in USD reads no
+  rate at all. `_rates` (every rate up to a time) stays for `performance`, whose
+  deposits and withdrawals are valued at their own times, and for the forward
+  producer's per-fill values. No index was added for `fx_rates`: the paper feed
+  records one reference rate an hour (about 24 rows a day, 673 in four weeks),
+  so the per-pair read stays small; it returns one row to Python instead of all
+  of them. Reason: the C8 package ("do the same for `_rates` if it reads every
+  FX rate").
+
+- **D271 (2026-10-18, implementation default for C8): one rule for "the newest
+  mark".** A coin's mark at a moment is the newest observed at or before it, and
+  of marks stamped with the very same time the first recorded (lowest `rowid`):
+  what the ledger always chose (its unordered read returned ties in `rowid`
+  order and `max` kept the first) and what the scorecard documented (D200).
+  `Ledger.newest_mark` holds it, and the money-limit step's freshness check
+  (`money_limits.py`) and a coin's value in the per-coin cap
+  (`Execution._native_mark`) now read it instead of their own `rowid DESC`
+  queries. For `money_limits.py` nothing changes (it reads only the time). For
+  `_native_mark` it changes which of two marks with the exact same timestamp
+  values a coin in the per-coin cap, so the cap and the account's value in the
+  same check use the same price (before, the cap used the last recorded and the
+  equity the first). Timestamps carry microseconds and each mark takes its own,
+  so this needs two marks of one coin in the same microsecond (a frozen test
+  clock). Reason: the C8 package ("align it with the ledger").
+
+- **D272 (2026-10-18, implementation default for C8): the scorecard reads the
+  prices its curve needs.** The equity curve has a point after every posting and
+  at every new price of a coin held (D200), so it now reads each coin's prices
+  from the posting that makes it held to the posting that empties it (or the end
+  of the period), the newest price when it becomes held, and each coin's newest
+  price at the start and the end. The points, the worst drawdown, the marks left
+  for the end valuation and the whole document (`scorecard_sha256` included) are
+  the same as when every price of every coin held in the period was read
+  (property test against the old `_curve`). Not done: (1) the check that refuses
+  a price recorded in another currency still asks the database about every price
+  of those coins in the period; it returns nothing but is about 0.34 of the 0.76
+  seconds at four weeks; making it bounded needs a second index on the largest
+  table (written on every price), not worth it for a read HQ makes at most once
+  a minute; (2) HQ's cache is not made incremental: the scorecard is a protected
+  scoring definition and carrying state between refreshes risks drifting from a
+  fresh computation. A coin held the whole period still has every price read,
+  because each is a point. Reason: the C8 package ("read only what it needs, or
+  update HQ's cache incrementally") and D204.
+
+- **D273 (2026-10-18, implementation default for C8): no migration, and reads
+  are measured by counts.** Every new read is served by migration 0044's
+  `valuation_marks_newest`; the reserved state migration 0048 is unused. Tests
+  assert on statements run, rows returned per table and SQLite virtual-machine
+  steps (`ReadMeter`), never on seconds, so they do not depend on machine load;
+  seconds are reported only as information. Reason: the C8 package and waves 8
+  and 9's experience with speed-dependent tests.
+
+- **D274 (2026-10-18, implementation default for C9): the "no safety exit"
+  card.** A new attention code `no_safety_exit` with severity `act` ("For you to
+  do"): a held coin without its safety exit breaks D117's promise that every
+  open position carries one, and software has not fixed it within the delay. One
+  card per coin (`no_safety_exit:<symbol>`), oldest first, at most three, then
+  one `no_safety_exit:more` card naming the rest (a page bound for the 80 KB
+  budget, not a limit on activity, D116). The title says which coin and how much
+  ("SOL/USD: 5 SOL has no safety exit", the exact quantity, "safety exit"
+  opening the glossary); `since` gives "since 25 min ago" and the explanation
+  gives the clock time; the consequence says nothing sells the coins by itself
+  if the price falls; "how" says what the system is doing: "Software tries again
+  at every step of the team's service" with the last recorded failure in plain
+  words (the raw reason only with "Show technical names"), or that nothing is
+  put on while the cancel-all setting is on (until it ends), that the
+  sell-everything setting is selling, that the account is stopped, or that
+  nothing happens while the team is off; then "HQ has no button for this; Owner
+  controls has the account-wide settings." Link: Trading records. No decision,
+  `can_fix_here` false; it is in the next review prompt like every act and watch
+  card. Reason: the C9 package, D115–D117, D188, D246, D251's "marked in the
+  panel only".
+
+- **D275 (2026-10-18, the plan's recommended default): 10 minutes.** A coin's
+  card shows once HQ's clock (the dashboard runtime's clock) is at least 10
+  minutes past the start of its bare stretch; a coin whose start can't be read
+  shows at once, because an unknown age is not "fine". Ordinary failures (no
+  quote for a moment, a sweep a few seconds later) never reach 10 minutes. Tests
+  drive the delay with the account's frozen clock (9 min 59 s: no card; 10 min:
+  card), never with real time.
+
+- **D276 (2026-10-18, implementation default for C9): since when.** The start of
+  the buy's current uncovered stretch, from the shared arithmetic on a timeline
+  of saved record times: the fill whose exit was never placed (in a refused
+  placement that is the moment of the first `protection_deferred` event), or the
+  moment an exit or close sell that covered it ended unsold (its order's last
+  update), for example the owner's cancel-all. Deferral events alone were not
+  enough: software records none under a pause that keeps no protection or while
+  the team is off, which would hide exactly those gaps. When the times can't be
+  read, the first `protection_deferred` event after the buy's newest fill stands
+  in, then the newest fill. A coin's start is its oldest bare buy's.
+
+- **D277 (2026-10-18, implementation default for C9): one arithmetic, read
+  only.** `kernel/day_plan_coverage.py` is used by `DayPlanProtection.coverage`,
+  the day plans panel, the card and the Trader's position view, so they never
+  disagree. The card caps a coin like the Trader's view (its buys' uncovered
+  parts, never more than is held and not already protected), so coins sold
+  another way (the sell-everything setting) get no card while the panel, which
+  shows each buy's arithmetic, may still mark that buy; an unreadable ledger
+  never hides a bare coin (no cap then). The records are read fresh on every
+  30-second poll (so the card clears on the next poll), the books only when
+  something is bare. Reading starts nothing: tested that the database is
+  unchanged and that placing, sending or cancelling would fail the test if
+  called.
+
+- **D278 (2026-10-18, implementation default for C9's small fix): a malformed
+  number in `news-alarm.json`.** `news-alarm-poll` and `news-alarm-report` catch
+  `ArithmeticError` (`decimal.InvalidOperation` from a decimal field's own
+  check, which Pydantic does not turn into a validation error) like the
+  in-service reader (`news_installation._installed_news_poll`) and stop with
+  exit code 2 and "news alarm settings refused (a malformed number); nothing was
+  read or sent". The message cannot name the field, because the error does not
+  carry it; `contracts/news.py` is unchanged.
