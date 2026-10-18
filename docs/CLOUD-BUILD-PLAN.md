@@ -117,7 +117,7 @@ The integrator updates this table each time it merges a wave.
 | Now | Switch on the price schedule on your PC, or tell the local Claude session it may | Windows blocked the agent. Without it, gaps appear in recent prices. |
 | Now | Check that Perplexity auto top-up is off | The prepaid credit is the outer limit while testing has no budget (D125). |
 | Optional | Get a Jev key at console.typesafe.ai only, then ask the local session to store it | The news alarm makes real checks only with a key. It is built and tested without one. |
-| Any time | Answer: should the older Leader keep its power to pause the account or narrow the allowed coins and strategies? Recommended: keep (both only reduce risk) | It stays as the fallback Leader beside the news rounds (W6-B). Nothing changes until you answer. |
+| Done 2026-10-18 | You answered the three open questions with the recommended answers: the older Leader keeps its power to pause the account or narrow the allowed coins and strategies (D262); the files that record AI spending become protected in a later package (D261); the fix for an order whose confirmation got lost will also apply to real-money orders, only through the live pilot (D260) | Recorded in the decision log; nothing changed in code. |
 | Each wave | Start the wave's sessions, then the integrator, or one night lead for several waves | Cloud sessions don't start themselves. |
 | Step L3 | Approve installing the new engine and the policy update with your D138 settings | Agents cannot change protected owner settings. |
 | About 2 weeks after L3 | Set the Perplexity monthly limit at about 1.5 × what HQ shows (D138) | Testing runs without a limit until then. |
@@ -764,7 +764,10 @@ re-hashing the standard library, which is protected engineering code); whole
 lots in practice-range replays (changes replay results); hourly scans widening
 the day's shortlist; Perplexity departments outside the AI allowance floor;
 how long hourly scans are kept (about 2 MB a day); money limits on the live
-path (live trading is out of scope).
+path (live trading is out of scope). Decided by the owner and waiting for a
+package: `application/budget.py` and `application/gateway.py` become protected
+paths (D261); the live pilot (T19) applies D248's settlement of a lost
+acknowledgement to live orders through its own lifecycle (D260).
 
 ### Local steps — on the owner's PC
 

@@ -2721,3 +2721,38 @@ check no longer depends on how fast the machine runs.
   `adapters/decisions/` (the key reader and the pinned transport). Reason: the
   package's third and fourth bullets, the wave 1 integration's open question,
   AGENTS.md (receipt collection is not agent-editable).
+
+Owner answers of 2026-10-18 (D260–D262). After the night shift for waves 8 and
+9, the owner answered the three open questions in the night report
+(`planning/handoffs/NIGHT-2026-10-17.md`), each with the recommended answer.
+None changes code now, and none authorizes live trading, real orders or paid
+calls.
+
+- **D260 (2026-10-18, owner decision; W8-B's question for the live pilot):**
+  D248's settlement of a lost acknowledgement will also apply to live orders,
+  but only through the live pilot's own lifecycle (T19): when the exchange
+  shows the order open or partially filled and the recorded fills equal its
+  filled quantity, the pilot may record it `OPEN` or `PARTIALLY_FILLED` with its
+  venue order id, nothing is resent, and the owner still reviews unknown live
+  effects. Until T19 builds and commissions this, live bindings keep today's
+  behaviour (an unknown live order stays `UNKNOWN` under owner review). Reason:
+  W8-B's recommendation; AGENTS.md (unknown order status is not rejection;
+  reconcile before replacement; live authorization is a separate gate).
+- **D261 (2026-10-18, owner decision; W8-A's finding):**
+  `application/budget.py` and `application/gateway.py` (reservations, receipts
+  and the gateway that records every paid AI call) become protected paths that
+  the deployed Engineer cannot edit, added to `PROTECTED_PATH_PREFIXES` in
+  `kernel/authority.py` by a later package, with a test, and re-pinned with the
+  kernel manifest at L3 like every protected path. Until then they are not
+  protected. Reason: AGENTS.md (accounting and receipt collection are not
+  agent-editable); W8-A's handoff.
+- **D262 (2026-10-18, owner decision; W6-B's question):** the older Leader
+  handler, kept as the fallback for Leader tasks that are not engine wakes and
+  for switched-off wakes, keeps its R1 portfolio actions: `pause` (for example
+  NO_NEW_EXPOSURE) and `mandate` (a narrower mandate within the owner's
+  envelope). Both only reduce risk. Neither approves an individual trade: a
+  narrower mandate works at the portfolio level (a coin left out gets no new
+  entries), not as a per-trade committee, so D116 holds. T38's news rounds
+  still have neither action.
+  Nothing changes in code. Reason: the recommended answer in the build plan's
+  "Only you can do these" and in W6-B's handoff.

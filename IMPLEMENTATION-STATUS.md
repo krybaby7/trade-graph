@@ -1,3 +1,16 @@
+# Owner answers three open questions (D260–D262), no code change — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`. Decision log only: no code changed, nothing deployed, no paid, network or exchange call, no order. After the night shift for waves 8 and 9 ([NIGHT-2026-10-17.md](planning/handoffs/NIGHT-2026-10-17.md)), the owner answered the three open owner questions, each with the recommended answer:
+- **[D260](docs/DECISIONS.md):** D248's settlement of a lost acknowledgement (paper today) will also apply to live orders, but only through the live pilot's own lifecycle (T19), with nothing resent and the owner still reviewing unknown live effects. Live bindings are unchanged until T19 builds and commissions it; this authorizes no live trading.
+- **[D261](docs/DECISIONS.md):** `application/budget.py` and `application/gateway.py` become protected paths the deployed Engineer cannot edit, in a later package (added to `PROTECTED_PATH_PREFIXES` with a test, re-pinned at L3). Not yet in code.
+- **[D262](docs/DECISIONS.md):** the older fallback Leader keeps its R1 actions, `pause` and `mandate` (both only reduce risk; neither approves an individual trade, so D116 holds). Nothing changes.
+
+The build plan's "Only you can do these" row for the Leader question is marked done, and "Later, not packaged" lists D260 and D261 as decided work waiting for a package. Evidence: `python3 scripts/check_plan.py`, `python3 scripts/test_planning.py` and `python3 scripts/check_repository_hygiene.py` pass.
+
+Next: unchanged. Local steps L1–L4; L3 needs the owner's yes at each step of [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md).
+
+---
+
 # Cloud wave 9 merged (C6), not deployed — 2026-10-18
 
 Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. With this wave all nine cloud waves are merged. The merged result was pushed as the candidate branch `claude/night-candidate-wave9`; GitHub's `test` job, the full suite, passed on it (`3a6b298`), and the integration branch was pushed with one docs-only commit on top that records the result. Merged with `git merge --no-ff` on the integration head `e68e798`: W9-A C6 `95628ae` ([#23](https://github.com/krybaby7/trade-graph/pull/23), package head `6ce3ec4`, code `6d3ab17`); two integration commits before the shared files: `16950be` (the acceptance day's test made independent of which thread finishes first) and `cdb46e8` (the synthetic image probe made independent of how fast the machine runs, a wave 8 leftover found by this integration's related run; both below). Decisions [D255–D259](docs/DECISIONS.md) are copied from `planning/handoffs/W9-A.md`. **Nothing was deployed or installed.** No paid, model-provider, Jev/TypeSafe, Perplexity, news-feed, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on the synthetic USD10,000 paper account with the real protected subscription binding (synthetic CLI), the owner's folder served from a dictionary of synthetic files, scripted feeds labelled `synthetic_fixture` and a scripted Jev (`ScriptedJevHttp`) with a made-up key.
