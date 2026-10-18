@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hmac
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from time import monotonic
+from typing import Any
 
 from trade_graph.adapters.persistence.db import atomic
 from trade_graph.application.budget import BudgetGateway
@@ -15,6 +17,9 @@ from trade_graph.kernel.financial_checkpoint import _unique
 from trade_graph.kernel.runtime_manifest import canonical_json, document_sha256
 
 MUTABLE_RESERVATION_FIELDS = {"state", "amount", "updated_at"}
+ROUTE_AUDIT_SECONDS = 5  # bounded like the financial witness's complete verification
+ROUTE_AUDIT_ROWS = 500_000
+ROUTE_AUDIT_SWEEP = 500  # this month's reservations checked per audit, in turn (about 0.5 ms each)
 
 
 class ProtectedBudgetOrigins:
@@ -284,3 +289,120 @@ class ProtectedBudgetGateway(BudgetGateway):
         self.origins.validate(reservation[0], require_allocations=False)
         super().allocate(receipt_id, weights)
         self.origins.validate(reservation[0])
+
+
+def utc_day_start(now: datetime) -> str:
+    return utc_iso(now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0))
+
+
+def utc_month_start(now: datetime) -> str:
+    return utc_iso(now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+
+
+class ProtectedRouteBudget(BudgetGateway):
+    """Reservations of one separately reviewed paid route, each bound to an authenticated protected budget origin.
+
+    A route keeps its reservations under its own deployment id (W8-A, D243: ``<deployment>:perplexity``; W9-A, D258:
+    ``<deployment>:news_alarm``), outside the protected deployment's financial witness, so trading and protection
+    never wait for, or fail on, its records. Each reservation gets its origin in the same transaction as the
+    reservation (``_bind_origin``, called by the route's ``reserve`` after its own admission), before anything is sent;
+    dispatch, settlement, commit and allocation validate it; a receipt seals its commitment with a 100% allocation to
+    the origin's portfolio; and ``audit`` checks the route's history, bounded, so verification never grows with the
+    history (W10-A, D265). A reservation whose origin fails validation is refused or stays unresolved at its full hold,
+    never settled as free. Routes supply their admission and money rule.
+    """
+
+    label = "route"
+    waiting = "paid calls"
+
+    def __init__(self, database, clock, *, deployment_id: str, origins: ProtectedBudgetOrigins, controller) -> None:
+        super().__init__(database, clock)
+        if origins.deployment_id != deployment_id:
+            raise ValueError(f"the {self.label}'s origins must be scoped to its own deployment")
+        if origins.database is not database or origins.financial.clock is not clock:
+            raise ValueError(f"the {self.label}'s budget requires its exact protected financial binding")
+        self.deployment_id, self.origins, self.controller = deployment_id, origins, controller
+        self._sweep_after = 0
+
+    def controller_problem(self) -> str | None:
+        try:
+            status = self.controller.status()
+        except Exception as error:  # noqa: BLE001 - an unreadable controller never admits a paid call
+            return f"the protected controller cannot be read ({type(error).__name__})"
+        if status.get("status") != "RUNNING":
+            return f"the protected controller is not running (management only); {self.waiting} wait until it runs"
+        return None
+
+    def _bind_origin(self, reservation_id: str, portfolio_id: str) -> None:
+        """Retain the reservation's original authority in its own transaction (the caller's ``reserve`` is atomic)."""
+        self.origins.record_origin(reservation_id, instance_id=self.controller.instance_id, portfolio_id=portfolio_id)
+
+    def _origin(self, reservation_id: str, step: str) -> dict[str, Any]:
+        origin = self.origins._load(reservation_id, "ORIGIN")
+        if origin is None:
+            raise StaleState(f"a {self.label} {step} lacks its protected budget origin")
+        self.origins.validate(reservation_id)
+        return origin
+
+    def protect_dispatch(self, reservation_id: str) -> None:
+        self._origin(reservation_id, "dispatch")
+
+    def protect_settlement(self, reservation_id: str) -> None:
+        self._origin(reservation_id, "settlement")
+
+    @atomic
+    def commit(self, reservation_id, usage, **kwargs):
+        self.origins.validate(reservation_id)
+        receipt = super().commit(reservation_id, usage, **kwargs)
+        self.origins.record_receipt(reservation_id)
+        self.origins.validate(reservation_id, require_allocations=False)
+        return receipt
+
+    @atomic
+    def allocate(self, receipt_id, weights) -> None:
+        row = self.database.execute("SELECT reservation_id FROM usage_receipts WHERE receipt_id = ?",
+                                    (receipt_id,)).fetchone()
+        if row is None:
+            raise StaleState(f"a {self.label} allocation lacks its receipt")
+        self.origins.validate(row["reservation_id"], require_allocations=False)
+        super().allocate(receipt_id, weights)
+        self.origins.validate(row["reservation_id"])
+
+    def audit_at(self, now: datetime) -> None:
+        """The audit of one round or poll: today's reservations and, in turn, this month's (the limits' periods)."""
+        self.audit(since=utc_day_start(now), sweep_since=utc_month_start(now))
+
+    def audit(self, *, since: str | None = None, sweep_since: str | None = None) -> None:
+        """Check the route's history, bounded, without re-verifying all of it each time.
+
+        Every route reservation has its origin and every origin its reservation (two indexed queries); the open
+        reservations and those created ``since`` (today's, which a daily limit sums) validate; and the next
+        ``ROUTE_AUDIT_SWEEP`` reservations created ``sweep_since`` (this month's, which a monthly limit sums)
+        validate in turn, so a changed amount anywhere in the month is found within a few audits. Bounded like the
+        witness."""
+        database = self.database
+        if database.execute("""SELECT 1 FROM budget_reservations r WHERE r.deployment_id = ? AND NOT EXISTS (
+                SELECT 1 FROM protected_financial_budget_origins o WHERE o.reservation_id = r.reservation_id
+                AND o.event_kind = 'ORIGIN') LIMIT 1""", (self.deployment_id,)).fetchone():
+            raise StaleState(f"a {self.label} reservation has no protected origin")
+        if database.execute("""SELECT 1 FROM protected_financial_budget_origins o LEFT JOIN budget_reservations r
+                ON r.reservation_id = o.reservation_id WHERE o.deployment_id = ? AND (r.reservation_id IS NULL
+                OR r.deployment_id != o.deployment_id) LIMIT 1""", (self.deployment_id,)).fetchone():
+            raise StaleState(f"a {self.label}'s protected budget authority disappeared")
+        clause, params = "state IN ('RESERVED', 'UNCERTAIN')", [self.deployment_id]
+        if since is not None:
+            clause, params = clause + " OR created_at >= ?", [self.deployment_id, since]
+        rows = database.execute(f"SELECT rowid, reservation_id FROM budget_reservations WHERE deployment_id = ? "
+                                f"AND ({clause}) ORDER BY rowid", params).fetchall()
+        if sweep_since is not None:
+            swept = database.execute("""SELECT rowid, reservation_id FROM budget_reservations WHERE deployment_id = ?
+                AND created_at >= ? AND rowid > ? ORDER BY rowid LIMIT ?""",
+                                     (self.deployment_id, sweep_since, self._sweep_after, ROUTE_AUDIT_SWEEP)).fetchall()
+            self._sweep_after = swept[-1]["rowid"] if len(swept) == ROUTE_AUDIT_SWEEP else 0  # restart once through
+            rows = [*rows, *swept]
+        started, count = monotonic(), 0
+        for row in rows:
+            count += 1
+            if count > ROUTE_AUDIT_ROWS or monotonic() - started >= ROUTE_AUDIT_SECONDS:
+                raise StaleState(f"the {self.label}'s protected budget audit exceeds its bound")
+            self.origins.validate(row["reservation_id"])
