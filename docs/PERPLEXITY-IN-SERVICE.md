@@ -2,7 +2,9 @@
 
 Status: built 2026-10-17 by cloud package W8-A (C3, decisions D240–D244), tested only with a scripted Perplexity and a
 made-up key. It changes nothing until you switch Research or the Leader on at L3 step 12. No real Perplexity call has
-been made; the first one is the opt-in smoke at step L2 ([PERPLEXITY-RESEARCH.md](PERPLEXITY-RESEARCH.md)).
+been made; the first one is the opt-in smoke at step L2 ([PERPLEXITY-RESEARCH.md](PERPLEXITY-RESEARCH.md)). On
+2026-10-18 cloud package W10-A (C7, D264–D268) bound every reservation of the route to a protected budget origin, as
+the news route's Jev checks are, and made the files that record AI spending protected paths.
 
 ## In plain words
 
@@ -30,11 +32,16 @@ Your reviewed proxy also needs the route on its command line (`--route paid_rese
 1. At start, if a department is switched on and the event engine runs, the protected parent process reads the three
    files above and builds the route: the transport (Perplexity's two endpoints only, through the route's proxy port,
    no environment proxy), a paid-enabled gateway that carries only Research's and the Leader's rounds and only the
-   software `web_search` tool, and the newest effective price card for each endpoint. HQ's activity log records a
-   `perplexity_route` event: `ready`, or `not_ready` with the reason. No secret is in it.
-2. An engine wake of a switched department runs W6-A's `FocusResearch` or W6-B's `LeaderNewsRounds`: the round is
-   recorded first; every search runs in software and every result is stored before the model reads it; every agent
-   step and search reserves first and ends with a receipt, or stays unresolved at its reserved maximum.
+   software `web_search` tool, and the newest effective price card for each endpoint. The route needs the protected
+   runtime the service prepares at start (its financial service and running controller), and its earlier records must
+   pass the route's audit (below). HQ's activity log records a `perplexity_route` event: `ready`, or `not_ready` with
+   the reason. No secret is in it.
+2. An engine wake of a switched department first passes the round check: the price cards are fresh, the protected
+   controller runs, and the route's bounded audit of its protected budget origins passes. If not, the wake fails with
+   the reason, a `perplexity_route` event `refused` names it, and nothing is sent. Then it runs W6-A's
+   `FocusResearch` or W6-B's `LeaderNewsRounds`: the round is recorded first; every search runs in software and every
+   result is stored before the model reads it; every agent step and search reserves first and ends with a receipt, or
+   stays unresolved at its reserved maximum.
 3. Which handler answered a turn is fixed in its snapshot, so a restart never switches a half-done turn to the other
    handler; a round already recorded returns its answer or is marked interrupted, never paid twice.
 
@@ -63,6 +70,15 @@ repository file and your owner copy; the service uses the newest effective card 
   protected books; HQ's AI spending reads them by price card as before. Amounts are held in EUR at a 1:1 USD rate
   plus the 2% buffer (no FX quote is configured for this route), which overstates the EUR view slightly; receipts
   keep the USD cost.
+- Protected budget origins (W10-A, D265, the same as the news route's Jev checks, D258): each reservation gets an
+  authenticated record of its original authority (the protected financial service's key, the admitted manifest and
+  controller, the paper portfolio, the exact reservation) in the same transaction, before anything is sent. Sending,
+  settling, the receipt and its allocation each check it; a receipt seals it with a full allocation to the
+  portfolio. Before each round (and at start) the route checks its records, bounded: every reservation has its
+  origin and every origin its reservation, the open and today's reservations, and 500 of this month's in turn. A
+  missing or forged origin, or a changed amount, refuses the round with the reason; a hold whose origin fails stays
+  unresolved at its maximum, never free. These records stay outside the subscription deployment's financial witness,
+  so trading and protection never wait for them. They change neither the money rule above nor your monthly limit.
 
 ## Records
 
@@ -74,7 +90,11 @@ The round records are W6-A's (`focus_research_rounds`, `focus_research_outcomes`
 
 `tests/integration/test_perplexity_in_service.py` runs a scripted day through `run_subscription_operation` with the
 real protected subscription binding: switched on, Research's focus step, the Leader's news round and the refresh its
-deep dive asks for all run on a scripted Perplexity with receipts and stored sources; switched off, the same day runs
-as before; switched on without a key, the wakes fail with the reason and nothing is sent.
+deep dive asks for all run on a scripted Perplexity with receipts, protected origins and stored sources; switched off,
+the same day runs as before; switched on without a key, the wakes fail with the reason and nothing is sent; with an
+origin forged during the day, the next round is refused with the reason and nothing more is sent.
+`tests/integration/test_perplexity_route_origins.py` covers the protected origins (each reservation, dispatch,
+settlement, receipt and allocation; missing, forged, replayed and changed records; the bounded audit's rolling
+sweep; the controller; no protected runtime).
 `tests/integration/test_perplexity_installation.py` covers the owner files, the pinned transport, stale cards, the
 money rule and which tasks may reserve; `tests/security/test_reviewed_routes.py` the network route.
