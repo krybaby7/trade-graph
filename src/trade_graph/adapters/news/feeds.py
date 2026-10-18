@@ -197,12 +197,23 @@ def _resolve(host: str) -> list[str]:
 
 
 class HttpxFeedFetcher:
-    """One bounded HTTPS GET per feed. Public data only: no key, cookie or account."""
+    """One bounded HTTPS GET per feed. Public data only: no key, cookie or account.
+
+    Through a reviewed route (W9-A, D256) the fetcher is given the route's ``proxy`` and the owner profile's ``admits``
+    check: a feed whose address the route does not admit is refused before anything is sent (a lost feed, never "no
+    news"), environment proxies are ignored, and no local DNS lookup is made, because the reviewed proxy resolves the
+    host itself, admits only public addresses and checks the TLS name (``kernel/subscription_proxy.py``).
+    """
 
     def __init__(self, *, resolver: Callable[[str], list[str]] = _resolve, transport=None, timeout: float = 10.0,
-                 max_bytes: int = MAX_FEED_BYTES, user_agent: str = USER_AGENT, trust_env: bool = True) -> None:
+                 max_bytes: int = MAX_FEED_BYTES, user_agent: str = USER_AGENT, trust_env: bool = True,
+                 proxy: str | None = None, admits: Callable[[str], bool] | None = None) -> None:
+        if (proxy is None) != (admits is None) or proxy is not None and type(proxy) is not str:
+            raise ValueError("a routed feed fetcher needs both the route's proxy and its admission check")
         self.resolver, self.transport, self.timeout = resolver, transport, timeout
-        self.max_bytes, self.user_agent, self.trust_env = max_bytes, user_agent, trust_env
+        self.max_bytes, self.user_agent = max_bytes, user_agent
+        self.proxy, self.admits = proxy, admits
+        self.trust_env = False if proxy is not None else trust_env
 
     def fetch(self, feed: FeedSource, *, etag: str | None, last_modified: str | None) -> FetchResult:
         import httpx
@@ -210,10 +221,18 @@ class HttpxFeedFetcher:
         def result(outcome: FetchOutcome, status: int | None = None, category: str | None = None) -> FetchResult:
             return FetchResult(outcome, status, None, None, None, "live_public", category)
 
-        try:
-            assert_public_url(feed.url, self.resolver)
-        except (UnsafeTarget, OSError, ValueError):
-            return result("refused", category="unsafe_target")
+        if self.admits is not None:
+            try:
+                admitted = self.admits(feed.url) is True
+            except Exception:  # noqa: BLE001 - an unreadable admission check never opens the route
+                admitted = False
+            if not admitted:
+                return result("refused", category="route_not_listed")
+        else:
+            try:
+                assert_public_url(feed.url, self.resolver)
+            except (UnsafeTarget, OSError, ValueError):
+                return result("refused", category="unsafe_target")
         headers = {"user-agent": self.user_agent,
                    "accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8"}
         if etag:
@@ -221,8 +240,9 @@ class HttpxFeedFetcher:
         if last_modified:
             headers["if-modified-since"] = last_modified
         try:
+            options = {} if self.proxy is None else {"proxy": self.proxy}
             with httpx.Client(transport=self.transport, timeout=self.timeout, follow_redirects=False,
-                              trust_env=self.trust_env) as client:
+                              trust_env=self.trust_env, **options) as client:
                 with client.stream("GET", feed.url, headers=headers) as response:
                     status = response.status_code
                     if status == 304:

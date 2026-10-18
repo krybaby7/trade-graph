@@ -246,6 +246,10 @@ Trader answers a wake with `TraderWakeReply` (see "For the next packages").
   records whom it would wake; live adds one `news_alarm` trigger per route through `EventEngine.notify(portfolio_id,
   department, kind="news_alarm", source_ref="news-alarm:<route id>", note=..., symbol=...)`. A wake made only of news
   alarms keeps the department's check-in when its answer names none. See [NEWS-ALARM.md](NEWS-ALARM.md#wake-ups-t45).
+- **W9-A (C6, the news check in the installed service), built.** The verdicts the router reads come from the 5-minute
+  news check the installed service runs in its own thread once the owner lists the reviewed `news_feeds` route
+  (`application/news_installation.py`, D255–D259); the engine is unchanged. See
+  [NEWS-ALARM.md](NEWS-ALARM.md#in-the-installed-service-w9-a).
 - **W6-D (C2), built.** A department chooses its reply per task (`GatewayRole.reply_type_for(task)`); the Trader's
   is `TraderWakeReply` when the task is a wake and `TraderReply` otherwise. Its wake turn is handed `wake` (the wake,
   with at most the newest 40 triggers and 20 alarm items shown and their totals) and `practice_range` (strategy

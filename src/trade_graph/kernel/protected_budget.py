@@ -18,8 +18,19 @@ MUTABLE_RESERVATION_FIELDS = {"state", "amount", "updated_at"}
 
 
 class ProtectedBudgetOrigins:
-    def __init__(self, financial):
+    """Authenticated original authority for each reservation of one deployment scope, recorded before dispatch.
+
+    The scope is the protected manifest's deployment. A separately reviewed route keeps its reservations under its own
+    deployment id (W8-A, D243; W9-A, D258: ``<deployment>:news_alarm``) so the main financial witness does not re-verify
+    them on every check; such a route binds its reservations here with ``deployment_id`` and validates each one at its
+    own reservation, dispatch and settlement.
+    """
+
+    def __init__(self, financial, *, deployment_id: str | None = None):
         self.financial, self.database = financial, financial.database
+        self.deployment_id = financial.manifest.deployment_id if deployment_id is None else deployment_id
+        if type(self.deployment_id) is not str or not 1 <= len(self.deployment_id) <= 160:
+            raise ValueError("protected budget origins need one bounded deployment scope")
         self._sizes = {}
 
     def _source_rows(self, table, clause, params):
@@ -89,7 +100,7 @@ class ProtectedBudgetOrigins:
         ):
             raise StaleState("protected budget origin lacks exact admitted controller")
         row = self._source_rows("budget_reservations", "reservation_id=?", (reservation_id,)).fetchone()
-        if row is None or row["deployment_id"] != self.financial.manifest.deployment_id:
+        if row is None or row["deployment_id"] != self.deployment_id:
             raise StaleState("protected budget origin lacks exact deployment reservation")
         existing = self._load(reservation_id, "ORIGIN")
         if existing:
@@ -163,7 +174,7 @@ class ProtectedBudgetOrigins:
         if origin is None or row is None:
             raise StaleState("protected original budget reservation disappeared")
         current = dict(row)
-        if (current["deployment_id"] != self.financial.manifest.deployment_id
+        if (current["deployment_id"] != self.deployment_id
                 or any(current.get(key) != value for key, value in origin["reservation"].items()
                        if key not in MUTABLE_RESERVATION_FIELDS)):
             raise StaleState("protected original budget scope was reinterpreted")
@@ -198,7 +209,7 @@ class ProtectedBudgetOrigins:
 
     def verify_all(self):
         started, count = monotonic(), 0
-        deployment = self.financial.manifest.deployment_id
+        deployment = self.deployment_id
         for row in self.database.execute("SELECT reservation_id FROM budget_reservations WHERE deployment_id=?",
                                          (deployment,)):
             count += 1

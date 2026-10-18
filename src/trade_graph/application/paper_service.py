@@ -84,6 +84,7 @@ class PaperService:
         optimisation_manual_only: bool = False,
         event_engine: EngineOptions | None = None,
         price_collector=None,
+        news_poll=None,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
@@ -167,6 +168,10 @@ class PaperService:
         # for it, and its failures are reported in the tick as collector:<error>.
         self.price_collector = price_collector
         self._collector_task: asyncio.Task | None = None
+        # W9-A (D255): the 5-minute news check runs in its own thread the same way; a tick never waits for it, and a
+        # failed step is reported as news_poll:<error>. The installed service sets it once it is prepared.
+        self.news_poll = news_poll
+        self._news_task: asyncio.Task | None = None
         # T35: with the event engine, departments wake on events and their own check-ins instead of fixed timers.
         self.event_engine: EventEngine | None = None
         self.price_watcher = None
@@ -188,6 +193,8 @@ class PaperService:
         self._stop_requested.set()
         if self.price_collector is not None:
             self.price_collector.request_stop()  # its waits end at once; a request in flight finishes
+        if self.news_poll is not None:
+            self.news_poll.request_stop()  # it ends between feeds and headlines; a request in flight finishes
 
     def _acquire(self) -> None:
         ownership = self.database.exclusive_lock("paper-service", single_link=False)
@@ -242,6 +249,8 @@ class PaperService:
         self._stop_requested.clear()
         if self.price_collector is not None:
             self.price_collector.resume()
+        if self.news_poll is not None:
+            self.news_poll.resume()
         self._acquire()
         self._shutdown_failures = []
         self._shutdown_task = None
@@ -786,6 +795,7 @@ class PaperService:
         management, management_failures = await self._offload(self._management)
         failures.extend(management_failures)
         failures.extend(self._collect_prices())
+        failures.extend(self._poll_news())
         scheduled = 0
         if not self._stop_requested.is_set():
             acquired, input_failures = await self._prepare_role_inputs()
@@ -831,6 +841,21 @@ class PaperService:
         if self._collector_task is None and not self._stop_requested.is_set():
             self._collector_task = asyncio.create_task(
                 asyncio.to_thread(self._thread_call, self.price_collector.step))
+        return failures
+
+    def _poll_news(self) -> list[str]:
+        """Keep one news check step running in its own thread; report a failed step, never wait for one (D255)."""
+        if self.news_poll is None:
+            return []
+        failures = []
+        if self._news_task is not None and self._news_task.done():
+            try:
+                self._news_task.result()
+            except Exception as exc:  # noqa: BLE001 - the news check's failure is reported, management goes on
+                failures.append("news_poll:" + type(exc).__name__)
+            self._news_task = None
+        if self._news_task is None and not self._stop_requested.is_set():
+            self._news_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.news_poll.step))
         return failures
 
     async def run(self, *, max_ticks: int | None = None, install_signal_handlers: bool = True) -> dict:
@@ -926,6 +951,14 @@ class PaperService:
                     self._shutdown_failures = list(dict.fromkeys(
                         [*self._shutdown_failures, "collector:" + type(exc).__name__]))[:20]
                 self._collector_task = None
+            if self._news_task:
+                # The stop signal ends the poll between feeds and headlines; a request in flight finishes first.
+                try:
+                    await self._wait_for_work(self._news_task, maintenance_errors=errors)
+                except Exception as exc:  # noqa: BLE001 - a news check failure is reported, never a shutdown error
+                    self._shutdown_failures = list(dict.fromkeys(
+                        [*self._shutdown_failures, "news_poll:" + type(exc).__name__]))[:20]
+                self._news_task = None
             if self._feed_task:
                 try:
                     _, failure = await self._consume_feed(self._feed_task, maintenance_errors=errors)

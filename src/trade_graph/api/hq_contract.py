@@ -121,8 +121,9 @@ ServiceStatus = Literal["IDLE", "UNOBSERVED", "STARTING", "RUNNING", "MANAGEMENT
 SERVICE_STATUSES: Final = get_args(ServiceStatus)
 ACTIVE_SERVICE_STATUSES: Final = ("STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING")  # service_controller.py:28
 # W8-C (D250): the money-limit, day-plan and price-collector steps of the paper service report in plain words too.
+# W9-A (D255): the news check's step (``paper_service._poll_news``).
 ProblemPrefix = Literal["feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "money_limits:", "day_plans:",
-                        "collector:", "other"]
+                        "collector:", "news_poll:", "other"]
 PROBLEM_PREFIXES: Final = get_args(ProblemPrefix)
 
 PauseProfile = Literal["RUNNING", "PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN",

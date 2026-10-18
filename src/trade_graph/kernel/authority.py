@@ -91,6 +91,11 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/perplexity_installation.py",
     "src/trade_graph/application/price_collector.py",
     "src/trade_graph/application/service_market_data.py",
+    # W9-A (D259): the news check in the installed service (owner files, the Jev key, the route's money rule and
+    # protected budget origins), Jev's receipt collection and the Jev adapter that carries the key to its endpoint.
+    "src/trade_graph/application/news_installation.py",
+    "src/trade_graph/application/jev_checks.py",
+    "src/trade_graph/adapters/decisions/",
 )
 
 

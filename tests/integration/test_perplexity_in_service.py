@@ -183,8 +183,9 @@ def test_with_the_switch_off_the_same_day_runs_as_before(day) -> None:
     try:
         assert result["event_engine"] is True
         assert not [item for item in result["failures"] if item.startswith("wakes")], result["failures"]
-        # Nothing Perplexity-related was read, seeded, built or sent.
-        assert day.built == [] and day.transport.calls == [] and day.reads == []
+        # Nothing Perplexity-related was read, seeded, built or sent. (The news check, W9-A, reads the network profile
+        # at start to see whether its own reviewed route is listed; this profile lists none, so it reads nothing else.)
+        assert day.built == [] and day.transport.calls == [] and day.reads == ["subscription-network-profile.json"]
         assert database.execute("SELECT COUNT(*) FROM price_cards").fetchone()[0] == cards_before
         assert _rows(database, "SELECT * FROM activity_events WHERE kind = 'perplexity_route'") == []
         assert _rows(database, "SELECT * FROM focus_research_rounds") == []

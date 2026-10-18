@@ -19,6 +19,7 @@ from trade_graph.application.candle_readiness import (
 )
 from trade_graph.application.collect_price_history import collect_public_hourly_history
 from trade_graph.application.events import EngineOptions
+from trade_graph.application.news_installation import installed_news_poll
 from trade_graph.application.owner_commands import recover_owner_commands
 from trade_graph.application.paper_service import PaperService
 from trade_graph.application.perplexity_installation import perplexity_departments
@@ -229,6 +230,9 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             handlers = runtime.prepare_runtime() if runtime.prepare_runtime else runtime.handlers
             if handlers and (runtime.runtime_ready is None or runtime.runtime_ready()):
                 resumed = _resume_previous_task_pause(runtime)
+            # W9-A (D255): the 5-minute news check runs beside the service in its own thread when the owner's network
+            # profile lists the reviewed news_feeds route; Jev checks only with the owner's switch and key.
+            service.news_poll = installed_news_poll(runtime, protected_owner)
             # W8-A (D240): with the event engine on and the owner's Perplexity switch on, Research's and the Leader's
             # engine wakes run on Perplexity in this protected process; otherwise the handlers are unchanged.
             return perplexity_departments(runtime, protected_owner, handlers, engine=service.event_engine)
@@ -266,6 +270,7 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             "price_collection": None if collector is None else {
                 "market_database": market.path.name, "public_requests": collector.requests_total},
             "event_engine": service.event_engine is not None,
+            "news_polls": None if service.news_poll is None else service.news_poll.polls,
             "billing_kind": "subscription", "actual_cost_native": None, "cost_status": "unknown",
             "live_authorization": False, "paid_authorization": False}
     finally:
