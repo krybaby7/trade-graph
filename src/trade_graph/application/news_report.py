@@ -21,6 +21,9 @@ from trade_graph.domain.money import canonical_decimal
 UNRESOLVED_STATES = ("RESERVED", "UNCERTAIN", "CONSERVATIVE")
 SETTLED_STATES = ("COMMITTED", "RECONCILED")
 ALERT_NOTE = "An alert only: nothing pauses at this amount (D138 item 10). Unresolved calls are not included."
+READ_OUTCOMES = ("fetched", "not_modified")
+LOST_NOTE = ("A feed that cannot be read is reported, never taken as \"no news\": its headlines for that time are "
+             "unknown until it is read again.")
 
 
 def _rows(database, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -58,8 +61,9 @@ def _empty(since: datetime, until: datetime, alert_usd: Decimal, note: str) -> d
     return {"report": "news-alarm-shadow", "mode": "shadow", "wakes_sent": 0,
             "window": {"since": utc_iso(since), "until": utc_iso(until)},
             "summary": {"headlines": 0, "checked": 0, "answered": 0, "would_wake": 0,
-                        "would_wake_by_role": {"leader": 0, "trader": 0}, "not_checked": 0, "failures": {}},
-            "headlines": [], "latency_ms": {"checks": 0, "median": None, "max": None},
+                        "would_wake_by_role": {"leader": 0, "trader": 0}, "not_checked": 0, "failures": {},
+                        "feeds_lost_now": 0},
+            "feeds": [], "headlines": [], "latency_ms": {"checks": 0, "median": None, "max": None},
             "spend": {"days": [], "testing_total_real_usd": "0", "testing_unresolved_calls": 0,
                       "alert_usd": _money(alert_usd), "alert": False, "alert_note": ALERT_NOTE},
             "notes": [note]}
@@ -126,9 +130,12 @@ def news_alarm_report(database, *, since: datetime, until: datetime, alert_usd: 
                       "not_checked": not_checked})
     summary["would_wake_by_role"] = {"leader": roles["leader"], "trader": roles["trader"]}
     summary["failures"] = dict(failures)
+    feeds = _feeds(database, window)
+    summary["feeds_lost_now"] = sum(1 for feed in feeds if feed["lost_now"])
     latencies = [check["latency_ms"] for check in checks if check["latency_ms"] is not None]
     report = {"report": "news-alarm-shadow", "mode": "shadow", "wakes_sent": 0,
-              "window": {"since": window[0], "until": window[1]}, "summary": summary, "headlines": items,
+              "window": {"since": window[0], "until": window[1]}, "summary": summary, "feeds": feeds,
+              "headlines": items,
               "latency_ms": {"checks": len(latencies),
                              "median": statistics.median_low(latencies) if latencies else None,
                              "max": max(latencies) if latencies else None},
@@ -138,10 +145,33 @@ def news_alarm_report(database, *, since: datetime, until: datetime, alert_usd: 
     if any(item["evidence"] != "live_public" for item in items) or any(
             check["cost"]["status"] == "synthetic" for item in items for check in item["checks"]):
         notes.append("Synthetic headlines and scripted Jev replies are test data, not real news or Jev answers.")
+    if summary["feeds_lost_now"]:
+        notes.append(LOST_NOTE)
     if report["spend"]["testing_unresolved_calls"]:
         notes.append("Unresolved calls keep their full reservation until the usage is known; they are not free.")
     report["notes"] = notes
     return report
+
+
+def _feeds(database, window: tuple[str, str]) -> list[dict[str, Any]]:
+    """Each feed's polls in the window as stored (W9-A, D259): how many were read, how many lost, and whether its last
+    poll was lost, since when, and when it was last read."""
+    rows = _rows(database, """SELECT feed_id, publisher, started_at, outcome, http_status, error_category
+        FROM news_feed_polls WHERE started_at >= ? AND started_at < ? ORDER BY started_at, rowid""", window)
+    feeds: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        feed = feeds.setdefault(row["feed_id"], {"feed_id": row["feed_id"], "publisher": row["publisher"], "polls": 0,
+                                                 "read": 0, "lost": 0, "last_read_at": None, "lost_since": None})
+        feed["polls"] += 1
+        read = row["outcome"] in READ_OUTCOMES
+        feed["read" if read else "lost"] += 1
+        if read:
+            feed["last_read_at"], feed["lost_since"] = row["started_at"], None
+        elif feed["lost_since"] is None:
+            feed["lost_since"] = row["started_at"]
+        feed.update(publisher=row["publisher"], last_outcome=row["outcome"], last_http_status=row["http_status"],
+                    last_error_category=row["error_category"], lost_now=not read)
+    return [feeds[feed_id] for feed_id in sorted(feeds)]
 
 
 def _spend(database, window: tuple[str, str], alert_usd: Decimal) -> dict[str, Any]:
@@ -211,6 +241,17 @@ def format_report_text(report: dict[str, Any]) -> str:
         lines.append(f"  {day['day']}: {day['calls']} calls, real USD {day['real_usd']}, synthetic USD "
                      f"{day['synthetic_usd']}, {day['unresolved_calls']} unresolved (EUR {day['unresolved_held_eur']}"
                      " held)")
+    if report.get("feeds"):
+        lines.append("Feeds:")
+        for feed in report["feeds"]:
+            if feed["lost_now"]:
+                http = f", HTTP {feed['last_http_status']}" if feed["last_http_status"] else ""
+                last = _time(feed["last_read_at"]) if feed["last_read_at"] else "not in this window"
+                lines.append(f"  {feed['publisher']}: not read in its last poll ({feed['last_outcome']}{http}) since "
+                             f"{_time(feed['lost_since'])}; read in {feed['read']} of {feed['polls']} polls, last read "
+                             f"{last}. Not \"no news\": its headlines are unknown.")
+            else:
+                lines.append(f"  {feed['publisher']}: read in {feed['read']} of {feed['polls']} polls.")
     if latency["checks"]:
         lines.append(f"Jev response time: median {latency['median']} ms, slowest {latency['max']} ms over "
                      f"{latency['checks']} checks.")
