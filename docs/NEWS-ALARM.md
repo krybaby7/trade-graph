@@ -4,7 +4,9 @@ Status: built and tested in source on 2026-10-16 (cloud package W1-A, decisions 
 No real feed was recorded and no Jev call was made: the cloud network refused every feed host, and no key
 exists. Tests use labelled synthetic feeds and scripted Jev replies. Wake-ups (T45) were added on 2026-10-17 by
 cloud package W7-A (decisions D225–D229, state migration 0042), shipped in shadow mode: see
-[Wake-ups](#wake-ups-t45).
+[Wake-ups](#wake-ups-t45). On 2026-10-18 cloud package W9-A (C6, decisions D255–D259, no migration) put the 5-minute
+news check inside the installed service, with its own reviewed network route: see
+[In the installed service](#in-the-installed-service-w9-a).
 
 ## In one minute
 
@@ -113,6 +115,10 @@ records stay out of the real paper log.
 The report reads only: it opens the database read-only, never creates or upgrades it, calls nothing and never
 recomputes an answer or a verdict.
 
+Inside a protected installation the news check runs in the service (below). There `news-alarm-poll` still collects
+headlines with Jev off, but refuses Jev checks, scripted or real: its reservations would have no protected budget origin,
+and the installation's financial witness re-verifies every reservation of its deployment.
+
 ## Switching Jev on (owner only)
 
 1. Sign up at console.typesafe.ai yourself and use only typesafe.ai addresses (D137).
@@ -171,6 +177,61 @@ meanwhile waits for its next wake and is never dropped. Nothing limits how many 
 **In HQ.** The wake log shows each news wake-up as "A news alarm about SOL/USD from Kraken blog." with the headline as a
 quote, and the day's counts say how many wake-ups news alarms made (live) or would have made (shadow).
 
+## In the installed service (W9-A)
+
+In plain words: once you list the news route in your network profile, the installed service reads the five feeds every
+five minutes by itself and keeps the shadow log filling, so step 17 of the install checklist has real evidence to look
+at. Jev is asked only when you switch it on in your news alarm settings and its key is in your owner folder. Nobody is
+woken until you switch news wake-ups on (step 17).
+
+**How it runs (D255).** At start, `run_subscription_operation` builds the news check in the protected parent process
+(`application/news_installation.py`). The paper service runs one news step at a time in its own thread, like the price
+collector: a tick never waits for it, a failed step shows in HQ as "the news check's last step failed" (`news_poll:` in
+the tick's failures), and a stop ends a poll between feeds and between headlines (a request in flight finishes; what was
+read is kept). A poll is due five minutes (`poll_interval_seconds`) after the previous poll started, by the service's
+clock and the stored polls, so a restart does not poll twice within five minutes. It writes the same `news_*` tables as
+the command, in the installation's state database, so the event engine routes its verdicts (T45). It keeps running under
+every pause: it places no order and wakes nobody itself.
+
+**What it needs from you** (all in your root-owned owner folder `<owner>`, mounted read-only at
+`/run/trade-graph-owner`):
+
+| What | Where | Without it |
+|---|---|---|
+| The reviewed `news_feeds` route | `subscription-network-profile.json`: `"news_feeds": {"port": 8083, "hosts": ["api.typesafe.ai", "blog.kraken.com", "cointelegraph.com", "decrypt.co", "status.kraken.com", "www.coindesk.com"]}` under `reviewed_routes`, and `--route news_feeds=8083:api.typesafe.ai,blog.kraken.com,cointelegraph.com,decrypt.co,status.kraken.com,www.coindesk.com` on your reviewed proxy ([REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)) | No feed is read: HQ's activity log shows `news_route` `not_ready` with the reason. |
+| Your news alarm settings (optional) | `news-alarm.json`: a copy of `config/news-alarm.example.json`, `root:10001` mode `0440` | The recommended defaults: the five feeds every 5 minutes, Jev off. |
+| Jev switched on | `"calls_enabled": true` under `jev` in `news-alarm.json` | Headlines are stored; nothing is sent to TypeSafe. |
+| Your Jev key | `typesafe.key`: one line, `root:10001` mode `0440` (like `perplexity.key`), read only by the protected owner-file reader | With Jev switched on: headlines are stored, nothing is sent, and the reason (`no Jev key`) is in the activity log. |
+
+Inside the image `jev.key_directory` and `jev.deployment_id` are not used: the key is `typesafe.key` in the owner
+folder, and Jev's reservations carry the route's own deployment id, `<deployment>:news_alarm`.
+
+**The network (D256).** Feeds are fetched only through the route's proxy port, only at addresses your profile lists,
+with no environment proxy and no local DNS lookup (the reviewed proxy resolves the host, admits only public addresses
+and checks the TLS name). A feed whose address your route does not list is refused before anything is sent and
+reported as lost. Jev is called only at `https://api.typesafe.ai/v1/systemone`, through the same port. A feed that
+moves to a host outside the reviewed catalogue needs a reviewed code change first (`REVIEWED_ROUTE_HOSTS`).
+
+**Money and receipts (D258).** Every Jev check reserves first and ends with a receipt or stays unresolved at its full
+hold, as with the command. The money rule is your owner policy's paid-call limits: at most `daily_paid_limit` per UTC
+day and `monthly_operating` per UTC month of Jev holds and receipts (synthetic ones excluded); a check with no room is
+logged as `budget_refused` and nothing is sent. The USD5 testing alert stays an alert. The deployment's EUR allowance,
+which a subscription installation does not use, is not consulted. Each reservation gets an authenticated **protected
+budget origin** in the same transaction, before anything is sent: dispatch and settlement re-check it, a receipt seals
+it, and each poll checks the route's open and today's reservations and, in turn, the rest of this month's. A changed or
+missing record stops Jev checks with the reason (headlines are still collected); trading and protection never wait for
+these checks, because the route's reservations are kept apart from the subscription deployment's own books.
+
+**A lost feed is reported (D259).** Every request and its outcome is stored (`news_feed_polls`). When a feed cannot be
+read, HQ's activity log gets a `news_poll` record naming it, why and when it was last read (when an outage starts and
+when it ends, not every five minutes), and `news-alarm-report` lists each feed's polls and whether its last one was
+lost. A lost feed is never taken as "no news": its headlines for that time are unknown.
+
+**What you see.** At each start a `news_route` activity: `ready` (which feeds, whether Jev is on and why not) or
+`not_ready` and the reason. Then `news_poll` activities: the first poll, every change (a feed lost or back, Jev on or
+off), every poll with a would-be wake-up. `trade-graph news-alarm-report --format text` and `news-wakes` read the log as
+before.
+
 ## Not yet confirmed
 
 - The wire field names beyond those recorded in S40 (`question`, `options`, `levels`, `probabilities`,
@@ -178,6 +239,9 @@ quote, and the day's counts say how many wake-ups news alarms made (live) or wou
   The first credentialed call (step L2) confirms them. A reply in another shape is logged as
   `malformed_answers`, still receipted, and wakes nobody.
 - The feed addresses above were not reachable from the cloud. Step L2 records one real sample of each.
-- Running the poll every 5 minutes on the owner's PC (a scheduled task or the service) is an installation
-  step (W6-D, L3). T44 adds no scheduler. The engine routes whatever verdicts the poll writes into the same state
-  database; without polls (or without a Jev key) there are no verdicts, and nothing is routed or woken.
+- The installed service runs the poll every 5 minutes once the owner lists the `news_feeds` route (W9-A, above); the
+  command does not schedule itself. The engine routes whatever verdicts the poll writes into the same state database;
+  without polls (or without a Jev key) there are no verdicts, and nothing is routed or woken.
+- The dated Jev card `typesafe-jev-1.13.0-2026-10-15` refuses real calls after 2026-11-14 (more than 30 days after it
+  was read). Step L2 re-reads TypeSafe's models page; a re-checked price is a new dated card (new id) in the owner's
+  `news-alarm.json` under `jev.price_card`.
