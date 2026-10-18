@@ -217,7 +217,7 @@ passed, 0 failed, 18 skipped; wave 4 at `b09cae4`, 7,189 passed, 0 failed, 18
 skipped; wave 5 at `e1008e5`, 7,347 passed, 0 failed, 18 skipped; wave 6 at
 `0595d98`, 7,600 passed, 0 failed, 18 skipped; wave 7 at `3008446`, 7,665
 passed, 0 failed, 18 skipped; wave 8 at `f90bda1`, 7,915 passed, 0 failed, 18
-skipped. Any failure now counts and must be reported. The container run took
+skipped; wave 9 at `3a6b298`, 8,016 passed, 0 failed, 18 skipped. Any failure now counts and must be reported. The container run took
 105 minutes (W1-E measured 54); GitHub's test job takes 50 to 75 minutes and
 may run 120.
 
