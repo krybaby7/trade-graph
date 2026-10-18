@@ -17,9 +17,10 @@ from it and returns to it through pull requests.
 
 ### In one minute
 
-- The work is split into **22 cloud packages in 9 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. All nine
-  waves are done; the local steps L1 to L4 remain.
+- The work is split into **25 cloud packages in 10 waves**, plus **4 local
+  steps** on your PC and a short list of things only you can do. Waves 1 to 9
+  are done. Wave 10, a short tidy-up you chose on 2026-10-18 (D263), runs
+  while L1 and L2 run on your PC; the install (L3) waits for it.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
@@ -72,6 +73,7 @@ into a cloud session.
 | 7 | W7-A real news wake-ups | Wave 6 merged |
 | 8 | W8-A Perplexity inside the installed system, W8-B Trader exit tools, W8-C HQ loss, plans and scorecard | Wave 7 merged |
 | 9 | W9-A news check next to the installed system | Wave 8 merged |
+| 10 | W10-A lock the AI-spending records, W10-B fast money checks and scorecard, W10-C HQ card for a coin without a safety exit | Wave 9 merged (added 2026-10-18, D263) |
 
 The slowest chain is W1-B → W2-A and W2-B → W3-A → W4-A → W5-A → wave 6 →
 local install. If you can only start a few sessions at a time, start W1-B
@@ -105,16 +107,20 @@ The integrator updates this table each time it merges a wave.
 | W8-B | C4 | The Trader can close a position early or move its safety exit | Merged 2026-10-18 (#22); paper only, like the day plans it works on, which stay off until you record the limits at L3 (`trade-graph money-limits --confirm`); one question for the live pilot (T19) is in the status entry |
 | W8-C | C5 | HQ shows today's loss, the day plans and the scorecard | Merged 2026-10-18 (#20); you look at the Money tab on your phone and iPad after L3 |
 | W9-A | C6 | The news check runs next to the installed system, so real news evidence builds up | Merged 2026-10-18 (#23); ships with Jev off: at L3 you add the news route to your network profile and proxy (step 3), and for Jev your `news-alarm.json` with `calls_enabled` and your `typesafe.key`; the Jev price is re-checked at L2, because today's price card goes stale on 2026-11-15; after L3 the shadow log fills and you decide on news wake-ups at step 17 ([L3 checklist](L3-INSTALL-CHECKLIST.md)) |
-| L1 | — | Price data kept current on your PC | Not started |
+| W10-A | C7 | The files that record AI spending are locked, and Perplexity's spending gets the same protected checks as Jev's | Not started |
+| W10-B | C8 | Money checks, HQ and the scorecard stay fast as weeks of prices pile up | Not started |
+| W10-C | C9 | HQ shows a "Needs you" card when a bought coin is left without a safety exit | Not started |
+| L1 | — | Price data kept current on your PC | Started 2026-10-18 with your yes (D263): the April–June archive download began; the Windows tasks and the first collection pass are next |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
-| L3 | — | New engine installed on your PC (your approval) | Not started; waves 1–9 are merged, so it can start with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
+| L3 | — | New engine installed on your PC (your approval) | Not started; waits for wave 10 (D263), then starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
 
 | When | What | Why |
 |---|---|---|
-| Now | Switch on the price schedule on your PC, or tell the local Claude session it may | Windows blocked the agent. Without it, gaps appear in recent prices. |
+| Now | Switch on the price schedule on your PC: run `scripts/register_candle_schedule.ps1` once (the local session gives you the command) | Windows blocked the agent. Without it, gaps appear in recent prices. Since 15 October 23:00 UTC none were collected. |
+| Done 2026-10-18 | You accepted the three recommendations of the 2026-10-18 briefing: start L1 now, run wave 10 before the install, and import the April–June archive (D263). You also asked that nothing runs Trade Graph without telling you first | Recorded in the decision log. |
 | Now | Check that Perplexity auto top-up is off | The prepaid credit is the outer limit while testing has no budget (D125). |
 | Optional | Get a Jev key at console.typesafe.ai only, then ask the local session to store it | The news alarm makes real checks only with a key. It is built and tested without one. |
 | Done 2026-10-18 | You answered the three open questions with the recommended answers: the older Leader keeps its power to pause the account or narrow the allowed coins and strategies (D262); the files that record AI spending become protected in a later package (D261); the fix for an order whose confirmation got lost will also apply to real-money orders, only through the live pilot (D260) | Recorded in the decision log; nothing changed in code. |
@@ -402,7 +408,8 @@ The owner is asleep: never stop to ask anything.
 
 ### Reserved numbers
 
-New owner decisions after this plan start at D260.
+The owner's decisions of 2026-10-18 are D260–D263. New owner decisions after
+this plan start at D280.
 
 | Package | Branch | Decisions | State migration |
 |---|---|---|---|
@@ -429,6 +436,9 @@ New owner decisions after this plan start at D260.
 | W8-B | `claude/c4-trader-exit-tools` | D245–D249 | 0044 |
 | W8-C | `claude/c5-hq-loss-plans-scorecard` | D250–D254 | 0045 |
 | W9-A | `claude/c6-news-poll-in-service` | D255–D259 | 0046 |
+| W10-A | `claude/c7-lock-ai-spending` | D264–D268 | 0047 |
+| W10-B | `claude/c8-fast-money-checks` | D269–D273 | 0048 |
+| W10-C | `claude/c9-hq-unprotected-card` | D274–D278 | 0049 |
 
 ### Wave 1 — start now
 
@@ -756,6 +766,106 @@ evidence after L3. Step 17 needs that evidence.
   records headlines and Jev answers with receipts, and the engine records
   shadow routes; with Jev off, headlines are stored and nothing is called.
 
+### Wave 10 — tidy-up before the install (added 2026-10-18)
+
+The owner chose (D263) to close three items from the night report for waves
+8 and 9 (`planning/handoffs/NIGHT-2026-10-17.md`, "Left for later") before
+L3, so the engine is installed once: D261's protected spending files, the
+growing cost of reading every price mark, and a warning when a bought coin
+has no safety exit. The three packages touch different files and run side by
+side. Wave 10 has no task in `planning/progress.json` (C ids are labels); its
+only dependency is wave 9, which is merged. Each package reads the handoffs it
+names before it starts.
+
+Order for the integrator: W10-B, W10-C, W10-A.
+
+**W10-A · C7 · Lock the AI-spending records.** The files that record every
+paid AI call become protected, and Perplexity's reservations get the same
+protected checks as Jev's.
+- Spec: D261, D243, D244, D258, D259; the W8-A and W9-A handoffs (W9-A's
+  "W8-A's Perplexity route could adopt the same protected budget origins");
+  `kernel/authority.py`, `kernel/protected_budget.py`,
+  `application/news_installation.py` (`NewsRouteBudget`),
+  `application/perplexity_installation.py` (`PerplexityRouteBudget`).
+- Add `application/budget.py` and `application/gateway.py` to
+  `PROTECTED_PATH_PREFIXES` with a comment, and a parametrized test like
+  `tests/unit/test_news_installation_paths.py` (D261). Afterwards
+  `kernel/protected_budget.py` imports only protected code.
+- Give `PerplexityRouteBudget` the protected budget origins that W9-A gave
+  Jev: the origin recorded in the reserve transaction, validated at dispatch,
+  settlement, commit and allocate, a bounded audit each round, scoped by
+  `ProtectedBudgetOrigins(protected.financial, deployment_id=...)`. A
+  reservation whose origin fails validation is refused or left unresolved,
+  never treated as free.
+- Do not change D125 (no money limit while testing) or the owner's monthly
+  limit (D243): it still pauses only the Perplexity rounds.
+- Fix, test first: a missing or forged origin on the Perplexity route is
+  refused and recorded, mirroring the news route's origin tests.
+- The protected package hash changes; the normal L3 re-pin (steps 2 and 3)
+  covers it. Update the L3 checklist only if an owner step changes.
+- Done when both files are protected with a test, and a scripted Perplexity
+  round in the installed service reserves with a protected origin, passes
+  the audit and ends receipted, while a tampered origin is refused. No real
+  call.
+
+**W10-B · C8 · Money checks and the scorecard stay fast.** As weeks of price
+marks pile up during the scored test, the money-limit step, HQ and the
+scorecard keep their speed and give the same results.
+- Spec: the night report's "Left for later" (`Ledger._marks`, a scorecard
+  refresh of about 3.5 s on four weeks of prices); the W5-C, W8-B and W8-C
+  handoffs; `docs/SCORECARD.md`; D200–D204, D245–D254.
+- `Ledger._marks` (`application/ledger.py`) reads every valuation mark of the
+  portfolio, with no asset filter and no limit, and `kernel/books.py`
+  `_latest_mark` searches that list for each open lot. Read only the newest
+  mark per held asset as of the time (`... WHERE portfolio_id=? AND asset=?
+  AND observed_at<=? ORDER BY observed_at DESC, rowid ASC LIMIT 1`, as
+  `application/scorecard.py` already does), so migration 0044's
+  `valuation_marks_newest` index is used. Do the same for `_rates` if it reads
+  every FX rate. Callers include the money-limit step (every tick), HQ's
+  today's loss, the Trader workflow and the forward producer.
+- Results do not change: a Hypothesis property test that the old and new
+  reads agree, tied timestamps included, and an EXPLAIN QUERY PLAN test that
+  the index is used. `application/money_limits.py` breaks ties with
+  `rowid DESC`; align it with the ledger and record the rule as a decision.
+- Scorecard: `_curve` (`application/scorecard.py`) loads every mark of every
+  coin held in the period. Read only what it needs, or update HQ's cache
+  incrementally; `tests/property/test_scorecard_properties.py` must still
+  pass unchanged.
+- Measure before and after on a synthetic four-week portfolio and record it
+  in the handoff. Assert on rows read or queries made, never on seconds
+  (waves 8 and 9 lost time to tests that depended on machine speed).
+- Use migration 0048 only if a new index is really needed.
+- Done when the money-limit step, HQ's today's loss and the scorecard give
+  identical results on old and new code with a bounded number of rows read.
+
+**W10-C · C9 · HQ asks you when a coin has no safety exit.** A "Needs you"
+card appears when a filled day-plan buy has stayed without an active safety
+exit.
+- Spec: `docs/HQ-DASHBOARD.md` (plain English, phone and iPad first, light
+  and dark, the 80 KB payload budget); the W4-A, W8-B and W8-C handoffs;
+  D115–D117, D185–D189, D245–D254. HQ's attention cards:
+  `api/hq_state.py` `attention`, with `api/hq_spending.py` as the pattern
+  for an extra card.
+- The card shows which coin, how much, since when and what the system is
+  doing about it. Measure the time from the fill or the first
+  `protection_deferred` event. Recommended default, record it: show the card
+  after 10 minutes without full cover. Use one shared coverage function with
+  `application/day_plan_protection.py` and `api/hq_plans.py`, not a third
+  copy of the arithmetic. Reading HQ starts nothing, and the card has no
+  button that trades.
+- A new `AttentionCode` with its severity and copy. If the snapshot gains a
+  key, update `api/hq_contract.py` and all nine
+  `tests/fixtures/hq/snapshot_*.json`, keeping the keys other packages added.
+- Small fix, test first: `news-alarm-poll` and `news-alarm-report` print a
+  traceback on a malformed number in `news-alarm.json`
+  (`decimal.InvalidOperation` escapes `_settings` in
+  `market_data_cli/news_alarm.py`). They must refuse with a clear message,
+  like the in-service reader.
+- Done when a scripted day whose exit placement is refused shows the card
+  after the delay and clears it once the exit is in place or the position is
+  closed; JS tests, and Chromium (Playwright) at phone, iPad and desktop sizes
+  in light and dark.
+
 ### Later, not packaged
 
 Open items the night shift found that wait for an owner decision or a later
@@ -764,10 +874,12 @@ re-hashing the standard library, which is protected engineering code); whole
 lots in practice-range replays (changes replay results); hourly scans widening
 the day's shortlist; Perplexity departments outside the AI allowance floor;
 how long hourly scans are kept (about 2 MB a day); money limits on the live
-path (live trading is out of scope). Decided by the owner and waiting for a
-package: `application/budget.py` and `application/gateway.py` become protected
-paths (D261); the live pilot (T19) applies D248's settlement of a lost
-acknowledgement to live orders through its own lifecycle (D260).
+path (live trading is out of scope); a partial close; HQ's wake log naming
+the Trader's position actions; the runtime evidence collector's 10,000-row
+bound filling with Jev records in about 50 days. Decided by the owner and
+waiting for a package: the live pilot (T19) applies D248's settlement of a
+lost acknowledgement to live orders through its own lifecycle (D260). D261
+(protected spending files) is packaged in W10-A.
 
 ### Local steps — on the owner's PC
 
@@ -782,9 +894,10 @@ with `trade-graph candle-coverage`. Confirm the archive's open-time
 convention, which the import assumed: backfill one September BTC/USD
 15-minute slot from public Trades and reconcile it against the archive
 (`reconcile-candles`), because the archive (to 30 September) and the collector
-(from 13 October) don't overlap yet. Ask the owner before downloading the
-2026Q2 archive (538 MB), which would give the practice range six months of
-history instead of three.
+(from 13 October) don't overlap yet. The owner approved downloading and
+importing the 2026Q2 archive (538 MB) on 2026-10-18 (D263), which gives the
+practice range six months of history instead of three. Tell the owner before
+running any `trade-graph` command (D263).
 
 **L2 · Real-data checks (after W2-A and W1-C are merged).** Practice-range
 reports for the two seed strategies on the real imported history, under all
@@ -793,8 +906,9 @@ used synthetic ones. One opt-in Perplexity smoke call with the test key
 (D125), with its receipt. A Jev smoke call only if the owner has installed a
 key. Each result is labelled real or synthetic.
 
-**L3 · Install the new engine (after waves 1–9 are merged; waves 8 and 9
-close the gaps of its steps 12 and 17).** Each step only on
+**L3 · Install the new engine (after waves 1–10 are merged; waves 8 and 9
+close the gaps of its steps 12 and 17, and the owner chose to wait for wave
+10, D263).** Each step only on
 the owner's yes: full suite; build the protected image and re-pin the kernel
 manifest; back up; install through the financial-manifest transition with the
 paper account in MANAGE_ONLY (docs/FINANCIAL-TRANSITION.md); run

@@ -2756,3 +2756,25 @@ calls.
   still have neither action.
   Nothing changes in code. Reason: the recommended answer in the build plan's
   "Only you can do these" and in W6-B's handoff.
+
+Owner choices of 2026-10-18 (D263). After the briefing on waves 8 and 9 the
+owner accepted its three recommendations for how the local steps start.
+
+- **D263 (2026-10-18, owner decision):** (1) Step L1 starts now: the owner
+  registers the two Windows price tasks (`scripts/register_candle_schedule.ps1`),
+  and the local session runs one full collection pass and the archive
+  open-time check. (2) A follow-up cloud wave 10 runs before L3, so the engine
+  is installed once: W10-A protects `application/budget.py` and
+  `application/gateway.py` (D261) and gives the Perplexity route protected
+  budget origins like Jev's; W10-B makes the ledger, money-limit step and
+  scorecard read only the price marks they need; W10-C adds an HQ "Needs you"
+  card for a filled buy left without a safety exit. L3 waits for wave 10.
+  (3) The local session downloads Kraken's public 2026Q2 OHLCVT archive
+  (`Kraken_OHLCVT_2026Q2.zip`, 537,866,903 bytes, assets.kraken.com) and
+  imports it, so the practice range has six months of history. The owner
+  also set a working rule for local sessions: nothing runs Trade Graph (any
+  `trade-graph` command, the service, HQ or the agents) without first telling
+  the owner what will run, and the trading system starts only with the
+  owner's yes at L3. None of this authorizes live trading, real orders or
+  paid calls. Reason: the recommendations in the 2026-10-18 owner briefing;
+  D261; `planning/handoffs/NIGHT-2026-10-17.md`, "Left for later".

@@ -1,3 +1,15 @@
+# Owner starts L1 and adds wave 10 before the install (D263), plan only — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`. Plan and decision log only: no code changed, nothing deployed or installed, no paid or exchange call, no order. The owner accepted the three recommendations of the 2026-10-18 briefing ([D263](docs/DECISIONS.md)):
+- **L1 starts now.** The owner registers the two Windows price tasks; the local session runs one full collection pass and the archive open-time check. A read-only coverage check on 2026-10-18 found the local candle file holds the 2026Q3 archive (1 July to 30 September) and collector candles from 13 October 10:30 to 15 October 23:00 UTC only (1- and 5-minute series); no Windows price task was registered.
+- **The 2026Q2 archive** (`Kraken_OHLCVT_2026Q2.zip`, 537,866,903 bytes by its HTTP headers) is being downloaded from assets.kraken.com into the private market folder for import.
+- **Wave 10** is planned in [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md): W10-A C7 protected spending files (D261) and protected Perplexity budget origins, W10-B C8 bounded price-mark reads for the ledger, money limits and scorecard, W10-C C9 an HQ card for a filled buy without a safety exit plus the `news-alarm-poll` malformed-number refusal. Reserved D264–D278 and state migrations 0047–0049; new owner decisions start at D280. L3 waits for wave 10.
+- Working rule for local sessions (D263): tell the owner before running any `trade-graph` command; the trading system starts only with the owner's yes at L3.
+
+Next: the wave 10 cloud session; on the PC, L1 (Windows tasks, collection pass, Q2 import, open-time check), then L2.
+
+---
+
 # Owner answers three open questions (D260–D262), no code change — 2026-10-18
 
 Branch `claude/day-trader-engine-20261012`. Decision log only: no code changed, nothing deployed, no paid, network or exchange call, no order. After the night shift for waves 8 and 9 ([NIGHT-2026-10-17.md](planning/handoffs/NIGHT-2026-10-17.md)), the owner answered the three open owner questions, each with the recommended answer:
