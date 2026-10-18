@@ -9,7 +9,7 @@ paid-call limits. Nothing needs your decision now: at L2 the Jev price must be r
 old for real calls from 15 November 2026), and at L3 step 3 of the checklist lists the lines to add.
 
 Branch: `claude/c6-news-poll-in-service`, head: the commit that adds this handoff's pull request link (code, tests and
-docs at `6d3ab17`). Pull request: PR_PLACEHOLDER (not merged).
+docs at `6d3ab17`). Pull request: https://github.com/krybaby7/trade-graph/pull/23 (not merged).
 
 ## What was built
 
