@@ -3,15 +3,20 @@
 ``CoinScanStep`` runs one live scan at the day start and records it; with no step configured, the day start uses
 the newest live scan already recorded, labelled with its source and moment. Scheduling the hourly scan inside the
 service is not done here: W6-D (C2) owns the in-service price collector and the hourly scan that follows it.
+
+A desk wake's shortlist carries each coin's market type (W12-A, ``with_market_types``): W11-A's label in force at the
+wake's moment, or none with its status (``stale`` or ``missing``). The hourly scan labels coins; the day start's scan
+step does not, so a coin's label comes from the hourly round, never from a guess here.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Protocol
 
 from trade_graph.application.coin_scanner.store import CoinScanStore, StoredScan
+from trade_graph.contracts.trading_desk import CoinMarketType
 from trade_graph.contracts.wakes import ScanReference, ShortlistCoin
 
 
@@ -29,6 +34,18 @@ def scan_reference(scan: StoredScan, *, source: str) -> ScanReference:
     return ScanReference(status=status, source=source, scan_id=scan.scan_id, as_of=scan.as_of,
                          ranking_version=scan.ranking_version, evidence=scan.evidence, optimistic=scan.optimistic,
                          shortlist=shortlist, error=(scan.error or None) and str(scan.error)[:500])
+
+
+def with_market_types(scan: ScanReference, readings: Mapping[str, CoinMarketType]) -> ScanReference:
+    """The shortlist with each coin's market type (W12-A): the type in force, or None with ``stale`` or ``missing``.
+    A coin without a reading is shown as missing; the scan itself is unchanged."""
+    shortlist = []
+    for coin in scan.shortlist:
+        reading = readings.get(coin.symbol)
+        shortlist.append(coin.model_copy(update={
+            "market_type": None if reading is None else reading.market_type,
+            "market_type_status": "missing" if reading is None else reading.status}))
+    return scan.model_copy(update={"shortlist": tuple(shortlist)})
 
 
 def latest_recorded(store: CoinScanStore, as_of: datetime) -> ScanReference:
@@ -56,4 +73,4 @@ class CoinScanStep:
         return scan_reference(self.store.record(result), source="day_start_scan")
 
 
-__all__ = ["CoinScanStep", "DayStartScan", "latest_recorded", "scan_reference"]
+__all__ = ["CoinScanStep", "DayStartScan", "latest_recorded", "scan_reference", "with_market_types"]

@@ -14,7 +14,10 @@ Leader approval, D121). The checks are the owner's rules and the facts a venue w
   each entry is authorized through ``Execution.authorize(..., day_plan=True)``.
 
 Installation persists the plan, every entry's authorized intent with its reservation and outbox row, and the plan's
-alarms in one transaction, before anything reaches the broker (dispatch sends them later). A retried installation
+alarms in one transaction, before anything reaches the broker (dispatch sends them later). The same transaction
+records, for Learning and the scorecard, the coin's market type at that moment, the Trading desk's playbook revision
+in force and its stance on the coin (W12-A, D298); that record is never a check: no plan is refused for not following
+the playbook or a market type (D280 item 5). A retried installation
 with the same ``request_id`` returns the installed plan instead of resting its entries twice. A new plan for a coin
 replaces that coin's latest plan: its resting entries are cancelled and reconciled first, and if any of them is
 still in an unknown state the new plan is refused until reconciliation settles it.
@@ -30,6 +33,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -40,6 +44,7 @@ from trade_graph.application.alarms.book import AlarmBook
 from trade_graph.application.day_plan_protection import OUTSTANDING, TERMINAL
 from trade_graph.application.execution import Execution
 from trade_graph.application.practice_range.store import PracticeRangeStore, RunRecord
+from trade_graph.application.trading_desk.store import DeskStore
 from trade_graph.contracts.alarms import AlarmRequest
 from trade_graph.contracts.day_plans import DAY_PLAN_CONTRACT_VERSION, DayPlan, expiry_of
 from trade_graph.contracts.models import Decision, InstrumentRules, OwnerPolicy
@@ -252,6 +257,8 @@ class DayPlans:
                  plan.content_sha256, installed_at))
             if latest is not None:
                 self._event(latest.plan_id, "superseded", document={"by": plan_id})
+            desk = self._desk_record(connection, plan_id=plan_id, portfolio_id=portfolio_id, symbol=plan.symbol,
+                                     task_id=task_id, at=now)
             base, quote = plan.symbol.split("/", 1)
             intents = []
             for position, (item, expiry) in enumerate(zip(plan.entries, checked.expiries, strict=True)):
@@ -291,8 +298,22 @@ class DayPlans:
                     self.alarms.cancel(alarm_id, department="trader", reason="replaced by a new day plan",
                                        task_id=task_id)
             self._event(plan_id, "installed", document={"alarm_ids": alarm_ids, "entry_intents": intents,
-                                                        "practice_reports": [r.run_id for r in checked.reports]})
+                                                        "practice_reports": [r.run_id for r in checked.reports],
+                                                        "desk_record": desk})
         return self._record(plan_id, created=True)
+
+    def _desk_record(self, connection, *, plan_id: str, portfolio_id: str, symbol: str, task_id: str | None,
+                     at: datetime) -> str:
+        """Record the coin's market type, the playbook revision in force and the desk's stance with the plan (W12-A,
+        D298), in a savepoint of the installation: a record that cannot be written leaves the plan installed without
+        one (never refused, D280 item 5); the ``installed`` event says which."""
+        try:
+            with self.database.immediate():
+                recorded = DeskStore(self.database, self.clock).record_day_plan(
+                    connection, plan_id=plan_id, portfolio_id=portfolio_id, symbol=symbol, task_id=task_id, at=at)
+        except (TradeGraphError, sqlite3.DatabaseError, ValueError) as error:
+            return f"not recorded: {type(error).__name__}"
+        return "recorded" if recorded is not None else "not recorded: no Trading desk records (before 0052)"
 
     async def _retire(self, plan: InstalledPlan, *, reason: str) -> list[str]:
         """Cancel the plan's outstanding entries (reconciling each) and record why."""
