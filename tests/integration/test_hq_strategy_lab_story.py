@@ -40,7 +40,8 @@ def test_a_failed_lab_step_is_named_in_right_now_and_needs_you(env):  # noqa: F8
     assert "routine step" not in _plain(card["title"])
 
 
-def _lab(env, status: str, *, minutes: float, request: str, kind: str = "tune", reason: str | None = None) -> None:
+def _lab(env, status: str, *, minutes: float, request: str, kind: str = "tune",  # noqa: F811
+         reason: str | None = None) -> None:
     env.runtime.clock.advance(minutes * 60)
     payload = {"status": status, "request_id": request, "kind": kind, "family": "dip-rebound",
                "brief": {"kind": kind, "strategy_ref": "dip-rebound@1", "symbol": "SOL/USD"}, "attempt": 1,
