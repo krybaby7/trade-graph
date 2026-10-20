@@ -205,5 +205,10 @@ def test_the_vocabulary_and_the_kernel_path() -> None:
     assert MARKET_TYPES == ("rising", "sideways", "falling", "unclear")
     assert set(UNCLEAR_REASONS) == {"no_recent_candle", "not_enough_candles", "gap", "no_value",
                                     "evaluation_failed"}
-    assert path_is_protected("src/trade_graph/kernel/market_type.py")
-    assert path_is_protected("src/trade_graph/domain/market_types.py")
+    for path in ("src/trade_graph/kernel/market_type.py", "src/trade_graph/kernel/trade_metrics.py",
+                 "src/trade_graph/domain/market_types.py", "src/trade_graph/application/market_types/labeller.py",
+                 "src/trade_graph/application/market_types/hourly.py",
+                 "src/trade_graph/application/market_types/store.py",
+                 "src/trade_graph/adapters/persistence/market_type_schema.py",
+                 "migrations/versions/0050_market_type_labels.py"):
+        assert path_is_protected(path), path

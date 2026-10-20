@@ -68,6 +68,9 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/events/",
     # T42 scorecard: how the paper result is valued and compared is a scoring definition, like the kernel sums.
     "src/trade_graph/application/scorecard.py",
+    # W11-A (D286): the readings the kernel's market-type function decides on, the hourly labels and their record,
+    # so live labels and practice-range splits cannot be steered (kernel/market_type.py is protected with kernel/).
+    "src/trade_graph/application/market_types/",
     # T37 focus coins on Perplexity: the owner's switch, the spend rule and receipt collection of research rounds,
     # and Research's focus workflow, which checks picks against the shortlist and the owner's coin list.
     "src/trade_graph/contracts/perplexity_switch.py",
