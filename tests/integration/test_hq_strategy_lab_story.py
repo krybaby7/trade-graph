@@ -11,10 +11,10 @@ Synthetic records on the HQ projection test's database (``test_hq_projection.env
 
 from __future__ import annotations
 
-from tests.integration.test_hq_projection import OWNER, env, run, snap  # noqa: F401 - env is the fixture
+from tests.integration.test_hq_projection import env, run, snap  # noqa: F401 - env is the fixture
 
-from trade_graph.api import hq_copy
 from trade_graph.api import hq_contract as contract
+from trade_graph.api import hq_copy
 from trade_graph.api.hq_state import PROBLEM_PREFIXES
 
 
