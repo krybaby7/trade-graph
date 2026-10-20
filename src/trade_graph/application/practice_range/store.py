@@ -9,6 +9,12 @@ Rules (T29, D119, D166), checked here with plain messages and again by SQL trigg
   the first version confirmed there spends it: another version needs a new study with a later, untouched window.
 - Reports and verifications are append-only.
 
+For the strategy lab inside the service (W11-B, D292), ``confirmation_offer`` names, per strategy family, the newest
+stretch of whole days the family never tuned or confirmed on, up to the newest complete UTC day: as the price collector
+adds days, they become new confirmation days (walk-forward). It is an offer, read from the same records the rules
+check; the rules themselves are unchanged. The module is a protected path (W11-B): the deployed Engineer cannot change
+how the test is kept fair.
+
 Nothing here calls a model, spends money or touches an order.
 """
 
@@ -61,6 +67,24 @@ class RunRecord:
     result_sha256: str
     report: dict[str, Any]
     created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationOffer:
+    """The newest untouched days of a strategy family for a new study's confirmation window (walk-forward, D292).
+
+    ``untouched_from`` is the day after the last day any of the family's studies tuned on or set aside for
+    confirmation (None: the family has no study, so every day is untouched); ``window`` runs from there to ``until``
+    (today, the end of the newest complete UTC day, excluded) when that is at least one day, else None. ``studies``
+    lists the family's newest studies with their windows and the version that spent the confirmation window (None:
+    still set aside, the first version confirmed there spends it).
+    """
+
+    strategy_id: str
+    untouched_from: date | None
+    until: date
+    window: ReplayWindow | None
+    studies: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +273,24 @@ class PracticeRangeStore:
                                     (strategy_ref,)).fetchone()
         return row is not None
 
+    def confirmation_offer(self, strategy_id: str, *, today: date, studies_shown: int = 4) -> ConfirmationOffer:
+        """The newest untouched days of a family for a confirmation, up to ``today`` (excluded); see the class."""
+        plans = self.studies(strategy_id)
+        latest = max((max(plan.tune.end, plan.confirm.end) for plan in plans), default=None)
+        window = None
+        if latest is not None and latest < today:
+            window = ReplayWindow(start=latest, end=today)
+        bound = {row["study_id"]: row["strategy_ref"] for row in self.database.execute(
+            "SELECT r.study_id, r.strategy_ref FROM practice_range_runs r JOIN practice_range_studies s "
+            "ON s.study_id = r.study_id WHERE s.strategy_id = ? AND r.phase = 'confirm' AND r.sequence = "
+            "(SELECT MIN(f.sequence) FROM practice_range_runs f WHERE f.study_id = r.study_id AND f.phase = 'confirm')",
+            (strategy_id,)).fetchall()}
+        shown = tuple({"study_id": plan.study_id, "tune": plan.tune.to_document(),
+                       "confirm": plan.confirm.to_document(), "confirmed_by": bound.get(plan.study_id)}
+                      for plan in plans[::-1][:studies_shown])
+        return ConfirmationOffer(strategy_id=strategy_id, untouched_from=latest, until=today, window=window,
+                                 studies=shown)
+
     def selection(self, study_id: str) -> dict[str, Any]:
         """What was tried in a study so far, so a confirmation shows the selection behind it (D119)."""
         rows = self.database.execute(
@@ -329,4 +371,5 @@ class ReadOnlyReports:
         self._connection.close()
 
 
-__all__ = ["PracticeRangeStore", "ReadOnlyReports", "RegisteredStrategy", "RunRecord", "VerificationRecord"]
+__all__ = ["ConfirmationOffer", "PracticeRangeStore", "ReadOnlyReports", "RegisteredStrategy", "RunRecord",
+           "VerificationRecord"]
