@@ -29,7 +29,7 @@ from trade_graph.domain.clock import Clock, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 
 REQUEST_PAUSE_SECONDS = 0.25
-MAX_LIVE_PAGES = 2_000
+MAX_LIVE_PAGES = 2_500  # 5-minute candles need 2,103 pages for two years
 
 
 def _save(store: CandleStore, candles: list[Candle], run_id: int) -> dict[str, int]:
