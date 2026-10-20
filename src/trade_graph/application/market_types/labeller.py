@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from types import MappingProxyType
 from typing import Any
@@ -69,16 +69,30 @@ def indicator_document(rules: MarketTypeRules) -> dict[str, Any]:
     return document
 
 
-def slot_facts(window: CandleWindow, rules: MarketTypeRules) -> tuple[SlotFacts, ...]:
-    """Each slot's candle close and readings; ``None`` where the engine gives no value (warming up or gapped)."""
+def slot_facts(window: CandleWindow, rules: MarketTypeRules, *, wanted: int | None = None) -> tuple[SlotFacts, ...]:
+    """Each slot's candle close and readings; ``None`` where the engine gives no value (warming up or gapped).
+
+    ``wanted``: only the newest ``wanted`` slots are labelled, so only they get readings (and the average also
+    ``slope_bars`` before them); older slots keep their candle and no readings. A reading depends only on the span
+    that ends at its slot, so each one is the value the whole window gives, and the work stays small for a live label.
+    """
     if window.interval_minutes != rules.interval_minutes:
         raise ValidationFailure(f"the rules read {rules.interval_minutes}-minute candles, not "
                                 f"{window.interval_minutes}-minute ones")
-    series = {role: rolling_latest(name, parameters, window)
-              for role, (name, parameters) in rules.indicator_settings().items()}
+    if wanted is not None and (type(wanted) is not int or wanted < 1):
+        raise ValidationFailure("label at least one slot")
+    first_wanted = 0 if wanted is None else max(0, len(window.slots) - wanted)
+    series, offsets, needed = {}, {}, {}
+    for role, (name, parameters) in rules.indicator_settings().items():
+        needed[role] = max(0, first_wanted - (rules.slope_bars if role == "average" else 0))
+        offsets[role] = max(0, needed[role] - plan_history(name, parameters, 1).span + 1) if wanted else 0
+        part = window if not offsets[role] else replace(window, slots=window.slots[offsets[role]:])
+        series[role] = rolling_latest(name, parameters, part)
 
     def reading(role: str, index: int):
-        value = series[role].at(index)
+        if index < needed[role]:
+            return None
+        value = series[role].at(index - offsets[role])
         return None if value is None else rounded_decimal(value)
 
     facts = []
@@ -109,15 +123,20 @@ def weakest_evidence(labels: set[str] | frozenset[str] | tuple[str, ...]) -> str
 
 @dataclass(frozen=True, slots=True)
 class LabelledWindow:
-    """A window of the rules' candles with every slot's verdict; ``at`` answers any moment it covers."""
+    """A window of the rules' candles with the verdicts of its labelled slots; ``at`` answers a moment whose newest
+    possible candle is one of them (or later, up to the lag)."""
 
     window: CandleWindow
     rules: MarketTypeRules
     history: int
     timeline: MarketTypeTimeline
+    first_close: datetime
     _index: Mapping[datetime, int] = field(repr=False)
 
     def at(self, moment: datetime) -> MarketTypeLabel:
+        moment = _aware("the moment", moment)
+        if align_close_time(moment, self.rules.interval_minutes) < self.first_close:
+            raise ValidationFailure("the moment lies before the labelled stretch of this window")
         return self.timeline.at(moment)
 
     def candles_behind(self, label: MarketTypeLabel, run_labels: Mapping[int, str]) -> dict[str, Any]:
@@ -148,11 +167,14 @@ class LabelledWindow:
                 "input_sha256": _digest(self.window, 0, len(self.window.slots) - 1)}
 
 
-def labelled_window(window: CandleWindow, rules: MarketTypeRules) -> LabelledWindow:
+def labelled_window(window: CandleWindow, rules: MarketTypeRules, *, slots: int | None = None) -> LabelledWindow:
+    """Verdicts for the newest ``slots`` slots of ``window`` (all of them by default) and the lag before them."""
     history = required_history(rules)
-    verdicts = slot_verdicts(slot_facts(window, rules), rules, history=history)
+    wanted = None if slots is None else slots + rules.max_lag_bars
+    verdicts = slot_verdicts(slot_facts(window, rules, wanted=wanted), rules, history=history)
+    first = 0 if slots is None else max(0, len(window.slots) - slots)
     return LabelledWindow(window=window, rules=rules, history=history,
-                          timeline=MarketTypeTimeline(verdicts, rules),
+                          timeline=MarketTypeTimeline(verdicts, rules), first_close=window.slots[first].close_time_utc,
                           _index=MappingProxyType({slot.close_time_utc: index
                                                    for index, slot in enumerate(window.slots)}))
 
@@ -166,18 +188,19 @@ def _aware(label: str, value: object) -> datetime:
 def read_timeline(store: CandleStore, symbol: str, source: str, *, end_close: datetime, slots: int,
                   as_of: datetime, rules: MarketTypeRules = CURRENT_MARKET_TYPE_RULES,
                   mode: ReadMode = "point_in_time") -> LabelledWindow:
-    """Labels for the ``slots`` candles ending at ``end_close`` and any moment up to the lag after them: reads the
-    history and lag before the first one too, so every one of them is labelled from its full history."""
+    """Labels for the ``slots`` candles ending at ``end_close`` and any moment up to the lag after them. It reads the
+    history and the lag before the first one too, so each of them, and the candles a moment on the first of them may
+    fall back to, is labelled from its full history."""
     _aware("end_close", end_close)
     _aware("as_of", as_of)
     if end_close != align_close_time(end_close, rules.interval_minutes) or end_close.microsecond:
         raise ValidationFailure(f"the last slot closes on the {rules.interval_minutes}-minute grid")
     if type(slots) is not int or slots < 1:
         raise ValidationFailure("label at least one slot")
-    count = slots + required_history(rules) - 1 + rules.max_lag_bars
+    count = slots + required_history(rules) + rules.max_lag_bars
     window = store.window(symbol, rules.interval_minutes, source, end_close_time=end_close, count=count, as_of=as_of,
                           mode=mode)
-    return labelled_window(window, rules)
+    return labelled_window(window, rules, slots=slots)
 
 
 @dataclass(frozen=True, slots=True)

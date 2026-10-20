@@ -26,6 +26,7 @@ from trade_graph.domain.clock import Clock, parse_utc
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.kernel.cost_profiles import CostProfileBook, load_cost_profiles
 from trade_graph.kernel.fills import BAR_REPLAY_POLICY
+from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES, MarketTypeRules, resolve_market_type_rules
 
 REPORT_VERSION = "practice-range-report-v1"
 DEFAULT_CAPITAL = Decimal("10000")  # the virtual USD10,000 paper account
@@ -102,8 +103,10 @@ class PracticeRange:
             profiles: Sequence[str] = ("all",), capital: Decimal = DEFAULT_CAPITAL,
             rules: InstrumentRules | None = None, window: ReplayWindow | None = None,
             benchmark_symbol: str | None = None, benchmark_source: str | None = None,
-            data_as_of=None) -> list[RunRecord]:
-        """Replay one version on one series for a study phase, once per cost profile, and store each report."""
+            data_as_of=None, market_type_rules: MarketTypeRules = CURRENT_MARKET_TYPE_RULES) -> list[RunRecord]:
+        """Replay one version on one series for a study phase, once per cost profile, and store each report.
+
+        Every report splits its trades by the market type at entry (W11-A, D289) under ``market_type_rules``."""
         plan = self.store.study(study_id)
         replayed = window or plan.window(phase)
         self.store.check_run(study_id=study_id, phase=phase, strategy_ref=strategy_ref, window=replayed)
@@ -114,7 +117,7 @@ class PracticeRange:
             request = ReplayRequest(strategy=strategy, symbol=symbol, source=source, window=replayed,
                                     data_as_of=cut_off, profile=profile, policy=BAR_REPLAY_POLICY, capital=capital,
                                     rules=rules, benchmark_symbol=benchmark_symbol,
-                                    benchmark_source=benchmark_source)
+                                    benchmark_source=benchmark_source, market_type_rules=market_type_rules)
             result = replay(self.candles, request)
             labels = self._labels(result)
             report, digest = build_report(result=result, plan=plan, phase=phase, labels=labels,
@@ -132,6 +135,8 @@ class PracticeRange:
         known = {run.run_id: run.evidence_label for run in self.candles.runs()}
         for document in result.benchmark_data.values():
             labels.extend(known.get(run_id, "unknown") for run_id in document.get("run_ids", ()))
+        if result.market_types is not None:  # the candles behind the market-type labels (W11-A)
+            labels.extend(known.get(run_id, "unknown") for run_id in result.market_types.candles["run_ids"])
         return labels
 
     def verify(self, run_id: str) -> VerificationRecord:
@@ -149,6 +154,13 @@ class PracticeRange:
         if policy is None or policy.content_sha256 != request_document["fill_policy"]["sha256"]:
             problems.append("the fill policy revision is unknown or changed")
             policy = policy or BAR_REPLAY_POLICY
+        # A report made before W11-A names no market-type rules and is replayed without them, as it was made.
+        named = request_document.get("market_type_rules")
+        market_type_rules = None
+        if named is not None:
+            market_type_rules = resolve_market_type_rules(named["ref"])
+            if market_type_rules.content_sha256 != named["sha256"]:
+                problems.append("the market-type rules no longer match the report's hash")
         window_document = request_document["window"]
         rules = request_document["instrument_rules"]
         request = ReplayRequest(
@@ -159,7 +171,7 @@ class PracticeRange:
             capital=Decimal(request_document["capital"]),
             rules=None if rules is None else InstrumentRules.model_validate(rules),
             benchmark_symbol=request_document["benchmark"]["hold_btc_symbol"],
-            benchmark_source=request_document["benchmark"]["hold_btc_source"])
+            benchmark_source=request_document["benchmark"]["hold_btc_source"], market_type_rules=market_type_rules)
         rerun = replay(self.candles, request).to_document()
         digest = result_sha256(rerun)
         stored = record.report["result"]

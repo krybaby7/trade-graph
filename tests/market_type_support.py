@@ -7,12 +7,13 @@ saved under the evidence label ``synthetic_fixture``; nothing here touches the n
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from tests.practice_range_support import save
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.contracts.candles import Candle
+from trade_graph.contracts.practice_range import PracticeStrategy, ReplayWindow
 
 HOUR = timedelta(hours=1)
 SERIES_START = datetime(2026, 5, 1, tzinfo=UTC)  # the open of candle 0
@@ -89,12 +90,64 @@ def hourly_moment(index: int, *, minutes: int = 5, start: datetime = SERIES_STAR
     return start + HOUR * (index + 1) + timedelta(minutes=minutes)
 
 
+# --- the practice-range fixture: an hourly path whose window holds every market type -----------------------------
+
+# Seed 2's hourly path is falling, then sideways, then rising inside the window; the missing hour 970 then makes
+# the last 13 hours of the window unclear (a gap among the 863 hours the label reads).
+MIXED_SEED = 2
+MIXED_HOURS = 1000
+MIXED_HOLE = 970
+REPLAY_WINDOW = ReplayWindow(start=date(2026, 6, 7), end=date(2026, 6, 11))  # hourly candles 888 to 983
+QUARTER = timedelta(minutes=15)
+
+
+def mixed_hours(symbol: str = "SYN/USD", **kwargs) -> list[Candle]:
+    return series(symbol, closes_wandering(MIXED_HOURS, MIXED_SEED), skip={MIXED_HOLE}, **kwargs)
+
+
+def quarters(hours: list[Candle], *, first: datetime, last: datetime) -> list[Candle]:
+    """15-minute candles inside each hourly candle that opens in [first, last): the price walks in four equal steps
+    from the hour's open to its close, with 0.03 wicks. The missing hour has no quarters either."""
+    rows = []
+    for hour in hours:
+        if not first <= hour.open_time_utc < last:
+            continue
+        step = (hour.close - hour.open) / 4
+        for part in range(4):
+            opened = hour.open + step * part
+            closed = opened + step
+            begin = hour.open_time_utc + QUARTER * part
+            rows.append(hour.model_copy(update={
+                "interval_minutes": 15, "open_time_utc": begin, "close_time_utc": begin + QUARTER,
+                "available_at_utc": begin + QUARTER, "open": opened, "close": closed,
+                "high": max(opened, closed) + Decimal("0.03"), "low": min(opened, closed) - Decimal("0.03")}))
+    return rows
+
+
+def busy_strategy(*market_types: tuple[str, str], version: int = 1, **changes) -> PracticeStrategy:
+    """Buy at the next open whenever flat (the close is always above 1), sell at +0.6%, -1% or after 6 candles;
+    ``market_types`` adds conditions such as ``("is", "rising")``. A test strategy, nothing more."""
+    entry = [{"left": {"candle": "close"}, "relation": "above", "right": {"level": "1"}},
+             *({"market_type": kind, "relation": relation} for relation, kind in market_types)]
+    document = {
+        "schema_version": 1, "strategy_id": "busy-test", "version": version, "title": "Always in, briefly",
+        "hypothesis": "Trades often so every market type gets trades; a test strategy, nothing more.",
+        "interval_minutes": 15, "indicators": {},
+        "entry": {"all_of": entry, "order": {"kind": "market"}},
+        "exit": {"stop_loss_fraction": "0.01", "take_profit_fraction": "0.006", "max_holding_bars": 6},
+        "sizing": {"equity_fraction": "0.5"},
+    }
+    document.update(changes)
+    return PracticeStrategy.model_validate(document)
+
+
 def labels_by_index(label_at: Callable[[datetime], str], indices: Iterable[int]) -> dict[int, str]:
     return {index: label_at(hourly_moment(index)) for index in indices}
 
 
 __all__ = [
     "FIRST_LABELLED", "HOUR", "SERIES_START", "candle", "closes_falling", "closes_range", "closes_rising",
-    "closes_wandering",
+    "closes_wandering", "MIXED_HOLE", "MIXED_HOURS", "MIXED_SEED", "REPLAY_WINDOW", "busy_strategy",
+    "mixed_hours", "quarters",
     "hourly_moment", "labels_by_index", "series", "store_series",
 ]
