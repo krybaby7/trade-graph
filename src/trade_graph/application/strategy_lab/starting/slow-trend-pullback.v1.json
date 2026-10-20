@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "strategy_id": "slow-trend-pullback",
+  "version": 1,
+  "title": "Slow trend pullback on 15-minute candles",
+  "hypothesis": "A rising trend can resume after a shallow pullback that holds the slower average.",
+  "interval_minutes": 15,
+  "indicators": {
+    "fast_average": {"indicator": "SMA", "parameters": {"timeperiod": 80}},
+    "slow_average": {"indicator": "SMA", "parameters": {"timeperiod": 200}},
+    "recent_high": {"indicator": "HIGHEST_HIGH", "parameters": {"timeperiod": 80}}
+  },
+  "entry": {
+    "all_of": [
+      {"left": {"indicator": "fast_average"}, "relation": "above", "right": {"indicator": "slow_average"}},
+      {"left": {"candle": "close"}, "relation": "below", "right": {"indicator": "recent_high"}},
+      {"left": {"candle": "close"}, "relation": "above", "right": {"indicator": "slow_average"}}
+    ],
+    "order": {"kind": "limit", "price": {"candle": "close"}, "offset_fraction": "0.002", "expires_after_bars": 4}
+  },
+  "exit": {
+    "stop_loss_fraction": "0.02",
+    "take_profit_fraction": "0.04",
+    "any_of": [
+      {"left": {"candle": "close"}, "relation": "crosses_below", "right": {"indicator": "slow_average"}}
+    ],
+    "max_holding_bars": 192
+  },
+  "sizing": {"equity_fraction": "0.2"},
+  "note": "An executable 15-minute reading of the slow-trend-pullback template (strategies/templates). Averages of 80 and 200 candles are about 20 and 50 hours. Unproven: a starting point for the practice range, not advice."
+}
