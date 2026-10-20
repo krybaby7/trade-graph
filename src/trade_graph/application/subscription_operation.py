@@ -237,6 +237,8 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             service.news_poll = installed_news_poll(runtime, protected_owner)
             # W11-B (D292): the Trading desk's strategy lab runs queued requests in its own thread, reading the candle
             # file through its own read-only handle; it needs no key or route and never places an order.
+            if lab.get("worker") is not None:
+                lab["worker"].close()  # a second start in this process opens a fresh handle
             service.lab_worker = lab["worker"] = installed_strategy_lab(runtime)
             # W8-A (D240): with the event engine on and the owner's Perplexity switch on, Research's and the Leader's
             # engine wakes run on Perplexity in this protected process; otherwise the handlers are unchanged.

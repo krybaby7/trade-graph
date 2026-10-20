@@ -13,8 +13,9 @@ How a request is carried out:
 - ``tune`` and ``confirm`` are checked by the store first (``check_run``: tune on earlier days, confirm the whole
   window once on untouched later days), then replayed outside any transaction under every cost profile asked for and
   always the account's own (default: all published profiles), at one data cut-off; then all their reports and the
-  request's end are written in **one** transaction. A stop between profiles puts the request back (``queued``); a crash
-  leaves it ``running`` and the next start runs it again. Either way nothing of it was recorded: never half recorded.
+  request's end are written in **one** transaction. A stop before the last profile's replay puts the request back
+  (``queued``); a crash leaves it ``running`` and the next start runs it again. Either way nothing of it was recorded:
+  never half recorded.
 
 A refused request (a ``TradeGraphError``: the grammar, the study rules, a missing version or candle file) ends
 ``refused`` with the reason; anything unexpected ends ``failed`` with the error's type, and the queue goes on. There is
@@ -210,8 +211,6 @@ class StrategyLabWorker:
             results.append(self.replay_fn(self.candles, ReplayRequest(
                 strategy=strategy, symbol=request.symbol, source=request.replay_source(), window=window,
                 data_as_of=cut_off, profile=profile, policy=BAR_REPLAY_POLICY, capital=self.capital)))
-        if self.stop.is_set():
-            raise _Stopped
         known = {run.run_id: run.evidence_label for run in self.candles.runs()}
         runs = []
         with self.database.immediate():
