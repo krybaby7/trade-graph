@@ -874,6 +874,10 @@ PROBLEM_PREFIX: Final = {
     "news_poll:": ("the news check's last step failed",
                    "New headlines may be missing until it works again; a missing feed is never taken as \"no news\". "
                    "Trading, protection and your records are not affected."),
+    # W13-A (D303): the strategy lab's step beside the service (``paper_service._run_lab``, W11-B).
+    "strategy_lab:": ("the strategy lab's last step failed",
+                      "The Trading desk's lab requests wait until it works again; trading, protection and your "
+                      "records are not affected."),
     "other": ("a routine step is failing", "Some background work is not happening."),
 }
 
@@ -999,6 +1003,24 @@ STORY: Final = {
     "account_opened": "Practice account opened with ",
     "account_opened_live": "Account opened with ",
     "engineer_candidate": "The Engineer finished an improvement for the Leader to review.",
+    # W13-A (D303): the strategy lab's finished requests; requests ending within 15 minutes are one item.
+    "lab_one": "The strategy lab finished {what}.",
+    "lab_one_refused": "The strategy lab refused {what}.",
+    "lab_one_failed": "The strategy lab couldn't finish {what}: it failed.",
+    "lab_many": "The strategy lab finished {n} requests: {outcomes}.",
+    "lab_outcome": {"done": "{n} done", "refused": "{n} refused", "failed": "{n} failed"},
+    "lab_kind": {"register_strategy": "a new strategy version", "create_study": "a new study",
+                 "tune": "a tuning run", "confirm": "a confirmation"},
+    "lab_of": " of {subject}",
+    "lab_on": " on {symbol}",
+    "lab_consequence": "Results are in the Trading desk room on the HQ tab; the desk is woken with them.",
+    "lab_refused_consequence": ("A refused request keeps the test fair (for example, a confirmation needs days the "
+                                "strategy never tuned on); the desk reads why when it is woken, and the Trading "
+                                "desk room shows it."),
+    "lab_failed_consequence": "The desk is told it failed; the lab goes on with the next request.",
+    "lab_not_ready": "The strategy lab couldn't start.",
+    "lab_not_ready_consequence": ("The Trading desk's lab requests wait until it can; trading, protection and your "
+                                  "records are not affected."),
 }
 
 # --- D.12 Rooms -----------------------------------------------------------------------------
