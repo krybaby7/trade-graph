@@ -13,9 +13,9 @@ read-only one too; W13-A can show "the Leader news the desk read" from the same 
   shown: they woke nobody, but the desk may weigh them.
 
 Everything here is data, never instructions: headlines and notes are quoted text. The key stays inside
-``NEWS_CONTEXT_BYTES`` of the 128 KiB request: the newest round is shown whole, older ideas and verdicts are left out
-first and counted, never dropped silently (D116 is about activity; this is a bound on what one turn is shown). News
-cannot be replayed, so a choice made because of news is recorded with its reason in the desk's stances.
+``NEWS_CONTEXT_BYTES`` (12 KiB) of the 128 KiB request: the newest round is shown whole, older ideas and verdicts are
+left out first and counted, never dropped silently (D116 is about activity; this bounds what one turn is shown).
+News cannot be replayed, so a choice made because of news is recorded with its reason in the desk's stances.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from trade_graph.application.news_wakes import news_wake_setting
 from trade_graph.contracts.news import SUBJECT_KRAKEN, coin_code
 from trade_graph.domain.clock import utc_iso
 
-NEWS_CONTEXT_BYTES = 16 * 1024  # the news share of one turn's 128 KiB request; a bound on what is shown, not a cap
+NEWS_CONTEXT_BYTES = 12 * 1024  # the news share of one turn's 128 KiB request; a bound on what is shown, not a cap
 INBOX_DAYS = 7
 JEV_HOURS = 24
 _TITLE = 200
@@ -122,7 +122,7 @@ def _inbox(connection: sqlite3.Connection, portfolio_id: str, since: str, at: st
     return items
 
 
-# --- Jev ---------------------------------------------------------------------------------------------------------------
+# --- Jev --------------------------------------------------------------------------------------------------------------
 
 def _codes(coins: Iterable[str]) -> list[str]:
     codes = set()
@@ -172,7 +172,7 @@ def _jev(connection: sqlite3.Connection, portfolio_id: str, codes: list[str], si
             "would_wake_total": sum(1 for item in verdicts if item["would_wake"])}
 
 
-# --- the key -----------------------------------------------------------------------------------------------------------
+# --- the key ----------------------------------------------------------------------------------------------------------
 
 def news_context(connection: sqlite3.Connection, portfolio_id: str, *, coins: Iterable[str], at: datetime,
                  budget: int = NEWS_CONTEXT_BYTES) -> dict[str, Any]:
@@ -191,11 +191,12 @@ def news_context(connection: sqlite3.Connection, portfolio_id: str, *, coins: It
         document["rounds_last_day"] = _rounds_since(connection, portfolio_id, utc_iso(at - timedelta(days=1)),
                                                     moment)
         document["lab_inbox"] = _inbox(connection, portfolio_id, utc_iso(at - timedelta(days=INBOX_DAYS)), moment)
-    return _fit(document, budget)
+    return fit_news(document, budget)
 
 
-def _fit(document: dict[str, Any], budget: int) -> dict[str, Any]:
-    """Leave out the oldest Jev verdicts and inbox ideas, in turn, until the key fits; the counts say how many."""
+def fit_news(document: dict[str, Any], budget: int) -> dict[str, Any]:
+    """Leave out the oldest Jev verdicts and inbox ideas, in turn, until the key fits; the counts say how many.
+    The newest round stays (its headlines shortened last). Changes ``document`` in place and returns it."""
     jev = document["jev"]
     while _size(document) > budget and (jev["verdicts"] or document["lab_inbox"]):
         if jev["verdicts"] and (len(jev["verdicts"]) >= len(document["lab_inbox"]) or not document["lab_inbox"]):
@@ -211,4 +212,4 @@ def _fit(document: dict[str, Any], budget: int) -> dict[str, Any]:
     return document
 
 
-__all__ = ["INBOX_DAYS", "JEV_HOURS", "NEWS_CONTEXT_BYTES", "NEWS_INSTRUCTION", "news_context"]
+__all__ = ["INBOX_DAYS", "JEV_HOURS", "NEWS_CONTEXT_BYTES", "NEWS_INSTRUCTION", "fit_news", "news_context"]

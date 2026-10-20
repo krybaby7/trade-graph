@@ -76,9 +76,8 @@ def test_a_strategy_idea_for_the_desk_wakes_it_and_waits_in_its_lab_inbox_until_
 
     # The desk decides: a lab request that cites the idea in its note links them; the inbox shows it.
     setup.engine.request_wake(setup.portfolio, "trader", "Synthetic: decide.", requested_by="leader")
-    answer = {"summary": "Test the Leader's idea.",
-              "lab_requests": [register(note=f"From the Leader's idea {desk_idea.request_id}.").model_dump(
-                  mode="json")]}
+    asked = register().model_copy(update={"note": f"From the Leader's idea {desk_idea.request_id}."})
+    answer = {"summary": "Test the Leader's idea.", "lab_requests": [asked.model_dump(mode="json")]}
     run_all(setup.scheduler, setup.engine, {"trader": scripted(answer)}, [setup.portfolio])
     (inbox,) = _news(setup)["lab_inbox"]
     assert len(inbox["lab_requests"]) == 1 and inbox["lab_requests"][0].startswith("wake:")

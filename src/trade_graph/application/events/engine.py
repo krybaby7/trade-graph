@@ -78,7 +78,7 @@ from trade_graph.contracts.wakes import (
     purpose_of,
     reasons_of,
 )
-from trade_graph.domain.clock import parse_utc, utc_iso
+from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.money_limits import TradingDay, trading_day
 
@@ -456,7 +456,7 @@ class EventEngine:
                          for item in wake.context.get("market_types") or ()}
                 unseen = {item.symbol: () for item in outcome.stances if item.symbol not in shown}
                 if unseen:
-                    moment = parse_utc(wake.context["created_at"])
+                    moment = datetime.fromisoformat(str(wake.context["created_at"]))
                     shown.update({item.symbol: item for item in coin_market_types(connection, unseen, moment)})
                 stances = self.desk.record_stances(
                     wake.portfolio_id, outcome.stances, wake_id=wake.wake_id, task_id=wake.task_id,
