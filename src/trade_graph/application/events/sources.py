@@ -1,4 +1,5 @@
-"""Where triggers come from: the alarm queue, fills, the daily loss stop, due check-ins and outside tasks (T35).
+"""Where triggers come from: the alarm queue, fills, the daily loss stop, due check-ins, outside tasks (T35) and the
+strategy lab's finished batches (W11-B).
 
 Each source is read from durable records with a cursor or a unique source reference, inside the same transaction
 that records its triggers, so a restart or a repeated read never records an event twice and never skips one.
@@ -42,6 +43,7 @@ class TriggerSources:
         added += self._loss_stops(portfolios)
         added += self._check_ins(portfolios)
         added += self._tasks(portfolios)
+        added += self._lab_results(portfolios)
         return added
 
     # --- the alarm delivery queue (T33) -------------------------------------------------------------------------
@@ -161,6 +163,29 @@ class TriggerSources:
                     source_ref=f"check-in:{latest.check_in_id}", occurred_at=latest.due_at,
                     check_in_id=latest.check_in_id, note=latest.note)
                 added += int(new)
+        return added
+
+    # --- the strategy lab's finished batches (W11-B, D291) -------------------------------------------------------
+
+    def _lab_results(self, portfolios: Sequence[str]) -> int:
+        """Wake the desk once per finished batch of its lab requests (``lab-results:<batch id>``), with a short note;
+        the results themselves are in its ``lab`` context. Like a news alarm it keeps the desk's check-in (D291)."""
+        lab = self.engine.lab
+        if not lab.available():
+            return 0
+        added = 0
+        for batch in lab.unannounced(portfolios, limit=_BATCH):
+            counts = lab.batch_counts(batch.batch_id)
+            parts = [f"{counts[status]} {status}" for status in ("done", "refused", "failed") if counts.get(status)]
+            note = (f"The strategy lab finished the {batch.requests} request{'s' if batch.requests != 1 else ''} of "
+                    f"your answer of {batch.created_at[:16].replace('T', ' ')} UTC: {', '.join(parts)}. The results "
+                    "and every reason are in lab.")
+            with self.database.immediate():
+                stored, new = self.store.add_trigger(
+                    kind="lab_results", department=batch.department, portfolio_id=batch.portfolio_id,
+                    source_ref=f"lab-results:{batch.batch_id}", occurred_at=batch.finished_at, note=note[:500])
+                lab.announce(batch.batch_id, stored.trigger.trigger_id)
+            added += int(new)
         return added
 
     # --- department tasks made outside the engine ---------------------------------------------------------------

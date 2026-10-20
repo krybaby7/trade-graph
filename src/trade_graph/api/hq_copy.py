@@ -1328,6 +1328,8 @@ WAKES: Final = {
         "focus_updated": ("Research changed today's focus coins", "Research changed today's focus coins"),
         "wake_request": ("{who} asked for it", "{n} requests from other departments"),
         "news_alarm": ("a news alarm", "{n} news alarms"),
+        # W11-B (D291): the strategy lab finished the requests of one of the desk's answers.
+        "lab_results": ("the strategy lab's results", "{n} rounds of strategy lab results"),
         "task_created": ("a task made for it", "{n} tasks made for it"),
     },
     "and": " and ",
@@ -1362,6 +1364,7 @@ WAKES: Final = {
         # T45: the headline's source (the owner's feed list) from the saved route; the headline itself is a quote.
         "news_alarm_source": "A news alarm from {source}.",
         "news_alarm_symbol_source": "A news alarm about {symbol} from {source}.",
+        "lab_results": "The strategy lab finished the practice replays and strategy records it was asked for.",
         "task_created": "A task was made for it outside its wake-ups (for example a report to look at).",
     },
     "leg": {"stop": "stop", "take_profit": "target"},

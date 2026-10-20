@@ -106,6 +106,13 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/budget.py",
     "src/trade_graph/application/gateway.py",
     "src/trade_graph/domain/",
+    # W11-B (D294): a fair test kept by protected software. The practice range's grammar, study rules (tune earlier,
+    # confirm once on untouched later days, every try listed), replay and report, and the strategy lab that runs the
+    # Trading desk's requests in the installed service (its queue, worker, context and packaged examples).
+    "src/trade_graph/contracts/practice_range.py",
+    "src/trade_graph/application/practice_range/",
+    "src/trade_graph/contracts/strategy_lab.py",
+    "src/trade_graph/application/strategy_lab/",
 )
 
 

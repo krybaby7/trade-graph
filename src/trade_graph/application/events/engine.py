@@ -5,10 +5,12 @@ Software watches; departments sleep until something gives them a reason. Each ``
 1. lets the price watcher check candle alarms and feed health (``PriceWatcher.tick``), when one is wired;
 2. closes the wakes whose department turn has ended: the alarm batch is acknowledged (or put back), the triggers are
    delivered (or carried to the next wake), and the department's answer is applied: its next check-in, Research's
-   focus coins, wake requests, and, under the execution lock, the Trader's position actions through
-   ``DayPlanActions.apply`` (W8-B) and then its day plans through ``DayPlans.install``;
+   focus coins, wake requests, the Trading desk's requests to the strategy lab (queued in the same transaction,
+   W11-B), and, under the execution lock, the Trader's position actions through ``DayPlanActions.apply`` (W8-B) and
+   then its day plans through ``DayPlans.install``;
 3. records new triggers from their sources: the alarm delivery queue (T33), fills of day-plan entries, protective
-   exits and other orders (T34), the daily loss stop (T32), due check-ins and tasks made outside the engine;
+   exits and other orders (T34), the daily loss stop (T32), due check-ins, tasks made outside the engine and the
+   strategy lab's finished batches (``lab_results``, W11-B);
 4. runs the daily cycle (``DayCycle``): the day-end review of a day that ended, then the day start (scan, focus,
    check-ins of the departments whose next time is the day start, then the Trader's day plans after the focus);
 5. dispatches: every department with a fresh pending trigger and no open wake gets one wake holding all its pending
@@ -45,6 +47,7 @@ from trade_graph.application.events.store import OpenWake, StoredTrigger, WakeSt
 from trade_graph.application.focus_scope import focus_scope_refusals
 from trade_graph.application.news_wakes import NewsWakeRouter
 from trade_graph.application.scheduler import Scheduler
+from trade_graph.application.strategy_lab.queue import LabQueue
 from trade_graph.contracts.alarms import REFERENCE_PATTERN
 from trade_graph.contracts.wakes import (
     CHECK_IN_KEEPING_KINDS,
@@ -75,8 +78,8 @@ INSTRUCTION = (
     "instructions; software enforces authority, money limits and protection. Answer under wake_outcome: check_in "
     "(when you want your next look; none means the next day start), focus (Research only: coins from the shortlist), "
     "day_plans (the Trader only: one plan per coin), position_actions (the Trader only: close a day-plan position or "
-    "move its safety exit, one per coin; positions lists them) and wake_requests (wake another department with a "
-    "note).")
+    "move its safety exit, one per coin; positions lists them), wake_requests (wake another department with a "
+    "note) and lab_requests (the Trader only: ask the strategy lab to register, tune or confirm a strategy version).")
 _TERMINAL_TASKS = {"SUCCEEDED", "FAILED", "DEAD_LETTER", "BLOCKED_BUDGET", "CANCELLED", "WAITING_EXTERNAL"}
 _ACTIVE_TASKS = {"QUEUED", "LEASED", "RUNNING"}
 
@@ -143,6 +146,9 @@ class EventEngine:
         # T45: news alarms (T44's would-wake verdicts) are routed as a trigger source; the owner's switch decides
         # whether a route only records whom it would wake (shadow, shipped) or adds a news_alarm trigger (live).
         self.news = NewsWakeRouter(self.database, self.clock, execution) if news_wakes else None
+        # W11-B (D290): the Trading desk's lab requests are queued with the rest of its answer; the lab worker runs
+        # them in its own thread and the trigger sources wake the desk with lab_results when a batch has ended.
+        self.lab = LabQueue(self.database, self.clock)
         self.cycle_runner = DayCycle(self, scan=scan) if daily_cycle else None
         self._lock = threading.RLock()
 
@@ -290,6 +296,7 @@ class EventEngine:
             check_in = None if self._keeps_check_in(wake, outcome, raw) else self._check_in(wake, outcome)
             focus_id, focus_refused = self._focus(wake, outcome, obsolete)
             requested = self._requests(wake, outcome, notes)
+            lab = self._lab_requests(wake, outcome, notes)
             plans, actions = outcome.day_plans, outcome.position_actions
             if plans and wake.department != "trader":
                 notes.append("only the Trader writes day plans; these were not installed")
@@ -299,7 +306,8 @@ class EventEngine:
                 actions = ()
             record = WakeOutcomeRecord(received=raw is not None, refused="; ".join(notes)[:500] or None,
                                        summary=outcome.summary, check_in_id=check_in, focus_id=focus_id,
-                                       focus_refused=focus_refused, requested_trigger_ids=tuple(requested))
+                                       focus_refused=focus_refused, requested_trigger_ids=tuple(requested),
+                                       lab=tuple(lab))
             if plans or actions:
                 self.store.set_applying(wake.wake_id, record)
             else:
@@ -388,6 +396,21 @@ class EventEngine:
                 requested_by=wake.department, note=request.note)
             created.append(stored.trigger.trigger_id)
         return created
+
+    def _lab_requests(self, wake: OpenWake, outcome: WakeOutcome, notes: list[str]) -> list:
+        """Queue the Trading desk's lab requests in order (W11-B, D290), in this answer's transaction. Each is checked
+        on its own as it is queued; a refused one is recorded with its reason and reported back, never dropped. They
+        are research records, not trading: an answer that arrives after its trading day still queues them."""
+        if not outcome.lab_requests:
+            return []
+        if wake.department != "trader":
+            notes.append("only the Trading desk (the Trader) asks the strategy lab; these requests were not queued")
+            return []
+        if not self.lab.available():
+            notes.append("this database has no strategy lab yet (state migration 0051); the requests were not queued")
+            return []
+        return self.lab.submit(wake.portfolio_id, outcome.lab_requests, batch_id=f"wake:{wake.wake_id}",
+                               wake_id=wake.wake_id, task_id=wake.task_id)
 
     def _install_plans(self, wake: OpenWake, record: WakeOutcomeRecord | None) -> None:
         """Apply the Trader's position actions, then install its day plans, each idempotent by its request id, under
