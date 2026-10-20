@@ -16,6 +16,12 @@
 
 These are orchestration records, not financial state: fills, intents and the ledger stay the books. Nothing here
 limits how many triggers, wakes or check-ins there are (D116).
+
+Migration 0051 (W11-B, D291) adds the trigger kind ``lab_results``. SQLite cannot change a CHECK constraint in place,
+so ``LAB_RESULTS_STATEMENTS`` rebuild ``wake_triggers`` with the new kind list: its rows are copied aside, the table is
+dropped and created again with the same columns, indexes and rules, and every row is copied back with its sequence.
+``news_alarm_wake_routes`` (0042), whose rows name their trigger, is rebuilt the same way around it, so its foreign
+key holds throughout; nothing else refers to the table. The 0035 statements below stay exactly as merged.
 """
 
 from typing import Final
@@ -24,10 +30,15 @@ VERSION: Final = "0035"
 # The value lists are frozen here, at the migration, like every CHECK constraint; ``contracts/wakes.py`` holds the
 # same lists and a test keeps them equal, so a new kind needs a new migration rather than a silent mismatch.
 DEPARTMENTS: Final = ("trader", "research", "leader", "learning", "optimisation")
-TRIGGER_KINDS: Final = (
+TRIGGER_KINDS_0035: Final = (
     "day_start", "focus_step", "day_plan_step", "day_end_review", "check_in", "alarm_fired", "feed_lost",
     "feed_restored", "entry_filled", "exit_filled", "order_filled", "loss_limit_reached", "focus_updated",
     "wake_request", "news_alarm", "task_created")
+# The kind list in force since migration 0051 (W11-B): the strategy lab's results wake the desk.
+TRIGGER_KINDS: Final = (
+    "day_start", "focus_step", "day_plan_step", "day_end_review", "check_in", "alarm_fired", "feed_lost",
+    "feed_restored", "entry_filled", "exit_filled", "order_filled", "loss_limit_reached", "focus_updated",
+    "wake_request", "news_alarm", "lab_results", "task_created")
 TRIGGER_STATUSES: Final = ("pending", "claimed", "delivered", "expired")
 WAKE_PURPOSES: Final = ("focus", "day_plan", "day_end_review", "event", "check_in", "task")
 WAKE_STATUSES: Final = ("queued", "applying", "completed", "failed", "obsolete")
@@ -58,14 +69,18 @@ _STEP_IDENTITY_KEPT = ("NEW.portfolio_id IS OLD.portfolio_id AND NEW.trading_day
                        "AND NEW.created_at IS OLD.created_at")
 _REFERENCE = "length({0}) BETWEEN 1 AND 128"
 
-STATEMENTS: Final[list[str]] = [
+
+
+def _trigger_table(kinds: tuple[str, ...]) -> list[str]:
+    """``wake_triggers`` with its indexes and rules, for a kind list (0035's, then 0051's)."""
+    return [
     f"""CREATE TABLE wake_triggers (
         sequence      INTEGER PRIMARY KEY AUTOINCREMENT,
         trigger_id    TEXT NOT NULL UNIQUE CHECK ({_REFERENCE.format('trigger_id')}),
         source_ref    TEXT NOT NULL UNIQUE CHECK (length(source_ref) BETWEEN 1 AND 200),
         portfolio_id  TEXT NOT NULL REFERENCES portfolios (portfolio_id),
         department    TEXT NOT NULL CHECK ({_DEPARTMENT}),
-        kind          TEXT NOT NULL CHECK ({_among('kind', TRIGGER_KINDS)}),
+        kind          TEXT NOT NULL CHECK ({_among('kind', kinds)}),
         occurred_at   TEXT NOT NULL,
         document_json TEXT NOT NULL CHECK (json_valid(document_json) AND json_type(document_json) = 'object'),
         status        TEXT NOT NULL CHECK ({_among('status', TRIGGER_STATUSES)}),
@@ -92,6 +107,11 @@ STATEMENTS: Final[list[str]] = [
           OR (OLD.status = 'claimed' AND NEW.status IN ('claimed', 'delivered') AND NEW.wake_id IS NOT OLD.wake_id)
           OR (NEW.status = 'pending' AND NEW.wake_id IS NOT NULL))
         BEGIN SELECT RAISE(ABORT, 'a claimed or delivered trigger names the one wake that holds it'); END""",
+    ]
+
+
+STATEMENTS: Final[list[str]] = [
+    *_trigger_table(TRIGGER_KINDS_0035),
 
     f"""CREATE TABLE wakes (
         sequence          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,5 +224,36 @@ def migration() -> tuple[str, list[str]]:
     return VERSION, STATEMENTS
 
 
-__all__ = ["CYCLE_STEPS", "DEPARTMENTS", "STATEMENTS", "TABLES", "TRIGGER_KINDS", "TRIGGER_STATUSES", "VERSION",
-           "WAKE_PURPOSES", "WAKE_STATUSES", "migration"]
+# --- migration 0051 (W11-B, D291): the lab_results kind -------------------------------------------------------------
+
+_TRIGGER_COLUMNS = ("sequence, trigger_id, source_ref, portfolio_id, department, kind, occurred_at, document_json, "
+                    "status, carried, wake_id, created_at, updated_at")
+_ROUTE_COLUMNS = ("sequence, route_id, verdict_id, headline_id, portfolio_id, department, mode, because, rule_version, "
+                  "policy_revision, reason_json, note, symbol, source_ref, trigger_id, alarm_at, created_at")
+
+
+def _lab_results_statements() -> list[str]:
+    from trade_graph.adapters.persistence.news_wake_schema import STATEMENTS as ROUTE_STATEMENTS
+
+    return [
+        # Copies first (plain tables without rules), then the child before its parent, so no foreign key is broken.
+        "CREATE TABLE wake_triggers_0051_copy AS SELECT * FROM wake_triggers",
+        "CREATE TABLE news_alarm_wake_routes_0051_copy AS SELECT * FROM news_alarm_wake_routes",
+        "DROP TABLE news_alarm_wake_routes",
+        "DROP TABLE wake_triggers",
+        *_trigger_table(TRIGGER_KINDS),
+        f"INSERT INTO wake_triggers ({_TRIGGER_COLUMNS}) SELECT {_TRIGGER_COLUMNS} FROM wake_triggers_0051_copy "
+        "ORDER BY sequence",
+        "DROP TABLE wake_triggers_0051_copy",
+        *ROUTE_STATEMENTS,
+        f"INSERT INTO news_alarm_wake_routes ({_ROUTE_COLUMNS}) SELECT {_ROUTE_COLUMNS} "
+        "FROM news_alarm_wake_routes_0051_copy ORDER BY sequence",
+        "DROP TABLE news_alarm_wake_routes_0051_copy",
+    ]
+
+
+LAB_RESULTS_STATEMENTS: Final[list[str]] = _lab_results_statements()
+
+
+__all__ = ["CYCLE_STEPS", "DEPARTMENTS", "LAB_RESULTS_STATEMENTS", "STATEMENTS", "TABLES", "TRIGGER_KINDS",
+           "TRIGGER_KINDS_0035", "TRIGGER_STATUSES", "VERSION", "WAKE_PURPOSES", "WAKE_STATUSES", "migration"]

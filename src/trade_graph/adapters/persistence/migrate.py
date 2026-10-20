@@ -34,6 +34,7 @@ from trade_graph.adapters.persistence.protected_runtime_schema import STATEMENTS
 from trade_graph.adapters.persistence.review_schema import STATEMENTS as REVIEW_STATEMENTS
 from trade_graph.adapters.persistence.service_schema import STATEMENTS as SERVICE_STATEMENTS
 from trade_graph.adapters.persistence.startup_schema import STATEMENTS as STARTUP_STATEMENTS
+from trade_graph.adapters.persistence.strategy_lab_schema import migration as strategy_lab_migration
 from trade_graph.adapters.persistence.subscription_admission_schema import (
     STATEMENTS as SUBSCRIPTION_ADMISSION_STATEMENTS,
 )
@@ -486,6 +487,7 @@ STATEMENTS.append(focus_research_migration())  # 0038, W6-A (T37)
 STATEMENTS.append(leader_news_migration())  # 0039, W6-B (T38)
 STATEMENTS.append(news_wake_migration())  # 0042, W7-A (T45)
 STATEMENTS.append(day_plan_action_migration())  # 0044, W8-B (C4)
+STATEMENTS.append(strategy_lab_migration())  # 0051, W11-B (C11): the lab_results kind and the strategy lab's queue
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

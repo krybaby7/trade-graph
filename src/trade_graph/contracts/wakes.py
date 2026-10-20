@@ -30,6 +30,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_serializ
 
 from trade_graph.contracts.alarms import REFERENCE_PATTERN, SYMBOL_PATTERN, AlarmDelivery
 from trade_graph.contracts.day_plans import DayPlan, DayPlanPosition, PositionAction, PositionActionKind
+from trade_graph.contracts.strategy_lab import AppliedLabRequest, LabRequest
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 WAKE_CONTRACT_VERSION = "wake-v1"
@@ -52,12 +53,13 @@ TriggerKind = Literal[
     "focus_updated",       # Research recorded a new revision of the day's focus coins during the day
     "wake_request",        # another department, normally the Leader, asked for this one with a note (D121)
     "news_alarm",          # a news alarm (T45, W7-A): the engine accepts it like any software trigger
+    "lab_results",         # the strategy lab finished the requests of one of the desk's answers (W11-B, D291)
     "task_created",        # a department task made outside the engine (Secretary routing, an owner request)
 ]
 TRIGGER_KINDS: tuple[TriggerKind, ...] = (
     "day_start", "focus_step", "day_plan_step", "day_end_review", "check_in", "alarm_fired", "feed_lost",
     "feed_restored", "entry_filled", "exit_filled", "order_filled", "loss_limit_reached", "focus_updated",
-    "wake_request", "news_alarm", "task_created")
+    "wake_request", "news_alarm", "lab_results", "task_created")
 # Steps of one trading day: when that day ended before the department saw them, they expire (recorded, not lost).
 DAY_BOUND_KINDS: frozenset[str] = frozenset({"day_start", "focus_step", "day_plan_step"})
 # Kinds that join a wake but never start one by themselves.
@@ -65,8 +67,8 @@ RIDE_ALONG_KINDS: frozenset[str] = frozenset({"feed_restored"})
 # Kinds software sources outside the engine may submit (``EventEngine.notify``).
 SOFTWARE_KINDS: frozenset[str] = frozenset({"news_alarm"})
 # A wake made only of these keeps the department's check-in in force when its answer names none (T45, D228): a news
-# alarm only adds wake-ups and never moves a department's own next look.
-CHECK_IN_KEEPING_KINDS: frozenset[str] = frozenset({"news_alarm"}) | RIDE_ALONG_KINDS
+# alarm only adds wake-ups and never moves a department's own next look; lab results do the same (W11-B, D291).
+CHECK_IN_KEEPING_KINDS: frozenset[str] = frozenset({"news_alarm", "lab_results"}) | RIDE_ALONG_KINDS
 
 WakePurpose = Literal["focus", "day_plan", "day_end_review", "event", "check_in", "task"]
 WAKE_PURPOSES: tuple[WakePurpose, ...] = ("focus", "day_plan", "day_end_review", "event", "check_in", "task")
@@ -131,6 +133,7 @@ _TRIGGER_NEEDS: dict[str, tuple[str, ...]] = {
     "focus_updated": ("focus_id",),
     "wake_request": ("requested_by", "note"),
     "news_alarm": ("note",),
+    "lab_results": ("note",),
     "task_created": ("task_id",),
 }
 
@@ -392,6 +395,9 @@ class WakeOutcome(_Frozen):
     - ``position_actions``: the Trader only, at most one per coin: close a day-plan position now or move its safety
       exit (W8-B, D245), applied through ``DayPlanActions.apply`` before the turn's day plans.
     - ``wake_requests``: wake other departments with a note.
+    - ``lab_requests``: the Trader (the Trading desk) only, requests to the strategy lab (W11-B, D290): register a
+      strategy version, create a study, tune or confirm. Queued in order, each checked by the grammar and the study
+      rules; no cap on how many (D116).
     """
 
     summary: str | None = Field(default=None, min_length=1, max_length=MAX_SUMMARY_LENGTH)
@@ -400,6 +406,7 @@ class WakeOutcome(_Frozen):
     day_plans: tuple[DayPlan, ...] = Field(default=(), max_length=MAX_DAY_PLANS)
     position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
     wake_requests: tuple[WakeRequest, ...] = Field(default=(), max_length=MAX_WAKE_REQUESTS)
+    lab_requests: tuple[LabRequest, ...] = ()
 
     @field_validator("summary")
     @classmethod
@@ -423,12 +430,15 @@ def _one_action_per_coin(actions: tuple[PositionAction, ...]) -> None:
 
 class TraderWakeReply(_Frozen):
     """The Trader's wake turn as a strict provider reply: day plans (possibly none), position actions (close a
-    day-plan position or move its safety exit, W8-B), its next check-in and a summary."""
+    day-plan position or move its safety exit, W8-B), its next check-in, a summary and, as the Trading desk, its
+    requests to the strategy lab (W11-B; no cap on how many, D116)."""
 
     day_plans: tuple[DayPlan, ...] = Field(default=(), max_length=MAX_DAY_PLANS)
     position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
     next_check_in: CheckInRequest | None = None
     summary: str = Field(min_length=1, max_length=MAX_SUMMARY_LENGTH)
+    # W11-B (D290): kept last and separate, so later desk fields (W12-A) extend the reply without touching it.
+    lab_requests: tuple[LabRequest, ...] = ()
 
     @field_validator("summary")
     @classmethod
@@ -442,7 +452,7 @@ class TraderWakeReply(_Frozen):
 
     def outcome(self) -> WakeOutcome:
         return WakeOutcome(summary=self.summary, check_in=self.next_check_in, day_plans=self.day_plans,
-                           position_actions=self.position_actions)
+                           position_actions=self.position_actions, lab_requests=self.lab_requests)
 
 
 class ResearchFocusReply(_Frozen):
@@ -524,6 +534,8 @@ class WakeOutcomeRecord(_Frozen):
     plans: tuple[AppliedPlan, ...] = ()
     actions: tuple[AppliedAction, ...] = ()
     requested_trigger_ids: tuple[str, ...] = ()
+    # W11-B (D290): each lab request of the answer, queued in the strategy lab or refused at once with its reason.
+    lab: tuple[AppliedLabRequest, ...] = ()
 
 
 class WakeRecord(_Frozen):
