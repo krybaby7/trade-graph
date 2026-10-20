@@ -10,7 +10,8 @@ check inside the installed service: step 3 names its network route and owner fil
 step 17 no longer needs a separate poll. Cloud package W11-B (C11, D290–D294) built the Trading desk's strategy lab
 into the installed service: step 3 adds `"lab"` to the Trader's context keys, and the missing confirmation step that
 step L2 found (`planning/handoffs/L2.md`, "Finding for L3") is now the lab's first-start behaviour, shown at steps 13
-and 15 (see "The strategy lab" below).
+and 15 (see "The strategy lab" below). Cloud package W12-A (C12, D295–D299) made the Trader the Trading desk: step 3
+adds `"playbook"` and `"news"` to the Trader's context keys (see "The Trading desk" below).
 
 In plain words: on your PC a local build session builds the new protected image from the merged code, puts your paper
 account on hold, copies your price history into the installation, moves the books to the new release, records your
@@ -43,7 +44,7 @@ bypasses the launcher.
 |---|---|---|---|
 | 1 | Get the code and run the full suite | `git fetch origin && git checkout <commit>`, then `uv sync --frozen --group dev --python 3.12` and `uv run pytest -p no:cacheprovider -rf` (trusted checkout on the PC; or read GitHub's `test` job on `<commit>`) | No failure. Compare with "Known failures" in the cloud build plan. |
 | 2 | Build the protected image | `uv run python scripts/build_protected_image.py --output <new-build-dir> --subscription-tools <reviewed-native-inputs>` then `uv run python scripts/verify_protected_image.py --build-directory <new-build-dir> --output <new-proof-dir>` (trusted checkout, [PROTECTED-DEPLOYMENT.md](PROTECTED-DEPLOYMENT.md)) | An image pin. The builder first checks that NumPy and TA-Lib are pinned with the hash of a Python 3.12 Linux wheel (it stops before any download if not), and the build imports both before it seals the image (D224). |
-| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"`, `"practice_range"` and `"lab"` (W11-B: the Trading desk's strategy lab) added to `allowed_context_keys.trader` and `"wake"` added to `allowed_context_keys.leader` (T45: the Leader reads why it was woken, news alarms included); `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below). For Perplexity (step 12): `perplexity.key` (your key, one line) and `perplexity-price-cards.json` (a copy of `config/perplexity-price-cards.json`), both `root:10001` mode `0440`; `"reviewed_routes": {"paid_research": {"port": 8082, "hosts": ["api.perplexity.ai"]}}` in `subscription-network-profile.json`; and your reviewed proxy recreated with `--route paid_research=8082:api.perplexity.ai` added to its command and its new review recorded ([REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)). For the news check (step 17): `"news_feeds": {"port": 8083, "hosts": ["api.typesafe.ai", "blog.kraken.com", "cointelegraph.com", "decrypt.co", "status.kraken.com", "www.coindesk.com"]}` added to `reviewed_routes` and `--route news_feeds=8083:api.typesafe.ai,blog.kraken.com,cointelegraph.com,decrypt.co,status.kraken.com,www.coindesk.com` to the proxy command (the same re-pin and review); optionally `news-alarm.json` (a copy of `config/news-alarm.example.json`; `"calls_enabled": true` under `jev` switches Jev on) and, with Jev on, `typesafe.key` (your key, one line), both `root:10001` mode `0440` ([NEWS-ALARM.md](NEWS-ALARM.md#in-the-installed-service-w9-a)) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
+| 3 | Prepare the new protected owner files | In `<owner>` (root-owned, as today): `runtime-manifest.json` with the new image's `protected_package_sha256` and approved source; `paper-config.json` with your existing settings plus `"event_engine": true` (the price collector is on by default with `public_data_enabled: true`; see "The configuration" below); `subscription-profile.json` with `"wake"`, `"practice_range"`, `"lab"` (W11-B: the Trading desk's strategy lab), `"playbook"` and `"news"` (W12-A: the desk's playbook with its newest stances, and the Leader's news round, the lab inbox and Jev's verdicts on its coins) added to `allowed_context_keys.trader` and `"wake"` added to `allowed_context_keys.leader` (T45: the Leader reads why it was woken, news alarms included); `subscription-network-profile.json` re-pinned to the new image id, manifest, package hash and the new `paper-config.json` hash; check `graph.py` (below). For Perplexity (step 12): `perplexity.key` (your key, one line) and `perplexity-price-cards.json` (a copy of `config/perplexity-price-cards.json`), both `root:10001` mode `0440`; `"reviewed_routes": {"paid_research": {"port": 8082, "hosts": ["api.perplexity.ai"]}}` in `subscription-network-profile.json`; and your reviewed proxy recreated with `--route paid_research=8082:api.perplexity.ai` added to its command and its new review recorded ([REVIEWED-NETWORK-ROUTES.md](REVIEWED-NETWORK-ROUTES.md)). For the news check (step 17): `"news_feeds": {"port": 8083, "hosts": ["api.typesafe.ai", "blog.kraken.com", "cointelegraph.com", "decrypt.co", "status.kraken.com", "www.coindesk.com"]}` added to `reviewed_routes` and `--route news_feeds=8083:api.typesafe.ai,blog.kraken.com,cointelegraph.com,decrypt.co,status.kraken.com,www.coindesk.com` to the proxy command (the same re-pin and review); optionally `news-alarm.json` (a copy of `config/news-alarm.example.json`; `"calls_enabled": true` under `jev` switches Jev on) and, with Jev on, `typesafe.key` (your key, one line), both `root:10001` mode `0440` ([NEWS-ALARM.md](NEWS-ALARM.md#in-the-installed-service-w9-a)) | The new files validate: `python -I -B -m trade_graph.kernel.deployment_image check-subscription` (inside the new image) prints `subscription_paper_profile_prepared`. |
 | 4 | Hold the account and stop the service | HQ: **Pause AI** / the authenticated owner pause to MANAGE_ONLY, then **Stop safely** (the dashboard, old image) | HQ shows the account on hold and the service stopped; `paper-service` and `role-worker` leases cleared. |
 | 5 | Stop the old Windows price tasks | `Get-ScheduledTask -TaskName 'TradeGraph-Candles-*' \| Disable-ScheduledTask` (PowerShell on the PC) | Both tasks `Disabled`. They are removed in step 14, once the new collector is seen working. Two collectors at once are not coordinated (D133). |
 | 6 | Back up | `trade-graph backup --database /var/lib/trade-graph/trade_graph.sqlite --destination <private-backup>` (inside the old image, service stopped); keep a copy of the WSL candle file `~/.local/share/trade-graph-market/market_data.sqlite` | A backup file; the candle file copy. The candle file is public data and not part of the financial recovery unit (D132). |
@@ -170,6 +171,16 @@ To read the reports yourself: `python -I -B -m trade_graph.cli practice-range-re
 read-only). The practice database of step L2 is separate and unchanged; its confirmation windows (August and September
 2026) do not count in the installation.
 
+## The Trading desk (W12-A)
+
+The Trader is now the Trading desk ([W12-A handoff](../planning/handoffs/W12-A.md)): on each wake it reads every coin's market type
+(the hourly labels, inside `"wake"`), its lab, its playbook and the news, and says per coin whether it waits in cash,
+buys dips, follows the trend or does something else. Nothing is needed from you beyond step 3's two keys. What you see
+after step 15: HQ's wake log as before; the desk's playbook revisions and stances are stored (HQ's Trading desk room
+shows them from wave 13); each installed day plan records the coin's market type and the playbook revision in force.
+Software never refuses a day plan for not following the playbook or a market type (D280 item 5). State migration 0052
+runs by itself when the new image opens the database.
+
 ## The configuration (`<owner>/paper-config.json`)
 
 Keep every existing setting; these are the new ones (W6-D). All of them are public-data settings or a switch; none
@@ -195,10 +206,11 @@ adds a paid call, an order permission or a cap on anyone's work (D116).
 - With the collector on, the hourly refresh into `hourly_candles` stops (the collector supersedes it); the Trader's and
   Research's hourly features read the candle file (D220). Old snapshots stay readable.
 
-The subscription profile (`<owner>/subscription-profile.json`) must allow the Trader's three new context keys,
-`"wake"`, `"practice_range"` and `"lab"`, in `allowed_context_keys.trader`. Without them the Trader still answers a
-wake, but without knowing why it was woken, which strategy versions have a practice-range report or what its strategy
-lab found.
+The subscription profile (`<owner>/subscription-profile.json`) must allow the Trader's five new context keys,
+`"wake"`, `"practice_range"`, `"lab"`, `"playbook"` and `"news"`, in `allowed_context_keys.trader`. Without them the
+Trader still answers a wake, but without knowing why it was woken, which strategy versions have a practice-range
+report, what its strategy lab found, which playbook it keeps or what the news says (the coins' market types come with
+`"wake"`).
 
 The owner graph (`<owner>/graph.py`) sees every department answer at `apply_role_result`. A wake answer has
 `day_plans`, `next_check_in` and `summary` and no `rationale`: a graph that edits `payload["rationale"]` for the

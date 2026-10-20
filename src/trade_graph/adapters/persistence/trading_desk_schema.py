@@ -32,14 +32,18 @@ from __future__ import annotations
 
 from typing import Final
 
+from trade_graph.adapters.persistence.leader_news_schema import DESK_IDEA_STATEMENTS, IDEA_DEPARTMENTS_0052
+
 VERSION: Final = "0052"
 TABLES: Final = ("desk_playbook_revisions", "desk_stances", "day_plan_desk_records")
 STANCES: Final = ("wait", "buy_dips", "follow_trend", "other")
 MARKET_TYPES: Final = ("rising", "sideways", "falling", "unclear")
 SEEN_MARKET_TYPES: Final = (*MARKET_TYPES, "none")
 LABEL_STATUSES: Final = ("current", "stale", "missing")
-# 0052's list of departments a strategy idea may go to (0039's was research and optimisation).
-IDEA_DEPARTMENTS: Final = ("trader", "research", "optimisation")
+# 0052's list of departments a strategy idea may go to (0039's was research and optimisation); the statements that
+# rebuild ``leader_round_requests`` for it live with the table, in ``leader_news_schema.DESK_IDEA_STATEMENTS``.
+IDEA_DEPARTMENTS: Final = IDEA_DEPARTMENTS_0052
+IDEA_STATEMENTS: Final = DESK_IDEA_STATEMENTS
 
 
 def _among(column: str, values: tuple[str, ...]) -> str:
@@ -61,49 +65,7 @@ def _append_only(table: str, words: str) -> list[str]:
         BEGIN SELECT RAISE(ABORT, '{words} are append-only'); END"""]
 
 
-# --- 1. strategy ideas for the desk: leader_round_requests rebuilt with the wider list ----------------------------
-
-_REQUEST_COLUMNS = ("sequence, request_id, round_id, portfolio_id, kind, department, asked_department, position, "
-                    "trigger_source_ref, document_json, created_at")
-_ROUTED = ("research", "trader", "optimisation")  # 0039's ROUTED_DEPARTMENTS, unchanged
-
-IDEA_STATEMENTS: Final[list[str]] = [
-    "CREATE TABLE leader_round_requests_0052_copy AS SELECT * FROM leader_round_requests",
-    "DROP TABLE leader_round_requests",
-    f"""CREATE TABLE leader_round_requests (
-        sequence           INTEGER PRIMARY KEY AUTOINCREMENT,
-        request_id         TEXT NOT NULL UNIQUE CHECK (length(request_id) BETWEEN 1 AND 128),
-        round_id           TEXT NOT NULL REFERENCES leader_news_rounds (round_id),
-        portfolio_id       TEXT NOT NULL REFERENCES portfolios (portfolio_id),
-        kind               TEXT NOT NULL CHECK (kind IN ('deep_dive', 'trader_note', 'strategy_idea')),
-        department         TEXT NOT NULL CHECK ({_among('department', _ROUTED)}),
-        asked_department   TEXT NOT NULL CHECK ({_among('asked_department', _ROUTED)}),
-        position           INTEGER NOT NULL CHECK (position BETWEEN 0 AND 15),
-        trigger_source_ref TEXT NOT NULL UNIQUE CHECK (length(trigger_source_ref) BETWEEN 1 AND 200),
-        document_json      TEXT NOT NULL CHECK (json_valid(document_json) AND json_type(document_json) = 'object'),
-        created_at         TEXT NOT NULL,
-        UNIQUE (round_id, position),
-        CHECK ((kind = 'trader_note' AND department = 'trader' AND asked_department = 'trader')
-            OR (kind = 'deep_dive' AND department = 'research' AND asked_department = 'research')
-            OR (kind = 'strategy_idea' AND {_among('department', IDEA_DEPARTMENTS)}
-                AND {_among('asked_department', IDEA_DEPARTMENTS)}))
-    )""",
-    "CREATE INDEX leader_round_requests_by_round ON leader_round_requests (round_id, position)",
-    f"INSERT INTO leader_round_requests ({_REQUEST_COLUMNS}) SELECT {_REQUEST_COLUMNS} "
-    "FROM leader_round_requests_0052_copy ORDER BY sequence",
-    "DROP TABLE leader_round_requests_0052_copy",
-    # The rules of 0039 again, after the copy (finished rounds' requests are copied back as they were).
-    """CREATE TRIGGER leader_round_requests_with_open_round BEFORE INSERT ON leader_round_requests
-        WHEN (SELECT status FROM leader_news_rounds WHERE round_id = NEW.round_id) IS NOT 'started'
-          OR (SELECT portfolio_id FROM leader_news_rounds WHERE round_id = NEW.round_id) IS NOT NEW.portfolio_id
-        BEGIN SELECT RAISE(ABORT, 'a routed request is recorded with its round, before it finishes'); END""",
-    """CREATE TRIGGER leader_round_requests_no_delete BEFORE DELETE ON leader_round_requests
-        BEGIN SELECT RAISE(ABORT, 'routed requests are kept'); END""",
-    """CREATE TRIGGER leader_round_requests_no_update BEFORE UPDATE ON leader_round_requests
-        BEGIN SELECT RAISE(ABORT, 'routed requests are append-only'); END""",
-]
-
-# --- 2. the desk's records -----------------------------------------------------------------------------------------
+# --- the desk's records -----------------------------------------------------------------------------------------
 
 DESK_STATEMENTS: Final[list[str]] = [
     f"""CREATE TABLE desk_playbook_revisions (

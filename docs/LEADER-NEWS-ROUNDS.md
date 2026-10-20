@@ -68,7 +68,8 @@ For a task the event engine made (input `{"wake": WakeContext}`):
 - `deep_dives`: up to 8 questions for Research, each with why it matters and the stored sources;
 - `trader_note`: at most one note for the Trader, with sources, only for news the Trader should see before its next
   check-in;
-- `strategy_ideas`: up to 4 ideas for `research` or `optimisation`, with sources;
+- `strategy_ideas`: up to 4 ideas for `trader` (the Trading desk, W12-A: it owns strategy research), `research` or
+  `optimisation` (cost and quality), with sources;
 - `next_check_in`: required; a time, or `at_utc: null` for the next day start (D123). Nothing limits how soon.
 - `findings`: always empty. Findings with counterevidence are Research's work; the Leader asks for a deep dive.
 
@@ -91,6 +92,10 @@ the request id and its source references, then the text; the full text, the sour
   `Leader strategy idea <id>, for the practice range before any use; nothing changes while running ...`. The idea
   changes no strategy, artifact, mandate or setting; Research or Optimisation turn it into a strategy version that
   goes through the practice range (T29) like any other.
+- Since W12-A (D280, D296) a **strategy idea for the Trading desk** (`trader`) wakes the desk:
+  `Leader strategy idea <id> for the Trading desk's lab inbox; you decide whether to test it ...`. It waits in the
+  desk's lab inbox (its `news` context) until the desk decides; software never queues a lab run from it. When the desk
+  is not woken by software, the idea goes to Research, as before. State migration 0052 widened the record's rule.
 
 ## Records (state migration 0039)
 
