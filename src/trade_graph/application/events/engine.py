@@ -463,7 +463,7 @@ class EventEngine:
                     trading_day_start=wake.trading_day_start, shown=shown,
                     playbook_revision_id=in_force.revision_id if in_force else None)
                 return (revision.revision_id if revision else None), [item.stance_id for item in stances]
-        except (TradeGraphError, ValidationError, sqlite3.DatabaseError, ValueError) as error:
+        except Exception as error:  # noqa: BLE001 - a record that cannot be written never sinks the rest of the answer
             notes.append(f"the playbook and stances could not be recorded: {type(error).__name__}: {error}"[:300])
             return None, []
 
@@ -596,8 +596,11 @@ class EventEngine:
             positions = tuple(self.actions.positions(portfolio_id)) if department in {"trader", "learning"} else ()
             market_types: tuple[CoinMarketType, ...] = ()
             if department == "trader":
-                scan, market_types = self._market_types(portfolio_id, day, now, scan=scan, focus=focus, plans=plans,
-                                                        triggers=triggers)
+                try:
+                    scan, market_types = self._market_types(portfolio_id, day, now, scan=scan, focus=focus,
+                                                            plans=plans, triggers=triggers)
+                except Exception:  # noqa: BLE001 - labels are information; they never hold back the desk's wake
+                    market_types = ()
             context = WakeContext(
                 wake_id=wake_id, portfolio_id=portfolio_id, department=department, purpose=purpose,
                 trading_day_start=day.start, trading_day_end=day.end, created_at=now,

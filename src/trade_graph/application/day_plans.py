@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -311,7 +310,7 @@ class DayPlans:
             with self.database.immediate():
                 recorded = DeskStore(self.database, self.clock).record_day_plan(
                     connection, plan_id=plan_id, portfolio_id=portfolio_id, symbol=symbol, task_id=task_id, at=at)
-        except (TradeGraphError, sqlite3.DatabaseError, ValueError) as error:
+        except Exception as error:  # noqa: BLE001 - the record is information; it never refuses the plan (D280 item 5)
             return f"not recorded: {type(error).__name__}"
         return "recorded" if recorded is not None else "not recorded: no Trading desk records (before 0052)"
 

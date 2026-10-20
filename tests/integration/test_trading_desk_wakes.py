@@ -164,3 +164,21 @@ def test_only_the_desk_keeps_a_playbook_and_gives_stances(tmp_path) -> None:
     assert "Trading desk" in wake.outcome.refused
     store = DeskStore(account.database, account.clock)
     assert store.playbook(account.portfolio) is None and store.stances(account.portfolio) == []
+
+
+def test_an_unreadable_label_is_shown_as_such_and_the_wake_goes_on(desk) -> None:
+    """A label whose record no longer matches its hash is never read as a type: every coin shows as missing with the
+    reason, and the desk is woken and answers as usual."""
+    account, scheduler, engine = desk
+    insert_label(account.database, "SOL/USD", "sideways", account.clock.now() - timedelta(minutes=5))
+    with account.database.immediate() as connection:  # an edited record (the test removes the append-only rule)
+        connection.execute("DROP TRIGGER market_type_labels_no_update")
+        connection.execute("UPDATE market_type_labels SET document_json = '{\"market_type\": \"rising\"}'")
+    seen: list = []
+    run_all(scheduler, engine, {"research": scripted(_focus), "trader": scripted({"summary": "Looked."}, seen=seen)},
+            [account.portfolio])
+    readings = {item["symbol"]: item for item in wake_input(seen[-1])["market_types"]}
+    assert {item["status"] for item in readings.values()} == {"missing"}
+    assert "could not be read (StaleState)" in readings["SOL/USD"]["sentence"]
+    (wake,) = engine.wakes(account.portfolio, department="trader")
+    assert wake.status == "completed"

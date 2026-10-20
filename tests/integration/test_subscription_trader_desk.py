@@ -187,3 +187,31 @@ def _rounds(setup, *, ideas: int, rounds: int) -> None:
         setup.db.execute(
             "UPDATE leader_news_rounds SET status = 'completed', reply_json = ?, output_json = '{}', finished_at = ? "
             "WHERE round_id = ?", (json.dumps(reply), at, round_id))
+
+
+def test_the_last_fit_trims_the_desks_own_parts_in_a_fixed_order_and_counts_them() -> None:
+    from trade_graph.application.trading_desk.context import fit_desk_request
+
+    def context() -> dict:
+        reading = {"symbol": "X/USD", "status": "current", "sentence": "s" * 300}
+        return {
+            "wake": {"triggers": [{"note": "n" * 400}] * 40, "triggers_total": 40,
+                     "market_types": [{**reading, "seen_as": ["focus"]}] * 4
+                     + [{**reading, "seen_as": ["shortlist"]}] * 20},
+            "news": {"leader_round": None, "lab_inbox": [{"idea": "i" * 300}] * 20, "lab_inbox_omitted": 0,
+                     "jev": {"verdicts": [{"title": "t" * 200}] * 30, "verdicts_omitted": 0}},
+            "playbook": {"current": None, "recent_stances": [{"reason": "r" * 300}] * 20,
+                         "recent_stances_omitted": 0},
+            "market": {"SOL/USD": "m" * 20_000}}
+
+    assert fit_desk_request(context(), 1_000_000) == []  # it fits: nothing is touched
+    trimmed = context()
+    steps = fit_desk_request(trimmed, _size(trimmed) - 6000)
+    assert steps == ["news_half"] and trimmed["news"]["jev"]["verdicts_omitted"] > 0
+    trimmed = context()
+    steps = fit_desk_request(trimmed, 36_000)
+    assert steps[:4] == ["news_half", "stances", "shortlist_market_types", "triggers_20"]
+    assert trimmed["wake"]["market_types_omitted"] == 20 and len(trimmed["wake"]["market_types"]) == 4
+    assert len(trimmed["wake"]["triggers"]) <= 20 and trimmed["wake"]["triggers_total"] == 40
+    assert trimmed["playbook"]["recent_stances_omitted"] > 0
+    assert trimmed["market"] == context()["market"]  # other departments' parts are never trimmed here
