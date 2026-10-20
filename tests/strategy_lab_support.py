@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from tests.practice_range_support import cross_strategy, open_store, save
-
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.application.practice_range.replay import replay
 from trade_graph.application.strategy_lab.queue import LabQueue

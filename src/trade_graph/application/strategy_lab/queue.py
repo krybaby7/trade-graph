@@ -126,7 +126,7 @@ class LabQueue:
     # --- the worker's side --------------------------------------------------------------------------------------
 
     def next_open(self) -> LabRequestRecord | None:
-        """The oldest request not ended yet: one a restart interrupted (``running``) comes first, as it was queued first."""
+        """The oldest request not ended yet (one a restart interrupted, ``running``, was queued first)."""
         row = self.database.execute(
             "SELECT * FROM strategy_lab_requests WHERE status IN ('queued', 'running') ORDER BY sequence LIMIT 1"
         ).fetchone()
@@ -176,7 +176,7 @@ class LabQueue:
     # --- waking the desk ----------------------------------------------------------------------------------------
 
     def unannounced(self, portfolio_ids: Iterable[str], *, limit: int = 500) -> list[LabBatch]:
-        """Finished batches whose ``lab_results`` trigger is not recorded yet, oldest first (a read bound, not a cap)."""
+        """Finished batches without their ``lab_results`` trigger yet, oldest first (``limit`` bounds one read)."""
         wanted = tuple(dict.fromkeys(portfolio_ids))
         if not wanted:
             return []
