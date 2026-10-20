@@ -245,7 +245,9 @@ skipped; wave 9 at `3a6b298`, 8,016 passed, 0 failed, 18 skipped; wave 10 at
 `b24422e`, 8,112 passed, 0 failed, 18 skipped. The base of wave 11, `663465e`
 (with the two OKX fetch commits `f18cef1` and `7b92e05` of 2026-10-20), passed
 GitHub's test job too (check run 118733454925, 15:58–16:53 UTC): 8,113 passed,
-0 failed, 18 skipped. Any failure now counts and must be reported. The container run took 105 minutes (W1-E measured 54); GitHub's
+0 failed, 18 skipped; wave 11 at `c6afa53`, 8,262 passed, 0 failed, 18 skipped
+(check run 118778910228, pytest 67 minutes). Any failure now counts and must be
+reported. The container run took 105 minutes (W1-E measured 54); GitHub's
 test job takes 50 to 80 minutes and may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
