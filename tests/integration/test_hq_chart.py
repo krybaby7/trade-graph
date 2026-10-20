@@ -289,9 +289,11 @@ def test_an_older_state_database_without_alarm_day_plan_or_scan_tables_still_cha
     path = market_file(tmp_path)
     write_candles(path, candles("SOL/USD", 15, chart_now(account), 400))
     with account.database.transaction() as connection:
-        for table in ("day_plan_events", "day_plan_exits", "day_plan_entries", "day_plans", "alarm_wake_claims",
-                      "alarm_deliveries", "price_alarm_watch", "price_alarm_events", "price_feed_events",
-                      "price_alarms", "coin_shortlist_entries", "coin_scan_pairs", "coin_scans"):
+        # A database older than the day-plan tables has no Trading desk record of a plan either (0052, W12-A):
+        # it refers to day_plans, so it goes first.
+        for table in ("day_plan_desk_records", "day_plan_events", "day_plan_exits", "day_plan_entries", "day_plans",
+                      "alarm_wake_claims", "alarm_deliveries", "price_alarm_watch", "price_alarm_events",
+                      "price_feed_events", "price_alarms", "coin_shortlist_entries", "coin_scan_pairs", "coin_scans"):
             connection.execute(f"DROP TABLE {table}")
     document = _chart(account, path, symbol="BTC/USD")
     assert [coin["symbol"] for coin in document["coins"]] == ["BTC/USD", "ETH/USD"]
