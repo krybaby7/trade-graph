@@ -8,6 +8,8 @@ adds it). Nothing here places an order or runs a replay.
 
 from __future__ import annotations
 
+import json
+
 from tests.integration.test_subscription_departments import flow
 from tests.integration.test_subscription_trader_wakes import WAKE_GRAPH, _engine
 from tests.strategy_lab_support import register
@@ -31,6 +33,10 @@ def test_a_wake_turn_is_handed_the_lab_and_its_lab_requests_are_queued(tmp_path)
     assert lab["results"] == [] and lab["queue"]["queued"] == 0
     assert "lab_requests" in request.instructions and "lab_requests" in lab["instruction"]
     assert "lab_requests" in request.output_schema["properties"]
+    task = setup.db.execute("SELECT output_json FROM tasks WHERE role = 'trader'").fetchone()
+    report = setup.db.execute("SELECT * FROM secretary_reports WHERE report_id = ?",
+                              (json.loads(task["output_json"])["report_id"],)).fetchone()
+    assert "Lab requests: 1" in json.loads(report["document_json"])["summary"]
     engine.step([setup.pid])
     (wake,) = engine.wakes(setup.pid)
     assert wake.status == "completed" and [item.status for item in wake.outcome.lab] == ["queued"]

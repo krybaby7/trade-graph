@@ -327,9 +327,10 @@ class TraderHandler(GatewayRole):
         outcome = reply.outcome()
         planned = ", ".join(plan.symbol for plan in outcome.day_plans) or "no plans"
         acted = ", ".join(f"{item.action} {item.symbol}" for item in outcome.position_actions) or "none"
+        asked = f"\nLab requests: {len(outcome.lab_requests)}" if outcome.lab_requests else ""  # W11-B
         report_id = self.secretary.report(
             task["portfolio_id"], role="trader", kind="decision",
-            summary=f"{reply.summary}\nDay plans: {planned}\nPosition actions: {acted}",
+            summary=f"{reply.summary}\nDay plans: {planned}\nPosition actions: {acted}{asked}",
             evidence_refs=[task["snapshot_id"]], source_key=task["task_id"], material=False,
         )
         return self._record(task, {"wake_outcome": outcome.model_dump(mode="json"), "report_id": report_id,
