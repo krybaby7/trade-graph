@@ -189,7 +189,7 @@ def test_the_service_stores_the_split_reruns_it_and_reads_it_out(lab) -> None:
         for offset, name in enumerate(MARKET_TYPES, start=1):
             line = lines[heading + offset]
             assert line.startswith(f"{name.capitalize()} at entry: {rows[name]['trades']} trades")
-            assert f"of the decision candles" in line
+            assert "of the decision candles" in line
         overview = summary.report_overview(record)
         assert overview["market_type_rules"] == "market-type-rules@1"
         assert [row["market_type"] for row in overview["by_market_type"]] == list(MARKET_TYPES)
