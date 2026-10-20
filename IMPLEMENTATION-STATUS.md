@@ -1,3 +1,13 @@
+# Owner adds waves 11–13: one Trading desk with its own strategy lab (D280), plan only — 2026-10-20
+
+Branch `claude/day-trader-engine-20261012`. Plan and decision log only: no code changed, nothing deployed, no paid, network or exchange call, no order. L1 is done (`planning/handoffs/L1.md`, 2026-10-19). L2 part 1 (`planning/handoffs/L2.md`, 2026-10-19) replayed both starting strategies on five coins over April–September 2026 at all three fee levels: 59 of 60 results lose after fees, and before fees both roughly break even. It also found that no department can create or replay a strategy (only the owner's `practice-range-*` commands make the confirmation reports a day plan needs), that no software labels market types, and that the L3 checklist lacks a step giving any strategy a confirmation report in the installed database, so as written the scored test would make no trade. The owner chose ([D280](docs/DECISIONS.md)) one Trading desk that owns trading and strategy work, with a strategy lab inside the service, software market types, and the Leader's news and Jev in its strategy choice. [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md) adds wave 11 (W11-A C10 market types, W11-B C11 the strategy lab), wave 12 (W12-A C12 one Trading desk) and wave 13 (W13-A C13 the desk in HQ and the scorecard by strategy and market type), reserving D285–D304 and migrations 0050–0053; new owner decisions start at D310. L3 waits for waves 11 to 13.
+
+Local commits not yet pushed (as of this entry): `f5622b0`, `137deb4` (L1), `4e03a5c` (L2 part 1), `f18cef1`, `7b92e05`, `aafc9fb` (two-year price download, including two small OKX fetch code changes), and this plan.
+
+Next: push the integration branch, then the cloud waves 11 to 13 (one night lead can run them in order); meanwhile L2's other free checks on the PC.
+
+---
+
 # Two years of Kraken and OKX prices for BTC, ETH, SOL, XRP and DOGE — 2026-10-20
 
 Owner request: download the last two years (20 Oct 2024 to 20 Oct 2026) for the five practice coins from Kraken and OKX. Free public data only: no key, no paid call, no order; the trading system was not started. The owner was told each command before it ran (D263) and approved the scope in chat (Kraken 5/15/60-minute candles; OKX 60/15/5-minute candles, with a one-line cap change for 5-minute). Everything is in the private candle file `~/.local/share/trade-graph-market/market_data.sqlite` (now 3.27 GB), nothing in Git.

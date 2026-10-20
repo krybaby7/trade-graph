@@ -2995,3 +2995,36 @@ that is stricter than D261, not looser, and the integration accepted it.
   exit code 2 and "news alarm settings refused (a malformed number); nothing was
   read or sent". The message cannot name the field, because the error does not
   carry it; `contracts/news.py` is unchanged.
+
+Owner choice of 2026-10-20 (D280). L2 part 1 (`planning/handoffs/L2.md`) found
+that both starting strategies lose after fees on six months of real prices,
+that no department can create or test a strategy the Trader may use, that no
+software labels market types, and that the L3 checklist has no step that gives
+a strategy its confirmation report inside the installed system. The owner chose
+to build the strategy loop into the graph before the install.
+
+- **D280 (2026-10-20, owner decision): one Trading desk with its own strategy
+  lab.** (1) Trading and strategy work are one department, the Trading desk
+  (the Trader's role grows; there was no separate strategy department, and
+  Optimisation keeps cost and quality). The desk continuously chooses, per
+  coin and situation, whether to wait in cash, buy dips, follow the trend or
+  do something else, and keeps a playbook of which strategy versions it uses
+  in which market type. (2) The desk can write new strategy versions in the
+  practice-range grammar (data, never code), replay and confirm them itself
+  inside the installed service, and is woken with the results; there is no cap
+  on how much it tries (D116), and protected software keeps the test fair
+  (tune on earlier days, confirm once on untouched later days, every try
+  listed). (3) Software labels each coin's market type (rising, sideways,
+  falling, unclear) from TA-Lib indicators (D118), the same way live and in
+  replays, and shows it to the desk; practice reports split results by market
+  type. (4) The desk reads the Leader's news rounds (summary, headlines, its
+  note, strategy ideas addressed to it) and Jev's verdicts and alarms, and may
+  change its strategy choice because of news; news cannot be replayed, so
+  news-driven choices are recorded with their reasons for Learning and the
+  scorecard. (5) Trader discretion stays real: software never refuses a day
+  plan for not following the playbook or a market type; money limits, riba
+  rules and safety exits are unchanged. Built as cloud waves 11 to 13
+  (`docs/CLOUD-BUILD-PLAN.md`); L3 waits for them, so the engine is installed
+  once. None of this authorizes live trading, real orders or paid calls.
+  Reason: the owner's instruction in chat on 2026-10-20 after the L2 results
+  and the five questions about strategies; `planning/handoffs/L2.md`.

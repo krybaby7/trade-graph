@@ -7,7 +7,11 @@ night shift of 2026-10-16/17; waves 8 and 9 by the night shift of
 2026-10-17, closed the gaps between "built" and "installed" that the night
 shift found; wave 10, the owner's tidy-up before the install (D263), locked
 the AI-spending records, kept the money checks fast and added HQ's card for a
-coin without a safety exit. The local steps L1–L4 remain. Every
+coin without a safety exit. L1 is done (2026-10-19). L2's first practice-range
+test found that both starting strategies lose after fees and that the graph
+cannot create or test strategies itself, so the owner added waves 11 to 13 on
+2026-10-20 (D280): one Trading desk with its own strategy lab, market types and
+news in its strategy choice. L2's other checks, L3 and L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -19,17 +23,17 @@ from it and returns to it through pull requests.
 
 ### In one minute
 
-- The work is split into **25 cloud packages in 10 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. All 10 waves
-  are done: wave 10, the short tidy-up you chose on 2026-10-18 (D263), was
-  merged the same day. L1 and L2 run on your PC; the install (L3) no longer
-  waits for any cloud package and starts with your yes.
+- The work is split into **29 cloud packages in 13 waves**, plus **4 local
+  steps** on your PC and a short list of things only you can do. Waves 1 to
+  10 are done. Waves 11 to 13, added on 2026-10-20 (D280), turn the Trader into
+  one Trading desk that finds, tests and chooses its own strategies. L1 is
+  done; the install (L3) waits for waves 11 to 13 and starts with your yes.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
   session, the **integrator**. It checks and merges that wave's work, then
   updates the status board below.
-- Then you start the next wave. Repeat until wave 10.
+- Then you start the next wave. Repeat until wave 13.
 - After that, a session on your PC installs the new engine (with your
   approval) and starts the scored practice test.
 
@@ -77,6 +81,9 @@ into a cloud session.
 | 8 | W8-A Perplexity inside the installed system, W8-B Trader exit tools, W8-C HQ loss, plans and scorecard | Wave 7 merged |
 | 9 | W9-A news check next to the installed system | Wave 8 merged |
 | 10 | W10-A lock the AI-spending records, W10-B fast money checks and scorecard, W10-C HQ card for a coin without a safety exit | Wave 9 merged (added 2026-10-18, D263) |
+| 11 | W11-A market types, W11-B the strategy lab inside the service | Wave 10 merged (added 2026-10-20, D280) |
+| 12 | W12-A one Trading desk: strategy choice, playbook, news | Wave 11 merged |
+| 13 | W13-A the Trading desk in HQ, scorecard by strategy and market type | Wave 12 merged |
 
 The slowest chain is W1-B → W2-A and W2-B → W3-A → W4-A → W5-A → wave 6 →
 local install. If you can only start a few sessions at a time, start W1-B
@@ -113,9 +120,13 @@ The integrator updates this table each time it merges a wave.
 | W10-A | C7 | The files that record AI spending are locked, and Perplexity's spending gets the same protected checks as Jev's | Merged 2026-10-18 (#25); nothing new for you: the protected package fingerprint changes, which the normal re-pin at L3 steps 2 and 3 covers; Perplexity rounds (step 12) now also check the protected runtime the installed service prepares at start, and a missing or altered spending record refuses the next round with the reason in HQ's activity log |
 | W10-B | C8 | Money checks, HQ and the scorecard stay fast as weeks of prices pile up | Merged 2026-10-18 (#26); nothing new for you: it is part of the normal install at L3, with no new database step; the first real scorecard after L3 (`trade-graph scorecard --format text`) uses it |
 | W10-C | C9 | HQ shows a "Needs you" card when a bought coin is left without a safety exit | Merged 2026-10-18 (#24); after L3 you look at the HQ tab once on your phone and iPad (it was checked only in a test browser with made-up numbers); the card appears only if a bought coin has had no safety exit for 10 minutes |
-| L1 | — | Price data kept current on your PC | Started 2026-10-18 with your yes (D263): the April–June archive download began; the Windows tasks and the first collection pass are next |
-| L2 | — | First real practice-range reports and paid-service smoke tests | Not started |
-| L3 | — | New engine installed on your PC (your approval) | Not started; wave 10 is merged (2026-10-18, D263), so it starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
+| W11-A | C10 | Software labels each coin's market type (rising, sideways, falling), and practice reports show where a strategy earns and loses | Planned 2026-10-20 (D280) |
+| W11-B | C11 | The Trading desk writes, replays and confirms its own strategies inside the installed system | Planned 2026-10-20 (D280) |
+| W12-A | C12 | One Trading desk: chooses per coin to wait, buy dips or follow the trend, keeps a playbook, reads the Leader's news and Jev | Planned 2026-10-20 (D280); after wave 11 |
+| W13-A | C13 | HQ's Trading desk room shows the playbook, today's choices and the lab; the scorecard splits results by strategy and market type | Planned 2026-10-20 (D280); after wave 12 |
+| L1 | — | Price data kept current on your PC | Done 2026-10-19 ([L1.md](../planning/handoffs/L1.md)): April–September for every coin, Bitcoin and Ether without a break to 19 October, Windows price tasks registered; a later local session added two years for the five practice coins (2026-10-20) |
+| L2 | — | First real practice-range reports and paid-service smoke tests | Part 1 done 2026-10-19 ([L2.md](../planning/handoffs/L2.md)): both starting strategies lose after fees; the coin scan, recordings, fee pages and the paid smoke calls remain |
+| L3 | — | New engine installed on your PC (your approval) | Not started; waits for waves 11 to 13 (D280), then starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
@@ -124,6 +135,7 @@ The integrator updates this table each time it merges a wave.
 |---|---|---|
 | Now | Switch on the price schedule on your PC: run `scripts/register_candle_schedule.ps1` once (the local session gives you the command) | Windows blocked the agent. Without it, gaps appear in recent prices. Since 15 October 23:00 UTC none were collected. |
 | Done 2026-10-18 | You accepted the three recommendations of the 2026-10-18 briefing: start L1 now, run wave 10 before the install, and import the April–June archive (D263). You also asked that nothing runs Trade Graph without telling you first | Recorded in the decision log. |
+| Done 2026-10-20 | You chose one Trading desk with its own strategy lab, market types and news in its strategy choice, built before the install (D280) | Recorded in the decision log; waves 11 to 13. |
 | Now | Check that Perplexity auto top-up is off | The prepaid credit is the outer limit while testing has no budget (D125). |
 | Optional | Get a Jev key at console.typesafe.ai only, then ask the local session to store it | The news alarm makes real checks only with a key. It is built and tested without one. |
 | Done 2026-10-18 | You answered the three open questions with the recommended answers: the older Leader keeps its power to pause the account or narrow the allowed coins and strategies (D262); the files that record AI spending become protected in a later package (D261); the fix for an order whose confirmation got lost will also apply to real-money orders, only through the live pilot (D260) | Recorded in the decision log; nothing changed in code. |
@@ -412,8 +424,11 @@ The owner is asleep: never stop to ask anything.
 
 ### Reserved numbers
 
-The owner's decisions of 2026-10-18 are D260–D263. New owner decisions after
-this plan start at D280.
+The owner's decisions of 2026-10-18 are D260–D263 and of 2026-10-20 D280. New
+owner decisions after this plan start at D310. Alembic has one head, 0044;
+reserved migration numbers that were never used (0043, 0045–0049) stay unused,
+and the integrator renumbers a new migration to follow the head if the
+migration code requires it (rule 11).
 
 | Package | Branch | Decisions | State migration |
 |---|---|---|---|
@@ -443,6 +458,10 @@ this plan start at D280.
 | W10-A | `claude/c7-lock-ai-spending` | D264–D268 | 0047 |
 | W10-B | `claude/c8-fast-money-checks` | D269–D273 | 0048 |
 | W10-C | `claude/c9-hq-unprotected-card` | D274–D278 | 0049 |
+| W11-A | `claude/c10-market-types` | D285–D289 | 0050 |
+| W11-B | `claude/c11-strategy-lab` | D290–D294 | 0051 |
+| W12-A | `claude/c12-trading-desk` | D295–D299 | 0052 |
+| W13-A | `claude/c13-desk-hq-scorecard` | D300–D304 | 0053 |
 
 ### Wave 1 — start now
 
@@ -870,6 +889,193 @@ exit.
   closed; JS tests, and Chromium (Playwright) at phone, iPad and desktop sizes
   in light and dark.
 
+### Wave 11 — the strategy lab and market types (added 2026-10-20)
+
+The owner chose (D280) one Trading desk that finds, tests and chooses its own
+strategies. L2 part 1 (`planning/handoffs/L2.md`) found four gaps: both
+starting strategies lose after fees on six months of real prices (before fees
+they roughly break even); no department can create or replay a strategy, so
+only the owner's `practice-range-*` commands make the confirmation reports a
+day plan needs (`application/day_plans.py`); no software labels market types,
+although D137's text says it does (the scanner only ranks); and the L3
+checklist has no step that gives any strategy a confirmation report in the
+installed database, so as written the scored test would make no trade. Waves
+11 to 13 close these gaps; L3 waits for them. The cloud has no market data and
+cannot reach kraken.com or okx.com: tests use synthetic candle series labelled
+`synthetic_fixture`, and the local session reruns the lab on real data after
+the merge. Waves 11 to 13 have no task in `planning/progress.json` (C ids are
+labels). Each package reads the handoffs it names before it starts.
+
+Order for the integrator: W11-A, W11-B. Both touch the practice range: W11-A
+the grammar, the replay and the report (`contracts/practice_range.py`,
+`replay.py`, `summary.py`); W11-B the store, the paths and new modules. Keep
+W11-B's contracts in their own file (`contracts/strategy_lab.py`).
+
+**W11-A · C10 · Market types.** Software labels each coin's market type, the
+same way live and in replays, and practice reports show where a strategy earns
+and where it loses.
+- Spec: D280, D118 (TA-Lib menu only, no in-house formulas), D119, D120, D132,
+  D136, D165–D169, D170–D174; `planning/handoffs/L2.md`; `docs/PRACTICE-RANGE.md`,
+  `docs/COIN-SCANNER.md`; `contracts/indicators.py` (ADX, PLUS_DI and MINUS_DI
+  are on the menu), `application/indicators/rolling.py`,
+  `application/coin_scanner/` (`inputs.py` `evaluate_pair`, `scanner.py`,
+  `store.py`).
+- One deterministic function, in a new protected kernel module, labels a coin
+  at a moment as `rising`, `sideways`, `falling` or `unclear` (too few candles,
+  a gap) from completed candles only, for example from a long moving average's
+  slope, the price's side of it and ADX for trend strength. The rules are a
+  versioned document (`market-type-rules@1`) with bounded parameters and the
+  candle size they read; record the defaults as decisions, with the reason.
+  Live labelling and replays call the same function with the same rules, never
+  a second copy (like `kernel/day_plan_coverage.py`, D277). Point in time: a
+  label never uses a candle that closed after its moment. Comparisons follow
+  D136.
+- Live: each hourly scan labels every shortlist coin, every coin held and the
+  day's focus coins, and stores the label with its inputs and rules version
+  (migration 0050 only if a new table is needed). A read-only command,
+  `trade-graph market-types`, prints the newest labels. The desk does not see
+  them yet (W12-A).
+- Practice range: (1) an optional grammar operand, so a strategy can require a
+  market type at entry (for example `{"market_type": "rising"}` with `is` or
+  `is_not`), computed in the replay by the same function; (2) every report
+  splits its trades by the market type at entry: count, wins, losses and
+  result after fees, summing to the report's totals. Existing strategy
+  documents, reports and their hashes stay valid.
+- Done when golden tests on synthetic series (a steady rise, a steady fall, a
+  flat range, a gap) give the expected labels from the expected first candle;
+  a property test shows a label at a moment never changes when later candles
+  are added; a replay using the operand sees the same label sequence as the
+  live function on the same candles; and a report's split sums to its totals.
+
+**W11-B · C11 · The strategy lab inside the service.** The Trading desk writes
+strategy versions, replays and confirms them inside the installed system, and
+is woken with the results; protected software keeps the test fair.
+- Spec: D280, D116, D117, D138 item 5, D165–D169, D185–D194, D220–D224 (the
+  in-service collector's thread); `planning/handoffs/L2.md` ("Finding for
+  L3"); `docs/PRACTICE-RANGE.md`, `docs/EVENT-ENGINE.md`, `docs/DAY-PLANS.md`;
+  `application/practice_range/` (`store.py` `register`, `create_study`,
+  `record_run`; `service.py` `PracticeRange.run`), `application/day_plans.py`,
+  `application/trader_workflow.py`, `application/events/` (`engine.py`,
+  `sources.py`), `contracts/wakes.py` (`TraderWakeReply`, `TRIGGER_KINDS`,
+  `_TRIGGER_NEEDS`, `purpose_of`), `adapters/persistence/wake_schema.py`,
+  `application/subscription_runtime.py` (`ROLE_CONTEXT_KEYS`).
+- Lab requests (`contracts/strategy_lab.py`): register a strategy version (a
+  `PracticeStrategy` document: data, never code), create a study, run tuning
+  replays (coin, source, window, cost profiles) and ask for a confirmation.
+  `TraderWakeReply` gains an optional `lab_requests` list. No cap on how many
+  (D116). Each request is checked by the existing grammar and study rules; a
+  refused one is reported back with its reason, never dropped silently.
+- A lab worker in the installed service, in its own thread like the price
+  collector: it runs queued requests in order against the installation's
+  candle file (read-only) and writes practice-range records into the state
+  database. It never places, sends or cancels an order and never delays
+  trading, protection, reconciliation or the money-limit step. The queue
+  survives a restart: an interrupted run is run again, never half recorded.
+  HQ's activity log shows `strategy_lab` with what is queued, running, done or
+  refused, and the seconds spent.
+- When the desk's requests are done, the desk is woken by a new trigger kind,
+  `lab_results` (`TRIGGER_KINDS`, `_TRIGGER_NEEDS`, `purpose_of`, a source in
+  `application/events/sources.py`, and migration 0051 for the CHECK
+  constraint in `wake_schema.py`); like a news alarm it keeps the desk's
+  check-in. A new `lab` context key, allowed for the Trader in
+  `ROLE_CONTEXT_KEYS`, gives the newest results in plain sentences
+  (`summary.report_lines`, the result per cost profile, W11-A's split by market
+  type), what is queued, and per strategy family how many versions and runs
+  were tried, all within the 128 KiB request limit.
+- A fair test, kept by protected software: add `application/practice_range/`,
+  `contracts/practice_range.py` and the lab modules to
+  `PROTECTED_PATH_PREFIXES` with a test, so the deployed Engineer cannot change
+  the rules. Keep the store's rules (tune on earlier days, confirm once on
+  untouched later days, every try listed in the report), and add a helper that
+  offers the desk the newest untouched confirmation window per family, so new
+  days from the collector become new confirmation days (walk-forward). The
+  account's own cost profile is always among the profiles replayed.
+- First start: an installation with no registered strategy registers the two
+  examples in `strategies/practice/` (shipped in the image), so the lab has a
+  start; the desk asks for their confirmations itself. Update the L3
+  checklist: step 3 adds `lab` to `allowed_context_keys.trader`, and the
+  "missing confirmation step" of `planning/handoffs/L2.md` becomes this
+  first-start behaviour, with what the owner should see.
+- Done when, on a scripted installation with synthetic candles: the desk's
+  reply registers a version and asks for tuning and a confirmation; the worker
+  runs them; the desk is woken with `lab_results`; its next day plan citing the
+  confirmed version is accepted; a confirmation on spent days, a tuning run on
+  confirmation days and a malformed strategy are refused with their reasons in
+  the next wake; the queue survives a restart; and a safety exit fills while a
+  long queue is running.
+
+### Wave 12 — one Trading desk (added 2026-10-20)
+
+**W12-A · C12 · One Trading desk.** The Trader becomes the Trading desk: it
+owns strategy choice and strategy research, and decides per coin whether to
+wait, buy dips or follow the trend, using market types, the lab and the news.
+- Spec: D280, D115–D117, D123, D127, D137, D138, D185–D189, D205–D214,
+  D225–D229, D255–D259; the W11-A and W11-B handoffs; `docs/LEADER-NEWS-ROUNDS.md`,
+  `docs/NEWS-ALARM.md`, `docs/FOCUS-RESEARCH.md`; `contracts/wakes.py`
+  (`TraderWakeReply`, `ShortlistCoin`), `application/events/scan.py`,
+  `application/trader_workflow.py` (`WAKE_INSTRUCTION`, the context),
+  `prompts/trader.md`, `application/subscription_runtime.py`,
+  `contracts/leader_news.py` (`StrategyIdea`), `application/leader_news/rounds.py`
+  (`_route`), `adapters/persistence/leader_news_schema.py`.
+- The desk's job, in its instruction (`WAKE_INSTRUCTION`, `prompts/trader.md`),
+  in plain terms: read each coin's market type, the lab results and the news;
+  decide per coin to wait in cash, buy dips, follow the trend or something
+  else; use the lab to find and confirm better strategies; fees decide most
+  results (L2), so weigh how often to trade. Discretion stays real: no
+  confidence threshold, no committee, no pass mark (D116, D138 item 5).
+- Playbook: a reply may revise the desk's playbook: per market type, the
+  strategy versions it means to use or "wait", each with a short reason and
+  the report ids it rests on. Store revisions with who, when, why and the
+  previous revision, readable at any past moment like lessons. Software never
+  refuses a day plan for not following the playbook or a market type.
+- Stances: a reply may give, per coin it considered, a stance (wait, buy dips,
+  follow the trend or other), the market type it saw, the strategy version, the
+  news it weighed and a one-sentence reason. A day plan records the coin's
+  market type and the playbook revision when it is installed, for Learning
+  and the scorecard (W13-A).
+- News: the desk's context gains `news`: the newest Leader news round (summary,
+  headlines, the desk's note and the strategy ideas addressed to it) and Jev's
+  recent verdicts and would-be alarms for the coins it watches, shadow mode
+  included, within the size limit. `StrategyIdea.department` gains the desk
+  (contract and the CHECK in `leader_news_schema.py`, migration 0052); an idea
+  for the desk appears in its next wake as a lab inbox item, and the desk
+  decides what to test. Optimisation keeps cost and quality.
+- Market types: each shortlist, focus and held coin in the desk's context
+  carries W11-A's label (`ShortlistCoin`, `events/scan.py`).
+- The new context keys are allowed for the Trader in `ROLE_CONTEXT_KEYS`; L3
+  checklist step 3 lists them for `subscription-profile.json`. A busy-day test
+  keeps every request under 128 KiB.
+- Done when a scripted week (synthetic candles, scripted Leader rounds and Jev
+  verdicts, scripted desk replies, no paid call) shows: a coin labelled
+  `falling` gets a "wait" stance; a Leader idea addressed to the desk becomes a
+  lab run; a confirmed dip-buying version is used on a `sideways` coin; the day
+  plan records its market type and playbook revision; and every request stays
+  under the size limit.
+
+### Wave 13 — the Trading desk in HQ (added 2026-10-20)
+
+**W13-A · C13 · The Trading desk room and the scorecard by strategy.** You see
+what the desk believes, what it is testing and what each strategy earns in
+each market type.
+- Spec: D280, `docs/HQ-DASHBOARD.md` (plain English, phone and iPad first,
+  light and dark, the 80 KB payload budget), `docs/SCORECARD.md`; the W11-A,
+  W11-B and W12-A handoffs; `api/hq_copy.py`, `api/hq_state.py`,
+  `api/hq_contract.py`, `web/static/hq-render.js`, `kernel/trade_metrics.py`,
+  `application/scorecard.py`.
+- HQ's Trading desk room shows, in plain words: the playbook (per market type,
+  the strategy or "wait", and why), today's stance per coin with its market
+  type, the lab (queued, the newest results with the result after fees against
+  holding, tries per family) and the Leader news the desk read. Reading HQ
+  starts nothing. Update the snapshot contract and the fixtures, keeping other
+  packages' keys.
+- The scorecard splits its trades and result after fees by strategy version,
+  market type at entry and stance, with the same sums (`kernel/trade_metrics.py`),
+  and Learning can read the split, so lessons can say which choice earned or
+  lost in which market.
+- Done when JS tests and Chromium (Playwright) at phone, iPad and desktop
+  sizes in light and dark show the room on a scripted week, within the payload
+  budget, and a property test shows the scorecard's split sums to its totals.
+
 ### Later, not packaged
 
 Open items the night shift found that wait for an owner decision or a later
@@ -923,8 +1129,9 @@ The commands, in order, with what each should show, are in
 [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) (W6-D). W8-A and W9-A are
 merged, so its step 12 (Research and the Leader on Perplexity) and its step 17
 (news wake-ups, once the shadow log shows real alarms) no longer wait for a
-cloud package; wave 10 is merged too (2026-10-18), so L3 waits for no cloud
-package.
+cloud package; wave 10 is merged too (2026-10-18). The owner then chose
+(D280) to build the Trading desk first, so L3 waits for waves 11 to 13; they
+also replace the confirmation step that L2 part 1 found missing.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final
