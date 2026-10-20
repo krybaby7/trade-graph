@@ -1,0 +1,418 @@
+{
+ "data_as_of": "2026-10-02T00:00:00.000000Z",
+ "evidence": [
+  "synthetic_fixture"
+ ],
+ "report": {
+  "currency_note": null,
+  "evidence": {
+   "labels": [
+    "synthetic_fixture"
+   ],
+   "orders_sent": 0,
+   "paid_calls": 0,
+   "real_market_data": false,
+   "statement": "Replayed on synthetic test data, not market history.",
+   "synthetic_data": true
+  },
+  "label": {
+   "kind": "evidence_for_trader_discretion",
+   "live_authorization": false,
+   "pass_mark": null,
+   "statement": "A practice-range report is evidence the Trader reads and weighs. It is not a pass mark, not a claim that the strategy is profitable, and not permission to trade real money: working software, economic evidence and permission for real money are separate gates (D138 item 5)."
+  },
+  "phase": "tune",
+  "report_version": "practice-range-report-v1",
+  "result": {
+   "bars_in_market": 40,
+   "benchmark_data": {
+    "hold_btc": {
+     "first_open_utc": "2026-07-01T00:00:00.000000Z",
+     "input_sha256": "4b86e8040560e6df22440e1376cded726678554d6278ecffab8aa43975c1ce9d",
+     "last_close_utc": "2026-07-02T00:00:00.000000Z",
+     "run_ids": [
+      2
+     ],
+     "source": "synthetic",
+     "status": "ok",
+     "symbol": "BTC/USD"
+    },
+    "hold_coin": {
+     "first_open_utc": "2026-07-01T00:00:00.000000Z",
+     "input_sha256": "f4973711957d586225a7da6684933bf9fd0de6b2d9f1644e97da9d75bd60a946",
+     "last_close_utc": "2026-07-02T00:00:00.000000Z",
+     "run_ids": [
+      1
+     ],
+     "source": "synthetic",
+     "status": "ok",
+     "symbol": "SYN/USD"
+    }
+   },
+   "data": {
+    "availability": "candles received by the data cut-off; decisions use event time only",
+    "candles_read": 97,
+    "data_as_of_utc": "2026-10-02T00:00:00.000000Z",
+    "evidence_labels": [
+     "synthetic_fixture"
+    ],
+    "input_sha256": "61bc9bc5caaceb9b8c646c67e797d5cf9a37eaed0a2eef96ee6ba69b3326a2fd",
+    "interval_minutes": 15,
+    "missing_ranges": [],
+    "read_mode": "point_in_time",
+    "revised_candles": 0,
+    "run_ids": [
+     1
+    ],
+    "slots_read": 97,
+    "source": "synthetic",
+    "source_pair": "SYNUSD",
+    "symbol": "SYN/USD",
+    "warmup_slots": 1,
+    "window_bars": 96,
+    "window_missing": 0,
+    "window_present": 96
+   },
+   "ending": {
+    "basis": "last close less exit slippage and the taker fee; an open position is not a trade",
+    "cash": "5043.7656",
+    "equity": "9814.41264",
+    "fee": "38.47296",
+    "held": "48",
+    "price": "100.19",
+    "value": "4770.64704",
+    "valued_at_utc": "2026-07-02T00:00:00.000000Z"
+   },
+   "engine": "practice-range-replay-v1",
+   "equity_curve": {
+    "daily": [
+     {
+      "at_utc": "2026-07-01T23:45:00.000000Z",
+      "day": "2026-07-01",
+      "equity": "9858.1656"
+     },
+     {
+      "at_utc": "2026-07-02T00:00:00.000000Z",
+      "day": "2026-07-02",
+      "equity": "9814.41264"
+     }
+    ],
+    "marked_at": "each candle's close",
+    "points": 97,
+    "sha256": "e70b47c9861209134fa73689f90f20df2c0d68ee8d923b567cbb606072dac250"
+   },
+   "events": {
+    "decision_bars": 95,
+    "entries_filled": 3,
+    "entries_placed": 3,
+    "entry_signals": 3,
+    "protective_exit_fills": 2
+   },
+   "fills": [
+    {
+     "cost_profile_ref": "kraken-spot-starting-tier@1",
+     "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "event_ref": "synthetic:SYNUSD:15:1782873900",
+     "fee": "39.71352",
+     "fee_asset": "USD",
+     "fill_policy_ref": "bar-replay@1",
+     "fill_policy_sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3",
+     "fill_ref": "cross-hundred@1:SYN/USD:1782873900:entry#1",
+     "filled_at_utc": "2026-07-01T02:45:00.000000Z",
+     "heuristic": true,
+     "liquidity": "taker",
+     "order_id": "cross-hundred@1:SYN/USD:1782873900:entry",
+     "price": "101.31",
+     "purpose": "entry",
+     "quantity": "49",
+     "reason": "market",
+     "reference_price": "101.2",
+     "side": "buy",
+     "symbol": "SYN/USD"
+    },
+    {
+     "cost_profile_ref": "kraken-spot-starting-tier@1",
+     "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "event_ref": "synthetic:SYNUSD:15:1782877500",
+     "fee": "41.65784",
+     "fee_asset": "USD",
+     "fill_policy_ref": "bar-replay@1",
+     "fill_policy_sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3",
+     "fill_ref": "cross-hundred@1:SYN/USD:1782873900:entry:exit#2",
+     "filled_at_utc": "2026-07-01T04:00:00.000000Z",
+     "heuristic": true,
+     "liquidity": "taker",
+     "order_id": "cross-hundred@1:SYN/USD:1782873900:entry:exit",
+     "price": "106.27",
+     "purpose": "protective_exit",
+     "quantity": "49",
+     "reason": "take_profit",
+     "reference_price": "106.38",
+     "side": "sell",
+     "symbol": "SYN/USD"
+    },
+    {
+     "cost_profile_ref": "kraken-spot-starting-tier@1",
+     "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "event_ref": "synthetic:SYNUSD:15:1782882900",
+     "fee": "40.244",
+     "fee_asset": "USD",
+     "fill_policy_ref": "bar-replay@1",
+     "fill_policy_sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3",
+     "fill_ref": "cross-hundred@1:SYN/USD:1782882900:entry#3",
+     "filled_at_utc": "2026-07-01T05:15:00.000000Z",
+     "heuristic": true,
+     "liquidity": "taker",
+     "order_id": "cross-hundred@1:SYN/USD:1782882900:entry",
+     "price": "100.61",
+     "purpose": "entry",
+     "quantity": "50",
+     "reason": "market",
+     "reference_price": "100.5",
+     "side": "buy",
+     "symbol": "SYN/USD"
+    },
+    {
+     "cost_profile_ref": "kraken-spot-starting-tier@1",
+     "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "event_ref": "synthetic:SYNUSD:15:1782883800",
+     "fee": "38.76",
+     "fee_asset": "USD",
+     "fill_policy_ref": "bar-replay@1",
+     "fill_policy_sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3",
+     "fill_ref": "cross-hundred@1:SYN/USD:1782882900:entry:exit#4",
+     "filled_at_utc": "2026-07-01T05:45:00.000000Z",
+     "heuristic": true,
+     "liquidity": "taker",
+     "order_id": "cross-hundred@1:SYN/USD:1782882900:entry:exit",
+     "price": "96.9",
+     "purpose": "protective_exit",
+     "quantity": "50",
+     "reason": "stop_gap",
+     "reference_price": "97",
+     "side": "sell",
+     "symbol": "SYN/USD"
+    },
+    {
+     "cost_profile_ref": "kraken-spot-starting-tier@1",
+     "cost_profile_sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "event_ref": "synthetic:SYNUSD:15:1782918900",
+     "fee": "38.51904",
+     "fee_asset": "USD",
+     "fill_policy_ref": "bar-replay@1",
+     "fill_policy_sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3",
+     "fill_ref": "cross-hundred@1:SYN/USD:1782918900:entry#5",
+     "filled_at_utc": "2026-07-01T15:15:00.000000Z",
+     "heuristic": true,
+     "liquidity": "taker",
+     "order_id": "cross-hundred@1:SYN/USD:1782918900:entry",
+     "price": "100.31",
+     "purpose": "entry",
+     "quantity": "48",
+     "reason": "market",
+     "reference_price": "100.2",
+     "side": "buy",
+     "symbol": "SYN/USD"
+    }
+   ],
+   "indicators": {},
+   "library": {
+    "numpy": "2.5.4",
+    "ta_lib_c": "0.8.1",
+    "ta_lib_python": "0.8.2"
+   },
+   "metrics": {
+    "average_loss": "-264.504",
+    "average_win": "161.66864",
+    "benchmarks": {
+     "hold_btc": {
+      "bought_at_utc": "2026-07-01T00:00:00.000000Z",
+      "buy_fee": "79.365076",
+      "buy_price": "50000",
+      "capital": "10000",
+      "cash_left": "0.000424",
+      "ending_value": "10825.3967904",
+      "fee_rate": "0.008",
+      "quantity": "0.19841269",
+      "result": "825.3967904",
+      "sell_fee": "87.3015836",
+      "sell_price": "55000",
+      "sold_at_utc": "2026-07-02T00:00:00.000000Z",
+      "symbol": "BTC/USD",
+      "versus": "-1010.9841504"
+     },
+     "hold_coin": {
+      "bought_at_utc": "2026-07-01T00:00:00.000000Z",
+      "buy_fee": "79.2",
+      "buy_price": "99",
+      "capital": "10000",
+      "cash_left": "20.8",
+      "ending_value": "9970.56",
+      "fee_rate": "0.008",
+      "quantity": "100",
+      "result": "-29.44",
+      "sell_fee": "80.24",
+      "sell_price": "100.3",
+      "sold_at_utc": "2026-07-02T00:00:00.000000Z",
+      "symbol": "SYN/USD",
+      "versus": "-156.14736"
+     }
+    },
+    "currency": "USD",
+    "ending_equity": "9814.41264",
+    "fees_paid": "198.8944",
+    "flat_trades": 0,
+    "losses": 1,
+    "metrics_version": "trade-metrics-v1",
+    "open_positions": [
+     {
+      "bought": "4814.88",
+      "fees": "38.51904",
+      "fill_refs": [
+       "cross-hundred@1:SYN/USD:1782918900:entry#5"
+      ],
+      "opened_at_utc": "2026-07-01T15:15:00.000000Z",
+      "quantity": "48",
+      "sold": "0",
+      "symbol": "SYN/USD"
+     }
+    ],
+    "result": "-185.58736",
+    "result_fraction": "-0.018558736",
+    "round_trips": [
+     {
+      "bought": "4964.19",
+      "closed_at_utc": "2026-07-01T04:00:00.000000Z",
+      "fees": "81.37136",
+      "fill_refs": [
+       "cross-hundred@1:SYN/USD:1782873900:entry#1",
+       "cross-hundred@1:SYN/USD:1782873900:entry:exit#2"
+      ],
+      "opened_at_utc": "2026-07-01T02:45:00.000000Z",
+      "outcome": "win",
+      "quantity": "49",
+      "result": "161.66864",
+      "sold": "5207.23",
+      "symbol": "SYN/USD"
+     },
+     {
+      "bought": "5030.5",
+      "closed_at_utc": "2026-07-01T05:45:00.000000Z",
+      "fees": "79.004",
+      "fill_refs": [
+       "cross-hundred@1:SYN/USD:1782882900:entry#3",
+       "cross-hundred@1:SYN/USD:1782882900:entry:exit#4"
+      ],
+      "opened_at_utc": "2026-07-01T05:15:00.000000Z",
+      "outcome": "loss",
+      "quantity": "50",
+      "result": "-264.504",
+      "sold": "4845",
+      "symbol": "SYN/USD"
+     }
+    ],
+    "starting_equity": "10000",
+    "total_lost": "-264.504",
+    "total_won": "161.66864",
+    "trades": 2,
+    "versus_cash": {
+     "cash_result": "0",
+     "note": "Cash earns no interest (D127).",
+     "versus": "-185.58736"
+    },
+    "win_rate": "0.5",
+    "wins": 1,
+    "worst_drawdown": {
+     "amount": "351.18384",
+     "fraction": "0.0345463093",
+     "peak_at_utc": "2026-07-01T03:45:00.000000Z",
+     "peak_equity": "10165.59648",
+     "trough_at_utc": "2026-07-02T00:00:00.000000Z",
+     "trough_equity": "9814.41264"
+    },
+    "worst_losing_streak": 1
+   },
+   "request": {
+    "benchmark": {
+     "hold_btc_source": "synthetic",
+     "hold_btc_symbol": "BTC/USD"
+    },
+    "capital": "10000",
+    "cost_profile": {
+     "maker_rate": "0.004",
+     "ref": "kraken-spot-starting-tier@1",
+     "sha256": "65ec96d721676e6d2fbcf3abef664c9d147c3c17052e22570e87af9fd243cbba",
+     "taker_rate": "0.008",
+     "venue": "kraken"
+    },
+    "currency": "USD",
+    "data_as_of_utc": "2026-10-02T00:00:00.000000Z",
+    "fill_policy": {
+     "entry_slippage_rate": "0.001",
+     "exit_slippage_rate": "0.001",
+     "participation": "0.1",
+     "ref": "bar-replay@1",
+     "sha256": "fc33b4e0a5353a90a381ac494be865408929d263f8802ca6d2107f65f6fce9c3"
+    },
+    "instrument_rules": {
+     "base_asset": "SYN",
+     "min_notional": "10",
+     "min_quantity": "1",
+     "price_increment": "0.01",
+     "quantity_increment": "1",
+     "quote_asset": "USD",
+     "symbol": "SYN/USD",
+     "synthetic": true,
+     "venue": "kraken"
+    },
+    "interval_minutes": 15,
+    "quantity_increment": "1",
+    "source": "synthetic",
+    "strategy": {
+     "ref": "cross-hundred@1",
+     "sha256": "233f9b777a1f0dec56c438f78b95ce8887c53844650caa8f5bb3c08090d50c90"
+    },
+    "symbol": "SYN/USD",
+    "window": {
+     "days": 1,
+     "end": "2026-07-02",
+     "end_is_exclusive": true,
+     "start": "2026-07-01"
+    }
+   }
+  },
+  "result_sha256": "8807097ba35ac8b75fd38cc520cf1cac603728c4e5d20a3af66509aab625bc74",
+  "selection": {
+   "confirm_runs": 0,
+   "tune_runs": 0,
+   "versions_confirmed": [],
+   "versions_tuned": []
+  },
+  "study": {
+   "confirm": {
+    "days": 1,
+    "end": "2026-07-03",
+    "end_is_exclusive": true,
+    "start": "2026-07-02"
+   },
+   "meets_three_month_minimum": false,
+   "note": "",
+   "replayed_days": 2,
+   "strategy_id": "cross-hundred",
+   "study_id": "cross-study-1",
+   "tune": {
+    "days": 1,
+    "end": "2026-07-02",
+    "end_is_exclusive": true,
+    "start": "2026-07-01"
+   }
+  },
+  "venue": {
+   "cost_profile_venue": "kraken",
+   "data_venue": "synthetic",
+   "note": "Synthetic prices: the fees are the profile's, the prices are test data.",
+   "stand_in": false
+  }
+ },
+ "result_sha256": "8807097ba35ac8b75fd38cc520cf1cac603728c4e5d20a3af66509aab625bc74"
+}
