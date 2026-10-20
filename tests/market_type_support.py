@@ -19,7 +19,6 @@ SERIES_START = datetime(2026, 5, 1, tzinfo=UTC)  # the open of candle 0
 # The default rules need 863 hourly candles before a coin can be labelled (ADX 14 reads that span, D136), so the
 # first labelled candle of a series that starts at candle 0 is candle 862.
 FIRST_LABELLED = 862
-CENT = Decimal("0.01")
 
 
 def candle(symbol: str, index: int, o: Decimal, h: Decimal, low: Decimal, c: Decimal, *, interval: int = 60,
@@ -47,6 +46,21 @@ _ZIGZAG = ("0", "0.5", "1", "0.5", "0", "-0.5", "-1", "-0.5")
 def closes_range(count: int, *, centre: str = "100") -> list[Decimal]:
     """A flat range: the close walks 100, 100.5, 101, 100.5, 100, 99.5, 99, 99.5 and again, every 8 hours."""
     return [Decimal(centre) + Decimal(_ZIGZAG[index % len(_ZIGZAG)]) for index in range(count)]
+
+
+def closes_wandering(count: int, seed: int, *, drifts: tuple[int, ...] = (-25, 0, 25)) -> list[Decimal]:
+    """A deterministic path in cents from 100.00: a drift per 100-hour block (falls, flats, rises) plus noise, from a
+    64-bit linear congruential generator, so the same seed gives the same prices everywhere."""
+    state = seed & ((1 << 64) - 1)
+    price = 10_000
+    closes = []
+    for index in range(count):
+        state = (state * 6364136223846793005 + 1442695040888963407) & ((1 << 64) - 1)
+        noise = (state >> 33) % 241 - 120
+        drift = drifts[(index // 100 + seed) % len(drifts)]
+        price = max(1_000, price + drift + noise)
+        closes.append(Decimal(price) / 100)
+    return closes
 
 
 def series(symbol: str, closes: list[Decimal], *, wick: str = "0.05", skip: Iterable[int] = (), first_index: int = 0,
@@ -81,5 +95,6 @@ def labels_by_index(label_at: Callable[[datetime], str], indices: Iterable[int])
 
 __all__ = [
     "FIRST_LABELLED", "HOUR", "SERIES_START", "candle", "closes_falling", "closes_range", "closes_rising",
+    "closes_wandering",
     "hourly_moment", "labels_by_index", "series", "store_series",
 ]
