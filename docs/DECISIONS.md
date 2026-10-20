@@ -3202,7 +3202,12 @@ rebuilds `leader_round_requests` so a strategy idea may go to the Trading desk
 (`trader`) and adds `desk_playbook_revisions`, `desk_stances` and
 `day_plan_desk_records`. 0052 follows 0051 directly, so Alembic has one head,
 0052, and the never-used 0043 and 0045–0049 stay unused. The merge had no
-conflict and needed no integration fix. D230–D239 stay reserved for the local
+conflict. One integration fix, after D298: GitHub's full suite on the first
+candidate found that the HQ chart's older-database test
+(`tests/integration/test_hq_chart.py`) dropped `day_plans` while the plan's new
+row in `day_plan_desk_records` still referred to it ("FOREIGN KEY constraint
+failed"); a database that old has no desk record either, so the test now drops
+it first. The HQ chart code is unchanged. D230–D239 stay reserved for the local
 steps L1–L4; new owner decisions start at D310.
 
 - **D295 (2026-10-20, implementation default for C12): the playbook.** A desk
