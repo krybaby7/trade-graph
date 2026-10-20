@@ -15,6 +15,7 @@ cost, spread and trend; drop thin pairs), D131 (no stablecoins or yield tokens),
 | The record, the latest shortlist and the coin rule | `src/trade_graph/application/coin_scanner/store.py` |
 | State migration 0031 | `src/trade_graph/adapters/persistence/coin_scan_schema.py`, `migrations/versions/0031_coin_scans.py` |
 | Commands `scan-coins`, `coin-shortlist` | `src/trade_graph/market_data_cli/coin_scanner.py` |
+| Market types of the scanned coins (W11-A) | `src/trade_graph/application/market_types/`, [MARKET-TYPES.md](MARKET-TYPES.md) |
 | Tests | `tests/unit/test_coin_scanner_rules.py`, `test_coin_ranking.py`, `test_kraken_ticker.py`, `tests/property/test_coin_ranking_properties.py`, `tests/integration/test_coin_scanner.py`, `test_coin_scanner_recorded.py`, `test_coin_scan_store.py`, `test_coin_scanner_cli.py`, `test_migration_0031.py` |
 | Synthetic ticker fixture | `tests/fixtures/coin_scanner/` |
 
@@ -170,6 +171,13 @@ eligible pair's hourly candles after the hour settled, then makes the one Ticker
 (KRAKEN-CANDLE-COLLECTION.md, "In the service"). The day start uses the newest of these scans; during the day they
 keep the coin rule's answer fresh (at most two hours old) without changing the day's shortlist. Outside the service
 `--scans` still works.
+
+## Market types after each scan (W11-A)
+
+After each live scan is recorded, software labels the market type (rising, sideways, falling or unclear) of every
+shortlisted coin and every coin of the day from the same hourly candles, and stores the labels in the state database
+(migration 0050); `trade-graph market-types` prints the newest ones. The labels do not change the ranking or the
+shortlist. Details: [MARKET-TYPES.md](MARKET-TYPES.md) (D285–D289).
 
 ## Measured (synthetic data, cloud container, 2026-10-16)
 

@@ -21,6 +21,13 @@ One position at a time, long only, no borrowing (D127): an entry spends at most 
 sized at the taker fee and entry slippage so a fill never needs more cash than there is. A position still held at
 the end is valued as if sold at the last close, less exit slippage and the taker fee; it is reported as open, not
 counted as a trade.
+
+Market types (W11-A, D286, D288, D289): with market-type rules in the request (every report the service makes now),
+the replay reads the rules' candles of the same series once and labels each decision with the label the live
+function gives at that candle's close (``application/market_types/labeller.py``, ``kernel/market_type.py``): the
+same function, the same rules, event time like the rest of the replay. A strategy's market-type condition reads that
+label, and the result splits the trades by the label at the decision that placed each entry, summing to the totals.
+A request without rules (every report made before W11-A) labels nothing and gives exactly the document it gave then.
 """
 
 from __future__ import annotations
@@ -37,24 +44,29 @@ from trade_graph.application.candle_store import MAX_WINDOW_SLOTS, CandleStore
 from trade_graph.application.indicators.engine import plan_history
 from trade_graph.application.indicators.library import library_versions, rounded_decimal, rounded_significant
 from trade_graph.application.indicators.rolling import RollingSeries, rolling_latest
+from trade_graph.application.market_types.labeller import LabelledWindow, read_timeline
 from trade_graph.contracts.candles import CANDLE_SOURCES, Candle, CandleSlot, CandleWindow, to_micros, to_unix
 from trade_graph.contracts.fills import CostProfile, FillPolicy, ProtectiveExit, SimFill, SimOrder
 from trade_graph.contracts.models import InstrumentRules
 from trade_graph.contracts.practice_range import (
     CandleOperand,
-    Condition,
+    EntryCondition,
     IndicatorOperand,
     LevelOperand,
+    MarketTypeCondition,
     Operand,
     PracticeStrategy,
     ReplayWindow,
 )
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.market_types import MARKET_TYPES, MarketType
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.fills import check_order_rules, fill_order_on_candle, trigger_exit_on_candle
+from trade_graph.kernel.market_type import MarketTypeLabel, MarketTypeRules, split_by_market_type
 from trade_graph.kernel.trade_metrics import (
     EquityPoint,
+    GroupResult,
     HoldBenchmark,
     TradeFill,
     TradeMetrics,
@@ -93,6 +105,7 @@ class ReplayRequest:
     rules: InstrumentRules | None = None
     benchmark_symbol: str | None = None
     benchmark_source: str | None = None
+    market_type_rules: MarketTypeRules | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.strategy, PracticeStrategy):
@@ -110,6 +123,11 @@ class ReplayRequest:
                                     "cannot be replayed")
         if self.rules is not None and self.rules.symbol != self.symbol:
             raise ValidationFailure("the instrument rules are for another symbol")
+        if self.market_type_rules is not None and not isinstance(self.market_type_rules, MarketTypeRules):
+            raise ValidationFailure("market-type rules are a MarketTypeRules document")
+        if self.market_type_rules is None and self.strategy.uses_market_type:
+            raise ValidationFailure("this strategy reads the coin's market type; its replay needs the market-type "
+                                    "rules")
 
     @property
     def quote(self) -> str:
@@ -144,6 +162,9 @@ class ReplayRequest:
             "instrument_rules": None if self.rules is None else self.rules.model_dump(mode="json"),
             "quantity_increment": _text(self.lot),
             "benchmark": {"hold_btc_symbol": self.hold_btc_symbol, "hold_btc_source": self.hold_btc_source},
+            # Only with rules: a request without them is one made before W11-A and keeps its document (D289).
+            **({} if self.market_type_rules is None
+               else {"market_type_rules": self.market_type_rules.reference()}),
         }
 
 
@@ -210,6 +231,27 @@ class DataFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketTypeReplay:
+    """The labels a replay used and its trades by the market type at entry (W11-A, D289)."""
+
+    rules: MarketTypeRules
+    candles: dict[str, Any]
+    decision_bars: dict[str, int]
+    split: tuple[GroupResult, ...]
+
+    def to_document(self) -> dict[str, Any]:
+        return {
+            "rules": self.rules.reference(),
+            "labelled_at": ("each decision candle's close, with the live function on the rules' candles of the same "
+                            "series (event time)"),
+            "entry_type": "the label at the decision that placed the trade's entry",
+            "candles": self.candles,
+            "decision_bars": {name: self.decision_bars.get(name, 0) for name in MARKET_TYPES},
+            "by_market_type": [row.to_document("market_type") for row in self.split],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayResult:
     request: ReplayRequest
     fills: tuple[ReplayFill, ...]
@@ -223,6 +265,9 @@ class ReplayResult:
     indicator_spans: dict[str, int]
     library: dict[str, str]
     bars_in_market: int
+    market_types: MarketTypeReplay | None = None
+    # Each decision's moment and label (not in the document): what the replay saw, for checks against live labels.
+    decision_labels: tuple[tuple[datetime, MarketType], ...] = ()
 
     def equity_curve_sha256(self) -> str:
         document = [[to_micros(point.at), canonical_decimal(point.equity)] for point in self.equity]
@@ -238,7 +283,7 @@ class ReplayResult:
 
     def to_document(self) -> dict[str, Any]:
         strategy = self.request.strategy
-        return {
+        document = {
             "engine": REPLAY_ENGINE_VERSION, "request": self.request.to_document(), "data": self.data.to_document(),
             "benchmark_data": self.benchmark_data,
             "indicators": {key: {"indicator": use.indicator, "parameters": use.resolved_parameters,
@@ -251,6 +296,9 @@ class ReplayResult:
                              "daily": self.daily_equity(), "marked_at": "each candle's close"},
             "metrics": self.metrics.to_document(),
         }
+        if self.market_types is not None:
+            document["market_types"] = self.market_types.to_document()
+        return document
 
 
 @dataclass(slots=True)
@@ -280,6 +328,11 @@ class _Simulation:
     equity: list[EquityPoint] = field(default_factory=list)
     events: Counter = field(default_factory=Counter)
     bars_in_market: int = 0
+    labels: LabelledWindow | None = None
+    type_memo: dict[int, MarketTypeLabel] = field(default_factory=dict)
+    entry_types: dict[str, MarketType] = field(default_factory=dict)
+    decision_types: Counter = field(default_factory=Counter)
+    decision_labels: list[tuple[datetime, MarketType]] = field(default_factory=list)
 
     # --- setup -----------------------------------------------------------------------------------------------
 
@@ -412,9 +465,21 @@ class _Simulation:
         self.events["entries_expired_partly_filled" if entry.filled > 0 else "entries_expired_unfilled"] += 1
         self.entry = None
 
+    def _market_type(self, index: int) -> MarketTypeLabel:
+        """The live function's label at this candle's close (asked once per candle)."""
+        assert self.labels is not None
+        label = self.type_memo.get(index)
+        if label is None:
+            label = self.type_memo[index] = self.labels.at(self.slots[index].close_time_utc)
+        return label
+
     def _decide(self, index: int, candle: Candle) -> None:
         strategy = self.request.strategy
         self.events["decision_bars"] += 1
+        if self.labels is not None:
+            seen = self._market_type(index).market_type
+            self.decision_types[seen] += 1
+            self.decision_labels.append((candle.close_time_utc, seen))
         if self.held > 0:
             if self.sell is not None:
                 return
@@ -478,6 +543,8 @@ class _Simulation:
                 return
         self.entry = _Entry(order=order, placed_index=index)
         self.events["entries_placed"] += 1
+        if self.labels is not None:
+            self.entry_types[order.order_id] = self._market_type(index).market_type
 
     def _candle(self, index: int) -> Candle | None:
         if index < 0:
@@ -502,8 +569,12 @@ class _Simulation:
         price = self._price(operand, index)
         return None if price is None else rounded_significant(price)
 
-    def _holds(self, condition: Condition, index: int) -> bool | None:
-        """True or False, or None when a value is missing (an unready value never satisfies anything)."""
+    def _holds(self, condition: EntryCondition, index: int) -> bool | None:
+        """True or False, or None when a value is missing (an unready value never satisfies anything).
+
+        A market-type condition always has an answer: ``unclear`` is a label like the others (D288)."""
+        if isinstance(condition, MarketTypeCondition):
+            return (self._market_type(index).market_type == condition.market_type) == (condition.relation == "is")
         left, right = self._value(condition.left, index), self._value(condition.right, index)
         if left is None or right is None:
             return None
@@ -633,6 +704,42 @@ def _benchmarks(store: CandleStore, request: ReplayRequest, read: CandleWindow, 
     return benchmarks, documents
 
 
+def _labels(store: CandleStore, request: ReplayRequest) -> LabelledWindow | None:
+    """The rules' candles of the same series over the window and the history before it, read once (point-in-time
+    at the data cut-off, like the replay's own candles); ``None`` without rules."""
+    rules = request.market_type_rules
+    if rules is None:
+        return None
+    # Decisions run from the window's first close to its last; the newest candle of the first is the one closing at
+    # the window's start, so one slot more than the window holds is labelled.
+    return read_timeline(store, request.symbol, request.source, end_close=request.window.end_utc,
+                         slots=request.window.bars(rules.interval_minutes) + 1, as_of=request.data_as_of, rules=rules,
+                         mode="point_in_time")
+
+
+def _market_type_replay(store: CandleStore, simulation: _Simulation, fills: tuple[ReplayFill, ...],
+                        metrics: TradeMetrics, ending: EndValuation) -> MarketTypeReplay | None:
+    """Each trade under the label at the decision that placed its entry; a position still held at the end with its
+    valued result (end value + sold - bought - fees), so the split sums to the report's result (D289)."""
+    labels, rules = simulation.labels, simulation.request.market_type_rules
+    if labels is None or rules is None:
+        return None
+    orders = {item.fill_ref: item.fill.order_id for item in fills}
+
+    def entry_type(refs: tuple[str, ...]) -> MarketType:
+        return simulation.entry_types[orders[refs[0]]]
+
+    if len(metrics.open_positions) > 1:
+        raise ValidationFailure("a replay holds one position at a time")
+    with localcontext(_EXACT):
+        held = [(entry_type(position.fill_refs), ending.value + position.sold - position.bought - position.fees)
+                for position in metrics.open_positions]
+    split = split_by_market_type([(entry_type(trip.fill_refs), trip) for trip in metrics.round_trips], held)
+    run_labels = {run.run_id: run.evidence_label for run in store.runs()}
+    return MarketTypeReplay(rules=rules, candles=labels.provenance(run_labels),
+                            decision_bars=dict(simulation.decision_types), split=split)
+
+
 def replay(store: CandleStore, request: ReplayRequest) -> ReplayResult:
     """Replay ``request.strategy`` on ``request.window``; deterministic for the same store contents and cut-off."""
     strategy = request.strategy
@@ -648,7 +755,8 @@ def replay(store: CandleStore, request: ReplayRequest) -> ReplayResult:
     read = store.window(request.symbol, interval, request.source, end_close_time=request.window.end_utc,
                         count=first + bars, as_of=request.data_as_of, mode="point_in_time")
     series = {key: rolling_latest(use.indicator, use.resolved_parameters, read) for key, use in uses.items()}
-    simulation = _Simulation(request=request, slots=read.slots, series=series, first=first)
+    simulation = _Simulation(request=request, slots=read.slots, series=series, first=first,
+                             labels=_labels(store, request))
     ending = simulation.run()
     benchmarks, benchmark_data = _benchmarks(store, request, read, first)
     fills = tuple(simulation.fills)
@@ -660,8 +768,10 @@ def replay(store: CandleStore, request: ReplayRequest) -> ReplayResult:
         request=request, fills=fills, equity=tuple(simulation.equity), metrics=metrics, ending=ending,
         events=dict(simulation.events), data=_data_facts(store, request, read, first), benchmark_data=benchmark_data,
         indicator_versions={key: item.spec_version for key, item in series.items()}, indicator_spans=spans,
-        library=library_versions(), bars_in_market=simulation.bars_in_market)
+        library=library_versions(), bars_in_market=simulation.bars_in_market,
+        market_types=_market_type_replay(store, simulation, fills, metrics, ending),
+        decision_labels=tuple(simulation.decision_labels))
 
 
-__all__ = ["DEFAULT_QUANTITY_INCREMENT", "REPLAY_ENGINE_VERSION", "DataFacts", "EndValuation", "ReplayFill",
-           "ReplayRequest", "ReplayResult", "replay"]
+__all__ = ["DEFAULT_QUANTITY_INCREMENT", "REPLAY_ENGINE_VERSION", "DataFacts", "EndValuation", "MarketTypeReplay",
+           "ReplayFill", "ReplayRequest", "ReplayResult", "replay"]

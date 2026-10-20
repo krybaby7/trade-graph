@@ -2,6 +2,9 @@
 
 Display only: amounts are rounded to cents and fractions to hundredths of a percent here, never in the stored report,
 whose numbers stay exact decimal text.
+
+Since W11-A (D289) a report also splits its trades by the market type at entry; ``report_lines`` reads it out per
+type and ``report_overview`` gives it as rows. A report made before has no split and reads as it always did.
 """
 
 from __future__ import annotations
@@ -38,6 +41,39 @@ def _benchmarks(metrics: dict[str, Any], currency: str) -> list[str]:
     return lines
 
 
+_TYPE_NAMES = {"rising": "Rising", "sideways": "Sideways", "falling": "Falling", "unclear": "Unclear"}
+
+
+def _share(count: int, total: int) -> str:
+    if not total:
+        return "none"
+    return f"{(Decimal(count) * 100 / Decimal(total)).quantize(_CENT, rounding=ROUND_HALF_EVEN)}%"
+
+
+def _market_type_lines(result: dict[str, Any], currency: str) -> list[str]:
+    """The trades by the market type at entry, one sentence per type; nothing for a report made before W11-A."""
+    section = result.get("market_types")
+    if not section:
+        return []
+    rules, candles = section["rules"], section["candles"]
+    decisions = section["decision_bars"]
+    total = sum(decisions.values())
+    lines = [f"By market type at entry (software's label when the entry was decided; {rules['ref']} on "
+             f"{rules['interval_minutes']}-minute candles):"]
+    for row in section["by_market_type"]:
+        name = row["market_type"]
+        held = (", including a position still held at the end (valued after the selling fee)"
+                if row["open_positions"] else "")
+        lines.append(f"{_TYPE_NAMES.get(name, name)} at entry: {row['trades']} trades ({row['wins']} won, "
+                     f"{row['losses']} lost), result after fees {_amount(row['result_after_fees'], currency)}"
+                     f"{held}; the coin was {name} at {_share(decisions.get(name, 0), total)} of the decision "
+                     "candles.")
+    if not candles["candles_read"]:
+        lines.append(f"No {candles['interval_minutes']}-minute candles of {candles['symbol']} from "
+                     f"{candles['source']} were found, so every market type is unclear.")
+    return lines
+
+
 def report_lines(record: RunRecord) -> list[str]:
     report = record.report
     result = report["result"]
@@ -61,6 +97,7 @@ def report_lines(record: RunRecord) -> list[str]:
         f"Worst drawdown: {_percent(metrics['worst_drawdown']['fraction'])} "
         f"({_amount(metrics['worst_drawdown']['amount'], currency)}). Worst losing streak: "
         f"{metrics['worst_losing_streak']} trades.",
+        *_market_type_lines(result, currency),
     ]
     ending = result["ending"]
     if Decimal(ending["held"]) > 0:
@@ -82,8 +119,16 @@ def report_text(record: RunRecord) -> str:
 
 
 def report_overview(record: RunRecord) -> dict[str, Any]:
-    """The few numbers a list shows, with the report's identity."""
+    """The few numbers a list shows, with the report's identity.
+
+    ``by_market_type``: the trades by the market type at entry, one row per type in the order rising, sideways,
+    falling, unclear (``market_type``, ``trades``, ``wins``, ``losses``, ``result_after_fees`` as decimal text and
+    ``open_positions``), summing to the report's trades and result; an empty list for a report made before W11-A.
+    """
     metrics = record.report["result"]["metrics"]
+    section = record.report["result"].get("market_types") or {}
+    by_type = [{key: row[key] for key in ("market_type", "trades", "wins", "losses", "result_after_fees",
+                                          "open_positions")} for row in section.get("by_market_type", ())]
     return {"run_id": record.run_id, "study_id": record.study_id, "phase": record.phase,
             "strategy_ref": record.strategy_ref, "symbol": record.symbol, "source": record.source,
             "cost_profile_ref": record.cost_profile_ref, "window": {"start": record.window.start.isoformat(),
@@ -91,7 +136,8 @@ def report_overview(record: RunRecord) -> dict[str, Any]:
             "evidence": list(record.evidence), "trades": metrics["trades"], "win_rate": metrics["win_rate"],
             "result": metrics["result"], "currency": metrics["currency"],
             "worst_drawdown": metrics["worst_drawdown"]["fraction"], "result_sha256": record.result_sha256,
-            "label": record.report["label"]["kind"]}
+            "label": record.report["label"]["kind"],
+            "market_type_rules": section["rules"]["ref"] if section else None, "by_market_type": by_type}
 
 
 __all__ = ["report_lines", "report_overview", "report_text"]

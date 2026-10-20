@@ -5,6 +5,10 @@ settings, compares them with the latest completed candle or a fixed level, and s
 protective exit and a size. It holds no code, formula or expression, and nothing in it can choose a side, borrow or
 size above the account (D127). The replay engine (``application/practice_range``) is the only thing that reads it.
 
+An entry may also require the coin's market type at the decision (W11-A, D288): ``{"market_type": "rising",
+"relation": "is"}`` or ``"is_not"``, with the four types software labels (``kernel/market_type.py``). The replay asks
+the same function the hourly scan uses, so the condition sees the label a live reading of the same candles gives.
+
 A ``StudyPlan`` fixes, before any replay, an earlier tuning window and a later confirmation window of whole UTC
 days. The confirmation window must start no earlier than the tuning window ends. The store refuses to tune a
 strategy family on any day that one of its studies set aside for confirmation, and binds each confirmation window to
@@ -35,6 +39,7 @@ from pydantic import (
 
 from trade_graph.contracts.indicators import get_indicator
 from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.market_types import MarketType
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 SCHEMA_VERSION = 1
@@ -45,6 +50,7 @@ MAX_EXPIRY_BARS = 10_000
 MAX_HOLDING_BARS = 100_000
 THREE_MONTHS_DAYS = 90
 Relation = Literal["above", "below", "crosses_above", "crosses_below"]
+MarketTypeRelation = Literal["is", "is_not"]
 CandleField = Literal["open", "high", "low", "close", "volume"]
 Phase = Literal["tune", "confirm"]
 _KEY = r"^[a-z][a-z0-9_]{0,31}$"
@@ -125,6 +131,20 @@ class Condition(_Record):
         return self
 
 
+class MarketTypeCondition(_Record):
+    """The coin's market type at the decision, as software labels it (W11-A, D288), ``is`` or ``is_not`` one type.
+
+    ``unclear`` is a label like the others: ``is_not falling`` also holds while the type is unclear (too few candles,
+    a gap, no recent candle); add ``is_not unclear`` to require a known type. Only entries read it.
+    """
+
+    market_type: MarketType
+    relation: MarketTypeRelation
+
+
+EntryCondition = Condition | MarketTypeCondition
+
+
 class IndicatorUse(_Record):
     indicator: str
     parameters: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict)
@@ -174,8 +194,19 @@ class EntryOrder(_Record):
 
 
 class Entry(_Record):
-    all_of: tuple[Condition, ...] = Field(min_length=1, max_length=MAX_CONDITIONS)
+    all_of: tuple[EntryCondition, ...] = Field(min_length=1, max_length=MAX_CONDITIONS)
     order: EntryOrder
+
+    @model_validator(mode="after")
+    def _one_type_at_a_time(self) -> Entry:
+        required = {item.market_type for item in self.all_of
+                    if isinstance(item, MarketTypeCondition) and item.relation == "is"}
+        refused = {item.market_type for item in self.all_of
+                   if isinstance(item, MarketTypeCondition) and item.relation == "is_not"}
+        if len(required) > 1 or required & refused:
+            raise ValueError("a coin has one market type at a time; these market-type conditions can never hold "
+                             "together")
+        return self
 
 
 class Exit(_Record):
@@ -252,7 +283,8 @@ class PracticeStrategy(_Record):
         used: set[str] = set()
         operands: list[Operand] = []
         for condition in (*self.entry.all_of, *self.exit.any_of):
-            operands.extend((condition.left, condition.right))
+            if isinstance(condition, Condition):
+                operands.extend((condition.left, condition.right))
         if self.entry.order.price is not None:
             operands.append(self.entry.order.price)
         for operand in operands:
@@ -275,6 +307,11 @@ class PracticeStrategy(_Record):
     @property
     def ref(self) -> str:
         return f"{self.strategy_id}@{self.version}"
+
+    @property
+    def uses_market_type(self) -> bool:
+        """Does an entry condition read the coin's market type? Then a replay needs the market-type rules."""
+        return any(isinstance(item, MarketTypeCondition) for item in self.entry.all_of)
 
     def canonical_document(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -359,6 +396,7 @@ class StudyPlan(_Record):
 
 __all__ = [
     "MAX_CONDITIONS", "MAX_INDICATORS", "REPLAY_INTERVALS", "REPORT_LABEL", "SCHEMA_VERSION", "THREE_MONTHS_DAYS",
-    "CandleOperand", "Condition", "Entry", "EntryOrder", "Exit", "IndicatorOperand", "IndicatorUse", "LevelOperand",
-    "Operand", "Phase", "PracticeStrategy", "Relation", "ReplayWindow", "Sizing", "StudyPlan",
+    "CandleOperand", "Condition", "Entry", "EntryCondition", "EntryOrder", "Exit", "IndicatorOperand", "IndicatorUse",
+    "LevelOperand", "MarketTypeCondition", "MarketTypeRelation", "Operand", "Phase", "PracticeStrategy", "Relation",
+    "ReplayWindow", "Sizing", "StudyPlan",
 ]

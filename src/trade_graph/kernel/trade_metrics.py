@@ -447,8 +447,67 @@ def summarize(*, currency: str, starting_equity: Decimal, ending_equity: Decimal
         round_trips=trips, open_positions=still_open, benchmarks=dict(benchmarks or {}))
 
 
+@dataclass(frozen=True, slots=True)
+class GroupResult:
+    """One group's share of a report's result (W11-A, D289): its closed trades and its positions still held at the end.
+
+    ``open_result`` is what a still-held position adds to the report's result: its end valuation (after the selling
+    fee) plus what it already sold, less what it bought and every fee it paid, so the groups' results sum exactly to
+    the report's result, open positions included.
+    """
+
+    group: str
+    trades: int
+    wins: int
+    losses: int
+    flat_trades: int
+    closed_result: Decimal
+    open_positions: int
+    open_result: Decimal
+
+    @property
+    def result(self) -> Decimal:
+        with localcontext(_EXACT):
+            return self.closed_result + self.open_result
+
+    def to_document(self, key: str = "group") -> dict[str, Any]:
+        return {key: self.group, "trades": self.trades, "wins": self.wins, "losses": self.losses,
+                "flat_trades": self.flat_trades, "result_after_fees": _text(self.result),
+                "closed_trades_result": _text(self.closed_result), "open_positions": self.open_positions,
+                "open_position_result": _text(self.open_result)}
+
+
+def split_results(groups: Sequence[str], trips: Sequence[tuple[str, RoundTrip]],
+                  open_positions: Sequence[tuple[str, Decimal]] = ()) -> tuple[GroupResult, ...]:
+    """Every closed trade and every open position counted once, in its group; the groups in the order given, empty
+    ones included, so the rows sum to the report's trades, wins, losses and result after fees. An open position comes
+    with its valued result (see ``GroupResult``); a group outside ``groups`` is refused."""
+    names = tuple(groups)
+    if len(set(names)) != len(names) or not names:
+        raise ValidationFailure("the groups of a split are named once each")
+    rows: dict[str, dict[str, Any]] = {name: {"trades": 0, "wins": 0, "losses": 0, "flat": 0, "closed": Decimal("0"),
+                                              "open": 0, "open_result": Decimal("0")} for name in names}
+    with localcontext(_EXACT):
+        for group, trip in trips:
+            if group not in rows or not isinstance(trip, RoundTrip):
+                raise ValidationFailure("every trade belongs to one of the split's groups")
+            row = rows[group]
+            row["trades"] += 1
+            row[{"win": "wins", "loss": "losses", "flat": "flat"}[trip.outcome]] += 1
+            row["closed"] += trip.result
+        for group, value in open_positions:
+            if group not in rows:
+                raise ValidationFailure("every open position belongs to one of the split's groups")
+            row = rows[group]
+            row["open"] += 1
+            row["open_result"] += _decimal("an open position's result", value)
+    return tuple(GroupResult(group=name, trades=row["trades"], wins=row["wins"], losses=row["losses"],
+                             flat_trades=row["flat"], closed_result=row["closed"], open_positions=row["open"],
+                             open_result=row["open_result"]) for name, row in rows.items())
+
+
 __all__ = [
-    "METRICS_VERSION", "NO_DRAWDOWN", "QUANTUM", "Drawdown", "EquityPoint", "HoldBenchmark", "OpenPosition",
-    "RoundTrip", "TradeFill", "TradeMetrics", "hold_benchmark", "round_trips", "summarize", "worst_drawdown",
-    "worst_losing_streak",
+    "METRICS_VERSION", "NO_DRAWDOWN", "QUANTUM", "Drawdown", "EquityPoint", "GroupResult", "HoldBenchmark",
+    "OpenPosition", "RoundTrip", "TradeFill", "TradeMetrics", "hold_benchmark", "round_trips", "split_results",
+    "summarize", "worst_drawdown", "worst_losing_streak",
 ]
