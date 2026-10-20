@@ -47,6 +47,8 @@ On a phone, HQ shows one area at a time. Use the tab bar at the bottom: **HQ**, 
 - **HQ map**: nine rooms (Trader, Research, Learning, Leader, Optimisation, Engineer, Secretary, Price feed,
   Accounts desk). A room's light changes only when a saved record says so, and every light has a shape and words,
   never colour alone.
+- **Trading desk room** (below the map, W13-A): what the Trading desk believes, what it is testing and what each
+  strategy earns in each market type (below). Tap the Trader's room on the map for a button that opens it.
 
 **Calendar**: each department's next turns, your own check-ins, and deadlines. Items marked "≈" are estimates,
 because each turn sets the next one when it actually runs. Estimates more than 48 hours ahead are grouped under
@@ -67,6 +69,38 @@ Practice money and real costs are always shown apart and never added together. A
 known yet"; it is never shown as zero.
 
 **Decide**: the buttons. See below.
+
+## The Trading desk room (the HQ tab)
+
+The Trader is the Trading desk (D280): it chooses per coin whether to wait in cash, buy dips, follow the trend or do
+something else, keeps a playbook, tests its own strategy versions in its lab and reads the Leader's news. The room
+below the HQ map shows all of it from saved records (W13-A, decisions D300-D304). Looking at it never starts, sends,
+cancels or changes anything.
+
+- **Playbook**: per market type (rising, sideways, falling, unclear), the strategy version the desk means to use, or
+  "wait in cash", with its reason in its own words and how many reports it rests on; which revision is in force, when
+  the desk set it, why it changed it and the revision it replaced. The playbook is the desk's own record, not a rule:
+  software never refuses a day plan for not following it.
+- **Today's choice per coin**: the desk's newest stance on each coin today (wait, buy dips, follow the trend or
+  something else, with the strategy version), its reason in its own words, the market type software showed the desk
+  when it chose and the coin's label now. A label more than 2 hours old, or none, is shown as "not known", never as a
+  guess.
+- **Strategy lab**: how many requests are queued and running; the newest results (a registered version, a study, a
+  tuning run, a confirmation, or a refusal with the lab's reason), each report with its trades and result after fees
+  against simply holding the coin over the same days; and the tries per strategy family (versions, studies, tuning
+  and confirmation runs, which versions are confirmed).
+- **News the desk read**: the Leader's newest news round at the desk's last turn (its summary, headlines, its note to
+  the desk and strategy ideas for it, all in their words), the ideas in the desk's lab inbox with whether the desk
+  tested them, and Jev's verdicts on the desk's coins (in shadow mode they wake nobody).
+- **What each strategy earned**: the scorecard's trades and result after fees split by the choice behind each first
+  buy: strategy version, market type at entry and the desk's stance, together and one by one, with the same figures as
+  the Scorecard on the Money tab. It is evidence only: never proof of profit or permission for real money.
+
+A part whose records a database doesn't have yet (an installation older than the desk, its lab or its labels) says
+so; a part whose records can't be read says so too, and the others still show. When the strategy lab's step of the
+service fails, "Right now" and "Needs you" say "the strategy lab's last step failed" instead of "a routine step is
+failing", and the Story lists the lab's finished requests (requests that end within 15 minutes of each other are one
+item).
 
 ## Today's trading (the Money tab)
 
@@ -368,6 +402,22 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 - **Safety-stop recovery** (D109): HQ discloses that Stop on an empty account replaces an automatic safety stop. It
   offers no guided recovery until the owner decides (open question Q1).
 
+- **The Trading desk room** (W13-A, D302) comes from `GET /api/v1/hq/desk` (`trade-graph.hq.desk.v1`,
+  `api/hq_desk_contract.py`), never from the snapshot, so the snapshot's keys and size are unchanged; the page asks
+  only while the panel is on screen and again with HQ's 30-second poll. The projection (`api/hq_desk.py`) reads,
+  inside one read snapshot, through the reads the records' own packages give HQ: the playbook and stances
+  (`application/trading_desk/store.py`, migration 0052, hash-checked), the labels (`application/market_types/
+  store.py`, 0050), the lab as the desk sees it (`application/strategy_lab/context.lab_context`, 0051) with each shown
+  report's figures from the practice range's stored report, the news at the desk's newest turn
+  (`application/trading_desk/news.news_context`) and the scorecard's split from the 60-second trading cache
+  (`hq_trading.facts`). It imports no engine, scheduler, worker, provider or broker (tested: the database is
+  byte-for-byte the same after reads). Lists are page bounds (16 coins, 8 lab results with 4 reports each, 8
+  families, 5 headlines, 5 inbox ideas, 5 verdicts, 8 rows per split list), never limits on what the desk does; every
+  list says how many more there are. The scripted week's room is about 11.5 KB; the busiest synthetic room (every list
+  past its bound, the longest words) is 62,699 bytes, within the endpoint's own 80 KB budget. The snapshot gains only
+  vocabulary: the problem prefix `strategy_lab:`, the Story kind `lab_result` (the lab's `strategy_lab` activities,
+  read like the other activity kinds) and four glossary terms (`playbook`, `stance`, `market_type`, `strategy_lab`).
+
 ## Routes
 
 | Route | Who | What |
@@ -378,6 +428,7 @@ These rules are enforced in code and tests. See `docs/DECISIONS.md` D105–D110.
 | `GET /api/v1/hq/story` | any signed-in role | Earlier story; `before` (timezone-aware ISO, required), `limit` 1–60 |
 | `GET /api/v1/hq/chart` | any signed-in role | One price chart (`trade-graph.hq.chart.v1`); `symbol` (for example `SOL/USD`) and `interval` 1, 5, 15 or 60, both optional |
 | `GET /api/v1/hq/plans` | any signed-in role | Today's day plans per coin with their buys, fills, safety exits and events, and today's refusals (`trade-graph.hq.plans.v1`) |
+| `GET /api/v1/hq/desk` | any signed-in role | The Trading desk room: playbook, today's stances, the strategy lab, the news the desk read and the scorecard's split (`trade-graph.hq.desk.v1`) |
 | `GET /api/v1/hq/wakes` | any signed-in role | Wake log, next check-ins, today's steps, focus coins and alarms (`trade-graph.hq.wakes.v1`); `before` (a wake cursor, for older pages) and `limit` 1–30, both optional |
 | `GET /api/v1/owner/checkins` | owner | Check-ins between `from` and `to` (default 7 days back to 30 days ahead) |
 | `POST /api/v1/owner/checkins` | owner (cookie sessions also need the CSRF header) | Plan, reschedule, done, skip or cancel a check-in |

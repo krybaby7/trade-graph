@@ -22,7 +22,8 @@ proof that the Trader is profitable and never permission to trade real money.
 | AI spending of one period (`period_spending`) | `src/trade_graph/application/ai_spending.py` |
 | The reference rate the books use (`Ledger.fx_rate`) | `src/trade_graph/application/ledger.py` |
 | The owner's command `trade-graph scorecard` | `src/trade_graph/market_data_cli/scorecard.py` |
-| Tests | `tests/integration/test_scorecard.py`, `test_scorecard_cli.py`, `test_ai_spending_period.py`, `tests/property/test_scorecard_properties.py`, `tests/unit/test_scorecard_stays_offline.py`, the T42 cases in `tests/unit/test_trade_metrics.py`; helpers in `tests/scorecard_support.py`; the golden document `tests/fixtures/scorecard/golden_scorecard.json` (synthetic) |
+| The split (W13-A) and what Learning reads | `src/trade_graph/application/scorecard.py` (`split_scorecard`, `scorecard_for_learning`) |
+| Tests | `tests/unit/test_scorecard_split.py`, `tests/integration/test_scorecard_split.py`, `test_learning_scorecard_split.py`, `tests/property/test_scorecard_split_properties.py`, `tests/integration/test_scorecard.py`, `test_scorecard_cli.py`, `test_ai_spending_period.py`, `tests/property/test_scorecard_properties.py`, `tests/unit/test_scorecard_stays_offline.py`, the T42 cases in `tests/unit/test_trade_metrics.py`; helpers in `tests/scorecard_support.py`; the golden document `tests/fixtures/scorecard/golden_scorecard.json` (synthetic) |
 
 The scorecard module and the sums are protected paths (`kernel/authority.py`): how a result is valued and compared
 is a scoring definition, which agents cannot edit.
@@ -85,6 +86,31 @@ not to one paper account): Perplexity, Jev and any other paid price card, each c
 the end: counted at its held maximum, "up to", never zero), in USD, per department, with test calls apart (D175).
 Codex subscription turns are counted per department, not priced. The figure is shown beside the result and never
 subtracted from it or paid from it: the paper result is simulated.
+
+## The split by strategy version, market type at entry and stance (W13-A, D300, D301)
+
+Every scorecard also splits its trades and result after fees (`split` in the JSON, three plain lines in the text) by
+the choice behind each trade's first buy:
+
+- **strategy version**: the version of the day plan whose waiting buy filled (`no_day_plan` when no day plan placed
+  the buy, for example on a database before day plans);
+- **market type at entry**: the label software recorded for the coin at that moment (W11-A, current for 2 hours;
+  `stale` when the newest label was older, `missing` when there was none: never a guess);
+- **stance**: the Trading desk's stance recorded with that day plan (W12-A; `not_recorded` when none was).
+
+Coins already held at the start count as `carried_in`, and a position still held counts with its value as if sold at
+the end with the taker fee. Each list (and the list of combinations, `by_choice`) is the kernel's `split_results`, so
+it sums exactly to the scorecard's trades, wins, losses, even trades, open positions and result after fees (property
+tests: `tests/property/test_scorecard_split_properties.py`); whatever no trade explains is `outside_trades` (zero for
+the paper broker's fills). `entries` lists each trade with its plan, label and stance. A database before migrations
+0034, 0050 or 0052 still scores; it says what it can't name as above. A record that can't be read (an edited,
+hash-checked label) makes only the split unavailable, with the reason, never the scorecard.
+
+Learning reads it (D301): a Learning turn gets the scorecard since the account opened under the context key
+`scorecard` (the totals, the used rows of each list, at most 24 strategy versions and 24 combinations, the 12 newest
+trades, the rest counted), so a lesson can say which choice earned or lost in which market. The owner's subscription
+profile must list `"scorecard"` in `allowed_context_keys.learning` ([L3 checklist](L3-INSTALL-CHECKLIST.md), step 3).
+HQ's Trading desk room shows the same split ([HQ-DASHBOARD.md](HQ-DASHBOARD.md)).
 
 ## Gates and the owner's test rule (D204)
 
