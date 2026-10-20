@@ -75,10 +75,14 @@ class StrategyLabWorker:
         self.store = PracticeRangeStore(database, clock)
         self.stop = threading.Event()
         self.ran = 0
+        self.report_failures = 0
         self._started = False
 
     def request_stop(self) -> None:
         self.stop.set()
+
+    def close(self) -> None:
+        """Release what the worker holds (the installed lab's own candle handle); nothing to release here."""
 
     def resume(self) -> None:
         self.stop.clear()
@@ -266,8 +270,13 @@ class StrategyLabWorker:
         return f"The lab {status} {request.kind} for {subject}{took}: {detail}"[:1000]
 
     def _report(self, payload: dict[str, Any]) -> None:
-        if self.record is not None:
+        """Record a ``strategy_lab`` activity; a failure to log never fails the request, whose own record is kept."""
+        if self.record is None:
+            return
+        try:
             self.record(payload)
+        except Exception:  # noqa: BLE001 - the activity log is a view; the lab's queue and reports are the record
+            self.report_failures += 1
 
 
 __all__ = ["ACTIVITY_KIND", "StrategyLabWorker", "account_cost_profile"]

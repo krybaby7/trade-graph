@@ -25,6 +25,7 @@ from trade_graph.application.paper_service import PaperService
 from trade_graph.application.perplexity_installation import perplexity_departments
 from trade_graph.application.scheduler import TaskLease
 from trade_graph.application.service_market_data import market_database_beside
+from trade_graph.application.strategy_lab.installation import installed_strategy_lab
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.deployment_image import assert_boot_environment, read_owner_file
@@ -220,6 +221,7 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
                                      protected_owner=protected_owner, api_keys={},
                                      market_database=market_database_beside(database_path))
     market = getattr(runtime, "market_data", None)
+    lab: dict = {}
     try:
         before_attempts = _attempts(runtime.database)
         before_decisions = runtime.database.execute("SELECT COUNT(*) FROM decisions WHERE portfolio_id=?",
@@ -233,6 +235,9 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
             # W9-A (D255): the 5-minute news check runs beside the service in its own thread when the owner's network
             # profile lists the reviewed news_feeds route; Jev checks only with the owner's switch and key.
             service.news_poll = installed_news_poll(runtime, protected_owner)
+            # W11-B (D292): the Trading desk's strategy lab runs queued requests in its own thread, reading the candle
+            # file through its own read-only handle; it needs no key or route and never places an order.
+            service.lab_worker = lab["worker"] = installed_strategy_lab(runtime)
             # W8-A (D240): with the event engine on and the owner's Perplexity switch on, Research's and the Leader's
             # engine wakes run on Perplexity in this protected process; otherwise the handlers are unchanged.
             return perplexity_departments(runtime, protected_owner, handlers, engine=service.event_engine)
@@ -271,9 +276,12 @@ def run_subscription_operation(database_path: Path, protected_owner: Path, *,
                 "market_database": market.path.name, "public_requests": collector.requests_total},
             "event_engine": service.event_engine is not None,
             "news_polls": None if service.news_poll is None else service.news_poll.polls,
+            "strategy_lab_requests": None if service.lab_worker is None else service.lab_worker.ran,
             "billing_kind": "subscription", "actual_cost_native": None, "cost_status": "unknown",
             "live_authorization": False, "paid_authorization": False}
     finally:
+        if lab.get("worker") is not None:
+            lab["worker"].close()
         if market is not None:
             market.close()
         runtime.database.close()

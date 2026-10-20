@@ -85,6 +85,7 @@ class PaperService:
         event_engine: EngineOptions | None = None,
         price_collector=None,
         news_poll=None,
+        lab_worker=None,
     ) -> None:
         if (service_mode not in {"paper", "live"} or execution.mode != service_mode
                 or execution.database is not database):
@@ -172,6 +173,11 @@ class PaperService:
         # failed step is reported as news_poll:<error>. The installed service sets it once it is prepared.
         self.news_poll = news_poll
         self._news_task: asyncio.Task | None = None
+        # W11-B (D292): the Trading desk's strategy lab runs queued requests in its own thread the same way; no
+        # trading, protection, reconciliation or money-limit step waits for it, and a failed step is reported as
+        # strategy_lab:<error>. It never places, sends or cancels an order.
+        self.lab_worker = lab_worker
+        self._lab_task: asyncio.Task | None = None
         # T35: with the event engine, departments wake on events and their own check-ins instead of fixed timers.
         self.event_engine: EventEngine | None = None
         self.price_watcher = None
@@ -195,6 +201,8 @@ class PaperService:
             self.price_collector.request_stop()  # its waits end at once; a request in flight finishes
         if self.news_poll is not None:
             self.news_poll.request_stop()  # it ends between feeds and headlines; a request in flight finishes
+        if self.lab_worker is not None:
+            self.lab_worker.request_stop()  # a running request goes back to the queue between replays
 
     def _acquire(self) -> None:
         ownership = self.database.exclusive_lock("paper-service", single_link=False)
@@ -251,6 +259,8 @@ class PaperService:
             self.price_collector.resume()
         if self.news_poll is not None:
             self.news_poll.resume()
+        if self.lab_worker is not None:
+            self.lab_worker.resume()
         self._acquire()
         self._shutdown_failures = []
         self._shutdown_task = None
@@ -796,6 +806,7 @@ class PaperService:
         failures.extend(management_failures)
         failures.extend(self._collect_prices())
         failures.extend(self._poll_news())
+        failures.extend(self._run_lab())
         scheduled = 0
         if not self._stop_requested.is_set():
             acquired, input_failures = await self._prepare_role_inputs()
@@ -856,6 +867,21 @@ class PaperService:
             self._news_task = None
         if self._news_task is None and not self._stop_requested.is_set():
             self._news_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.news_poll.step))
+        return failures
+
+    def _run_lab(self) -> list[str]:
+        """Keep one strategy lab step running in its own thread; report a failed step, never wait for one (D292)."""
+        if self.lab_worker is None:
+            return []
+        failures = []
+        if self._lab_task is not None and self._lab_task.done():
+            try:
+                self._lab_task.result()
+            except Exception as exc:  # noqa: BLE001 - the lab's failure is reported, trading and management go on
+                failures.append("strategy_lab:" + type(exc).__name__)
+            self._lab_task = None
+        if self._lab_task is None and not self._stop_requested.is_set():
+            self._lab_task = asyncio.create_task(asyncio.to_thread(self._thread_call, self.lab_worker.step))
         return failures
 
     async def run(self, *, max_ticks: int | None = None, install_signal_handlers: bool = True) -> dict:
@@ -959,6 +985,14 @@ class PaperService:
                     self._shutdown_failures = list(dict.fromkeys(
                         [*self._shutdown_failures, "news_poll:" + type(exc).__name__]))[:20]
                 self._news_task = None
+            if self._lab_task:
+                # The stop signal puts a running request back between replays; a replay in progress finishes first.
+                try:
+                    await self._wait_for_work(self._lab_task, maintenance_errors=errors)
+                except Exception as exc:  # noqa: BLE001 - a lab failure is reported, never a shutdown error
+                    self._shutdown_failures = list(dict.fromkeys(
+                        [*self._shutdown_failures, "strategy_lab:" + type(exc).__name__]))[:20]
+                self._lab_task = None
             if self._feed_task:
                 try:
                     _, failure = await self._consume_feed(self._feed_task, maintenance_errors=errors)
