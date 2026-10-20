@@ -3028,3 +3028,169 @@ to build the strategy loop into the graph before the install.
   once. None of this authorizes live trading, real orders or paid calls.
   Reason: the owner's instruction in chat on 2026-10-20 after the L2 results
   and the five questions about strategies; `planning/handoffs/L2.md`.
+
+Cloud wave 11 (D285–D294, 2026-10-20). The wave 11 integration copied these
+implementation defaults from `planning/handoffs/W11-A.md` (D285–D289) and
+`W11-B.md` (D290–D294), where each package's evidence is kept. Both packages
+used their reserved state migration: 0050 (W11-A, `market_type_labels`) and 0051
+(W11-B, the `wake_triggers` rebuild for `lab_results` with
+`news_alarm_wake_routes` around it, and the lab's queue tables). Both Alembic
+files followed 0044; the integration re-linked 0051 to follow 0050, so Alembic
+has one head, 0051, and the never-used 0043 and 0045–0049 stay unused. One
+integration fix, between D289 and D292: W11-B's lab worker built its replay
+requests itself, without market-type rules, so its reports had no split by
+market type and a version requiring a market type at entry (D288) was refused;
+the worker now replays with the current rules, as `PracticeRange.run` does, and
+lists their candle runs in the report's evidence
+(`tests/integration/test_strategy_lab_market_types.py`). D230–D239 stay reserved
+for the local steps L1–L4; new owner decisions start at D310.
+
+- **D285 (2026-10-20, implementation default for C10): the rules
+  `market-type-rules@1`.** Hourly candles; the simple moving average of the
+  close over 168 candles (one week, each weekday once) and its value 24 candles
+  (one day) earlier; ADX, +DI and -DI 14 (Wilder's usual setting); a trend
+  counts at ADX 20 or more; a lag of up to 2 candles (like the scanner's 2-hour
+  rule, D170). Rising: ADX ≥ 20, +DI > -DI, close above the average, the average
+  higher than a day earlier; falling: the mirror; sideways: anything else (weak
+  trend or disagreeing signs); unclear with a reason (`no_recent_candle`,
+  `not_enough_candles`, `gap`, `no_value`, `evaluation_failed`). Bounds: 15 or
+  60 minutes, average 20–500, slope 1–168, period 7–50, threshold 10–40, lag
+  0–6; any change is a new version and hash (`d017d69a…`, pinned). Reason: the
+  plan's example (a long average's slope, the price's side of it, ADX for
+  strength) with the menu's directional indicators (D118); the hourly series is
+  what the collector keeps for every pair and the archive has; 20 rather than 25
+  because the label asks whether a trend is present at all and three other
+  checks must agree; every check is a comparison of library outputs or with a
+  level, no in-house ratio.
+
+- **D286 (2026-10-20, implementation default for C10): one function, point in
+  time, protected.** The kernel (`kernel/market_type.py`) decides from plain
+  readings; the application supplies the engine's own values per slot
+  (`rolling_latest`, the engine's span: ADX 14 reads 863 hourly candles, D136).
+  The live label and the replay end in `slot_verdicts` and
+  `MarketTypeTimeline.at` with the same rules; a slot's verdict reads only the
+  863 slots ending at it, and a label at a moment only candles closed (live:
+  also received) by then, so later candles never change it. A missing hour makes
+  the label unclear until 863 complete hours follow it (no carry-forward, D136);
+  a coin needs 863 complete hours before its first label (on the owner's PC from
+  about 2026-10-24, since the collector's hourly series starts 2026-09-18).
+  `application/market_types/` is a protected path like the kernel, so the
+  readings cannot be steered either. Reason: the plan's "never a second copy"
+  (like D277) and D118/D136.
+
+- **D287 (2026-10-20, implementation default for C10): live labels and their
+  record.** After each live scan the service labels the scan's shortlist and the
+  day's coins (`day_coins`: focus, held, planned, alarmed; a superset of the
+  plan's shortlist, held and focus, because a coin with a day plan or an alarm
+  is one the desk watches) at the scan's moment from `kraken_public_ohlc`, in
+  one transaction, and notes the round in HQ's activity log. An unreadable coin
+  is stored as unclear (`evaluation_failed`, with the error's name) and the
+  others carry on; a labelling failure is noted and never stops the scan or the
+  collector. State migration 0050 adds `market_type_labels` (append-only,
+  hash-checked on read, SQL checks for the point-in-time rule and the reason).
+  `scan-coins` labels the same way after a live scan (without held coins);
+  `trade-graph market-types` reads the newest labels read-only. A label is
+  current for 2 hours (`DEFAULT_LABEL_AGE`). About 1.4 KB per label; with 20–30
+  coins an hour about 1 MB a day (retention is the same open item as the hourly
+  scans'). Reason: the plan's live step and D174's record pattern.
+
+- **D288 (2026-10-20, implementation default for C10): the grammar condition.**
+  `{"market_type": "<rising|sideways|falling|unclear>", "relation": "is" |
+  "is_not"}` among `entry.all_of` only (exits do not read it); `unclear` is a
+  label like the others, so `is_not falling` also holds while unclear (add
+  `is_not unclear` to require a known type); two different `is`, or `is` and
+  `is_not` of the same type, are refused as never true together; a replay of a
+  strategy that reads the type needs the rules. Documents without the condition
+  serialise exactly as before (hashes unchanged, tested). Reason: the plan's
+  example, and a condition that always has an answer is easier for the desk to
+  reason about than a hidden "unclear never satisfies" rule.
+
+- **D289 (2026-10-20, implementation default for C10): the report split and
+  older reports.** A trade's market type is the label at the decision that
+  placed its entry (what the strategy saw; with the condition, all its trades
+  fall in the required type); a position still held at the end counts in its
+  entry's type with its valued result (end value after the selling fee + sold −
+  bought − fees), so the rows sum exactly to the report's trades, wins, losses
+  and result after fees. The section also gives the decision candles per type
+  and the label candles read; it is part of the hashed result, and the request
+  names the rules' reference and hash. A request without rules (every report
+  made before W11-A) labels nothing and gives exactly the old document, so
+  `practice-range-verify` still reproduces old reports (tested on a stored one);
+  a report naming unknown or changed rules is marked not reproduced with the
+  reason. The labels' candle runs join the report's evidence labels. When the
+  source has no 60-minute candles, every label is unclear and the report says
+  so. Reason: the plan's "split ... summing to the report's totals" and
+  "existing reports and their hashes stay valid".
+
+- **D290 (2026-10-20, implementation default for C11): the desk's lab
+  requests.** The Trader's wake reply carries an optional `lab_requests` list
+  with no item bound (D116; one reply is bounded by the 64 KiB model response,
+  an envelope, not a count) of four kinds: `register_strategy` (the
+  `PracticeStrategy` document as JSON text, because a strategy's named-key maps
+  cannot be a strict provider schema), `create_study`, `tune`, `confirm`. The
+  reply checks only the shape; `LabRequest.problem()` judges each request alone
+  when the event engine queues the answer's requests in the transaction that
+  applies the answer (one batch per wake, request ids `wake:<wake_id>:<n>`): a
+  malformed strategy, a missing or unused field, windows in the wrong order are
+  recorded `refused` with the reason at once, so one bad request never sinks the
+  plans of the same answer and none is dropped. Study rules are checked when the
+  request's turn comes. Only the Trader asks the lab (others are refused with a
+  note). An answer that arrives after its trading day still queues its lab
+  requests: they are research, not trading. Reason: the W11-B package, D116,
+  D165, D166, D192.
+
+- **D291 (2026-10-20, implementation default for C11): `lab_results` and
+  migration 0051.** When every request of a batch has ended (done, refused or
+  failed), a trigger source wakes the desk once (`lab-results:<batch id>`, a
+  short note; the results are in `lab`); like a news alarm it keeps the desk's
+  own check-in. State migration 0051 adds the kind to `wake_triggers`' CHECK
+  list: SQLite cannot alter a CHECK, so 0051 copies the rows aside, drops and
+  recreates the table with the same columns, indexes and rules, and copies every
+  row back with its sequence; it does the same around it for
+  `news_alarm_wake_routes`, whose rows name a trigger, so the foreign key holds
+  throughout without switching foreign keys off inside the migration
+  transaction. The 0035 statements stay exactly as merged (a test pins their
+  hash). 0051 also adds `strategy_lab_batches` and `strategy_lab_requests`
+  (kept, identity immutable, path `queued` → `running` → ended, ended final,
+  attempts only grow, a batch finishes and is announced once). Reason: D194 (a
+  new kind needs a new migration), the package text.
+
+- **D292 (2026-10-20, implementation default for C11): the worker.** One request
+  per step in its own thread of the service, like the price collector (D222); it
+  reads the candle file through its own read-only handle, never the price
+  watcher's single locked connection, so a long replay cannot delay an alarm
+  check; no trading, protection, reconciliation or money-limit step waits for
+  it, and it runs under every pause (it places no order). Replays use the
+  profiles named (all published ones when none is named, as the
+  `practice-range-run` command) plus always the account's own (the paper
+  broker's published profile, Kraken's starting tier by default), one data
+  cut-off per request, the virtual USD10,000 and no instrument rules (as step
+  L2). All reports of a request and its end are one transaction; a stop before
+  the last replay puts the request back, a crash leaves it `running` and it is
+  re-run first. `strategy_lab` activities record each start and each finished or
+  interrupted request with the reason, the seconds spent and the queue counts.
+  The `lab` key takes at most 24 KiB of the 128 KiB request (newest results in
+  full, older ones without sentences, the rest counted) and offers per family
+  the newest untouched confirmation window (`confirmation_offer`: from the end
+  of the family's last tuning or confirmation window to the newest complete UTC
+  day), so new collector days become new confirmation days. Reason: the package
+  text, D116, D167.
+
+- **D293 (2026-10-20, implementation default for C11): first start.** At the
+  first lab step of a start, an installation with no registered strategy
+  registers `slow-trend-pullback@1` and `range-reversion@1`, packaged in
+  `application/strategy_lab/starting/` because the protected image copies only
+  `src/trade_graph` (a test keeps them equal to
+  `strategies/practice/*.v1.json`). It does not confirm them: confirmations are
+  the desk's own requests (D138 item 5: a report is evidence, not a pass mark).
+  This replaces the missing confirmation step that step L2 found; the L3
+  checklist says what the owner sees. Reason: `planning/handoffs/L2.md`
+  ("Finding for L3"), the package text.
+
+- **D294 (2026-10-20, implementation default for C11): a fair test kept by
+  protected software.** The practice range's contract and package (grammar,
+  study rules, replay, report, summary, the walk-forward offer) and the lab's
+  contract and package (queue, worker, context, installation, the packaged
+  examples) are protected paths; migration 0051 is already under
+  `adapters/persistence/`. The deployed Engineer cannot change how the test is
+  kept fair. Reason: D280 ("protected software keeps the test fair"), AGENTS.md.
