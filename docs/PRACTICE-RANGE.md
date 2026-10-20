@@ -25,6 +25,7 @@ makes money and not permission to trade real money.
 | OKX public candles | `src/trade_graph/adapters/market/okx_candles.py`, `application/okx_history.py` |
 | Candle source `okx_public_candles` (candle database 0002) | `src/trade_graph/adapters/persistence/market_data_schema.py` |
 | Commands | `src/trade_graph/market_data_cli/practice_range.py`, `market_data_cli/okx.py` |
+| Market types at each decision and the report's split by them (W11-A) | `src/trade_graph/kernel/market_type.py`, `application/market_types/labeller.py`; see [MARKET-TYPES.md](MARKET-TYPES.md) |
 
 ## Strategy versions
 
@@ -36,7 +37,10 @@ expression. It names up to 8 indicators from the T27 menu with bounded settings,
   `{"candle": "close"}` (any field of the latest completed candle), `{"indicator": "<name>", "output": ...}` or
   `{"level": "100"}`, with `above`, `below`, `crosses_above` or `crosses_below`. Both sides are rounded to the 12
   significant digits the indicator library vouches for, as alarms compare (D136); an indicator with no value
-  (warming up or gapped) never satisfies a condition;
+  (warming up or gapped) never satisfies a condition. Since W11-A an entry condition may also be
+  `{"market_type": "rising", "relation": "is"}` (or `"is_not"`, with `rising`, `sideways`, `falling` or `unclear`):
+  the coin's market type at the decision, from the same function the hourly scan uses (D288,
+  [MARKET-TYPES.md](MARKET-TYPES.md)); `unclear` is a label like the others;
 - `entry.order`: a market buy at the next open, or a limit buy at an operand's price less `offset_fraction`,
   resting for `expires_after_bars` candles;
 - `exit`: a stop `stop_loss_fraction` below the entry (required: every position carries a protective exit, D117),
@@ -108,7 +112,13 @@ Stored in `practice_range_runs.report_json` with its run, study, phase and profi
   cut-off, cost profile and fill policy references, hashes and rates, capital, instrument rules, benchmark series),
   the data facts (candles read, missing ranges, runs, a hash of every candle revision read), the indicators with
   their menu versions and library versions, every fill with its purpose, the end valuation, a daily equity curve
-  with the hash of the full curve, event counts, and the metrics.
+  with the hash of the full curve, event counts, and the metrics;
+- since W11-A (D289), `result.request.market_type_rules` (reference, hash, candle size) and `result.market_types`:
+  the 60-minute candles the labels read, how many decision candles were of each market type, and `by_market_type`,
+  the trades, wins, losses and result after fees by the market type at the decision that placed each entry, a
+  position still held at the end in its entry's type with its valued result, so the rows sum to the report's totals.
+  A report made before W11-A has neither and is still reproduced exactly by `practice-range-verify`
+  ([MARKET-TYPES.md](MARKET-TYPES.md)).
 
 `practice-range-verify` replays a stored report from its own inputs and records whether the result hash is identical
 (`practice_range_verifications`). A changed strategy document, profile revision, fill policy or candle input shows
@@ -136,7 +146,8 @@ The paper scorecard (T42) uses the same sums on the ledger's fills: [SCORECARD.m
 
 D138 item 5: a report must exist for a strategy version before it enters a day plan; there is no pass mark.
 `PracticeRangeStore.has_report(strategy_ref, confirmed=False)` and `reports_for(strategy_ref, phase=None)` answer
-that; `summary.report_lines(record)` gives the plain sentences to show the Trader. Whether a tuning report is enough
+that; `summary.report_lines(record)` gives the plain sentences to show the Trader (with one sentence per market type
+since W11-A), and `summary.report_overview(record)` the few numbers a list shows, with its `by_market_type` rows. Whether a tuning report is enough
 or a confirmation is needed is T34's choice (the recommendation is a confirmation report).
 
 ## OKX candles
