@@ -124,11 +124,17 @@ def fit_desk_request(context: dict[str, Any], room: int) -> list[str]:
         steps.append(("triggers_10", lambda: _fewer_triggers(wake, 10)))
     taken = []
     for name, step in steps:
-        if _size(context) <= room:
+        if request_size(context) <= room:
             break
         step()
         taken.append(name)
     return taken
+
+
+def request_size(value: Any) -> int:
+    """Bytes as the invocation journal's 128 KiB bound counts them (sorted keys, spaced separators, ASCII escapes):
+    larger than the compact JSON the subscription bound reads, so a fit by this measure holds for both."""
+    return len(json.dumps(value, sort_keys=True, default=str).encode())
 
 
 def desk_context(connection: sqlite3.Connection, portfolio_id: str, *, at: datetime,
@@ -139,4 +145,4 @@ def desk_context(connection: sqlite3.Connection, portfolio_id: str, *, at: datet
 
 
 __all__ = ["PLAYBOOK_CONTEXT_BYTES", "PLAYBOOK_INSTRUCTION", "STANCES_SHOWN", "desk_context", "fit_desk_request",
-           "fit_playbook", "playbook_context"]
+           "fit_playbook", "playbook_context", "request_size"]

@@ -17,7 +17,7 @@ from trade_graph.application.research import ResearchStore
 from trade_graph.application.strategy_lab.context import lab_context
 from trade_graph.application.strategy_lab.worker import account_cost_profile
 from trade_graph.application.trader import Trader, TraderTurn
-from trade_graph.application.trading_desk.context import desk_context, fit_desk_request
+from trade_graph.application.trading_desk.context import desk_context, fit_desk_request, request_size
 from trade_graph.contracts.models import ContractModel, ModelRequest, ModelResult
 from trade_graph.contracts.wakes import TraderWakeReply
 from trade_graph.domain.clock import utc_iso
@@ -260,8 +260,8 @@ class TraderHandler(GatewayRole):
     def _context_room(self, task: dict) -> int:
         """Bytes left for a wake turn's context once the instruction, the reply schema and an envelope margin of
         ``REQUEST_MARGIN`` are counted against the 128 KiB request bound."""
-        schema = json.dumps(TraderWakeReply.model_json_schema(), separators=(",", ":"), ensure_ascii=False)
-        return MAX_REQUEST_BYTES - len(self.instructions(task).encode()) - len(schema.encode()) - REQUEST_MARGIN
+        schema = request_size(TraderWakeReply.model_json_schema())
+        return MAX_REQUEST_BYTES - request_size(self.instructions(task)) - schema - REQUEST_MARGIN
 
     def _recent_refusals(self, portfolio_id: str, as_of: str) -> list[dict]:
         rows = self.database.execute(

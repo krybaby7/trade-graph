@@ -190,7 +190,7 @@ def _rounds(setup, *, ideas: int, rounds: int) -> None:
 
 
 def test_the_last_fit_trims_the_desks_own_parts_in_a_fixed_order_and_counts_them() -> None:
-    from trade_graph.application.trading_desk.context import fit_desk_request
+    from trade_graph.application.trading_desk.context import fit_desk_request, request_size
 
     def context() -> dict:
         reading = {"symbol": "X/USD", "status": "current", "sentence": "s" * 300}
@@ -206,7 +206,7 @@ def test_the_last_fit_trims_the_desks_own_parts_in_a_fixed_order_and_counts_them
 
     assert fit_desk_request(context(), 1_000_000) == []  # it fits: nothing is touched
     trimmed = context()
-    steps = fit_desk_request(trimmed, _size(trimmed) - 6000)
+    steps = fit_desk_request(trimmed, request_size(trimmed) - 6000)
     assert steps == ["news_half"] and trimmed["news"]["jev"]["verdicts_omitted"] > 0
     trimmed = context()
     steps = fit_desk_request(trimmed, 36_000)
