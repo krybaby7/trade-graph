@@ -32,9 +32,12 @@ ROLE_CONTEXT_KEYS = {
                             "analysis_instruction", "reports"},
     # W6-D (D223): "wake" is the wake a Trader turn answers (T35) and "practice_range" the strategy versions a day
     # plan may follow, with their reports. W11-B (D290): "lab" is the Trading desk's strategy lab (results, queue,
-    # families). The owner's pinned subscription profile must list them too (step L3).
+    # families). W12-A (D297): "playbook" is the desk's playbook in force with its newest stances, "news" the Leader's
+    # newest round, the lab inbox and Jev's verdicts on its coins. The owner's pinned subscription profile must list
+    # them too (step L3).
     "trader": _COMMON | {"as_of", "artifact", "market", "portfolio", "selected_context", "strategy_templates",
-                          "active_strategy_templates", "research", "wake", "practice_range", "lab"},
+                          "active_strategy_templates", "research", "wake", "practice_range", "lab", "playbook",
+                          "news"},
     "learning": _COMMON | {"reports", "decisions", "lesson_revisions", "analysis_instruction"},
     "optimisation": _COMMON | {"reports", "expenses", "task_counts", "analysis_instruction"},
     # T45 (D226): "wake" is the wake a Leader turn answers (T35): news alarms and wake requests with their notes, as

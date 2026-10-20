@@ -31,6 +31,15 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_serializ
 from trade_graph.contracts.alarms import REFERENCE_PATTERN, SYMBOL_PATTERN, AlarmDelivery
 from trade_graph.contracts.day_plans import DayPlan, DayPlanPosition, PositionAction, PositionActionKind
 from trade_graph.contracts.strategy_lab import AppliedLabRequest, LabRequest
+from trade_graph.contracts.trading_desk import (
+    MAX_STANCES,
+    CoinMarketType,
+    CoinStance,
+    LabelStatus,
+    PlaybookRevision,
+    one_stance_per_coin,
+)
+from trade_graph.domain.market_types import MarketType
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 WAKE_CONTRACT_VERSION = "wake-v1"
@@ -93,6 +102,9 @@ MAX_WAKE_REQUESTS = 16
 MAX_POSITION_ACTIONS = 16
 MAX_POSITIONS_SHOWN = 16
 MAX_EVIDENCE_REFS = 20
+# W12-A: the coins whose market type a desk wake shows (held, planned, focus, trigger and shortlist coins, in that
+# order). A display bound of one wake, never a limit on how many coins the desk may look at (D116).
+MAX_MARKET_TYPES_SHOWN = 32
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f​-‏‪-‮⁦-⁩]")
 
 
@@ -277,9 +289,14 @@ class CheckIn(_Frozen):
 # --- the scanner's shortlist and the focus step --------------------------------------------------------------------
 
 class ShortlistCoin(_Frozen):
+    """A shortlisted coin. In a desk wake it carries its market type (W12-A): the label in force, or None with
+    ``market_type_status`` ``stale`` or ``missing`` (never a guess); ``wake.market_types`` has the sentence."""
+
     symbol: str = Field(pattern=SYMBOL_PATTERN)
     position: int = Field(ge=1)
     flags: tuple[str, ...] = ()
+    market_type: MarketType | None = None
+    market_type_status: LabelStatus | None = None
 
 
 class ScanReference(_Frozen):
@@ -398,6 +415,11 @@ class WakeOutcome(_Frozen):
     - ``lab_requests``: the Trader (the Trading desk) only, requests to the strategy lab (W11-B, D290): register a
       strategy version, create a study, tune or confirm. Queued in order, each checked by the grammar and the study
       rules; no cap on how many (D116).
+    - ``playbook``: the Trading desk only, a new revision of its playbook (W12-A): per market type the strategy
+      versions it means to use, or wait, with reasons and the reports they rest on. Stored append-only.
+    - ``stances``: the Trading desk only, one stance per coin it considered (wait, buy dips, follow the trend or
+      other) with the market type it saw, the strategy version, the news it weighed and a reason. Records for
+      Learning and the scorecard; software never refuses a day plan for not following them (D280 item 5).
     """
 
     summary: str | None = Field(default=None, min_length=1, max_length=MAX_SUMMARY_LENGTH)
@@ -407,6 +429,8 @@ class WakeOutcome(_Frozen):
     position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
     wake_requests: tuple[WakeRequest, ...] = Field(default=(), max_length=MAX_WAKE_REQUESTS)
     lab_requests: tuple[LabRequest, ...] = ()
+    playbook: PlaybookRevision | None = None
+    stances: tuple[CoinStance, ...] = Field(default=(), max_length=MAX_STANCES)
 
     @field_validator("summary")
     @classmethod
@@ -419,6 +443,7 @@ class WakeOutcome(_Frozen):
         if len(symbols) != len(set(symbols)):
             raise ValueError("one day plan per coin in a turn; a later turn may replace it")
         _one_action_per_coin(self.position_actions)
+        one_stance_per_coin(self.stances)
         return self
 
 
@@ -431,7 +456,8 @@ def _one_action_per_coin(actions: tuple[PositionAction, ...]) -> None:
 class TraderWakeReply(_Frozen):
     """The Trader's wake turn as a strict provider reply: day plans (possibly none), position actions (close a
     day-plan position or move its safety exit, W8-B), its next check-in, a summary and, as the Trading desk, its
-    requests to the strategy lab (W11-B; no cap on how many, D116)."""
+    requests to the strategy lab (W11-B; no cap on how many, D116), a playbook revision and its stances per coin
+    (W12-A)."""
 
     day_plans: tuple[DayPlan, ...] = Field(default=(), max_length=MAX_DAY_PLANS)
     position_actions: tuple[PositionAction, ...] = Field(default=(), max_length=MAX_POSITION_ACTIONS)
@@ -439,6 +465,9 @@ class TraderWakeReply(_Frozen):
     summary: str = Field(min_length=1, max_length=MAX_SUMMARY_LENGTH)
     # W11-B (D290): kept last and separate, so later desk fields (W12-A) extend the reply without touching it.
     lab_requests: tuple[LabRequest, ...] = ()
+    # W12-A (D295, D296): the desk's playbook revision (none means no change) and its stance per coin it considered.
+    playbook: PlaybookRevision | None = None
+    stances: tuple[CoinStance, ...] = Field(default=(), max_length=MAX_STANCES)
 
     @field_validator("summary")
     @classmethod
@@ -448,11 +477,13 @@ class TraderWakeReply(_Frozen):
     @model_validator(mode="after")
     def _one_action_per_coin(self) -> TraderWakeReply:
         _one_action_per_coin(self.position_actions)
+        one_stance_per_coin(self.stances)
         return self
 
     def outcome(self) -> WakeOutcome:
         return WakeOutcome(summary=self.summary, check_in=self.next_check_in, day_plans=self.day_plans,
-                           position_actions=self.position_actions, lab_requests=self.lab_requests)
+                           position_actions=self.position_actions, lab_requests=self.lab_requests,
+                           playbook=self.playbook, stances=self.stances)
 
 
 class ResearchFocusReply(_Frozen):
@@ -497,6 +528,9 @@ class WakeContext(_Frozen):
     check_in: CheckIn | None = None
     allowance: AllowanceReading
     instruction: str = Field(min_length=1, max_length=1000)
+    # W12-A (D297): a desk wake shows each of its coins' market type at the wake's moment (held, planned, focus,
+    # trigger and shortlist coins): current, stale or missing, never a guess.
+    market_types: tuple[CoinMarketType, ...] = Field(default=(), max_length=MAX_MARKET_TYPES_SHOWN)
 
 
 # --- what the engine recorded --------------------------------------------------------------------------------------
@@ -536,6 +570,9 @@ class WakeOutcomeRecord(_Frozen):
     requested_trigger_ids: tuple[str, ...] = ()
     # W11-B (D290): each lab request of the answer, queued in the strategy lab or refused at once with its reason.
     lab: tuple[AppliedLabRequest, ...] = ()
+    # W12-A (D295, D296): the playbook revision this answer recorded, and the stances it recorded, by id.
+    playbook_revision_id: str | None = None
+    stance_ids: tuple[str, ...] = ()
 
 
 class WakeRecord(_Frozen):
@@ -589,8 +626,8 @@ def is_obsolete(purpose: str, trading_day_end: datetime, now: datetime) -> bool:
 
 __all__ = [
     "CHECK_IN_KEEPING_KINDS",
-    "CYCLE_STEPS", "DAY_BOUND_KINDS", "DEPARTMENTS", "MAX_DAY_PLANS", "MAX_FOCUS_COINS", "MAX_POSITION_ACTIONS",
-    "MAX_POSITIONS_SHOWN", "MAX_WAKE_REQUESTS",
+    "CYCLE_STEPS", "DAY_BOUND_KINDS", "DEPARTMENTS", "MAX_DAY_PLANS", "MAX_FOCUS_COINS", "MAX_MARKET_TYPES_SHOWN",
+    "MAX_POSITION_ACTIONS", "MAX_POSITIONS_SHOWN", "MAX_WAKE_REQUESTS",
     "RIDE_ALONG_KINDS", "SOFTWARE_KINDS", "TRIGGER_KINDS", "TRIGGER_STATUSES", "WAKE_CONTRACT_VERSION",
     "WAKE_PURPOSES", "WAKE_STATUSES", "ActivePlan", "AllowanceReading", "AllowanceWindow", "AppliedAction",
     "AppliedPlan", "CheckIn",
