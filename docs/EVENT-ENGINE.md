@@ -165,6 +165,17 @@ optional:
   checked on its own (a refused one is recorded with its reason) and listed in the wake's outcome (`lab`). No cap on
   how many (D116). The lab runs them in its own thread; the desk is woken with `lab_results` when they have ended
   ([PRACTICE-RANGE.md](PRACTICE-RANGE.md#the-strategy-lab-inside-the-service-w11-b-c11)).
+- **`playbook`** and **`stances`** (the Trader, as the Trading desk, only; W12-A, D295, D296): a new playbook revision
+  (per market type the strategy versions it uses or "wait", with reasons and the reports they rest on) and one stance
+  per coin it considered (wait, buy dips, follow the trend or other, with the market type it saw, the strategy
+  version, the news it weighed and a reason). Stored append-only in the transaction that applies the answer (state
+  migration 0052), with the label the wake showed; listed in the outcome (`playbook_revision_id`, `stance_ids`). They
+  are records, not rules: no day plan is refused for not following them (D280 item 5). Each installed day plan
+  records the coin's market type and the playbook revision in force (D298).
+
+A desk wake (the Trader's) also shows `market_types`: the market type of each of its coins (held, planned, focus,
+trigger and the day's shortlist coins, at most 32) at the wake's moment, from W11-A's hourly labels: `current` (at
+most 2 hours old), `stale` or `missing`, never a guess; its shortlist's coins carry the word and status (D297).
 
 `TraderWakeReply` (`day_plans`, `position_actions`, `next_check_in`, `summary`) and `ResearchFocusReply` (`focus`,
 `next_check_in`) are the same answers in the shape of strict provider replies; both pass the OpenAI and Anthropic
