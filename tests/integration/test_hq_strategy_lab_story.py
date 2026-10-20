@@ -79,3 +79,27 @@ def test_a_lab_that_could_not_start_or_failed_needs_a_look(env):  # noqa: F811
     assert [item["problem"] for item in items] == [True, True]
     assert "couldn't start" in _plain(items[1]["headline"])
     assert "1 failed" in _plain(items[0]["headline"]) or "failed" in _plain(items[0]["headline"])
+
+
+# The lab's Story item in ``tests/fixtures/hq/snapshot_busy.json``: two finished requests 4 minutes apart (synthetic).
+BUSY_LAB_EVENTS = [
+    {"event_id": "ev-lab-busy-1", "created_at": "2026-10-10T06:10:00.000000Z", "kind": "strategy_lab",
+     "payload": {"status": "done", "request_id": "wake:wk-busy:0", "kind": "tune", "family": "dip-rebound",
+                 "brief": {"kind": "tune", "strategy_ref": "dip-rebound@1", "symbol": "SOL/USD"}, "runs": 2}},
+    {"event_id": "ev-lab-busy-2", "created_at": "2026-10-10T06:14:00.000000Z", "kind": "strategy_lab",
+     "payload": {"status": "done", "request_id": "wake:wk-busy:1", "kind": "confirm", "family": "dip-rebound",
+                 "brief": {"kind": "confirm", "strategy_ref": "dip-rebound@1", "symbol": "SOL/USD"}, "runs": 2}},
+]
+
+
+def test_the_busy_snapshot_fixture_carries_the_labs_story_item_made_by_the_builder() -> None:
+    import json
+    from pathlib import Path
+
+    from trade_graph.api import hq_story
+
+    fixture = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "hq" / "snapshot_busy.json").read_text(
+        encoding="utf-8"))
+    (item,) = [entry for entry in fixture["story"]["items"] if entry["kind"] == "lab_result"]
+    assert item == hq_story._lab_item(BUSY_LAB_EVENTS)
+    assert _plain(item["headline"]) == "The strategy lab finished 2 requests: 2 done."

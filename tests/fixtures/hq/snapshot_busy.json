@@ -1859,6 +1859,31 @@
         "technical": "model timeout_uncertain"
       },
       {
+        "id": "lab:ev-lab-busy-1",
+        "at": "2026-10-10T06:10:00.000Z",
+        "until": "2026-10-10T06:14:00.000Z",
+        "kind": "lab_result",
+        "dept": "trader",
+        "tone": "good",
+        "headline": [
+          {
+            "t": "text",
+            "v": "The strategy lab finished 2 requests: 2 done."
+          }
+        ],
+        "consequence": [
+          {
+            "t": "text",
+            "v": "Results are in the Trading desk room on the HQ tab; the desk is woken with them."
+          }
+        ],
+        "quote": null,
+        "count": 2,
+        "link": null,
+        "problem": false,
+        "technical": null
+      },
+      {
         "id": "decision:d-140",
         "at": "2026-10-10T05:56:26.000Z",
         "until": null,
