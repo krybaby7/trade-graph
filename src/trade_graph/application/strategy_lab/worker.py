@@ -44,6 +44,7 @@ from trade_graph.domain.clock import Clock
 from trade_graph.domain.errors import TradeGraphError, ValidationFailure
 from trade_graph.kernel.cost_profiles import KRAKEN_STARTING, CostProfileBook, load_cost_profiles
 from trade_graph.kernel.fills import BAR_REPLAY_POLICY
+from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES
 
 ACTIVITY_KIND = "strategy_lab"
 _MILLI = Decimal("0.001")
@@ -210,7 +211,8 @@ class StrategyLabWorker:
                 raise _Stopped
             results.append(self.replay_fn(self.candles, ReplayRequest(
                 strategy=strategy, symbol=request.symbol, source=request.replay_source(), window=window,
-                data_as_of=cut_off, profile=profile, policy=BAR_REPLAY_POLICY, capital=self.capital)))
+                data_as_of=cut_off, profile=profile, policy=BAR_REPLAY_POLICY, capital=self.capital,
+                market_type_rules=CURRENT_MARKET_TYPE_RULES)))  # W11-A (D289): split by market type, as the range
         known = {run.run_id: run.evidence_label for run in self.candles.runs()}
         runs = []
         with self.database.immediate():
@@ -218,6 +220,8 @@ class StrategyLabWorker:
                 labels = list(result.data.evidence_labels)
                 for document in result.benchmark_data.values():
                     labels.extend(known.get(run_id, "unknown") for run_id in document.get("run_ids", ()))
+                if result.market_types is not None:  # the candles behind the market-type labels (W11-A)
+                    labels.extend(known.get(run_id, "unknown") for run_id in result.market_types.candles["run_ids"])
                 report, digest = build_report(result=result, plan=plan, phase=phase, labels=labels,
                                               selection=self.store.selection(plan.study_id))
                 stored = self.store.record_run(

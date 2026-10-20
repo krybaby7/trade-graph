@@ -163,8 +163,10 @@ fair. Paper only; no order, paid call or network request.
 - **The worker** (`worker.py`, `installation.py`). In the installed service, in its own thread like the price collector
   (D222): one request per step, reading the candle file through its own read-only handle. Replays run outside any
   transaction under the profiles asked for (all published ones when none is named) and always the account's own (the
-  paper broker's, Kraken's starting tier by default), at one data cut-off, with the USD10,000 capital and no
-  instrument rules (as in step L2); then every report and the request's end are written in one transaction, so a
+  paper broker's, Kraken's starting tier by default), at one data cut-off, with the USD10,000 capital, no
+  instrument rules (as in step L2) and the current market-type rules (W11-A, as `PracticeRange.run`; added by the
+  wave 11 integration), so every lab report has the split by market type at entry and a version that requires a
+  market type can be tested; then every report and the request's end are written in one transaction, so a
   request is never half recorded. Each start and each finished request is a `strategy_lab` activity (what ran, how it
   ended and why, the seconds spent, how many are queued and running).
 - **The wake** (`lab_results`, D291). When every request of a batch has ended, the event engine's trigger source wakes
