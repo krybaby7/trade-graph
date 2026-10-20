@@ -42,6 +42,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     command.add_argument("--interval", type=int, default=15, choices=[1, 5, 15, 60])
     command.add_argument("--pages", type=int, default=1, help="pages of 100 candles to fetch, newest first")
     command.add_argument("--record", help="also keep the pages verbatim in this new folder")
+    command.add_argument("--before-ms", type=int, help="resume: start at candles older than this open time "
+                         "(Unix milliseconds), for example the first_open of a run that stopped early")
 
 
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None:
@@ -85,7 +87,7 @@ def _fetch(args, parser) -> int:
     try:
         report = collect_okx_candles(store, OkxCandleFetcher(build_transport(), clock), clock,
                                      inst_id=args.inst_id, interval_minutes=args.interval, pages=args.pages,
-                                     record_to=args.record)
+                                     record_to=args.record, before_ms=args.before_ms)
     except (TradeGraphError, OSError) as error:
         parser.error(f"OKX fetch stopped: {error}; candles saved so far are kept")
     finally:

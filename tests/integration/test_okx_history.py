@@ -20,6 +20,7 @@ from trade_graph.application.practice_range.service import PracticeRange
 from trade_graph.application.practice_range.store import PracticeRangeStore
 from trade_graph.contracts.practice_range import PracticeStrategy, ReplayWindow, StudyPlan
 from trade_graph.domain.clock import FrozenClock
+from trade_graph.domain.errors import ValidationFailure
 
 NOW = datetime(2026, 7, 10, tzinfo=UTC)
 
@@ -64,6 +65,20 @@ class _ScriptedOkx:
         self.urls.append(url)
         after = url.split("after=")[1] if "after=" in url else None
         return self.by_after[after]
+
+
+def test_a_stopped_run_resumes_from_before_ms_without_asking_for_newer_pages(market) -> None:
+    transport = _ScriptedOkx()
+    resume_at = json.loads(pages()[0])["data"][-1][0]  # the oldest open time on the first page
+    report = collect_okx_candles(market, OkxCandleFetcher(transport, FrozenClock(NOW)), FrozenClock(NOW),
+                                 inst_id="SOL-USDT", interval_minutes=15, pages=50, before_ms=int(resume_at),
+                                 sleep=lambda _seconds: None)
+    assert report["status"] == "ok" and report["requests"] == 7 and 0 < report["candles"] < 600
+    assert f"after={resume_at}" in transport.urls[0] and len(transport.urls) == 7
+    assert market.runs()[-1].parameters["before_ms"] == int(resume_at)
+    with pytest.raises(ValidationFailure):
+        collect_okx_candles(market, OkxCandleFetcher(transport, FrozenClock(NOW)), FrozenClock(NOW),
+                            inst_id="SOL-USDT", interval_minutes=15, pages=1, before_ms=0)
 
 
 def test_paging_back_saves_each_page_and_a_scripted_source_is_labelled_synthetic(market, tmp_path) -> None:

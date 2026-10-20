@@ -79,20 +79,26 @@ def import_okx_recording(store: CandleStore, folder: Path | str, clock: Clock) -
 
 def collect_okx_candles(store: CandleStore, fetcher: OkxCandleFetcher, clock: Clock, *, inst_id: str,
                         interval_minutes: int, pages: int, record_to: Path | str | None = None,
+                        before_ms: int | None = None,
                         sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
-    """Page back from the newest candle, saving each page as it arrives (step L2; tests use a scripted transport)."""
+    """Page back from the newest candle (or from ``before_ms``, to resume a stopped run), saving each page as it
+    arrives (step L2; tests use a scripted transport)."""
     if type(pages) is not int or not 1 <= pages <= MAX_LIVE_PAGES:
         raise ValidationFailure(f"collect between 1 and {MAX_LIVE_PAGES} pages")
+    if before_ms is not None and (type(before_ms) is not int or before_ms <= 0):
+        raise ValidationFailure("before is a positive open time in milliseconds")
     started = clock.now()
     # A scripted transport (tests) is synthetic and says so; only the real network transport is live public data.
     synthetic = bool(getattr(fetcher.transport, "synthetic", False))
-    parameters = {"inst_id": inst_id, "bar": okx_bar(interval_minutes), "pages": pages}
+    parameters: dict[str, Any] = {"inst_id": inst_id, "bar": okx_bar(interval_minutes), "pages": pages}
+    if before_ms is not None:
+        parameters["before_ms"] = before_ms
     run_id = store.begin_run(kind="public_collect", source=OKX_SOURCE,
                              evidence_label="synthetic_fixture" if synthetic else "live_public",
                              started_at=started, parameters=parameters)
     fetches: list[OkxFetch] = []
     totals = {"inserted": 0, "revised": 0, "duplicates": 0}
-    after: int | None = None
+    after: int | None = before_ms
     status, stopped = "ok", None
     try:
         for number in range(pages):
