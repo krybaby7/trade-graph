@@ -14,6 +14,10 @@ like it but never part of the financial books or their recovery (D132). The serv
 coins with an armed alarm and coins with a day plan that has not ended. The collector reads them before each chunk.
 With the event engine on, ``quoted_day_coins`` gives the paper feed the day's coins (focus, plans, alarms, held) the
 owner's coin scope covers, so they are quoted too (D223).
+
+After each hourly scan is recorded, software labels the market type of every shortlisted coin and every coin of the
+day (W11-A, D287: ``application/market_types/hourly.py``) from the collector's own view, and notes the round in HQ's
+activity log; a labelling failure is noted and never stops the scan or the collector.
 """
 
 from __future__ import annotations
@@ -35,6 +39,8 @@ from trade_graph.application.alarms.book import AlarmBook
 from trade_graph.application.candle_store import CandleStore
 from trade_graph.application.coin_scanner.scanner import CoinScanner
 from trade_graph.application.coin_scanner.store import CoinScanStore
+from trade_graph.application.market_types.hourly import label_after_scan
+from trade_graph.application.market_types.store import MarketTypeStore
 from trade_graph.application.price_collector import (
     CollectorSettings,
     CollectorTransports,
@@ -155,11 +161,22 @@ def open_service_market_data(path: Path, *, database: Database, clock: Clock, po
     collector = None
     if transports is not None:
         scans = CoinScanStore(database, clock)
+        labels = MarketTypeStore(database, clock)
 
         def scan(as_of: datetime, ticker, ticker_error: str | None):
             # The scanner reads the collector's own view, so it sees the hour the pass just stored.
             result = CoinScanner(store, clock=clock).scan(as_of=as_of, ticker=ticker, ticker_error=ticker_error)
-            return scans.record(result)
+            stored = scans.record(result)
+            try:  # W11-A (D287): label the scan's shortlist and the day's coins at the scan's moment
+                day = day_coins(database, clock, portfolio_ids, ledger=ledger).symbols
+                note = label_after_scan(candles=store, labels=labels, scan=stored, day_symbols=day,
+                                        as_of=as_of).note()
+            except Exception as error:  # noqa: BLE001 - labels never stop the scan or the collector
+                note = {"job": "market_types", "status": "failed", "reason": type(error).__name__,
+                        "scan_id": stored.scan_id, "model_calls": 0}
+            if record is not None:
+                record(note)
+            return stored
 
         collector = PriceCollector(
             store, clock, transports, limiter, settings=settings, scan=scan, stop=stop, record=record,

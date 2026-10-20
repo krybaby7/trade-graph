@@ -8,6 +8,10 @@ always labelled optimistic. ``coin-shortlist`` only reads the newest recorded li
 ``--scans N`` repeats a live scan once an hour, at ``--at-minute`` past the hour (default 5, so the hour's candle
 is in), and records each one; ``--replay --as-of T --scans N`` replays N hourly moments from T. Wiring the hourly
 scan into the paper service or a scheduled task is an installation step.
+
+A live scan then labels the market type of its shortlist and the day's coins (W11-A, D287; held coins only in the
+service, which has the books), stored in the state database; ``trade-graph market-types`` reads them. A replay
+labels nothing.
 """
 
 from __future__ import annotations
@@ -171,12 +175,30 @@ def _one_scan(args, parser, clock: Clock, candles, database, replay_as_of: datet
         source=None if replay_as_of is None else args.source, ticker_error=ticker_error)
     stored = CoinScanStore(database, clock).record(result)
     document = stored.document
+    labelled = {} if replay_as_of is not None else {"market_types": _label(clock, candles, database, stored, as_of)}
     return {
         "command": SCAN, "scan_id": stored.scan_id, "as_of_utc": document["scan"]["as_of_utc"],
         **{key: document["scan"][key] for key in ("mode", "status", "error", "evidence", "optimistic",
                                                    "optimism_reasons", "ranking_version")},
         "public_requests": requests, "model_calls": 0, "paid_calls": False, "ticker": document["ticker"],
-        "counts": document["counts"], "excluded": document["excluded"], "shortlist": _shortlist_rows(stored)}
+        "counts": document["counts"], "excluded": document["excluded"], "shortlist": _shortlist_rows(stored),
+        **labelled}
+
+
+def _label(clock: Clock, candles, database, stored, as_of: datetime) -> dict[str, Any]:
+    """Label the scan's shortlist and the day's focus, planned and alarmed coins; a failure is said, never fatal."""
+    from trade_graph.application.market_types.hourly import label_after_scan
+    from trade_graph.application.market_types.store import MarketTypeStore
+    from trade_graph.application.service_market_data import day_coins
+
+    try:
+        day = day_coins(database, clock, ()).symbols
+        note = label_after_scan(candles=candles, labels=MarketTypeStore(database, clock), scan=stored,
+                                day_symbols=day, as_of=as_of).note()
+    except (ValueError, OSError, sqlite3.DatabaseError, TradeGraphError) as error:
+        note = {"job": "market_types", "status": "failed", "reason": type(error).__name__,
+                "scan_id": stored.scan_id, "model_calls": 0}
+    return {key: value for key, value in note.items() if key != "job"}
 
 
 def _shortlist_rows(stored) -> list[dict[str, Any]]:
