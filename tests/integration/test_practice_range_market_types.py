@@ -213,3 +213,12 @@ def test_a_changed_rules_hash_is_not_reproduced(lab) -> None:
     check = practice.verify(edited.run_id)
     assert not check.reproduced
     assert "the market-type rules no longer match the report's hash" in check.document["problems"]
+    report["result"]["request"]["market_type_rules"]["ref"] = "market-type-rules@9"
+    unknown = store.record_run(
+        study_id="busy-1", phase="tune", strategy_ref="busy-test@1", symbol="SYN/USD", interval_minutes=15,
+        source="synthetic", cost_profile_ref=record.cost_profile_ref, fill_policy_ref=record.fill_policy_ref,
+        window=record.window, data_as_of=record.data_as_of, evidence=record.evidence,
+        result_sha256=record.result_sha256, report=report)
+    later = practice.verify(unknown.run_id)
+    assert not later.reproduced
+    assert "the market-type rules market-type-rules@9 are unknown to this version" in later.document["problems"]

@@ -158,7 +158,11 @@ class PracticeRange:
         named = request_document.get("market_type_rules")
         market_type_rules = None
         if named is not None:
-            market_type_rules = resolve_market_type_rules(named["ref"])
+            try:
+                market_type_rules = resolve_market_type_rules(named["ref"])
+            except ValidationFailure:
+                problems.append(f"the market-type rules {named['ref']} are unknown to this version")
+                market_type_rules = CURRENT_MARKET_TYPE_RULES
             if market_type_rules.content_sha256 != named["sha256"]:
                 problems.append("the market-type rules no longer match the report's hash")
         window_document = request_document["window"]
