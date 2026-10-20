@@ -57,8 +57,8 @@ def installed_strategy_lab(runtime) -> InstalledStrategyLab | None:
         if reader is not None:
             reader.close()
         try:
-            record({"status": "not_ready", "reason": f"the strategy lab could not be prepared ({type(error).__name__}); "
-                                                     "it is off until the next start"})
+            reason = f"the strategy lab could not be prepared ({type(error).__name__}); it is off until the next start"
+            record({"status": "not_ready", "reason": reason})
         except Exception:  # noqa: BLE001 - recording the reason is best effort here
             pass
         return None
