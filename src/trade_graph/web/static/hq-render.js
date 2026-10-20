@@ -555,6 +555,12 @@
     }
     kv(facts, "To-dos", todo);
     body.append(facts);
+    if (dept.id === "trader" && HQ.use("desk") && doc.querySelector('[data-hq="desk"]')) {
+      // W13-A: the desk's playbook, today's choices, its lab and the news it read are in the Trading desk room.
+      const room = button("button button-secondary hq-desk-open", "Open the Trading desk room");
+      room.addEventListener("click", () => { HQ.sheet.close(); HQ.use("desk").open(); });
+      body.append(el("p", "hq-muted", "Its playbook, today's choice per coin, its strategy lab and the news it read are in the Trading desk room, below the map."), room);
+    }
     const actions = el("div", "hq-actions hq-sheet-actions");
     const focus = `${dept.name}: ${plain(dept.light_text)}. ${plain(dept.now)}`;
     actions.append(askButton(focus, snapshot.as_of));

@@ -19,6 +19,7 @@ from trade_graph.api import (
     financial,
     hq,
     hq_chart,
+    hq_desk,
     hq_plans,
     hq_wakes,
     live,
@@ -356,6 +357,7 @@ def create_app(runtime) -> FastAPI:
     hq_chart.register(app, runtime, identity)
     hq_wakes.register(app, runtime, identity)
     hq_plans.register(app, runtime, identity)
+    hq_desk.register(app, runtime, identity)  # W13-A (D302): the Trading desk room, read while it is on screen
     return app
 
 

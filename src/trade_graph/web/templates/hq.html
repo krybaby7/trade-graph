@@ -38,6 +38,7 @@
   <script src="/static/hq-charts.js" defer></script>
   <script src="/static/hq-wakes.js" defer></script>
   <script src="/static/hq-plans.js" defer></script>
+  <script src="/static/hq-desk.js" defer></script>
   <script src="/static/hq.js" defer></script>
 {% endblock %}
 {% block eyebrow %}Trade Graph{% endblock %}
@@ -104,6 +105,15 @@
         {{ help('map', 'HQ map') }}
       </div>
       <div data-hq="map">{% if departments %}<ul class="hq-map-fallback">{% for dept in departments if dept is mapping %}<li><strong>{{ dept.get('name', '') }}</strong>: {{ segs(dept.get('light_text')) }}</li>{% endfor %}</ul>{% endif %}</div>
+    </article>
+    {#- W13-A: the Trading desk room reads its own endpoint (GET /api/v1/hq/desk) only while it is on screen. -#}
+    <article class="hq-panel hq-desk" aria-labelledby="hq-h-desk">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-desk" class="hq-panel-title">Trading desk room</h2>
+        {{ help('desk', 'Trading desk room') }}
+      </div>
+      <div data-hq="desk"><p class="hq-muted">The Trading desk room loads when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">The Trading desk room needs JavaScript, which is switched off here.</p></noscript>
     </article>
     </div>
   </section>

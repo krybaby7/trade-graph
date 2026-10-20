@@ -204,7 +204,9 @@ GlossaryKey = Literal["practice_money", "real_trading_off", "protect_only", "saf
                       "euro_rate", "currency_effect", "team_effect", "pays_for_itself", "bill_share",
                       "bills_complete", "history_gap", "avg_20h", "avg_50h", "trial", "rules", "sign_of_life",
                       "review_checkin", "review_prompt", "estimated_cost", "unresolved_cost", "testing_alert",
-                      "prepaid_credit", "loss_limit", "day_plan", "safety_exit", "scorecard", "price_collector"]
+                      "prepaid_credit", "loss_limit", "day_plan", "safety_exit", "scorecard", "price_collector",
+                      # W13-A (D302): the Trading desk room.
+                      "playbook", "stance", "market_type", "strategy_lab"]
 GLOSSARY_KEYS: Final = get_args(GlossaryKey)
 
 # --- Owner check-ins (spec §B.10) ----------------------------------------------------------

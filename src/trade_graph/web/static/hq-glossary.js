@@ -84,6 +84,18 @@
       href: "/journal"},
     price_collector: {term: "Price collector", meaning: "The part of the service that saves price candles from Kraken and runs the hourly coin scan.",
       why: "Charts, alarms and the coin scanner read what it saves.", example: "", href: "/progress"},
+    playbook: {term: "Playbook", meaning: "The Trading desk's own record of which tested strategy it means to use in which kind of market, or to wait in cash, and why.",
+      why: "It is the desk's record, not a rule: software never refuses a day plan for not following it.", example: "Sideways: buy dips with dip-rebound@1.",
+      href: "/trading"},
+    stance: {term: "Stance", meaning: "What the desk chose for one coin at a wake: wait in cash, buy dips, follow the trend or something else, with a short reason.",
+      why: "The scorecard splits every trade by the stance behind it, so lessons can say which choice earned or lost.", example: "SOL/USD: buy dips.",
+      href: "/trading"},
+    market_type: {term: "Market type", meaning: "Software's label for a coin from its hourly prices: rising, sideways, falling or unclear. A label more than 2 hours old is not used.",
+      why: "The desk chooses per market type, and the scorecard shows what each strategy earned in each one.", example: "BTC/USD: falling.",
+      href: "/trading"},
+    strategy_lab: {term: "Strategy lab", meaning: "The desk's own test bench: it replays strategy versions on stored prices with real fees, tuning on earlier days and confirming once on later, untouched days.",
+      why: "A result is evidence the desk weighs, never a pass mark and never permission for real money.", example: "",
+      href: "/organization"},
   });
 
   // Room id → why the room matters (§D.12). Job lines come from the server.
@@ -122,6 +134,7 @@
     plans: {title: "Today's day plans", text: "The Trader's plans for today, coin by coin: waiting buys, the safety exit software puts on every filled part, fills and refusals. Looking never changes anything."},
     scorecard: {title: "Scorecard", text: "The result after every fee since the account opened, against keeping the cash and holding Bitcoin. It is evidence only: it never proves a profit or allows real money."},
     collector: {title: "Price collector", text: "The price collector saves candles and runs the hourly coin scan inside the paper service. This shows its newest records and any problems."},
+    desk: {title: "Trading desk room", text: "What the Trading desk believes and tests: its playbook per market type, today's choice per coin, its strategy lab, the news it read and what each strategy earned in each market type. Looking never changes anything."},
   });
   const SECTION_HELP_LIVE = Object.freeze({
     ...SECTION_HELP,
