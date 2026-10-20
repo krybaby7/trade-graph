@@ -15,6 +15,7 @@ from trade_graph.application.leadership import GatewayRole
 from trade_graph.application.learning import LearningJournal, OptimisationReview
 from trade_graph.application.market_context import active_templates, market_context
 from trade_graph.application.research import ResearchStore
+from trade_graph.application.scorecard import scorecard_for_learning
 from trade_graph.contracts.leadership import DepartmentReply
 from trade_graph.contracts.models import (
     ChangeTask,
@@ -23,7 +24,7 @@ from trade_graph.contracts.models import (
     OptimisationProposal,
     ResearchFinding,
 )
-from trade_graph.domain.clock import utc_iso
+from trade_graph.domain.clock import parse_utc, utc_iso
 from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.money import Money, parse_decimal
 
@@ -188,7 +189,10 @@ class LearningHandler(ResearchHandler):
                                             "AND created_at <= ? ORDER BY created_at DESC, rowid DESC LIMIT 20",
                                             (task["portfolio_id"], self.scheduler.now())).fetchall()
         lessons = [json.loads(row[0]) for row in lesson_rows]
-        return {**context, "decisions": decisions, "lesson_revisions": lessons,
+        # W13-A (D301): the scorecard's split by strategy version, market type at entry and stance, so a lesson can
+        # say which choice earned or lost in which market (read only; the protected scorecard computes it).
+        scorecard = scorecard_for_learning(self.database, task["portfolio_id"], end=parse_utc(self.scheduler.now()))
+        return {**context, "decisions": decisions, "lesson_revisions": lessons, "scorecard": scorecard,
                 "evidence_refs": list(dict.fromkeys(context["evidence_refs"] + [d["record_id"] for d in decisions])),
                 "analysis_instruction": ("Grade process separately from outcome. "
                                          "Preserve counterevidence across revisions.")}

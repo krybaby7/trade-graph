@@ -38,7 +38,9 @@ ROLE_CONTEXT_KEYS = {
     "trader": _COMMON | {"as_of", "artifact", "market", "portfolio", "selected_context", "strategy_templates",
                           "active_strategy_templates", "research", "wake", "practice_range", "lab", "playbook",
                           "news"},
-    "learning": _COMMON | {"reports", "decisions", "lesson_revisions", "analysis_instruction"},
+    # W13-A (D301): "scorecard" is the paper scorecard with its split by strategy version, market type at entry and
+    # stance. The owner's pinned subscription profile must list it too (step L3).
+    "learning": _COMMON | {"reports", "decisions", "lesson_revisions", "analysis_instruction", "scorecard"},
     "optimisation": _COMMON | {"reports", "expenses", "task_counts", "analysis_instruction"},
     # T45 (D226): "wake" is the wake a Leader turn answers (T35): news alarms and wake requests with their notes, as
     # data. The owner's pinned subscription profile must list it too (step L3).

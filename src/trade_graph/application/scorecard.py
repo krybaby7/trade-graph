@@ -998,6 +998,62 @@ def format_scorecard_text(card: Scorecard) -> str:
     return "\n".join(lines)
 
 
+# --- What Learning reads (W13-A, C13; D301) ---------------------------------------------------------------------
+
+
+# Bounds on what one Learning turn is shown (its 128 KiB request), never on trades or strategies (D116): the rows with
+# a trade or a position still held, the most combinations and the newest trades, each with the number left out.
+LEARNING_STRATEGIES_SHOWN = 24
+LEARNING_CHOICES_SHOWN = 24
+LEARNING_TRADES_SHOWN = 12
+LEARNING_NOTE = (
+    "The paper scorecard since the account opened, split by the choice behind each trade's first buy: the strategy "
+    "version, the market type at entry and the Trading desk's stance. Use it to say which choice earned or lost in "
+    "which market. It is evidence about simulated paper trading: a small sample proves little, it is not a pass mark "
+    "and not permission for real money.")
+_ROW_KEYS = ("trades", "wins", "losses", "flat_trades", "open_positions", "result_after_fees")
+_TRADE_KEYS = ("symbol", "opened_at_utc", "closed_at_utc", "strategy_ref", "market_type", "stance",
+               "result_after_fees", "outcome", "plan_id")
+
+
+def _shown(rows: list[dict[str, Any]], names: tuple[str, ...], limit: int | None = None) -> tuple[list, int]:
+    used = [{**{name: row[name] for name in names}, **{key: row[key] for key in _ROW_KEYS}} for row in rows
+            if row["trades"] or row["open_positions"]]
+    return (used, 0) if limit is None else (used[:limit], max(0, len(used) - limit))
+
+
+def learning_view(card: Scorecard) -> dict[str, Any]:
+    """The scorecard as Learning's ``scorecard`` context key: the totals and the split's used rows, bounded."""
+    split = card.split.document()
+    strategies, strategies_omitted = _shown(split["by_strategy"], ("strategy_ref",), LEARNING_STRATEGIES_SHOWN)
+    choices, choices_omitted = _shown(split["by_choice"], ("strategy_ref", "market_type", "stance"),
+                                      LEARNING_CHOICES_SHOWN)
+    entries = split["entries"]
+    return {
+        "available": True, "split_available": split["available"], "reason": split["reason"],
+        "period": {"start": utc_iso(card.start), "end": utc_iso(card.end)}, "status": card.status,
+        "currency": card.currency, "result_after_fees": _text(card.metrics.result), "basis": SPLIT_BASIS,
+        "totals": split["totals"], "outside_trades": split["outside_trades"],
+        "by_strategy": strategies, "by_strategy_omitted": strategies_omitted,
+        "by_market_type": _shown(split["by_market_type"], ("market_type",))[0],
+        "by_stance": _shown(split["by_stance"], ("stance",))[0],
+        "by_choice": choices, "by_choice_omitted": choices_omitted,
+        "recent_trades": [{key: item[key] for key in _TRADE_KEYS} for item in entries[-LEARNING_TRADES_SHOWN:]],
+        "recent_trades_omitted": max(0, len(entries) - LEARNING_TRADES_SHOWN), "note": LEARNING_NOTE}
+
+
+def scorecard_for_learning(database, portfolio_id: str, *, end: datetime) -> dict[str, Any]:
+    """Learning's ``scorecard`` key: the paper scorecard since the account opened, to ``end``, with its split; or
+    why it can't be scored. Reads only."""
+    try:
+        return learning_view(compute_scorecard(database, portfolio_id=portfolio_id, end=end))
+    except ScorecardUnavailable as error:
+        return {"available": False, "reason": str(error), "note": LEARNING_NOTE}
+    except (TradeGraphError, sqlite3.DatabaseError, ArithmeticError, LookupError, TypeError, ValueError) as error:
+        return {"available": False, "reason": f"the scorecard can't be read from the records ({type(error).__name__})",
+                "note": LEARNING_NOTE}
+
+
 _SPLIT_WORDS = {
     NO_DAY_PLAN: "no day plan", CARRIED_IN_GROUP: "carried in (held at the start)",
     "stale": "stale (label older than 2 hours)", "missing": "missing (no label)", "buy_dips": "buy dips",
@@ -1036,4 +1092,7 @@ __all__ = [
     # W13-A (D300): the split by strategy version, market type at entry and stance.
     "CARRIED_IN_GROUP", "LABEL_MAX_AGE", "MARKET_TYPES_AT_ENTRY", "NOT_RECORDED", "NO_DAY_PLAN", "SPLIT_BASIS",
     "SPLIT_VERSION", "STANCES_AT_ENTRY", "EntryChoice", "ScorecardSplit", "split_scorecard",
+    # W13-A (D301): what Learning reads.
+    "LEARNING_CHOICES_SHOWN", "LEARNING_NOTE", "LEARNING_STRATEGIES_SHOWN", "LEARNING_TRADES_SHOWN", "learning_view",
+    "scorecard_for_learning",
 ]
