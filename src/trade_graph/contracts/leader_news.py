@@ -7,7 +7,8 @@ result before the model reads it, and receipts every call. From a round the Lead
 - note the headlines it read (each citing one stored source),
 - ask Research for a deep dive,
 - wake the Trader with one note,
-- route a strategy-level idea to Research or Optimisation, who test it on the practice range before any use,
+- route a strategy-level idea to the Trading desk (W12-A, D280: it decides what to test in its strategy lab), or
+  to Research or Optimisation; any idea is tested on the practice range before any use,
 
 and it names its next check-in (D123: no time means the next day start; nothing limits how soon, D116).
 
@@ -113,9 +114,13 @@ class TraderNote(ContractModel):
 
 
 class StrategyIdea(ContractModel):
-    """A strategy-level idea for Research or Optimisation. It goes through the practice range before any use."""
+    """A strategy-level idea. Strategy ideas go to the Trading desk (``trader``, D280: it owns strategy choice and
+    research and decides what to test in its strategy lab); cost and quality ideas to Optimisation; Research may still
+    be asked. Any idea goes through the practice range before any use."""
 
-    department: Literal["research", "optimisation"]
+    department: Literal["trader", "research", "optimisation"] = Field(
+        description="trader (the Trading desk: strategy ideas for its lab), optimisation (cost and quality) or "
+                    "research.")
     idea: str = Field(min_length=1, max_length=MAX_TEXT)
     source_refs: list[SourceRef] = Field(min_length=1, max_length=MAX_SOURCES_PER_REQUEST)
 

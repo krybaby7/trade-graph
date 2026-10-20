@@ -125,8 +125,10 @@ def test_requests_are_written_with_their_open_round_and_go_only_where_they_may(u
     _request(upgraded, "q-1", kind="deep_dive", department="research", position=0)
     _request(upgraded, "q-2", kind="trader_note", department="trader", position=1)
     _request(upgraded, "q-3", kind="strategy_idea", department="research", asked="optimisation", position=2)
+    # Since 0052 (W12-A, D280) a strategy idea may also go to the Trading desk (``trader``); test_migration_0052
+    # checks that, so the head refuses an idea for the Leader instead.
     for kind, department, asked in (("trader_note", "research", None), ("deep_dive", "trader", None),
-                                    ("strategy_idea", "trader", None), ("deep_dive", "leader", None),
+                                    ("strategy_idea", "leader", None), ("deep_dive", "leader", None),
                                     ("trader_note", "trader", "research")):
         with pytest.raises(sqlite3.IntegrityError):
             _request(upgraded, f"bad-{kind}-{department}", kind=kind, department=department, asked=asked,

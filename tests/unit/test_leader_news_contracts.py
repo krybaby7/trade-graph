@@ -91,10 +91,11 @@ def test_every_request_cites_stored_sources_and_texts_are_bounded_and_plain() ->
         LeaderNewsReply.model_validate(_reply(headlines=[{"source_ref": REF, "takeaway": "t", "symbols": ["SOL"]}]))
 
 
-def test_strategy_ideas_go_only_to_research_or_optimisation() -> None:
-    for department in ("research", "optimisation"):
+def test_strategy_ideas_go_only_to_the_trading_desk_research_or_optimisation() -> None:
+    # W12-A (D280): the Trading desk (``trader``) owns strategy research, so a strategy idea may go to it too.
+    for department in ("trader", "research", "optimisation"):
         assert StrategyIdea(department=department, idea="Try it.", source_refs=[REF]).department == department
-    for department in ("trader", "leader", "engineer", "owner"):
+    for department in ("leader", "engineer", "owner", "learning"):
         with pytest.raises(ValidationError):
             StrategyIdea(department=department, idea="Try it.", source_refs=[REF])
 

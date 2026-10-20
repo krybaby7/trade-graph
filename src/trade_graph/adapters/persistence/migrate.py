@@ -40,6 +40,7 @@ from trade_graph.adapters.persistence.subscription_admission_schema import (
     STATEMENTS as SUBSCRIPTION_ADMISSION_STATEMENTS,
 )
 from trade_graph.adapters.persistence.subscription_attempt_schema import STATEMENTS as SUBSCRIPTION_ATTEMPT_STATEMENTS
+from trade_graph.adapters.persistence.trading_desk_schema import migration as trading_desk_migration
 from trade_graph.adapters.persistence.transport_evidence_schema import STATEMENTS as TRANSPORT_EVIDENCE_STATEMENTS
 from trade_graph.adapters.persistence.usage_provenance_schema import STATEMENTS as USAGE_PROVENANCE_STATEMENTS
 from trade_graph.adapters.persistence.wake_schema import migration as wake_migration
@@ -490,6 +491,7 @@ STATEMENTS.append(news_wake_migration())  # 0042, W7-A (T45)
 STATEMENTS.append(day_plan_action_migration())  # 0044, W8-B (C4)
 STATEMENTS.append(market_type_migration())  # 0050, W11-A (C10)
 STATEMENTS.append(strategy_lab_migration())  # 0051, W11-B (C11): the lab_results kind and the strategy lab's queue
+STATEMENTS.append(trading_desk_migration())  # 0052, W12-A (C12): strategy ideas for the desk, its playbook and stances
 
 def applied_versions(connection: sqlite3.Connection) -> set[str]:
     row = connection.execute(

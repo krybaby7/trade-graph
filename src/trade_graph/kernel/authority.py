@@ -113,6 +113,10 @@ PROTECTED_PATH_PREFIXES = (
     "src/trade_graph/application/practice_range/",
     "src/trade_graph/contracts/strategy_lab.py",
     "src/trade_graph/application/strategy_lab/",
+    # W12-A (D299): the Trading desk's records (playbook revisions, stances, each day plan's market type and playbook
+    # revision) and how its context is read, which the scorecard splits by (W13-A); 0052 is under persistence/.
+    "src/trade_graph/contracts/trading_desk.py",
+    "src/trade_graph/application/trading_desk/",
 )
 
 
