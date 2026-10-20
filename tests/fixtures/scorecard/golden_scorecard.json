@@ -275,9 +275,253 @@
   "portfolio_id": "paper-scorecard-synthetic",
   "provisional_reasons": [],
   "report": "paper-scorecard",
-  "scorecard_sha256": "00550b93a5b6688830d34b98ceb8cccfe26e0fa1088556fc5d97241665ef08c8",
+  "scorecard_sha256": "5d2240eb0a43c719119297a8b199b7b523081127320fe18543a69d5d00ae08f0",
   "scorecard_version": "paper-scorecard-v1",
   "simulated": true,
+  "split": {
+    "available": true,
+    "basis": "Each trade and each position still held counts once, by the choice behind its first buy: the strategy version of the day plan whose waiting buy filled (no_day_plan when no day plan placed it), the market type software labelled the coin with at that moment (stale when the newest label was more than 2 hours old, missing when there was none) and the Trading desk's stance recorded with that day plan (not_recorded when none was). Coins already held at the start count as carried_in. A position still held counts with its value as if sold at the end with the taker fee, so each list sums exactly to the trades, wins, losses and result after fees.",
+    "by_choice": [
+      {
+        "closed_trades_result": "154.04",
+        "flat_trades": 0,
+        "losses": 1,
+        "market_type": "missing",
+        "open_position_result": "56.1",
+        "open_positions": 1,
+        "result_after_fees": "210.14",
+        "stance": "not_recorded",
+        "strategy_ref": "no_day_plan",
+        "trades": 2,
+        "wins": 1
+      }
+    ],
+    "by_market_type": [
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "rising",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "sideways",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "falling",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "unclear",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "stale",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "154.04",
+        "flat_trades": 0,
+        "losses": 1,
+        "market_type": "missing",
+        "open_position_result": "56.1",
+        "open_positions": 1,
+        "result_after_fees": "210.14",
+        "trades": 2,
+        "wins": 1
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "market_type": "carried_in",
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "trades": 0,
+        "wins": 0
+      }
+    ],
+    "by_stance": [
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "stance": "wait",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "stance": "buy_dips",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "stance": "follow_trend",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "stance": "other",
+        "trades": 0,
+        "wins": 0
+      },
+      {
+        "closed_trades_result": "154.04",
+        "flat_trades": 0,
+        "losses": 1,
+        "open_position_result": "56.1",
+        "open_positions": 1,
+        "result_after_fees": "210.14",
+        "stance": "not_recorded",
+        "trades": 2,
+        "wins": 1
+      },
+      {
+        "closed_trades_result": "0",
+        "flat_trades": 0,
+        "losses": 0,
+        "open_position_result": "0",
+        "open_positions": 0,
+        "result_after_fees": "0",
+        "stance": "carried_in",
+        "trades": 0,
+        "wins": 0
+      }
+    ],
+    "by_strategy": [
+      {
+        "closed_trades_result": "154.04",
+        "flat_trades": 0,
+        "losses": 1,
+        "open_position_result": "56.1",
+        "open_positions": 1,
+        "result_after_fees": "210.14",
+        "strategy_ref": "no_day_plan",
+        "trades": 2,
+        "wins": 1
+      }
+    ],
+    "entries": [
+      {
+        "closed_at_utc": "2026-11-02T03:10:00.000000Z",
+        "first_fill_ref": "paper:paper:synthetic-1",
+        "kind": "trade",
+        "label_id": null,
+        "labelled_at_utc": null,
+        "market_type": "missing",
+        "opened_at_utc": "2026-11-02T01:00:00.000000Z",
+        "outcome": "win",
+        "plan_id": null,
+        "playbook_revision": null,
+        "result_after_fees": "220.64",
+        "stance": "not_recorded",
+        "stance_id": null,
+        "strategy_ref": "no_day_plan",
+        "symbol": "ETH/USD"
+      },
+      {
+        "closed_at_utc": "2026-11-02T08:00:00.000000Z",
+        "first_fill_ref": "paper:paper:synthetic-5",
+        "kind": "trade",
+        "label_id": null,
+        "labelled_at_utc": null,
+        "market_type": "missing",
+        "opened_at_utc": "2026-11-02T05:00:00.000000Z",
+        "outcome": "loss",
+        "plan_id": null,
+        "playbook_revision": null,
+        "result_after_fees": "-66.6",
+        "stance": "not_recorded",
+        "stance_id": null,
+        "strategy_ref": "no_day_plan",
+        "symbol": "BTC/USD"
+      },
+      {
+        "closed_at_utc": null,
+        "first_fill_ref": "paper:paper:synthetic-7",
+        "kind": "open",
+        "label_id": null,
+        "labelled_at_utc": null,
+        "market_type": "missing",
+        "opened_at_utc": "2026-11-02T10:00:00.000000Z",
+        "outcome": null,
+        "plan_id": null,
+        "playbook_revision": null,
+        "result_after_fees": "56.1",
+        "stance": "not_recorded",
+        "stance_id": null,
+        "strategy_ref": "no_day_plan",
+        "symbol": "ETH/USD"
+      }
+    ],
+    "label_max_age_minutes": 120,
+    "outside_trades": "0",
+    "reason": null,
+    "split_version": "scorecard-split-v1",
+    "totals": {
+      "flat_trades": 0,
+      "losses": 1,
+      "open_positions": 1,
+      "result_after_fees": "210.14",
+      "trades": 2,
+      "wins": 1
+    }
+  },
   "status": "complete",
   "valuation": {
     "basis": "the ledger's postings and marks; coins held at the start carried in at the start price; coins held at the end valued as sold at their mark with the taker fee",
