@@ -3194,3 +3194,81 @@ for the local steps L1–L4; new owner decisions start at D310.
   examples) are protected paths; migration 0051 is already under
   `adapters/persistence/`. The deployed Engineer cannot change how the test is
   kept fair. Reason: D280 ("protected software keeps the test fair"), AGENTS.md.
+
+Cloud wave 12 (D295–D299, 2026-10-20). The wave 12 integration copied these
+implementation defaults from `planning/handoffs/W12-A.md`, where the package's
+evidence is kept. The package used its reserved state migration, 0052: it
+rebuilds `leader_round_requests` so a strategy idea may go to the Trading desk
+(`trader`) and adds `desk_playbook_revisions`, `desk_stances` and
+`day_plan_desk_records`. 0052 follows 0051 directly, so Alembic has one head,
+0052, and the never-used 0043 and 0045–0049 stay unused. The merge had no
+conflict and needed no integration fix. D230–D239 stay reserved for the local
+steps L1–L4; new owner decisions start at D310.
+
+- **D295 (2026-10-20, implementation default for C12): the playbook.** A desk
+  answer may carry `playbook`: a whole new revision with, per market type it
+  covers (each once), a stance, the strategy versions it means to use (none for
+  "wait"), a reason of at most 300 characters and up to 8 report ids it rests
+  on, and why it changed (500). Software stores it append-only in
+  `desk_playbook_revisions` with who (`set_by` = trader, SQL-checked), the wake
+  and task, when, why, the revision it replaced and its SHA-256-checked
+  document; a portfolio's revisions form one chain (revision + 1, naming the
+  newest, never earlier than it; SQL trigger), so the revision in force at any
+  past moment is the newest made by then, like lessons. No answer without
+  `playbook` changes it. It is the desk's record, not a rule (D280 item 5).
+  Reason: the package text, D280 items 1 and 5, AGENTS.md (point-in-time inputs
+  and revisions).
+
+- **D296 (2026-10-20, implementation default for C12): stances and ideas for the
+  desk.** A desk answer may give one stance per coin it considered (up to 32 per
+  answer, an envelope, D116); each is stored in `desk_stances` with the label
+  software showed for that coin in the wake (or, for a coin the wake did not
+  show, the label at the wake's moment) and the playbook revision in force after
+  the answer. Only the Trader keeps a playbook and gives stances (others' are
+  refused with a note). `StrategyIdea.department` gains `trader`: the Leader's
+  guidance sends strategy ideas to the desk and cost and quality ideas to
+  Optimisation; an idea for the desk goes to it when software wakes it (else
+  Research, as before), wakes it with a note and waits in its lab inbox (7 days,
+  newest first, with the lab requests whose note cites its id); software never
+  queues a lab run from an idea. Reason: D280 items 1, 2 and 4, the package text
+  ("the desk decides what to test").
+
+- **D297 (2026-10-20, implementation default for C12): what a desk wake shows,
+  within the bound.** Only the Trader's wakes show market types: held, planned,
+  focus, trigger and the day's shortlist coins, at most 32, each `current`
+  (label at most 2 hours old, D287), `stale` (its word and age, "not known now")
+  or `missing`; an unreadable label shows every coin as missing with the reason
+  and the wake goes on; the shortlist's coins carry the word and status. New
+  context keys `playbook` (6 KiB: the revision in force, the one before, the
+  count, the newest stance per coin of the last 24 hours) and `news` (12 KiB:
+  the newest completed Leader round, the lab inbox, Jev's verdicts of the last
+  24 hours on the desk's coins or Kraken with their routes and the switch's
+  mode, shadow included). A last step trims the desk's own parts in a fixed
+  order (older news to half, older stances, shortlist-only market types, wake
+  triggers to 20, news to a quarter, triggers to 10), counting what it leaves
+  out, until the context fits 128 KiB minus the instruction, the reply schema
+  and an 8 KiB margin. Measured: a busy synthetic day without it was 143,852
+  bytes (refused by the subscription bound); with it 99,604 bytes and 2,307 JSON
+  nodes (bound 10,000). Reason: the package's "within the size limit" and
+  "busy-day test", W6-D's and W11-B's shares.
+
+- **D298 (2026-10-20, implementation default for C12): a day plan records its
+  market type and playbook revision.** In the installation transaction (a
+  savepoint) `day_plan_desk_records` keeps the coin's newest label at that
+  moment (status, type, label id, when), the playbook revision in force (id and
+  number) and the desk's stance on the coin in the same answer (by task id); SQL
+  checks that it names its own plan, coin, revision and stance. It never checks
+  or refuses anything (D280 item 5, tested: a plan against the playbook on a
+  falling coin is installed); a record that cannot be written leaves the plan
+  installed and the `installed` event says `not recorded`. Reason: the package
+  text ("for Learning and the scorecard"), W13-A.
+
+- **D299 (2026-10-20, implementation default for C12): protected paths and the
+  desk's words.** The desk's contract and package (records, readings, news and
+  context) are protected paths: what the desk chose in which market type is what
+  the scorecard splits by. Migration 0052 is under `adapters/persistence/`. The
+  desk's job is in the code (`DESK_WAKE_INSTRUCTION`, reaching every
+  installation) and in the R1 prompt `prompts/trader.md` (a new installation's
+  baseline; an installed database keeps its active prompt until the Engineer's
+  normal path changes it). Reason: AGENTS.md (protected acceptance and
+  accounting records), W11-B's D294.
