@@ -52,6 +52,7 @@ restart or a repeated read never records an event twice.
 | `focus_updated` | Trader | Research recorded a focus revision outside the day-start step | `focus:<focus_id>` |
 | `wake_request` | any but the requester | `EventEngine.request_wake` or a department's `wake_requests` | `wake-request:<requester>:<id>` or `wake-request:<wake_id>:<n>` |
 | `news_alarm` | Leader, Trader | T44's would-wake verdicts, routed by `NewsWakeRouter` through `EventEngine.notify` when the owner's switch is live (T45, W7-A) | `software:news-alarm:<route id>` |
+| `lab_results` | Trader (the Trading desk) | every request of one of its answers to the strategy lab has ended (W11-B, D291; state migration 0051); like a news alarm it keeps the desk's check-in | `lab-results:<batch id>` |
 | `task_created` | the task's role | a department root task made outside the engine | `task:<task_id>` |
 
 Fields: `trigger_id`, `kind`, `department`, `portfolio_id`, `source_ref`, `occurred_at`, and, by kind,
@@ -159,6 +160,11 @@ optional:
   committee or approval. Details: [DAY-PLANS.md](DAY-PLANS.md#closing-a-position-or-moving-its-exit-w8-b-c4).
 - **`wake_requests`**: wake another department with a note (the Leader's wake notes, D121); at most 16 in one
   answer, a document bound and not a cap on how often.
+- **`lab_requests`** (the Trader, as the Trading desk, only; W11-B, D290): requests to the strategy lab (register a
+  strategy version, create a study, tune, confirm), queued in order in the transaction that applies the answer, each
+  checked on its own (a refused one is recorded with its reason) and listed in the wake's outcome (`lab`). No cap on
+  how many (D116). The lab runs them in its own thread; the desk is woken with `lab_results` when they have ended
+  ([PRACTICE-RANGE.md](PRACTICE-RANGE.md#the-strategy-lab-inside-the-service-w11-b-c11)).
 
 `TraderWakeReply` (`day_plans`, `position_actions`, `next_check_in`, `summary`) and `ResearchFocusReply` (`focus`,
 `next_check_in`) are the same answers in the shape of strict provider replies; both pass the OpenAI and Anthropic

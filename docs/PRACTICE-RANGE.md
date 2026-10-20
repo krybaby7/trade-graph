@@ -25,6 +25,7 @@ makes money and not permission to trade real money.
 | OKX public candles | `src/trade_graph/adapters/market/okx_candles.py`, `application/okx_history.py` |
 | Candle source `okx_public_candles` (candle database 0002) | `src/trade_graph/adapters/persistence/market_data_schema.py` |
 | Commands | `src/trade_graph/market_data_cli/practice_range.py`, `market_data_cli/okx.py` |
+| The strategy lab inside the service (W11-B, C11): the Trading desk's requests, queue, worker and `lab` context | `src/trade_graph/contracts/strategy_lab.py`, `src/trade_graph/application/strategy_lab/`; state migration 0051 (`adapters/persistence/strategy_lab_schema.py`) |
 
 ## Strategy versions
 
@@ -131,6 +132,44 @@ up as not reproduced, with the parts that differ.
 Sums are exact; ratios and averages are rounded half-even to ten decimal places. The golden tests in
 `tests/unit/test_trade_metrics.py` and `tests/integration/test_practice_range_replay.py` are checked by hand.
 The paper scorecard (T42) uses the same sums on the ledger's fills: [SCORECARD.md](SCORECARD.md).
+
+## The strategy lab inside the service (W11-B, C11)
+
+Built on 2026-10-20 by cloud package W11-B (decisions D290–D294, state migration 0051; proposed in
+`planning/handoffs/W11-B.md`). In plain words: the Trading desk (the Trader's role, D280) writes, replays and confirms
+its own strategy versions inside the installed system, and is woken with the results; protected software keeps the test
+fair. Paper only; no order, paid call or network request.
+
+- **Requests** (`contracts/strategy_lab.py`, `LabRequest`). The desk's wake answer (`TraderWakeReply`) may carry
+  `lab_requests`, as many as it likes (D116): `register_strategy` (a `PracticeStrategy` document as JSON text, so the
+  reply stays a strict provider schema), `create_study`, `tune` (a coin, a source, an optional sub-window of the tuning
+  window, cost profiles) and `confirm` (the whole confirmation window). `LabRequest.problem()` checks one request on its
+  own (the grammar, missing fields, window order) when the event engine queues the answer's requests; a refused one is
+  recorded with its reason at once. The store's study rules are checked when its turn comes. Nothing is dropped
+  silently, and one bad request never sinks the rest of the answer.
+- **The queue** (`application/strategy_lab/queue.py`, tables `strategy_lab_batches` and `strategy_lab_requests`). One
+  batch per answer, the requests in order. A request moves `queued` → `running` → `done`, `refused` or `failed`; a
+  restart re-runs a `running` one, a clean stop puts it back; ended is final; rows are never deleted.
+- **The worker** (`worker.py`, `installation.py`). In the installed service, in its own thread like the price collector
+  (D222): one request per step, reading the candle file through its own read-only handle. Replays run outside any
+  transaction under the profiles asked for (all published ones when none is named) and always the account's own (the
+  paper broker's, Kraken's starting tier by default), at one data cut-off, with the USD10,000 capital and no
+  instrument rules (as in step L2); then every report and the request's end are written in one transaction, so a
+  request is never half recorded. Each start and each finished request is a `strategy_lab` activity (what ran, how it
+  ended and why, the seconds spent, how many are queued and running).
+- **The wake** (`lab_results`, D291). When every request of a batch has ended, the event engine's trigger source wakes
+  the desk once; like a news alarm it keeps the desk's own check-in.
+- **What the desk reads** (`context.py`, the `lab` context key). Its newest results with every report in plain words
+  (`summary.report_lines`) and numbers (`summary.report_overview`), one per cost profile, so whatever a report says
+  reaches the desk unchanged (W11-A's split by market type included); the queue; per family the versions, studies,
+  tuning and confirmation runs, confirmed versions, newest studies and the **newest untouched confirmation window**
+  (`PracticeRangeStore.confirmation_offer`: walk-forward, new days from the collector become new confirmation days);
+  all within 24 KiB of the 128 KiB request.
+- **First start** (`starting.py`, D293). An installation without any registered strategy registers the two examples,
+  packaged in `application/strategy_lab/starting/` because the protected image carries only `src/trade_graph` (a test
+  keeps them equal to `strategies/practice`). The desk asks for their confirmations itself.
+- **Protected** (D294). `contracts/practice_range.py`, `application/practice_range/`, `contracts/strategy_lab.py` and
+  `application/strategy_lab/` are protected paths: the deployed Engineer cannot change the rules that keep the test fair.
 
 ## For day plans (T34)
 
