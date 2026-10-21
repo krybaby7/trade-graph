@@ -3277,3 +3277,92 @@ steps L1–L4; new owner decisions start at D310.
   baseline; an installed database keeps its active prompt until the Engineer's
   normal path changes it). Reason: AGENTS.md (protected acceptance and
   accounting records), W11-B's D294.
+
+Cloud wave 13 (D300–D304, 2026-10-20; merged 2026-10-21). The wave 13
+integration copied these implementation defaults from
+`planning/handoffs/W13-A.md`, where the package's evidence is kept. The package
+needed no state migration: its reserved 0053 stays unused, so Alembic's one head
+is still 0052, and the never-used 0043 and 0045–0049 stay unused too; the candle
+database is unchanged. HQ's Trading desk room is its own read,
+`GET /api/v1/hq/desk`, behind the same sign-in check and read snapshot as HQ's
+other reads, instead of a change to the snapshot contract (D302). The merge had
+no conflict and needed no integration fix. D230–D239 stay reserved for the local
+steps L1–L4; new owner decisions start at D310.
+
+- **D300 (2026-10-20, implementation default for C13): the scorecard's split.**
+  Each trade and each position still held counts once, by the choice behind its
+  first buy: the strategy version of the day plan whose waiting buy filled
+  (`no_day_plan` when none placed it), the market type software labelled the
+  coin with at that fill (the newest label made by then; `stale` when it was
+  more than 2 hours old, D287; `missing` when there was none; never a guess) and
+  the desk's stance recorded with that day plan (D298; `not_recorded` when
+  none). Coins held at the period's start count as `carried_in` in all three. A
+  position still held counts with its value as if sold at the end with the taker
+  fee (the scorecard's own end valuation), so every list (`by_strategy`,
+  `by_market_type`, `by_stance` and the combinations `by_choice`) sums exactly
+  to the trades, wins, losses, even trades, open positions and result after fees
+  (`kernel/trade_metrics.split_results`, unchanged); whatever no trade explains
+  is `outside_trades` (zero for paper fills, tested). Market type at entry is
+  the label at the fill, not at the plan's installation, because a resting buy
+  can fill hours later (the plan's record keeps the installation label). The
+  split is additive to the scorecard document (`split`, with `entries` per
+  trade); a record that can't be read (an edited, hash-checked label) makes only
+  the split unavailable with the reason, never the scorecard. Reason: the
+  package text ("by strategy version, market type at entry and stance, with the
+  same sums"), the night lead's "use as_of=<fill time>", D289's split rule for
+  the practice range, AGENTS.md (unknown is never zero, point-in-time inputs).
+
+- **D301 (2026-10-20, implementation default for C13): Learning reads the
+  split.** A Learning turn's context gains `scorecard`: the paper scorecard
+  since the account opened (period, status, result), the split's totals and the
+  rows that hold a trade or a position still held, at most 24 strategy versions
+  and 24 combinations and the 12 newest trades (the rest counted, never a cap on
+  trading or learning, D116), with a note that it is evidence, not a pass mark;
+  an account that can't be scored says why. The key joins Learning's protected
+  allowlist (`ROLE_CONTEXT_KEYS`); like W12-A's keys, the owner's pinned
+  subscription profile must list it (L3 step 3), and without it Learning answers
+  as before. Reason: the package ("Learning can read the split, so lessons can
+  say which choice earned or lost in which market"), W12-A's D297 precedent.
+
+- **D302 (2026-10-20, implementation default for C13): the Trading desk room is
+  its own read.** `GET /api/v1/hq/desk` (`trade-graph.hq.desk.v1`), never inside
+  the snapshot: the busy week with W8-C's and W10-C's fullest blocks is already
+  about 75 KB of the snapshot's 80 KB (W10-C), as the charts, wake log and day
+  plans are separate (D197, D215, D251). The panel sits on the HQ tab below the
+  map (the map's Trader room is already called "Trading desk"; its sheet opens
+  the room), in the left column on a desktop, and reads only while on screen,
+  again with HQ's 30-second poll. It shows five parts, each `shown`, `empty`,
+  `not_available` (an older database or a live account's scorecard) or
+  `unreadable` (said as such; the others still show): the playbook in force per
+  market type with reasons and the revision it replaced; today's newest stance
+  per coin with the label the desk saw and the label now; the lab as the desk
+  sees it (`lab_context`) with each shown report's trades and result after fees
+  against holding the coin (from the stored report's `hold_coin` benchmark); the
+  news at the desk's newest turn (`news_context` at that task's moment for its
+  coins: round, inbox, Jev); and the scorecard's split from HQ's 60-second
+  trading cache. Page bounds: 16 coins, 8 results with 4 reports, 8 families, 5
+  headlines, 3 ideas, 5 inbox ideas, 5 verdicts, 8 rows per split list, each
+  with its count of the rest. The busiest synthetic room is 62,699 bytes
+  (compact JSON, as served); the scripted week's 11,508. Reason: the package
+  text, D280, HQ-DASHBOARD's budget and "reading starts nothing".
+
+- **D303 (2026-10-20, implementation default for C13): the lab in HQ's problems
+  and Story (W11-B's open items).** The service's `strategy_lab:<error>` failure
+  has words of its own ("the strategy lab's last step failed"; the desk's lab
+  requests wait; trading, protection and records are unaffected; no "practice",
+  so a live account reads them too). The Story lists the lab's finished requests
+  from its `strategy_lab` activities under the Trading desk: requests ending
+  within 15 minutes of each other are one item with their count and outcomes (a
+  busy lab never floods the 60-item page), a failed request needs a look, a
+  refused one is neutral (the fair-test rules at work), a lab that couldn't
+  start (`not_ready`) needs a look; starts and requests put back by a stop are
+  not results. Reason: W11-B's handoff, D255's pattern for the news check.
+
+- **D304 (2026-10-20, implementation default for C13): no migration and no new
+  rule.** Everything here reads existing records (0034, 0050, 0051, 0052)
+  through the packages' own read functions; there is no state migration (0053
+  stays unused) and no candle-database change. The split lives in the protected
+  scorecard; the kernel, the desk's, labels', lab's and practice range's
+  packages are unchanged; HQ's new code is a view like the other HQ projections
+  (not protected). Nothing here refuses, approves or changes a plan, an order or
+  the playbook (D280 item 5). Reason: the package ("prefer none"), AGENTS.md.

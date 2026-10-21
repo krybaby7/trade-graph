@@ -1,10 +1,10 @@
 # Cloud build plan for the day-trader engine
 
 Status: plan, 2026-10-16 (D139). Phases D0 and D1 are done (T23–T27), and
-cloud waves 1 to 12 are merged (wave 1 on 2026-10-16; waves 2 to 7 by the
+all 13 cloud waves are merged (wave 1 on 2026-10-16; waves 2 to 7 by the
 night shift of 2026-10-16/17; waves 8 and 9 by the night shift of
-2026-10-17/18; wave 10 on 2026-10-18; waves 11 and 12 by the night shift of
-2026-10-20; D140–D299). Waves 8 and 9, added on
+2026-10-17/18; wave 10 on 2026-10-18; waves 11 to 13 by the night shift of
+2026-10-20/21; D140–D304). Waves 8 and 9, added on
 2026-10-17, closed the gaps between "built" and "installed" that the night
 shift found; wave 10, the owner's tidy-up before the install (D263), locked
 the AI-spending records, kept the money checks fast and added HQ's card for a
@@ -13,8 +13,10 @@ test found that both starting strategies lose after fees and that the graph
 cannot create or test strategies itself, so the owner added waves 11 to 13 on
 2026-10-20 (D280): one Trading desk with its own strategy lab, market types and
 news in its strategy choice. Wave 11 built the market types and the strategy
-lab, and wave 12 the Trading desk itself (strategy choice per coin, its
-playbook and the news); wave 13, L2's other checks, L3 and L4 remain. Every
+lab, wave 12 the Trading desk itself (strategy choice per coin, its playbook
+and the news) and wave 13 HQ's Trading desk room and the scorecard by strategy
+version, market type and stance; no cloud wave remains. L2's other checks, the
+local real-data reruns, L3 (with the owner's yes) and L4 remain. Every
 owner decision in the [build plan](DAY-TRADER-BUILD-PLAN.md) is decided (D138).
 This file splits the remaining work into packages that cloud coding sessions
 can build in parallel, and lists the steps that must stay on the owner's PC.
@@ -27,12 +29,13 @@ from it and returns to it through pull requests.
 ### In one minute
 
 - The work is split into **29 cloud packages in 13 waves**, plus **4 local
-  steps** on your PC and a short list of things only you can do. Waves 1 to
-  12 are done. Waves 11 to 13, added on 2026-10-20 (D280), turn the Trader into
-  one Trading desk that finds, tests and chooses its own strategies; waves 11
-  (market types and the strategy lab) and 12 (the Trading desk: strategy
-  choice, playbook and news) were merged that night. L1 is done; the install
-  (L3) waits for wave 13 and starts with your yes.
+  steps** on your PC and a short list of things only you can do. All 13
+  waves are done. Waves 11 to 13, added on 2026-10-20 (D280), turn the Trader
+  into one Trading desk that finds, tests and chooses its own strategies; waves
+  11 (market types and the strategy lab), 12 (the Trading desk: strategy
+  choice, playbook and news) and 13 (the desk's room in HQ and the scorecard by
+  strategy) were merged that night (20–21 October). L1 is done; the install
+  (L3) no longer waits for a cloud wave and starts with your yes.
 - Packages in the same wave don't depend on each other, so you start them all
   at once, one cloud session each.
 - When a wave's sessions have opened their pull requests, you start one more
@@ -128,10 +131,10 @@ The integrator updates this table each time it merges a wave.
 | W11-A | C10 | Software labels each coin's market type (rising, sideways, falling), and practice reports show where a strategy earns and loses | Merged 2026-10-20 (#28); nothing to do now: it was tested only on made-up prices, so a local session labels real coins and reruns the practice range on your PC (its reports then show the split by market type); after L3 the installed service labels coins every hour and `trade-graph market-types` shows the newest labels; the Trading desk reads them from wave 12 |
 | W11-B | C11 | The Trading desk writes, replays and confirms its own strategies inside the installed system | Merged 2026-10-20 (#27); at L3 you add `lab` to the Trader's list in your subscription profile ([L3 checklist](L3-INSTALL-CHECKLIST.md), step 3); the first real lab results come after L3, when the desk asks its lab to confirm the two starting strategies or its own, and you can follow the lab's work in HQ's activity log (`strategy_lab`) |
 | W12-A | C12 | One Trading desk: chooses per coin to wait, buy dips or follow the trend, keeps a playbook, reads the Leader's news and Jev | Merged 2026-10-20 (#29); at L3 you add `playbook` and `news` to the Trader's list in your subscription profile ([L3 checklist](L3-INSTALL-CHECKLIST.md), step 3); it was tested only with made-up prices, a scripted Leader and a scripted desk, so the desk's first real playbook and stances come after L3 (they show in HQ's Trading desk room from wave 13), and each installed day plan records the coin's market type and the playbook in force; software never refuses a plan for not following the playbook |
-| W13-A | C13 | HQ's Trading desk room shows the playbook, today's choices and the lab; the scorecard splits results by strategy and market type | Planned 2026-10-20 (D280); can start: wave 12 is merged (2026-10-20) |
+| W13-A | C13 | HQ's Trading desk room shows the playbook, today's choices and the lab; the scorecard splits results by strategy and market type | Merged 2026-10-21 (#30); at L3 you add `scorecard` to Learning's list in your subscription profile ([L3 checklist](L3-INSTALL-CHECKLIST.md), step 3), so Learning's lessons can say which choice earned or lost in which market; it was checked only with made-up prices and a scripted desk in a test browser, so after L3 you look once at the HQ tab's Trading desk room (below the map) on your phone and iPad, in light and dark; the room shows real records once the desk has written its first playbook, stances and lab results |
 | L1 | — | Price data kept current on your PC | Done 2026-10-19 ([L1.md](../planning/handoffs/L1.md)): April–September for every coin, Bitcoin and Ether without a break to 19 October, Windows price tasks registered; a later local session added two years for the five practice coins (2026-10-20) |
 | L2 | — | First real practice-range reports and paid-service smoke tests | Part 1 done 2026-10-19 ([L2.md](../planning/handoffs/L2.md)): both starting strategies lose after fees; the coin scan, recordings, fee pages and the paid smoke calls remain |
-| L3 | — | New engine installed on your PC (your approval) | Not started; waits for wave 13 (D280; waves 11 and 12 merged 2026-10-20), then starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
+| L3 | — | New engine installed on your PC (your approval) | Not started; no longer waits for a cloud wave (D280: waves 11 and 12 merged 2026-10-20, wave 13 on 2026-10-21): it starts with your yes; every command in order is in [L3-INSTALL-CHECKLIST.md](L3-INSTALL-CHECKLIST.md) |
 | L4 | T43 | Scored practice test, at least 4 weeks and 30 trades | Not started |
 
 ### Only you can do these
@@ -439,9 +442,9 @@ The owner is asleep: never stop to ask anything.
 The owner's decisions of 2026-10-18 are D260–D263 and of 2026-10-20 D280. New
 owner decisions after this plan start at D310. Alembic has one head, 0052
 (wave 11 added 0050 after 0044, then 0051 after 0050; wave 12 added 0052 after
-0051); reserved migration numbers that were never used (0043, 0045–0049) stay
-unused, and the integrator renumbers a new migration to follow the head if the
-migration code requires it (rule 11).
+0051; wave 13 added none); reserved migration numbers that were never used
+(0043, 0045–0049 and W13-A's 0053) stay unused, and the integrator renumbers a
+new migration to follow the head if the migration code requires it (rule 11).
 
 | Package | Branch | Decisions | State migration |
 |---|---|---|---|
@@ -1148,7 +1151,10 @@ also replace the confirmation step that L2 part 1 found missing. Wave 11 is
 merged (2026-10-20): the checklist's step 3 adds `lab`, and its section "The
 strategy lab" replaces that step. Wave 12 is merged (2026-10-20): step 3
 also adds `playbook` and `news`, and the checklist's section "The Trading desk"
-says what the owner sees; L3 now waits for wave 13.
+says what the owner sees. Wave 13 is merged (2026-10-21): step 3 also adds
+`scorecard` to Learning's context keys, and "The Trading desk" names HQ's
+Trading desk room. L3 no longer waits for a cloud wave; it starts with the
+owner's yes.
 
 **L4 · T43 · Scored practice test.** Run for at least four weeks and at least
 30 completed trades (D138 item 7). Weekly owner check-ins in HQ. The final
