@@ -40,7 +40,7 @@ from trade_graph.domain.errors import ValidationFailure
 from trade_graph.domain.market_types import MARKET_TYPES
 from trade_graph.kernel.cost_profiles import load_cost_profiles
 from trade_graph.kernel.fills import BAR_REPLAY_POLICY
-from trade_graph.kernel.market_type import MARKET_TYPE_RULES_V1
+from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES, MARKET_TYPE_RULES_V1
 
 AS_OF = datetime(2026, 7, 1, tzinfo=UTC)
 D = Decimal
@@ -78,7 +78,7 @@ def test_a_replay_sees_the_live_label_at_every_decision(market) -> None:
     assert len(seen) == result.events["decision_bars"] == 4 * 96 - 1 - 4
     assert {market_type for _, market_type in seen} == set(MARKET_TYPES)
     for moment, market_type in seen:
-        live = label_coin(market, symbol="SYN/USD", moment=moment, source="synthetic")
+        live = label_coin(market, symbol="SYN/USD", moment=moment, source="synthetic", rules=MARKET_TYPE_RULES_V1)
         assert live.market_type == market_type, moment
     counts = result.to_document()["market_types"]["decision_bars"]
     assert list(counts) == list(MARKET_TYPES) and sum(counts.values()) == len(seen)
@@ -178,20 +178,20 @@ def test_the_service_stores_the_split_reruns_it_and_reads_it_out(lab) -> None:
                            source="synthetic", profiles=["okx-eea-spot", "kraken-spot-starting-tier"])
     for record in records:
         result = record.report["result"]
-        assert result["request"]["market_type_rules"]["ref"] == "market-type-rules@1"
+        assert result["request"]["market_type_rules"]["ref"] == CURRENT_MARKET_TYPE_RULES.ref
         assert record.evidence == ("synthetic_fixture",)
         check = practice.verify(record.run_id)
         assert check.reproduced and check.result_sha256 == record.result_sha256
         lines = summary.report_lines(record)
         heading = next(index for index, line in enumerate(lines) if line.startswith("By market type at entry"))
-        assert "market-type-rules@1" in lines[heading] and "60-minute" in lines[heading]
+        assert CURRENT_MARKET_TYPE_RULES.ref in lines[heading] and "60-minute" in lines[heading]
         rows = {row["market_type"]: row for row in result["market_types"]["by_market_type"]}
         for offset, name in enumerate(MARKET_TYPES, start=1):
             line = lines[heading + offset]
             assert line.startswith(f"{name.capitalize()} at entry: {rows[name]['trades']} trades")
             assert "of the decision candles" in line
         overview = summary.report_overview(record)
-        assert overview["market_type_rules"] == "market-type-rules@1"
+        assert overview["market_type_rules"] == CURRENT_MARKET_TYPE_RULES.ref
         assert [row["market_type"] for row in overview["by_market_type"]] == list(MARKET_TYPES)
         assert sum(row["trades"] for row in overview["by_market_type"]) == overview["trades"]
         assert sum((D(row["result_after_fees"]) for row in overview["by_market_type"]), D("0")) == D(

@@ -65,7 +65,7 @@ def test_the_newest_labels_in_plain_words_and_as_json_without_writing(labelled, 
     before = path.stat().st_mtime_ns
     assert main(["market-types", "--database", str(path)]) == 0
     text = capsys.readouterr().out
-    assert "Market types (software's labels from 60-minute candles, market-type-rules@1; no AI" in text
+    assert "Market types (software's labels from 60-minute candles, market-type-rules@2; no AI" in text
     assert "ETH/USD is falling" in text and "SOL/USD is rising" in text
     assert text.index("ETH/USD") < text.index("SOL/USD")
     assert "1 rising, 0 sideways, 1 falling, 0 unclear" in text

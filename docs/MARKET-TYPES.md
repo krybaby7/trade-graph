@@ -3,7 +3,8 @@
 Status: built and tested in source on 2026-10-20 by cloud package W11-A (branch `claude/c10-market-types`, for
 `claude/day-trader-engine-20261012`). Not deployed. Decisions D285–D289 are proposed in `planning/handoffs/W11-A.md`;
 the integrator copies them into the decision log. They build on D280 item 3, D118, D119, D120, D132, D136,
-D165–D169 and D170–D174.
+D165–D169 and D170–D174. On 2026-10-21 a local session added version 2 of the rules, which skips short holes (D230,
+"Version 2" below).
 
 In plain words: once an hour, software says for each coin the team works with whether its price is **rising**,
 **sideways** or **falling**, or that it cannot tell (**unclear**: too little history, a missing hour, no recent
@@ -16,7 +17,7 @@ because of it (D280 item 5).
 | Part | Path |
 |---|---|
 | The four words | `src/trade_graph/domain/market_types.py` |
-| The rules `market-type-rules@1` and the one labelling function (protected) | `src/trade_graph/kernel/market_type.py` |
+| The rules `market-type-rules@1` and `@2` (the default, D230) and the one labelling function (protected) | `src/trade_graph/kernel/market_type.py` |
 | The split of a report's sums by group (protected) | `src/trade_graph/kernel/trade_metrics.py` (`split_results`) |
 | The readings from stored candles, live and over a stretch | `src/trade_graph/application/market_types/labeller.py` |
 | The hourly labels after each scan | `src/trade_graph/application/market_types/hourly.py` |
@@ -59,6 +60,31 @@ among them makes the label unclear until 863 complete hours follow it again. The
 up to 720 hours after a break (Kraken's window), so live gaps are rare; Kraken's archive leaves out hours without a
 trade, so thin coins are often unclear in replays. On the owner's PC the collector's hourly series reaches back to
 2026-09-18 (L1), so labels are possible from about 2026-10-24.
+
+## Version 2: short holes are skipped (`market-type-rules@2`, D230, the default since 2026-10-21)
+
+L2's two-year rerun (`planning/handoffs/L2.md`, part 1b) showed the cost of version 1's rule: Kraken's hourly archive
+has three short holes in 2025 (3 hours on 25 January, 1 hour on 28 August, 5 hours on 1 November, the same hours for
+every coin), and each one left every coin `unclear` for about 36 days, about 108 days in all, while OKX's series,
+which has no hole, had almost no `unclear` trades. Live, one missed hour of the collector or of Kraken would leave the
+desk without market types for five weeks.
+
+Version 2 keeps every value of version 1 and adds two settings:
+
+| Setting | Value | Bounds | Why |
+|---|---|---|---|
+| Longest hole skipped | 6 hours (`max_bridged_gap_bars`) | 0–12 | Covers the archive's 5-hour outage and short collector or exchange interruptions; a longer outage still means the history is not whole. |
+| Skipped hours in one look-back | at most 24 (`max_bridged_total_bars`) | 0–48, at least the longest hole | A label looks back over its 863 candles plus these 24 slots (887 in all); more missing hours than that, and it is `unclear` (`gap`). |
+
+A hole is skipped only when it has a candle right before and right after it; a run at the start of the series (or of
+a read) and the hours after the newest candle are never skipped, so the lag rule still decides how long the last label
+stands while candles are late. The indicator engine reads the candles on both sides of a skipped hole as if they
+followed each other (`rolling_latest(skip=...)`, after the whole window has passed the engine's usual checks); nothing
+is filled in or carried forward, and the skipped hours themselves have no label. The average a day earlier is the one
+24 candles earlier. The slots a label depends on are its own 887 look-back slots, so a live read of just those gives
+the label a replay of months gives (property-tested with random holes), and later candles never change it. Version 1
+is unchanged and keeps its pinned hash: stored labels and old reports name `market-type-rules@1` and still reproduce.
+The kernel's `bridged_slots` names the skipped slots for both the kernel and the labeller, so they cannot disagree.
 
 ## One function, point in time (D286)
 

@@ -20,7 +20,14 @@ from tests.market_type_support import FIRST_LABELLED, HOUR, closes_wandering, ho
 from tests.practice_range_support import open_store
 
 from trade_graph.application.market_types.labeller import label_coin
-from trade_graph.kernel.market_type import MARKET_TYPE_RULES_V1, MarketTypeTimeline, SlotFacts, slot_verdicts
+from trade_graph.kernel.market_type import (
+    MARKET_TYPE_RULES_V1,
+    MARKET_TYPE_RULES_V2,
+    MarketTypeTimeline,
+    SlotFacts,
+    look_back_slots,
+    slot_verdicts,
+)
 
 RULES = MARKET_TYPE_RULES_V1
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
@@ -56,6 +63,29 @@ def test_a_longer_stretch_never_changes_an_earlier_label(rows, cut, history, min
         moment = T0 + HOUR * index + timedelta(minutes=minutes)
         assert short.at(moment) == long.at(moment)
         assert long.at(moment).candle_close is None or long.at(moment).candle_close <= moment
+
+
+holes = st.lists(st.tuples(st.integers(0, 150), st.integers(1, 9)), max_size=7)
+
+
+@settings(max_examples=300, deadline=None, derandomize=True)
+@given(rows=st.lists(st.tuples(st.integers(90, 110), st.integers(95, 105), st.integers(0, 60), st.integers(0, 50),
+                               st.integers(0, 50)), min_size=160, max_size=160),
+       holes=holes, history=st.integers(25, 35), extra=st.integers(0, 15), cut=st.integers(1, 160))
+def test_version_two_reads_only_its_look_back(rows, holes, history, extra, cut) -> None:
+    """Skipping short holes (D230) keeps both point-in-time promises: a read of only the look-back gives the label a
+    long read gives, and a longer stretch never changes an earlier label, whatever the holes."""
+    missing = {first + step for first, length in holes for step in range(length)}
+    facts = [SlotFacts(close_time=T0 + HOUR * index, present=False) if index in missing else
+             SlotFacts(close_time=T0 + HOUR * index, present=True, close=D(close), average=D(average),
+                       strength=D(strength), plus=D(plus), minus=D(minus))
+             for index, (close, average, strength, plus, minus) in enumerate(rows)]
+    rules = MARKET_TYPE_RULES_V2
+    whole = slot_verdicts(facts, rules, history=history)
+    assert slot_verdicts(facts[:cut], rules, history=history) == whole[:cut]
+    reach = look_back_slots(rules, history=history) + extra
+    for last in range(reach - 1, len(facts)):
+        assert slot_verdicts(facts[last - reach + 1:last + 1], rules, history=history)[-1] == whole[last]
 
 
 @settings(max_examples=12, deadline=None, derandomize=True,

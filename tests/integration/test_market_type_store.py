@@ -40,7 +40,7 @@ from trade_graph.application.market_types.store import (
 )
 from trade_graph.domain.clock import FrozenClock, utc_iso
 from trade_graph.domain.errors import StaleState
-from trade_graph.kernel.market_type import MARKET_TYPE_RULES_V1
+from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES
 
 SOURCE = "kraken_public_ohlc"
 MOMENT = hourly_moment(FIRST_LABELLED + 40)
@@ -74,14 +74,14 @@ def test_the_scan_labels_its_shortlist_and_the_days_coins_with_their_inputs(setu
     note = done.note()
     assert note["job"] == "market_types" and note["status"] == "ok" and note["scan_id"] == scan_id
     assert note["by_type"] == {"rising": 1, "sideways": 1, "falling": 1, "unclear": 1}
-    assert note["rules"] == "market-type-rules@1" and note["model_calls"] == 0
+    assert note["rules"] == "market-type-rules@2" and note["model_calls"] == 0
     newest = labels.latest()
     sol = newest["SOL/USD"]
     assert (sol.scan_id, sol.as_of, sol.source, sol.interval_minutes) == (scan_id, MOMENT, SOURCE, 60)
-    assert (sol.rules_ref, sol.rules_sha256) == ("market-type-rules@1", MARKET_TYPE_RULES_V1.content_sha256)
+    assert (sol.rules_ref, sol.rules_sha256) == ("market-type-rules@2", CURRENT_MARKET_TYPE_RULES.content_sha256)
     assert sol.candle_close == hourly_moment(FIRST_LABELLED + 40) - timedelta(minutes=5) and sol.lag_bars == 0
     assert sol.evidence == "synthetic_fixture" and sol.document["values"]["strength"] == "100"
-    assert sol.document["candles"]["candles_read"] == 863 and sol.document["candles"]["read_mode"] == "point_in_time"
+    assert sol.document["candles"]["candles_read"] == 887 and sol.document["candles"]["read_mode"] == "point_in_time"
     assert newest["NEW/USD"].reason == "not_enough_candles" and newest["NEW/USD"].candle_close is not None
     assert "SOL/USD is rising" in sol.sentence()
     assert sol.is_fresh(MOMENT + DEFAULT_LABEL_AGE) and not sol.is_fresh(MOMENT + DEFAULT_LABEL_AGE + HOUR)

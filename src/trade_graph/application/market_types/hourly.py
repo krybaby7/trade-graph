@@ -31,7 +31,7 @@ from trade_graph.application.market_types.store import MarketTypeStore, StoredMa
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import TradeGraphError
 from trade_graph.domain.market_types import MARKET_TYPES
-from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES, MarketTypeRules, unclear_label
+from trade_graph.kernel.market_type import CURRENT_MARKET_TYPE_RULES, MarketTypeRules, look_back_slots, unclear_label
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,8 +62,8 @@ def _unreadable(symbol: str, moment: datetime, rules: MarketTypeRules, source: s
                 error: Exception) -> CoinLabel:
     candles = {"symbol": symbol, "source": source, "interval_minutes": rules.interval_minutes,
                "read_mode": "point_in_time", "as_of_utc": utc_iso(moment), "history_candles": required_history(rules),
-               "candles_read": 0, "run_ids": [], "evidence_labels": [], "input_sha256": None,
-               "error": type(error).__name__}
+               "look_back_slots": look_back_slots(rules, history=required_history(rules)), "candles_read": 0,
+               "run_ids": [], "evidence_labels": [], "input_sha256": None, "error": type(error).__name__}
     return CoinLabel(symbol=symbol, label=unclear_label(moment, rules, "evaluation_failed"),
                      candles=MappingProxyType(candles), indicators=MappingProxyType(indicator_document(rules)),
                      library=MappingProxyType(library_versions()))

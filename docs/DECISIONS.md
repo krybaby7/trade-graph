@@ -2996,6 +2996,32 @@ that is stricter than D261, not looser, and the integration accepted it.
   read or sent". The message cannot name the field, because the error does not
   carry it; `contracts/news.py` is unchanged.
 
+Local step L2, 2026-10-21 (D230, from the block D230–D239 reserved for L1–L4).
+
+- **D230 (2026-10-21, implementation default for L2's finding; the owner asked
+  for the fix before L3): market-type rules version 2 skip short holes.**
+  `market-type-rules@2` keeps every value of `@1` (D285) and adds
+  `max_bridged_gap_bars` 6 and `max_bridged_total_bars` 24: a run of at most 6
+  missing hourly slots with a candle right before and right after it is
+  skipped, the indicator engine reading the candles on both sides as if they
+  followed each other (`rolling_latest(skip=...)`, after the window passes the
+  engine's usual checks), as long as a label's look-back (its 863 candles plus
+  24 slots, 887) holds at most 24 skipped slots; a longer outage is still
+  `gap`. Nothing is filled in or carried forward (D136 holds for what is
+  read), and a run at the start of a series or after the newest candle is
+  never skipped. A slot's verdict depends only on its own look-back slots, so
+  a live read of them gives the replay's label (property-tested with random
+  holes). `@2` is the default for live labels, the lab and the practice range
+  from now on; `@1` is unchanged with its pinned hash (fields that are zero
+  are left out of its canonical document), so stored labels and old reports
+  still reproduce. Reason: L2's two-year rerun (`planning/handoffs/L2.md`,
+  part 1b) found that Kraken's three short archive holes in 2025 (3, 1 and 5
+  hours) left every coin `unclear` for about 108 days, and that live, one
+  missed hour would blind the desk's market types for five weeks; 6 hours
+  covers the longest of them, and 24 skipped hours bounds how far a label's
+  candles stretch. Bounds: 0–12 and 0–48, both zero or the total at least the
+  longest hole.
+
 Owner choice of 2026-10-20 (D280). L2 part 1 (`planning/handoffs/L2.md`) found
 that both starting strategies lose after fees on six months of real prices,
 that no department can create or test a strategy the Trader may use, that no

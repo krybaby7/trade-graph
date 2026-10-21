@@ -61,18 +61,21 @@ def test_the_history_is_adx_fourteens_span() -> None:
 def test_a_steady_rise_is_rising_from_the_first_complete_history(candles) -> None:
     store_series(candles, series(SYMBOL, closes_rising(1000)))
     assert _labels(candles, 1000) == ["unclear"] * FIRST_LABELLED + ["rising"] * (1000 - FIRST_LABELLED)
-    first = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(FIRST_LABELLED), source="synthetic")
+    first = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(FIRST_LABELLED), source="synthetic",
+                       rules=RULES)
     assert first.label.market_type == "rising" and first.label.lag_bars == 0
     assert first.label.checks == {"strength": "trending", "pressure": "buyers", "price": "above_average",
                                   "average": "rising"}
-    before = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(FIRST_LABELLED - 1), source="synthetic")
+    before = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(FIRST_LABELLED - 1), source="synthetic",
+                       rules=RULES)
     assert (before.label.market_type, before.label.reason) == ("unclear", "not_enough_candles")
 
 
 def test_a_steady_fall_is_falling_from_the_first_complete_history(candles) -> None:
     store_series(candles, series(SYMBOL, closes_falling(1000)))
     assert _labels(candles, 1000) == ["unclear"] * FIRST_LABELLED + ["falling"] * (1000 - FIRST_LABELLED)
-    label = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(999), source="synthetic").label
+    label = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(999), source="synthetic",
+                       rules=RULES).label
     assert label.checks == {"strength": "trending", "pressure": "sellers", "price": "below_average",
                             "average": "falling"}
 
@@ -80,7 +83,8 @@ def test_a_steady_fall_is_falling_from_the_first_complete_history(candles) -> No
 def test_a_flat_range_is_sideways_from_the_first_complete_history(candles) -> None:
     store_series(candles, series(SYMBOL, closes_range(1000)))
     assert _labels(candles, 1000) == ["unclear"] * FIRST_LABELLED + ["sideways"] * (1000 - FIRST_LABELLED)
-    label = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(999), source="synthetic").label
+    label = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(999), source="synthetic",
+                       rules=RULES).label
     assert label.checks["average"] == "flat" and label.checks["strength"] == "weak"
 
 
@@ -92,24 +96,31 @@ def test_a_gap_keeps_the_last_label_within_the_lag_then_withholds_it_for_one_his
     assert labels[1000] == "rising"  # the missing hour: the candle before it, one interval behind
     assert labels[1001:1863] == ["unclear"] * 862  # every history that holds the missing hour
     assert labels[1863:] == ["rising"] * (1900 - 1863)
-    during = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1000), source="synthetic").label
+    during = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1000), source="synthetic",
+                       rules=RULES).label
     assert (during.candle_close, during.lag_bars) == (SERIES_START + HOUR * 1000, 1)
-    gap = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1001), source="synthetic").label
+    gap = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1001), source="synthetic",
+                       rules=RULES).label
     assert (gap.market_type, gap.reason) == ("unclear", "gap")
-    oldest = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1862), source="synthetic").label
+    oldest = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1862), source="synthetic",
+                       rules=RULES).label
     assert (oldest.market_type, oldest.reason) == ("unclear", "not_enough_candles")
 
 
 def test_too_few_candles_and_no_recent_candle_are_unclear(candles) -> None:
     store_series(candles, series(SYMBOL, closes_rising(500)))
-    young = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(499), source="synthetic").label
+    young = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(499), source="synthetic",
+                       rules=RULES).label
     assert (young.market_type, young.reason) == ("unclear", "not_enough_candles")
     store_series(candles, series("OLD/USD", closes_rising(900)))
-    late = label_coin(candles, symbol="OLD/USD", moment=hourly_moment(899) + 2 * HOUR, source="synthetic").label
+    late = label_coin(candles, symbol="OLD/USD", moment=hourly_moment(899) + 2 * HOUR, source="synthetic",
+                       rules=RULES).label
     assert (late.market_type, late.lag_bars) == ("rising", 2)
-    stale = label_coin(candles, symbol="OLD/USD", moment=hourly_moment(899) + 3 * HOUR, source="synthetic").label
+    stale = label_coin(candles, symbol="OLD/USD", moment=hourly_moment(899) + 3 * HOUR, source="synthetic",
+                       rules=RULES).label
     assert (stale.market_type, stale.reason, stale.lag_bars) == ("unclear", "no_recent_candle", 3)
-    nothing = label_coin(candles, symbol="NONE/USD", moment=hourly_moment(899), source="synthetic").label
+    nothing = label_coin(candles, symbol="NONE/USD", moment=hourly_moment(899), source="synthetic",
+                       rules=RULES).label
     assert (nothing.market_type, nothing.reason, nothing.candle_close) == ("unclear", "no_recent_candle", None)
 
 
@@ -119,15 +130,18 @@ def test_a_live_label_never_reads_a_candle_received_after_its_moment(candles) ->
     store_series(candles, rows[:900])
     store_series(candles, [late], at=late.available_at_utc)
     moment = hourly_moment(900)  # five minutes after candle 900 closed, before it arrived
-    label = label_coin(candles, symbol=SYMBOL, moment=moment, source="synthetic")
+    label = label_coin(candles, symbol=SYMBOL, moment=moment, source="synthetic",
+                       rules=RULES)
     assert (label.label.candle_close, label.label.lag_bars) == (SERIES_START + HOUR * 900, 1)
-    after = label_coin(candles, symbol=SYMBOL, moment=late.available_at_utc, source="synthetic")
+    after = label_coin(candles, symbol=SYMBOL, moment=late.available_at_utc, source="synthetic",
+                       rules=RULES)
     assert after.label.candle_close == late.close_time_utc and after.label.lag_bars == 2
 
 
 def test_a_live_label_keeps_its_inputs_and_rules(candles) -> None:
     run_id = store_series(candles, series(SYMBOL, closes_rising(900)))
-    coin = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(899), source="synthetic")
+    coin = label_coin(candles, symbol=SYMBOL, moment=hourly_moment(899), source="synthetic",
+                       rules=RULES)
     document = coin.to_document()
     assert document["symbol"] == SYMBOL and document["market_type"] == "rising"
     assert document["rules"] == {"ref": "market-type-rules@1", "sha256": RULES.content_sha256,
@@ -144,7 +158,8 @@ def test_a_live_label_keeps_its_inputs_and_rules(candles) -> None:
 
 def test_a_moment_must_be_aware_and_the_rules_interval_supported(candles) -> None:
     with pytest.raises(ValidationFailure):
-        label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1).replace(tzinfo=None), source="synthetic")
+        label_coin(candles, symbol=SYMBOL, moment=hourly_moment(1).replace(tzinfo=None), source="synthetic",
+                       rules=RULES)
     with pytest.raises(ValidationFailure):
         read_timeline(candles, SYMBOL, "synthetic", end_close=SERIES_START + timedelta(minutes=30), slots=10,
                       as_of=SERIES_START + HOUR, rules=RULES)

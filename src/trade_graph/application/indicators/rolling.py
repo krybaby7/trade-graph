@@ -11,13 +11,17 @@ converts it to float64 once, and for each candle runs the library over exactly t
 - a candle whose span holds a missing slot, or reaches before the window's first slot, has no value (``None``),
   as the engine withholds a gapped or warming-up indicator. Nothing is carried forward or partly computed.
 
+``skip`` (market-type rules version 2, D230) names missing slots to leave out: the window is checked whole as
+always, then the candles on both sides of a skipped slot follow each other in a span. Only missing slots can be
+skipped, and a skipped slot has no value itself. Nothing is filled in.
+
 No indicator formula is written here (D118): every number comes from ``library.compute_prepared``.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
@@ -65,32 +69,36 @@ class RollingSeries:
         return sum(1 for value in first if value is None)
 
 
-def rolling_latest(name: str, params: Mapping[str, object] | None, window: CandleWindow) -> RollingSeries:
+def rolling_latest(name: str, params: Mapping[str, object] | None, window: CandleWindow, *,
+                   skip: Sequence[bool] | None = None) -> RollingSeries:
     spec = get_indicator(name)
     resolved = spec.resolve_parameters({} if params is None else params)
     span = plan_history(name, resolved, 1).span
     _assert_completed(window)
     slots = window.slots
-    candles = [None if slot.stored is None else slot.stored.candle for slot in slots]
+    skipped = tuple(bool(flag) for flag in skip) if skip is not None else (False,) * len(slots)
+    if len(skipped) != len(slots) or any(flag and slot.stored is not None for flag, slot in zip(skipped, slots)):
+        raise ValidationFailure("only missing slots can be skipped, with one flag per slot of the window")
+    kept = [index for index, flag in enumerate(skipped) if not flag]
+    candles = [None if slots[index].stored is None else slots[index].stored.candle for index in kept]
     columns = float_columns(candles)
     missing_before = [0]
     for candle in candles:
         missing_before.append(missing_before[-1] + (candle is None))
     outputs = spec.output_names
-    series: dict[str, list[float | None]] = {output: [] for output in outputs}
-    for index in range(len(slots)):
-        start = index - span + 1
-        if start < 0 or missing_before[index + 1] - missing_before[start]:
-            for output in outputs:
-                series[output].append(None)
+    series: dict[str, list[float | None]] = {output: [None] * len(slots) for output in outputs}
+    for position, index in enumerate(kept):
+        start = position - span + 1
+        if start < 0 or missing_before[position + 1] - missing_before[start]:
             continue
-        raw = compute_prepared(name, resolved, {field: column[start:index + 1] for field, column in columns.items()})
+        raw = compute_prepared(name, resolved,
+                               {field: column[start:position + 1] for field, column in columns.items()})
         for output in outputs:
             value = float(raw[output][-1])
             if not math.isfinite(value):
                 raise IndicatorComputationError(
                     f"{name} {output} has no finite value where the library lookback says it should")
-            series[output].append(value)
+            series[output][index] = value
     return RollingSeries(
         indicator=name, parameters=MappingProxyType(dict(resolved)), spec_version=spec_version(spec),
         library=MappingProxyType(library_versions()), span=span,

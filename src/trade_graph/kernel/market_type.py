@@ -13,6 +13,12 @@ four TA-Lib menu indicators on it (D118): a long simple moving average of the cl
   nothing is carried forward, D136), an indicator without a value (``no_value``), or a read that failed
   (``evaluation_failed``).
 
+Version 2 (``market-type-rules@2``, D230) keeps version 1's readings and adds one rule: a hole of at most
+``max_bridged_gap_bars`` missing slots with a candle right before and right after it is skipped, the indicators reading
+the candles on both sides as if they followed each other, as long as a label's look-back (the history plus
+``max_bridged_total_bars``) holds at most ``max_bridged_total_bars`` skipped slots. Nothing is invented for the hole:
+no candle is carried forward or filled in. A longer outage is still ``gap``. Version 1 (no skipping) is unchanged.
+
 Each comparison is exact, with both sides rounded half-even to 12 significant digits first, as alarms compare (D136).
 
 The application computes the indicator values per candle slot (``application/market_types/labeller.py``, with the
@@ -73,6 +79,8 @@ class MarketTypeRules(BaseModel):
     strength_period: int = Field(ge=7, le=50, strict=True)
     trending_strength: Decimal
     max_lag_bars: int = Field(ge=0, le=6, strict=True)
+    max_bridged_gap_bars: int = Field(default=0, ge=0, le=12, strict=True)
+    max_bridged_total_bars: int = Field(default=0, ge=0, le=48, strict=True)
     note: str = Field(default="", max_length=600)
 
     @field_validator("interval_minutes", mode="before")
@@ -106,6 +114,10 @@ class MarketTypeRules(BaseModel):
                 get_indicator(name).resolve_parameters(parameters)
             except ValidationFailure as error:
                 raise ValueError(str(error)) from None
+        gap, total = self.max_bridged_gap_bars, self.max_bridged_total_bars
+        if (gap == 0) != (total == 0) or total < gap:
+            raise ValueError("skipping holes needs both a longest hole and a total of at least that many slots, "
+                             "or neither")
         return self
 
     @property
@@ -121,6 +133,8 @@ class MarketTypeRules(BaseModel):
 
     def canonical_document(self) -> dict[str, Any]:
         document = self.model_dump(mode="json")
+        if not self.max_bridged_gap_bars:  # rules without skipping keep version 1's exact document and hash (D230)
+            del document["max_bridged_gap_bars"], document["max_bridged_total_bars"]
         document["indicators"] = {role: {"indicator": name, "parameters": dict(parameters)}
                                   for role, (name, parameters) in self.indicator_settings().items()}
         return document
@@ -144,9 +158,15 @@ MARKET_TYPE_RULES_V1: Final = MarketTypeRules(
     note=("Hourly candles: the one-week average of the close (168 hours) and its change over one day (24 hours) give "
           "the direction; ADX 14 at 20 or more says a trend is present and +DI against -DI says which side leads "
           "(D285)."))
-CURRENT_MARKET_TYPE_RULES: Final = MARKET_TYPE_RULES_V1
+MARKET_TYPE_RULES_V2: Final = MarketTypeRules(
+    version=2, interval_minutes=60, average_period=168, slope_bars=24, strength_period=14,
+    trending_strength=Decimal("20"), max_lag_bars=2, max_bridged_gap_bars=6, max_bridged_total_bars=24,
+    note=("Version 1's readings, and a hole of up to 6 missing hours with a candle on both sides is skipped, at most "
+          "24 skipped hours among the hours one label looks back over, so one missed hour no longer leaves a coin "
+          "unclear for 36 days (D230)."))
+CURRENT_MARKET_TYPE_RULES: Final = MARKET_TYPE_RULES_V2
 KNOWN_MARKET_TYPE_RULES: Final[Mapping[str, MarketTypeRules]] = MappingProxyType(
-    {MARKET_TYPE_RULES_V1.ref: MARKET_TYPE_RULES_V1})
+    {rules.ref: rules for rules in (MARKET_TYPE_RULES_V1, MARKET_TYPE_RULES_V2)})
 
 
 def resolve_market_type_rules(ref: str) -> MarketTypeRules:
@@ -220,17 +240,65 @@ def _consecutive(close_times: Sequence[datetime], rules: MarketTypeRules) -> Non
             raise ValidationFailure("slots are consecutive candles of the rules' interval, on its time grid")
 
 
+def look_back_slots(rules: MarketTypeRules, *, history: int) -> int:
+    """How many slots ending at a slot its label depends on: the history, and the skipped slots the rules allow."""
+    return history + rules.max_bridged_total_bars
+
+
+def bridged_slots(present: Sequence[bool], rules: MarketTypeRules) -> tuple[bool, ...]:
+    """For each slot, whether it is a missing slot the rules skip: a run of at most ``max_bridged_gap_bars`` missing
+    slots with a candle right before and right after it. A run at the start (the series, or the read, began later) or
+    at the end (no candle after it yet) is never skipped. Version 1 skips nothing."""
+    flags = [bool(item) for item in present]
+    skipped = [False] * len(flags)
+    limit = rules.max_bridged_gap_bars
+    index = 0
+    while limit and index < len(flags):
+        if flags[index]:
+            index += 1
+            continue
+        end = index
+        while end < len(flags) and not flags[end]:
+            end += 1
+        if index > 0 and end < len(flags) and end - index <= limit:
+            skipped[index:end] = [True] * (end - index)
+        index = end
+    return tuple(skipped)
+
+
+def _bridged_history(present: Sequence[bool], index: int, rules: MarketTypeRules, history: int,
+                     ) -> tuple[UnclearReason | None, int | None]:
+    """Version 2, for a present slot: why it is unclear, or None and the slot whose average is read ``slope_bars``
+    candles earlier. Only the look-back slots ending at it are read (slots before the series count as missing), so a
+    short live read and a long replay give the same answer."""
+    first = index - look_back_slots(rules, history=history) + 1
+    local = [False] * max(0, -first) + [bool(flag) for flag in present[max(0, first):index + 1]]
+    skipped = bridged_slots(local, rules)
+    kept = [position for position, flag in enumerate(skipped) if not flag]
+    if len(kept) < history:
+        return "gap", None  # more skipped slots in the look-back than the rules allow
+    used = kept[-history:]
+    missing = [position for position in used if not local[position]]
+    if missing:
+        first_present = next(position for position in used if local[position])
+        return ("gap" if missing[-1] > first_present else "not_enough_candles"), None
+    return None, first + used[-1 - rules.slope_bars]
+
+
 def slot_verdicts(slots: Sequence[SlotFacts], rules: MarketTypeRules, *, history: int) -> tuple[SlotVerdict, ...]:
     """Each slot's verdict from the ``history`` slots ending at it (the candles its indicators read).
 
     A slot reads nothing outside those slots, so its verdict is the same in a short live read and a long replay, and
     later candles never change it. ``not_enough_candles``: the missing slots are all at the start of the history (the
     series began inside it, or a hole reaches back past its start); ``gap``: a slot is missing after a present one.
+    Version 2 first skips the short holes ``bridged_slots`` names, within the slot's ``look_back_slots`` (D230).
     """
     if type(history) is not int or history <= rules.slope_bars:
         raise ValidationFailure("the history a label reads covers at least the average's slope and one more candle")
     facts = tuple(slots)
     _consecutive([item.close_time for item in facts], rules)
+    present = [item.present for item in facts]
+    reach = look_back_slots(rules, history=history)
     missing_before = [0]
     for item in facts:
         missing_before.append(missing_before[-1] + (not item.present))
@@ -242,18 +310,24 @@ def slot_verdicts(slots: Sequence[SlotFacts], rules: MarketTypeRules, *, history
         if not item.present:
             verdicts.append(SlotVerdict(close_time=item.close_time, present=False, market_type=None))
             continue
-        start = index - history + 1
         reason: UnclearReason | None = None
-        if start < 0:
-            reason = "not_enough_candles"
-        elif missing_before[index + 1] - missing_before[start]:
-            first = next_present[start]
-            reason = "gap" if missing_before[index + 1] - missing_before[first] else "not_enough_candles"
-        if reason is not None:
+        before_index: int | None = index - rules.slope_bars
+        if rules.max_bridged_gap_bars:
+            look_back = index - reach + 1
+            if look_back < 0 or missing_before[index + 1] - missing_before[look_back]:
+                reason, before_index = _bridged_history(present, index, rules, history)
+        else:
+            start = index - history + 1
+            if start < 0:
+                reason = "not_enough_candles"
+            elif missing_before[index + 1] - missing_before[start]:
+                first = next_present[start]
+                reason = "gap" if missing_before[index + 1] - missing_before[first] else "not_enough_candles"
+        if reason is not None or before_index is None:
             verdicts.append(SlotVerdict(close_time=item.close_time, present=True, market_type="unclear",
                                         reason=reason))
             continue
-        before = facts[index - rules.slope_bars].average
+        before = facts[before_index].average
         readings = {"close": item.close, "average": item.average, "average_before": before,
                     "strength": item.strength, "plus": item.plus, "minus": item.minus}
         if any(value is None for value in readings.values()):
@@ -351,7 +425,8 @@ def split_by_market_type(trips: Sequence[tuple[MarketType, RoundTrip]],
 
 __all__ = [
     "COMPARISON_DIGITS", "CURRENT_MARKET_TYPE_RULES", "KNOWN_MARKET_TYPE_RULES", "LABEL_INTERVALS",
-    "MARKET_TYPE_RULES_V1", "RULES_ID", "ROLES", "UNCLEAR_REASONS", "MarketTypeLabel", "MarketTypeRules",
-    "MarketTypeTimeline", "SlotFacts", "SlotVerdict", "UnclearReason", "classify", "label_at",
-    "resolve_market_type_rules", "slot_verdicts", "split_by_market_type", "unclear_label",
+    "MARKET_TYPE_RULES_V1", "MARKET_TYPE_RULES_V2", "RULES_ID", "ROLES", "UNCLEAR_REASONS", "MarketTypeLabel",
+    "MarketTypeRules", "MarketTypeTimeline", "SlotFacts", "SlotVerdict", "UnclearReason", "bridged_slots", "classify",
+    "label_at", "look_back_slots", "resolve_market_type_rules", "slot_verdicts", "split_by_market_type",
+    "unclear_label",
 ]

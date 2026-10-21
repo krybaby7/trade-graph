@@ -39,6 +39,8 @@ from trade_graph.kernel.market_type import (
     MarketTypeRules,
     MarketTypeTimeline,
     SlotFacts,
+    bridged_slots,
+    look_back_slots,
     resolve_market_type_rules,
     slot_verdicts,
 )
@@ -75,19 +77,26 @@ def slot_facts(window: CandleWindow, rules: MarketTypeRules, *, wanted: int | No
     ``wanted``: only the newest ``wanted`` slots are labelled, so only they get readings (and the average also
     ``slope_bars`` before them); older slots keep their candle and no readings. A reading depends only on the span
     that ends at its slot, so each one is the value the whole window gives, and the work stays small for a live label.
+
+    Rules that skip short holes (version 2, D230): the engine leaves out the slots the kernel's ``bridged_slots``
+    names (``rolling_latest(skip=...)``), so the candles on both sides of such a hole follow each other in its span,
+    and each reading reaches back up to ``max_bridged_total_bars`` slots further. Nothing is filled in; a skipped
+    slot stays missing in the facts.
     """
     if window.interval_minutes != rules.interval_minutes:
         raise ValidationFailure(f"the rules read {rules.interval_minutes}-minute candles, not "
                                 f"{window.interval_minutes}-minute ones")
     if wanted is not None and (type(wanted) is not int or wanted < 1):
         raise ValidationFailure("label at least one slot")
+    skipped = bridged_slots([slot.stored is not None for slot in window.slots], rules)
+    extra = rules.max_bridged_total_bars
     first_wanted = 0 if wanted is None else max(0, len(window.slots) - wanted)
     series, offsets, needed = {}, {}, {}
     for role, (name, parameters) in rules.indicator_settings().items():
-        needed[role] = max(0, first_wanted - (rules.slope_bars if role == "average" else 0))
-        offsets[role] = max(0, needed[role] - plan_history(name, parameters, 1).span + 1) if wanted else 0
+        needed[role] = max(0, first_wanted - (rules.slope_bars if role == "average" else 0) - extra)
+        offsets[role] = max(0, needed[role] - plan_history(name, parameters, 1).span + 1 - extra) if wanted else 0
         part = window if not offsets[role] else replace(window, slots=window.slots[offsets[role]:])
-        series[role] = rolling_latest(name, parameters, part)
+        series[role] = rolling_latest(name, parameters, part, skip=skipped[offsets[role]:])
 
     def reading(role: str, index: int):
         if index < needed[role]:
@@ -129,6 +138,7 @@ class LabelledWindow:
     window: CandleWindow
     rules: MarketTypeRules
     history: int
+    look_back: int
     timeline: MarketTypeTimeline
     first_close: datetime
     _index: Mapping[datetime, int] = field(repr=False)
@@ -140,19 +150,20 @@ class LabelledWindow:
         return self.timeline.at(moment)
 
     def candles_behind(self, label: MarketTypeLabel, run_labels: Mapping[int, str]) -> dict[str, Any]:
-        """The candles a label rests on: the ``history`` slots ending at its candle (none when it has none)."""
+        """The candles a label rests on: the look-back slots ending at its candle (the ``history``, and the skipped
+        slots the rules allow), none when it has none."""
         if label.candle_close is None or label.candle_close not in self._index:
             first = last = -1
             used = []
         else:
             last = self._index[label.candle_close]
-            first = max(0, last - self.history + 1)
+            first = max(0, last - self.look_back + 1)
             used = [slot.stored for slot in self.window.slots[first:last + 1] if slot.stored is not None]
         runs = sorted({stored.run_id for stored in used})
         return {"symbol": self.window.symbol, "source": self.window.source,
                 "interval_minutes": self.window.interval_minutes, "read_mode": self.window.mode,
                 "as_of_utc": utc_iso(self.window.as_of_utc), "history_candles": self.history,
-                "candles_read": len(used), "run_ids": runs,
+                "look_back_slots": self.look_back, "candles_read": len(used), "run_ids": runs,
                 "evidence_labels": sorted({run_labels.get(run, "unknown") for run in runs}),
                 "input_sha256": _digest(self.window, first, last) if used else None}
 
@@ -174,6 +185,7 @@ def labelled_window(window: CandleWindow, rules: MarketTypeRules, *, slots: int 
     verdicts = slot_verdicts(slot_facts(window, rules, wanted=wanted), rules, history=history)
     first = 0 if slots is None else max(0, len(window.slots) - slots)
     return LabelledWindow(window=window, rules=rules, history=history,
+                          look_back=look_back_slots(rules, history=history),
                           timeline=MarketTypeTimeline(verdicts, rules), first_close=window.slots[first].close_time_utc,
                           _index=MappingProxyType({slot.close_time_utc: index
                                                    for index, slot in enumerate(window.slots)}))
@@ -197,7 +209,7 @@ def read_timeline(store: CandleStore, symbol: str, source: str, *, end_close: da
         raise ValidationFailure(f"the last slot closes on the {rules.interval_minutes}-minute grid")
     if type(slots) is not int or slots < 1:
         raise ValidationFailure("label at least one slot")
-    count = slots + required_history(rules) + rules.max_lag_bars
+    count = slots + look_back_slots(rules, history=required_history(rules)) + rules.max_lag_bars
     window = store.window(symbol, rules.interval_minutes, source, end_close_time=end_close, count=count, as_of=as_of,
                           mode=mode)
     return labelled_window(window, rules, slots=slots)
@@ -278,6 +290,10 @@ def describe(document: Mapping[str, Any]) -> str:
             history = document["candles"]["history_candles"]
             words = (f"fewer than {history} complete candles in a row" if reason == "not_enough_candles"
                      else f"a candle is missing among the last {history}")
+            if reason == "gap" and rules is not None and rules.max_bridged_gap_bars:
+                words = (f"a hole of more than {rules.max_bridged_gap_bars} candles, or more than "
+                         f"{rules.max_bridged_total_bars} missing ones, among the last "
+                         f"{look_back_slots(rules, history=history)}")
         return f"{symbol} is unclear: {words}{when}."
     checks, values = document.get("checks", {}), document.get("values", {})
     if rules is None:

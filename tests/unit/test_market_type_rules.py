@@ -35,9 +35,11 @@ T0 = datetime(2026, 9, 1, tzinfo=UTC)  # the close of slot 0
 RULES = MARKET_TYPE_RULES_V1
 
 
-def test_version_one_is_the_documented_default() -> None:
-    rules = CURRENT_MARKET_TYPE_RULES
-    assert rules is MARKET_TYPE_RULES_V1 and rules.ref == "market-type-rules@1"
+def test_version_one_stays_as_documented() -> None:
+    # Version 2 (D230) is the default now; version 1 keeps every value and its pinned hash for its stored labels.
+    assert CURRENT_MARKET_TYPE_RULES.ref == "market-type-rules@2"
+    rules = MARKET_TYPE_RULES_V1
+    assert rules.ref == "market-type-rules@1"
     assert (rules.interval_minutes, rules.average_period, rules.slope_bars, rules.strength_period,
             rules.trending_strength, rules.max_lag_bars) == (60, 168, 24, 14, D("20"), 2)
     assert rules.indicator_settings() == {
