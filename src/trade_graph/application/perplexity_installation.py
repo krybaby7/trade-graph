@@ -209,7 +209,7 @@ class PerplexityRouteBudget(ProtectedRouteBudget):
 
 
 class PerplexityRouteGateway(ModelGateway):
-    """The paid-enabled gateway of the installed route: Perplexity only, the software-run ``web_search`` only."""
+    """The paid-enabled gateway of the installed route: Perplexity only, the software-run ``search_the_web`` only."""
 
     def __init__(self, budget: PerplexityRouteBudget, *, transport, key: SecretStr) -> None:
         super().__init__(budget, paid_calls_enabled=True, transport=transport,
@@ -223,7 +223,7 @@ class PerplexityRouteGateway(ModelGateway):
         names = {(item.get("function", item) if isinstance(item, dict) else {}).get("name") for item in tools}
         handlers = set(kwargs.get("tool_handlers") or {})
         if not names <= {SEARCH_TOOL_NAME} or not handlers <= {SEARCH_TOOL_NAME}:
-            raise AuthorityDenied("the installed Perplexity route runs only the software web_search tool")
+            raise AuthorityDenied("the installed Perplexity route runs only the software search_the_web tool")
         return super().invoke(request, **kwargs)
 
     def _usage_is_priced(self, request: ModelRequest, result: ModelResult) -> bool:

@@ -56,7 +56,7 @@ def test_body_offers_only_the_software_search_tool_and_keeps_control_fields_out_
     assert body["max_output_tokens"] == 800
     # Built-in Perplexity tools (web_search, fetch_url) are never enabled: search runs in software (D150).
     assert [tool["type"] for tool in body["tools"]] == ["function"]
-    assert body["tools"][0]["name"] == "web_search"
+    assert body["tools"][0]["name"] == "search_the_web"  # Perplexity reserves "web_search" (D231)
     assert body["tools"][0]["parameters"]["additionalProperties"] is False
     message = body["input"][0]
     assert message["type"] == "message" and message["role"] == "user"
@@ -80,12 +80,31 @@ def test_body_refuses_provider_run_tools(tool) -> None:
         PerplexityAgentAdapter().build_body(request)
 
 
+@pytest.mark.parametrize("name", ["web_search", "fetch_url", "image_search", "people_search", "finance_search",
+                                  "sandbox"])
+def test_a_function_named_after_a_perplexity_tool_is_refused_before_sending(name) -> None:
+    # The first live call (2026-10-21) came back 400: 'custom function name "web_search" is reserved' (D231).
+    tool = {**search_tool_definition(), "name": name}
+    with pytest.raises(ValueError, match="software-run"):
+        PerplexityAgentAdapter().build_body(_request(tools=[tool]))
+    assert search_tool_definition()["name"] == "search_the_web"
+
+
+def test_the_software_search_in_the_usage_report_is_not_a_billed_provider_tool() -> None:
+    payload = _fixture("agent_final.json")
+    payload["usage"]["tool_calls_details"] = {"search_the_web": {"invocation": 2}}
+    assert PerplexityAgentAdapter().parse(payload).usage.unreported_fields == []
+    payload["usage"]["tool_calls_details"] = {"search_the_web": {"invocation": 2}, "web_search": {"invocation": 1}}
+    assert "tool_units" in PerplexityAgentAdapter().parse(payload).usage.unreported_fields
+
+
 def test_body_replays_each_software_tool_call_and_its_stored_output() -> None:
-    transcript = [{"call_id": "call_1", "name": "web_search", "arguments": {"query": "SOL outage", "recency": "week"},
+    transcript = [{"call_id": "call_1", "name": "search_the_web",
+                   "arguments": {"query": "SOL outage", "recency": "week"},
                    "output": {"status": "results", "results": [{"source_ref": "search:abc:1"}]}}]
     body = PerplexityAgentAdapter().build_body(_request(tool_results=transcript))
     call, output = body["input"][1:]
-    assert call == {"type": "function_call", "call_id": "call_1", "name": "web_search",
+    assert call == {"type": "function_call", "call_id": "call_1", "name": "search_the_web",
                     "arguments": json.dumps({"query": "SOL outage", "recency": "week"}, sort_keys=True)}
     assert output["type"] == "function_call_output" and output["call_id"] == "call_1"
     assert json.loads(output["output"])["results"] == [{"source_ref": "search:abc:1"}]
@@ -95,7 +114,7 @@ def test_body_replays_each_software_tool_call_and_its_stored_output() -> None:
 def test_tool_call_turn_parses_arguments_and_usage() -> None:
     result = PerplexityAgentAdapter().parse(_fixture("agent_tool_call.json"))
     assert result.ok and result.payload is None
-    assert [(call.call_id, call.name) for call in result.tool_requests] == [("call_synthetic_1", "web_search")]
+    assert [(call.call_id, call.name) for call in result.tool_requests] == [("call_synthetic_1", "search_the_web")]
     assert result.tool_requests[0].arguments == {"query": "Solana network outage October 2026", "recency": "week"}
     usage = result.usage
     assert (usage.uncached_input_tokens, usage.cache_read_tokens, usage.billed_output_tokens) == (1000, 200, 40)

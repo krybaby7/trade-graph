@@ -8,7 +8,7 @@
       "type": "function_call",
       "id": "fc_synthetic_1",
       "call_id": "call_synthetic_1",
-      "name": "web_search",
+      "name": "search_the_web",
       "arguments": "{\"query\": \"Solana network outage October 2026\", \"recency\": \"week\"}",
       "status": "completed"
     }

@@ -57,8 +57,8 @@ MAX_ROUTED_REQUESTS = MAX_DEEP_DIVES + 1 + MAX_STRATEGY_IDEAS
 MAX_TEXT = 300
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f​-‏‪-‮⁦-⁩]")
-CITE = ("Copy one source_ref verbatim from a web_search result returned in this round. Citing anything else rejects "
-        "the whole reply.")
+CITE = ("Copy one source_ref verbatim from a search_the_web result returned in this round. Citing anything else "
+        "rejects the whole reply.")
 
 
 def plain(value: str | None) -> str | None:

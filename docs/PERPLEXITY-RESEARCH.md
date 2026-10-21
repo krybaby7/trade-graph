@@ -36,11 +36,13 @@ Research's focus-coin workflow (see [FOCUS-RESEARCH.md](FOCUS-RESEARCH.md)).
 3. Each Agent API step reserves money first, records the dispatch intent, then
    sends. Its receipt is priced from the dated card; Perplexity's own reported
    total is saved next to it for comparison.
-4. The model may call the `web_search` tool. That tool is software: it reserves
+4. The model may call the `search_the_web` tool. That tool is software: it reserves
    one search, records the intent, calls the Search API, saves each result as a
    source with a `source_ref`, commits the receipt, and returns the saved
    results marked as untrusted data. Perplexity's own `web_search` and
-   `fetch_url` tools are never turned on (D150).
+   `fetch_url` tools are never turned on (D150). Perplexity reserves the names
+   of its own tools, so the software function is not called `web_search`
+   (D231); the stored records keep their `web_search_*` table names.
 5. The final reply must match its contract. Each finding names one
    `source_ref`. Software fills in the link, publisher, publication date and
    hash from the saved result, never from the model. A result whose text looks
@@ -129,6 +131,18 @@ What L2 should confirm against the real responses: the endpoint path
 (`/v1/agent`), the `response_format` shape, replaying function calls with
 their outputs, the `usage` and `cost` field names, the Search API path and
 result fields, and both prices.
+
+**Confirmed at L2 on 2026-10-21 (D231).** The first real call was refused with
+HTTP 400, "custom function name \"web_search\" is reserved"; the software
+function is now `search_the_web`. The next call ran a whole round but stopped
+at the smoke's old 800-token output cap, because Claude spent 800 of 803 output
+tokens on hidden reasoning; the smoke now allows 3,000 output tokens like the
+Leader's rounds. The third call completed: one search, five stored sources, two
+cited findings, USD0.0435 in receipts (two Agent API steps and one search),
+with Perplexity's reported totals within a fraction of a cent of the receipts in
+both directions. The endpoint, `response_format`, function-call replay, `usage`
+and `cost` fields and the Search API worked as built; the official pricing pages
+showed unchanged prices, renewed as cards verified 2026-10-21.
 
 ## For later packages
 

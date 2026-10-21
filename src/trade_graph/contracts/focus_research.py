@@ -1,7 +1,7 @@
 """Research's focus-coin round as a strict provider reply (T37; D120, D124, D150, D192, D206, D207).
 
 At the day start, and when it refreshes, Research reviews the coin scanner's shortlist with news it found through
-the software-run ``web_search`` tool and answers with a ``FocusResearchReply``:
+the software-run ``search_the_web`` tool and answers with a ``FocusResearchReply``:
 
 - ``focus``: the coins worth a Trader day plan today, each with a short reason and the evidence it rests on (the
   day's scan id or ``source_ref`` values the tool returned in this round). Picking nothing is a valid answer.

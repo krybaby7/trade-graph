@@ -7,9 +7,12 @@ reported ``cost``. Shapes follow Perplexity's published Agent API documentation;
 no real response has been recorded yet (local step L2).
 
 Search never runs inside Perplexity here. The only tool offered to the model is
-the software-run ``web_search`` function, whose results the application stores
-before the model reads them (D124, D150). Perplexity's own ``web_search`` and
-``fetch_url`` tools are refused, and any reported use of them leaves the usage
+the software-run search function, whose results the application stores before
+the model reads them (D124, D150). Perplexity reserves the names of its own
+tools for custom functions (the first live call, 2026-10-21, was refused with
+"custom function name \"web_search\" is reserved"), so the function is named
+``search_the_web`` (D231). Perplexity's own tools are refused, a function named
+after one of them is refused, and any reported use of them leaves the usage
 unresolved rather than priced.
 """
 
@@ -25,12 +28,13 @@ from trade_graph.contracts.models import ModelCapabilities, ModelRequest, ModelR
 
 AGENT_ENDPOINT = "https://api.perplexity.ai/v1/agent"
 PERPLEXITY_SONNET = "anthropic/claude-sonnet-5-5"
-SEARCH_TOOL_NAME = "web_search"
+SEARCH_TOOL_NAME = "search_the_web"  # not "web_search": Perplexity reserves its own tools' names (D231)
 
 # Context keys that steer software, not the model. They never enter the prompt.
 _CONTROL_KEYS = frozenset({"tools", "tool_results", "http_fixture", "max_input_tokens", "scripted_result",
                            "fallback_payload", "input_tokens", "output_tokens", "temperature", "forced_tool"})
-_PROVIDER_TOOLS = frozenset({"web_search", "fetch_url"})
+# Perplexity's own tools (its pricing page, read 2026-10-21): never enabled, and their names are reserved.
+_PROVIDER_TOOLS = frozenset({"web_search", "fetch_url", "image_search", "people_search", "finance_search", "sandbox"})
 
 
 def search_tool_definition() -> dict[str, Any]:
@@ -152,9 +156,9 @@ def _wire_function(tool: Any) -> dict[str, Any]:
     function = tool.get("function", tool)
     kind = tool.get("type", "function")
     name = function.get("name") if isinstance(function, dict) else None
-    # A provider tool type, or a function named like the provider's fetcher, would let Perplexity read
-    # pages the application never stored. Only the software-run search function is a "web_search".
-    if kind != "function" or name in _PROVIDER_TOOLS - {SEARCH_TOOL_NAME}:
+    # A provider tool type would let Perplexity read pages the application never stored, and a function named
+    # after one of Perplexity's tools is refused by Perplexity itself (D231).
+    if kind != "function" or name in _PROVIDER_TOOLS:
         raise ValueError("only software-run function tools are offered; Perplexity's own tools stay off")
     if not isinstance(name, str) or not name:
         raise ValueError("function tools need a name")
@@ -220,7 +224,9 @@ def _usage(payload: dict[str, Any]) -> ModelUsage | None:
     if not isinstance(tool_details, dict):
         unreported.append("tool_units")
     else:
-        for value in tool_details.values():
+        for name, value in tool_details.items():
+            if name == SEARCH_TOOL_NAME:
+                continue  # the software-run function: Perplexity bills only its own tools, never a custom function
             invocations = _count(value.get("invocation", value.get("invocations"))) if isinstance(value, dict) else None
             # Provider-run tools are never enabled, so any reported invocation is unresolved, not priced.
             if invocations != 0:

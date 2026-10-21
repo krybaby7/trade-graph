@@ -217,7 +217,7 @@ def test_the_route_gateway_carries_only_research_and_leader_rounds_with_the_soft
     with pytest.raises(AuthorityDenied):
         route.gateway.invoke(_request(), deployment_id=route.route.deployment_id, price_card_id=AGENT_CARD_ID,
                              fx_rate=Decimal("1"), fx_buffer=Decimal("1.02"),
-                             tool_handlers={"web_search": lambda _a: {}, "fetch_url": lambda _a: {}})
+                             tool_handlers={"search_the_web": lambda _a: {}, "fetch_url": lambda _a: {}})
     assert account.database.execute("SELECT COUNT(*) FROM budget_reservations").fetchone()[0] == 0
 
 

@@ -87,7 +87,9 @@ The six prerequisites, now done or concrete owner actions:
 4. **Owner action (step 3), with step L2.** The prices: `<owner>/perplexity-price-cards.json`, a copy of
    `config/perplexity-price-cards.json`, seeded into the database as immutable dated cards. The cloud could not open
    Perplexity's pricing page on 2026-10-17, so the cards are unchanged: the 2026-10-12 Agent API card goes stale on
-   **2026-11-11** and the Search API card on 2026-11-15. **Re-check at step L2**: read the official pricing page; if a
+   **2026-11-11** and the Search API card on 2026-11-15. *Done at L2 on 2026-10-21 (D231): the official pages showed the
+   same prices, renewed as cards verified 2026-10-21, fresh until 2026-11-20; renew again before then during L4.*
+   **Re-check at step L2**: read the official pricing page; if a
    price differs, or to renew a card that would be stale on the day of L3, add a new dated card (new id, new
    `verified_at`) to `config/perplexity-price-cards.json` and copy the file again. A stale card refuses paid calls
    (the wake fails with the reason), never prices them as free.

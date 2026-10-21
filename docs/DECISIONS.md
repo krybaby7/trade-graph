@@ -3022,6 +3022,33 @@ Local step L2, 2026-10-21 (D230, from the block D230–D239 reserved for L1–L4
   candles stretch. Bounds: 0–12 and 0–48, both zero or the total at least the
   longest hole.
 
+- **D231 (2026-10-21, implementation default for L2's Perplexity smoke; the
+  owner chose Perplexity from day one and asked to fix it before L3): the
+  software search function is `search_the_web`.** The first real Agent API call
+  was refused with HTTP 400, "custom function name \"web_search\" is reserved".
+  The function the model sees, and the instructions of Research's focus round,
+  the Leader's news rounds and the generic research round, now name it
+  `search_the_web`; the stored tables (`web_search_calls`, `_sources`,
+  `_outcomes`) and the reservation purpose `<role>:web_search` keep their names.
+  A function named after any of Perplexity's own tools (`web_search`,
+  `fetch_url`, `image_search`, `people_search`, `finance_search`, `sandbox`, from
+  its pricing page on 2026-10-21) is refused before sending, and Perplexity's
+  usage report naming the software function is not a billed provider tool
+  (Perplexity bills only its own tools). Also: the smoke's output cap rises from
+  800 to 3,000 tokens (input 12,000), like the Leader's rounds, because Claude
+  spent 800 of 803 output tokens on hidden reasoning and the answer was cut off;
+  the official pricing pages showed the same prices, renewed as dated cards
+  verified 2026-10-21 (`perplexity-agent-claude-sonnet-5-5-2026-10-21`,
+  `perplexity-search-api-2026-10-21`); and `scripts/build_protected_image.py`
+  allows the image build an hour instead of 10 minutes, because compiling SQLite
+  and the wheels without a warm cache took longer on the owner's PC. The third
+  smoke completed (one search, five sources, two findings, USD0.0435 in
+  receipts). Open: Perplexity's reported totals differed from the receipts by a
+  fraction of a cent in both directions (USD0.00545 against 0.004528 once, then
+  0.00152 against 0.004528 for the same request, and 0.03418 against 0.033972),
+  so a receipt can read slightly below Perplexity's total; reconciling to the
+  larger of the two is later work.
+
 Owner choice of 2026-10-20 (D280). L2 part 1 (`planning/handoffs/L2.md`) found
 that both starting strategies lose after fees on six months of real prices,
 that no department can create or test a strategy the Trader may use, that no

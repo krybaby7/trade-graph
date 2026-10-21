@@ -71,7 +71,9 @@ def run_smoke(args: argparse.Namespace, *, transport=None) -> int:
     except (OSError, ValueError, KeyError, InvalidOperation) as exc:
         print(f"Perplexity smoke refused: {exc}", file=sys.stderr)
         return 2
-    ask_bounds = {"max_searches": 1, "max_input_tokens": 8000, "max_output_tokens": 800}
+    # The Leader's news rounds allow 3,000 output tokens. The first real smoke (2026-10-21) showed Claude spending 800
+    # of 803 output tokens on hidden reasoning, so a smaller cap cuts the answer off (D231).
+    ask_bounds = {"max_searches": 1, "max_input_tokens": 12000, "max_output_tokens": 3000}
     step = worst_case_cost(agent, ask_bounds["max_input_tokens"], ask_bounds["max_output_tokens"], 1)
     maximum = (2 * step + worst_case_cost(search, 0, 0, 1)) * route.fx_buffer
     if not args.confirm_paid_call:

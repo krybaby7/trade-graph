@@ -315,13 +315,23 @@ def test_a_forged_origin_stops_the_next_round_with_the_reason_and_nothing_more_i
         database.close()
 
 
-def test_the_repositorys_dated_cards_are_what_the_owner_installs_and_they_go_stale_on_2026_11_11() -> None:
+def test_the_repositorys_dated_cards_are_what_the_owner_installs_and_the_renewed_ones_go_stale_on_2026_11_20(
+) -> None:
     from trade_graph.contracts.models import PriceCard
 
     cards = [PriceCard.model_validate(item) for item in json.loads(CARDS)["price_cards"]]
+    by_id = {card.price_card_id: card for card in cards}
+    # L2 re-read the official pages on 2026-10-21 and renewed both cards (D231): the newest valid ones are chosen.
     agent, search = installed.select_cards(cards, datetime(2026, 11, 10, tzinfo=UTC).date())
     assert (agent.price_card_id, search.price_card_id) == (
-        "perplexity-agent-claude-sonnet-5-5-2026-10-12", "perplexity-search-api-2026-10-16")
-    assert installed.card_problem(agent, datetime(2026, 11, 10, tzinfo=UTC).date()) is None
-    assert "went stale on 2026-11-11" in installed.card_problem(agent, datetime(2026, 11, 11, tzinfo=UTC).date())
-    assert "went stale on 2026-11-15" in installed.card_problem(search, datetime(2026, 11, 15, tzinfo=UTC).date())
+        "perplexity-agent-claude-sonnet-5-5-2026-10-21", "perplexity-search-api-2026-10-21")
+    assert installed.card_problem(agent, datetime(2026, 11, 19, tzinfo=UTC).date()) is None
+    assert "went stale on 2026-11-20" in installed.card_problem(agent, datetime(2026, 11, 20, tzinfo=UTC).date())
+    assert "went stale on 2026-11-20" in installed.card_problem(search, datetime(2026, 11, 20, tzinfo=UTC).date())
+    # The earlier cards stay as records and keep their own dates.
+    old_agent, old_search = (by_id["perplexity-agent-claude-sonnet-5-5-2026-10-12"],
+                             by_id["perplexity-search-api-2026-10-16"])
+    assert "went stale on 2026-11-11" in installed.card_problem(old_agent, datetime(2026, 11, 11, tzinfo=UTC).date())
+    assert "went stale on 2026-11-15" in installed.card_problem(old_search, datetime(2026, 11, 15, tzinfo=UTC).date())
+    assert (agent.input_per_million, agent.output_per_million, search.search_per_call) == (
+        old_agent.input_per_million, old_agent.output_per_million, old_search.search_per_call)

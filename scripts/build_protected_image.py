@@ -406,11 +406,12 @@ def build(output: Path, *, subscription_tools: Path | None = None,
                 archive.addfile(info)
     image_file = output / "image-id.txt"
     with context_archive.open("rb") as stream:
+        # An hour: compiling SQLite and the wheels without a warm cache took over 10 minutes on the owner's PC (L3).
         subprocess.run(["docker", "build", "--network", "none", "--platform", inputs["platform"],
                         "--build-arg", f"BASE_IMAGE={inputs['base_image']}", "--build-arg",
                         f"SQLITE_COMPILER_IMAGE={inputs['sqlite']['compiler_image']}", "--build-arg",
                         f"SOURCE_DATE_EPOCH={inputs['source_date_epoch']}", "--iidfile", str(image_file), "-"],
-                       stdin=stream, cwd=ROOT, check=True, timeout=600)
+                       stdin=stream, cwd=ROOT, check=True, timeout=3600)
     image_id = image_file.read_text().strip()
     # Read metadata from the exact content-addressed image, independent of tags.
     raw_seal = run(["docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
