@@ -11,7 +11,10 @@ step 17 no longer needs a separate poll. Cloud package W11-B (C11, D290–D294) 
 into the installed service: step 3 adds `"lab"` to the Trader's context keys, and the missing confirmation step that
 step L2 found (`planning/handoffs/L2.md`, "Finding for L3") is now the lab's first-start behaviour, shown at steps 13
 and 15 (see "The strategy lab" below). Cloud package W12-A (C12, D295–D299) made the Trader the Trading desk: step 3
-adds `"playbook"` and `"news"` to the Trader's context keys (see "The Trading desk" below).
+adds `"playbook"` and `"news"` to the Trader's context keys (see "The Trading desk" below). Cloud package W13-A (C13,
+D300–D304) added HQ's Trading desk room and the scorecard's split by strategy, market type and stance: step 3 adds
+`"scorecard"` to Learning's context keys, and after the install you look at the room on the HQ tab on your phone and
+iPad, in light and dark.
 
 In plain words: on your PC a local build session builds the new protected image from the merged code, puts your paper
 account on hold, copies your price history into the installation, moves the books to the new release, records your
