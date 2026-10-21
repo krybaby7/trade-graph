@@ -254,9 +254,10 @@ GitHub's test job too (check run 118733454925, 15:58–16:53 UTC): 8,113 passed,
 (check run 118778910228, pytest 67 minutes); wave 12 at `bd405c7`, 8,306
 passed, 0 failed, 18 skipped (check run 118896468198, pytest 81 minutes; the
 first candidate `c3212cf` failed one HQ chart test whose setup missed
-0052's new table, fixed in `44ad04b`). Any failure now counts and must be
-reported. The container run took 105 minutes (W1-E measured 54); GitHub's
-test job takes 50 to 80 minutes and may run 120.
+0052's new table, fixed in `44ad04b`); wave 13 at `69926c3`, 8,361 passed, 0
+failed, 18 skipped (check run 118961096365, pytest 84 minutes). Any failure
+now counts and must be reported. The container run took 105 minutes (W1-E
+measured 54); GitHub's test job takes 50 to 90 minutes and may run 120.
 
 **Cloud container failures.** In a cloud session some isolation tests can also
 fail because of the container itself. Bubblewrap (`bwrap`) is not installed:
