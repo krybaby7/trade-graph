@@ -874,6 +874,10 @@ PROBLEM_PREFIX: Final = {
     "news_poll:": ("the news check's last step failed",
                    "New headlines may be missing until it works again; a missing feed is never taken as \"no news\". "
                    "Trading, protection and your records are not affected."),
+    # W13-A (D303): the strategy lab's step beside the service (``paper_service._run_lab``, W11-B).
+    "strategy_lab:": ("the strategy lab's last step failed",
+                      "The Trading desk's lab requests wait until it works again; trading, protection and your "
+                      "records are not affected."),
     "other": ("a routine step is failing", "Some background work is not happening."),
 }
 
@@ -999,6 +1003,24 @@ STORY: Final = {
     "account_opened": "Practice account opened with ",
     "account_opened_live": "Account opened with ",
     "engineer_candidate": "The Engineer finished an improvement for the Leader to review.",
+    # W13-A (D303): the strategy lab's finished requests; requests ending within 15 minutes are one item.
+    "lab_one": "The strategy lab finished {what}.",
+    "lab_one_refused": "The strategy lab refused {what}.",
+    "lab_one_failed": "The strategy lab couldn't finish {what}: it failed.",
+    "lab_many": "The strategy lab finished {n} requests: {outcomes}.",
+    "lab_outcome": {"done": "{n} done", "refused": "{n} refused", "failed": "{n} failed"},
+    "lab_kind": {"register_strategy": "a new strategy version", "create_study": "a new study",
+                 "tune": "a tuning run", "confirm": "a confirmation"},
+    "lab_of": " of {subject}",
+    "lab_on": " on {symbol}",
+    "lab_consequence": "Results are in the Trading desk room on the HQ tab; the desk is woken with them.",
+    "lab_refused_consequence": ("A refused request keeps the test fair (for example, a confirmation needs days the "
+                                "strategy never tuned on); the desk reads why when it is woken, and the Trading "
+                                "desk room shows it."),
+    "lab_failed_consequence": "The desk is told it failed; the lab goes on with the next request.",
+    "lab_not_ready": "The strategy lab couldn't start.",
+    "lab_not_ready_consequence": ("The Trading desk's lab requests wait until it can; trading, protection and your "
+                                  "records are not affected."),
 }
 
 # --- D.12 Rooms -----------------------------------------------------------------------------
@@ -1719,6 +1741,143 @@ PROTECTION: Final = {
     "more_why": "Each has had none for at least 10 minutes. Trading records lists every order.",
 }
 
+# --- The Trading desk room (W13-A, C13; D302) ----------------------------------------------------------------
+# Words for ``api/hq_desk.py``. The desk's own words (reasons, notes, ideas) are labelled quotes; these never say
+# "practice" except where the paper scorecard is meant, so a live account reads the playbook and lab parts too.
+
+DESK: Final = {
+    "playbook": {
+        "not_available": "The playbook isn't recorded in this database yet (it is older than the Trading desk).",
+        "empty": "The desk hasn't written a playbook yet: it does at a wake when it chooses what to use where.",
+        "unreadable": "The playbook couldn't be read: a stored revision no longer matches its check value ({error}).",
+        "headline": (" revision {revision}, set by the desk ", "; {n} revision so far.", "; {n} revisions so far."),
+        "short": "Playbook revision {revision}.",
+        "short_none": "No playbook yet.",
+        "previous": ("It replaced revision {revision} from ", "."),
+        "choice": {"wait": "{type}: wait in cash.", "buy_dips": "{type}: buy dips{refs}.",
+                   "follow_trend": "{type}: follow the trend{refs}.", "other": "{type}: something else{refs}."},
+        "with": " with {refs}",
+        "no_version": " (no strategy version named yet)",
+        "no_choice": "{type}: no choice in this revision.",
+        "type": {"rising": "Rising", "sideways": "Sideways", "falling": "Falling", "unclear": "Unclear"},
+    },
+    "stance": {
+        "not_available": "Stances aren't recorded in this database yet (it is older than the Trading desk).",
+        "empty": "No stance today yet: the desk gives one per coin it looks at when it is woken.",
+        "unreadable": "Today's stances couldn't be read ({error}).",
+        "text": {"wait": "Wait in cash.", "buy_dips": "Buy dips{refs}.", "follow_trend": "Follow the trend{refs}.",
+                 "other": "Something else{refs}."},
+        "with": " with {ref}",
+        "no_version": " (no strategy version named)",
+        "verb": {"wait": "waits", "buy_dips": "buys dips", "follow_trend": "follows the trend",
+                 "other": "does something else"},
+        "headline": ("Today's ", " for 1 coin: ", " for {n} coins: "),
+        "more": " and {n} more",
+        "unknown_type": "type not known",
+        "shown": {"current": "{type} when it chose (software's label).",
+                  "stale": "Not known when it chose: the newest label was more than 2 hours old.",
+                  "missing": "Not known when it chose: no label yet."},
+        "now": {"current": "{type} now (labelled {age}).", "just_now": "just now",
+                "stale": "Not known now: the newest label is {age} old.",
+                "missing": "Not known now: no label yet."},
+        "short": ("1 coin chosen today.", "{n} coins chosen today."),
+        "short_none": "No stance today yet.",
+    },
+    "lab": {
+        "not_available": "The strategy lab isn't in this database yet (it is older than the lab).",
+        "empty": "The lab has had no request yet: the desk asks it to replay and confirm strategy versions.",
+        "unreadable": "The lab's records couldn't be read ({error}).",
+        "headline": ("The ", ": {queued} queued, {running} running; {results} finished so far."),
+        "short": "Lab: {queued} queued, {running} running.",
+        "running": "Running: {what}.",
+        "queued": "Queued: {what}.",
+        "kind": {"register_strategy": "a new strategy version", "create_study": "a new study",
+                 "tune": "a tuning run", "confirm": "a confirmation"},
+        "of": " of {subject}",
+        "on": " on {symbol}",
+        "done": {"register_strategy": "Registered {subject}.", "register_again": "{subject} was already registered.",
+                 "create_study": "Set up the study {subject}: tune {tune}, confirm {confirm}.",
+                 "tune": "Tuned {subject} on {symbol} over {window}: {reports}.",
+                 "confirm": "Confirmed {subject} on {symbol} over {window}: {reports}.",
+                 "other": "Finished {what}."},
+        "reports": ("1 report", "{n} reports"),
+        "refused": "Refused: {what}.",
+        "failed": "Failed: {what}.",
+        "window": "{start} to {end}",
+        "report": "With {profile} fees: {trades}, result after fees ",
+        "trades": ("1 trade", "{n} trades"),
+        "hold": "; holding {symbol} over the same days made ",
+        "versus": ", so the strategy did ",
+        "versus_tail": (" better.", " worse."),
+        "versus_same": ", the same as the strategy.",
+        "no_hold": "; holding {symbol} wasn't valued in this report.",
+        "missing_report": "The report {run_id} couldn't be read.",
+        "family": "{strategy}: {versions}, {studies}, {tunes} and {confirms}",
+        "family_confirmed": "; confirmed: {refs}.",
+        "family_none": "; none confirmed yet.",
+        "versions": ("1 version", "{n} versions"),
+        "studies": ("1 study", "{n} studies"),
+        "tunes": ("1 tuning run", "{n} tuning runs"),
+        "confirms": ("1 confirmation run", "{n} confirmation runs"),
+    },
+    "news": {
+        "not_available": "News rounds aren't in this database yet (it is older than the Leader's news).",
+        "empty": "No Leader news round, idea or Jev verdict for the desk yet.",
+        "unreadable": "The news the desk read couldn't be read ({error}).",
+        "headline_turn": "The news the desk read at its last turn, ",
+        "headline_next": "The news the desk reads at its next wake",
+        "round": ": the Leader's newest round, finished ",
+        "no_round": ": no Leader round yet",
+        "verdicts": ("; 1 Jev verdict on its coins.", "; {n} Jev verdicts on its coins.",
+                     "; no Jev verdict on its coins in the 24 hours before."),
+        "inbox": "Sent to the desk ",
+        "inbox_research": "Sent to Research (the desk wasn't woken then) ",
+        "inbox_cited": ("; the desk cited it in 1 lab request.", "; the desk cited it in {n} lab requests."),
+        "inbox_untested": "; the desk hasn't tested it (it decides).",
+        "jev": {"shadow": "Jev, the news alarm, is in shadow mode: its verdicts wake nobody until you switch news "
+                          "wake-ups on.",
+                "live": "Jev, the news alarm, is live: a would-be alarm about a held coin wakes the desk.",
+                "other": "Jev, the news alarm, is in mode {mode}."},
+        "jev_counts": (" 1 verdict on the desk's coins in the 24 hours before; {wake} would have woken someone.",
+                       " {n} verdicts on the desk's coins in the 24 hours before; {wake} would have woken someone.",
+                       " No verdict on the desk's coins in the 24 hours before."),
+        "verdict": "{publisher} · {subjects}",
+        "would_wake": " · would wake {who}",
+        "would_wake_shadow": " · would have woken {who} (shadow: nobody was woken)",
+        "no_wake": " · no alarm",
+    },
+    "split": {
+        "not_applied": "A live account has no paper scorecard, so its trades aren't split here.",
+        "empty": ("No trades since ", " yet: each one will be split by its strategy version, its market type at "
+                  "entry and the desk's stance."),
+        "unavailable": "The split can't be worked out yet: {reason}",
+        "unreadable": "The split couldn't be read: {reason}",
+        "headline": ("Since ", ": {trades}{held}, result after fees ", ", split by strategy version, ",
+                     " at entry and the desk's stance (the same figures as the Scorecard)."),
+        "trades": ("1 trade", "{n} trades"),
+        "held": (" and 1 still held", " and {n} still held"),
+        "row": "{name}: {counts}, result after fees ",
+        "counts": "{trades} ({won} won, {lost} lost)",
+        "no_trades": "no trades",
+        "strategy": {"no_day_plan": "No day plan", "carried_in": "Held from before the period"},
+        "market": {"rising": "Rising at entry", "sideways": "Sideways at entry", "falling": "Falling at entry",
+                   "unclear": "Unclear at entry", "stale": "Label too old at entry", "missing": "No label at entry",
+                   "carried_in": "Held from before the period"},
+        "stance": {"wait": "Waiting", "buy_dips": "Buying dips", "follow_trend": "Following the trend",
+                   "other": "Something else", "not_recorded": "No stance recorded",
+                   "carried_in": "Held from before the period"},
+        "choice_market": {"rising": "when rising", "sideways": "when sideways", "falling": "when falling",
+                          "unclear": "when unclear", "stale": "with a label too old", "missing": "with no label",
+                          "carried_in": "held from before"},
+        "choice_stance": {"wait": "waiting", "buy_dips": "buying dips", "follow_trend": "following the trend",
+                          "other": "doing something else", "not_recorded": "no stance recorded",
+                          "carried_in": "held from before"},
+        "choice": "{strategy} {market}, {stance}",
+        "note": ("Evidence about simulated paper trading, split by the choice behind each trade's first buy; a small "
+                 "sample proves little, and this is never proof of profit or permission for real money."),
+    },
+}
+
 # --- D.13 Section help (also used by the page) ------------------------------------------------
 
 SECTION_HELP: Final = {
@@ -1752,6 +1911,10 @@ SECTION_HELP: Final = {
                   "shows its newest records and any problems."),
     "wakes": ("Every wake-up from the saved records, with its reasons and the AI allowance at that moment. Nothing "
               "limits how often a department is woken."),
+    # W13-A (D302): the Trading desk room (HQ tab).
+    "desk": ("What the Trading desk believes and tests: its playbook per market type, today's choice per coin, its "
+             "strategy lab, the news it read and what each strategy earned in each market type. Looking never "
+             "changes anything."),
 }
 NO_RECORDED_ACTIVITY: Final = "No recorded activity"
 

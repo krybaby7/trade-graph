@@ -48,6 +48,7 @@ def story(p: Projection, *, window_start: datetime, window_end: datetime, checki
     items += _owner_actions(p, checkins)
     items += _improvements(p)
     items += _account_opened(p)
+    items += _lab_results(p)
     floor = p.facts.get("story_floor")
     start = max(window_start, floor) if floor is not None else window_start
     cut: datetime | None = None
@@ -524,6 +525,70 @@ def _safety_stop(p: Projection) -> list:
                         c.says(c.STORY["safety_stop"].format(profile=c.PAUSE_SHORT[p.profile])),
                         consequence=c.says(c.STORY["safety_stop_consequence"]), problem=True,
                         technical=p.profile)]
+
+
+# --- The strategy lab (W13-A, D303) -------------------------------------------------------------------------------
+
+LAB_ENDED = ("done", "refused", "failed")
+LAB_GROUP_GAP = timedelta(minutes=15)  # requests that end within 15 minutes of each other are one story item
+
+
+def _lab_what(payload: dict) -> str:
+    brief = payload.get("brief") if isinstance(payload.get("brief"), dict) else {}
+    words = c.STORY["lab_kind"].get(payload.get("kind"), "a request")
+    subject = next((brief.get(key) for key in ("strategy_ref", "study_id", "strategy_id")
+                    if isinstance(brief.get(key), str)), None)
+    if subject:
+        words += c.STORY["lab_of"].format(subject=c.cut(subject, 80))
+    if isinstance(brief.get("symbol"), str):
+        words += c.STORY["lab_on"].format(symbol=c.cut(brief["symbol"], 24))
+    return words
+
+
+def _lab_item(group: list[dict]) -> dict | None:
+    first, last = group[0], group[-1]
+    outcomes = [event["payload"].get("status") for event in group]
+    failed, refused = "failed" in outcomes, "refused" in outcomes
+    if len(group) == 1:
+        key = {"done": "lab_one", "refused": "lab_one_refused", "failed": "lab_one_failed"}[outcomes[0]]
+        headline = c.says(c.STORY[key].format(what=_lab_what(first["payload"])))
+    else:
+        counts = [c.STORY["lab_outcome"][status].format(n=outcomes.count(status)) for status in LAB_ENDED
+                  if status in outcomes]
+        headline = c.says(c.STORY["lab_many"].format(n=len(group), outcomes=", ".join(counts)))
+    consequence = c.says(c.STORY["lab_failed_consequence"] if failed else c.STORY["lab_refused_consequence"]
+                         if refused else c.STORY["lab_consequence"])
+    reasons = [str(event["payload"].get("reason")) for event in group if event["payload"].get("reason")]
+    return _story_item(f"lab:{first['event_id']}", first["created_at"], "lab_result", "trader",
+                       "attention" if failed else "neutral" if refused else "good", headline,
+                       until=last["created_at"] if len(group) > 1 else None, consequence=consequence,
+                       count=len(group) if len(group) > 1 else None, problem=failed,
+                       technical="; ".join(reasons) or None)
+
+
+def _lab_results(p: Projection) -> list:
+    """The lab's finished requests (``strategy_lab`` activities), grouped, and any start it couldn't make."""
+    events = sorted((event for event in p.facts["events"] if event["kind"] == "strategy_lab"
+                     and isinstance(event.get("payload"), dict) and _dt(event["created_at"]) is not None),
+                    key=lambda event: (event["created_at"], event["event_id"]))
+    items, group = [], []
+    for event in events:
+        status = event["payload"].get("status")
+        if status == "not_ready":
+            items.append(_story_item(f"lab:{event['event_id']}", event["created_at"], "lab_result", "trader",
+                                     "attention", c.says(c.STORY["lab_not_ready"]),
+                                     consequence=c.says(c.STORY["lab_not_ready_consequence"]), problem=True,
+                                     technical=event["payload"].get("reason")))
+            continue
+        if status not in LAB_ENDED:
+            continue  # a start, or a request put back by a stop: not a result
+        if group and _dt(event["created_at"]) - _dt(group[-1]["created_at"]) > LAB_GROUP_GAP:
+            items.append(_lab_item(group))
+            group = []
+        group.append(event)
+    if group:
+        items.append(_lab_item(group))
+    return items
 
 
 # --- Owner actions, improvements, account -------------------------------------------------------------------

@@ -27,6 +27,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
@@ -34,9 +37,13 @@ from typing import Any
 
 from trade_graph.application.ai_spending import PeriodSpending, period_spending
 from trade_graph.application.ledger import Ledger
+from trade_graph.application.market_types.store import DEFAULT_LABEL_AGE, read_latest_market_types
+from trade_graph.application.trading_desk.store import read_day_plan_desk_records
 from trade_graph.contracts.models import FillRecord, InstrumentRules
+from trade_graph.contracts.trading_desk import STANCES
 from trade_graph.domain.clock import FrozenClock, parse_utc, utc_iso
-from trade_graph.domain.errors import ValidationFailure
+from trade_graph.domain.errors import TradeGraphError, ValidationFailure
+from trade_graph.domain.market_types import MARKET_TYPES
 from trade_graph.domain.money import canonical_decimal
 from trade_graph.kernel.books import Mark, native_equity
 from trade_graph.kernel.cost_profiles import KRAKEN_STARTING, load_cost_profiles
@@ -44,10 +51,12 @@ from trade_graph.kernel.trade_metrics import (
     METRICS_VERSION,
     QUANTUM,
     EquityPoint,
+    GroupResult,
     HoldBenchmark,
     TradeFill,
     TradeMetrics,
     hold_benchmark,
+    split_results,
     summarize,
 )
 
@@ -162,6 +171,163 @@ class OwnerTestReading:
                 "note": READING_NOTE}
 
 
+# --- The split by strategy version, market type at entry and stance (W13-A, C13; D300) ------------------------------
+
+
+SPLIT_VERSION = "scorecard-split-v1"
+NO_DAY_PLAN = "no_day_plan"  # a trade whose first buy no day plan placed (an older order, or a plan before 0034)
+CARRIED_IN_GROUP = "carried_in"  # coins already held at the start: their entry lies before the period
+NOT_RECORDED = "not_recorded"  # no stance was recorded with the day plan (a plan before 0052, or none given)
+# The label software recorded for the coin at the first buy (D287: current for 2 hours); a label more than 2 hours
+# old is "stale" and none at all is "missing": neither is shown as the type then, never a guess.
+MARKET_TYPES_AT_ENTRY = (*MARKET_TYPES, "stale", "missing", CARRIED_IN_GROUP)
+STANCES_AT_ENTRY = (*STANCES, NOT_RECORDED, CARRIED_IN_GROUP)
+LABEL_MAX_AGE = DEFAULT_LABEL_AGE
+SPLIT_BASIS = (
+    "Each trade and each position still held counts once, by the choice behind its first buy: the strategy version "
+    "of the day plan whose waiting buy filled (no_day_plan when no day plan placed it), the market type software "
+    "labelled the coin with at that moment (stale when the newest label was more than 2 hours old, missing when "
+    "there was none) and the Trading desk's stance recorded with that day plan (not_recorded when none was). Coins "
+    "already held at the start count as carried_in. A position still held counts with its value as if sold at the "
+    "end with the taker fee, so each list sums exactly to the trades, wins, losses and result after fees.")
+_STRATEGY_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9._-]{1,16}$")
+
+
+@dataclass(frozen=True)
+class EntryChoice:
+    """What was chosen when a trade's first buy filled: the strategy version, the market type then, the stance."""
+
+    strategy: str  # a strategy version (strategy_id@version), NO_DAY_PLAN or CARRIED_IN_GROUP
+    market_type: str  # one of MARKET_TYPES_AT_ENTRY
+    stance: str  # one of STANCES_AT_ENTRY
+    plan_id: str | None = None
+    label_id: str | None = None
+    labelled_at: datetime | None = None
+    stance_id: str | None = None
+    playbook_revision: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.strategy not in (NO_DAY_PLAN, CARRIED_IN_GROUP) and (
+                not isinstance(self.strategy, str) or _STRATEGY_REF.fullmatch(self.strategy) is None):
+            raise ValidationFailure("a trade's strategy is a strategy version, no_day_plan or carried_in")
+        if self.market_type not in MARKET_TYPES_AT_ENTRY:
+            raise ValidationFailure(f"a market type at entry is one of {', '.join(MARKET_TYPES_AT_ENTRY)}")
+        if self.stance not in STANCES_AT_ENTRY:
+            raise ValidationFailure(f"a stance at entry is one of {', '.join(STANCES_AT_ENTRY)}")
+
+    @classmethod
+    def carried_in(cls) -> EntryChoice:
+        return cls(strategy=CARRIED_IN_GROUP, market_type=CARRIED_IN_GROUP, stance=CARRIED_IN_GROUP)
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return self.strategy, self.market_type, self.stance
+
+    def document(self) -> dict[str, Any]:
+        return {"strategy_ref": self.strategy, "market_type": self.market_type, "stance": self.stance,
+                "plan_id": self.plan_id, "label_id": self.label_id, "labelled_at_utc": _iso(self.labelled_at),
+                "stance_id": self.stance_id, "playbook_revision": self.playbook_revision}
+
+
+@dataclass(frozen=True)
+class ScorecardSplit:
+    """The scorecard's trades and result after fees by strategy version, market type at entry and stance.
+
+    ``by_strategy`` lists the strategy versions found in name order, then ``no_day_plan`` and ``carried_in`` when
+    used; ``by_market_type`` and ``by_stance`` list every word in its fixed order, empty ones included; ``by_choice``
+    the combinations found. Each sums exactly to ``totals`` (the kernel's ``split_results``). ``outside_trades`` is
+    whatever part of the scorecard's result no trade explains: zero for the paper broker's fills.
+    """
+
+    available: bool
+    reason: str | None
+    by_strategy: tuple[GroupResult, ...] = ()
+    by_market_type: tuple[GroupResult, ...] = ()
+    by_stance: tuple[GroupResult, ...] = ()
+    by_choice: tuple[tuple[tuple[str, str, str], GroupResult], ...] = ()
+    entries: tuple[dict[str, Any], ...] = ()
+    totals: dict[str, Any] | None = None
+    outside_trades: Decimal | None = None
+
+    @classmethod
+    def unavailable(cls, reason: str) -> ScorecardSplit:
+        return cls(available=False, reason=reason)
+
+    def document(self) -> dict[str, Any]:
+        return {
+            "split_version": SPLIT_VERSION, "available": self.available, "reason": self.reason, "basis": SPLIT_BASIS,
+            "label_max_age_minutes": int(LABEL_MAX_AGE.total_seconds() // 60), "totals": self.totals,
+            "outside_trades": _text(self.outside_trades),
+            "by_strategy": [row.to_document("strategy_ref") for row in self.by_strategy],
+            "by_market_type": [row.to_document("market_type") for row in self.by_market_type],
+            "by_stance": [row.to_document("stance") for row in self.by_stance],
+            "by_choice": [{"strategy_ref": key[0], "market_type": key[1], "stance": key[2],
+                           **{name: value for name, value in row.to_document().items() if name != "group"}}
+                          for key, row in self.by_choice],
+            "entries": [dict(item) for item in self.entries]}
+
+
+def split_scorecard(metrics: TradeMetrics, *, trade_choices: Sequence[EntryChoice],
+                    open_choices: Sequence[EntryChoice], open_values: Sequence[Decimal]) -> ScorecardSplit:
+    """Split ``metrics``' trades and positions still held by the choice behind each one's first buy.
+
+    ``trade_choices`` follow ``metrics.round_trips`` and ``open_choices`` with ``open_values`` (each position's value
+    as if sold at the end, after the selling fee) follow ``metrics.open_positions``.
+    """
+    trips, held = metrics.round_trips, metrics.open_positions
+    if len(trade_choices) != len(trips):
+        raise ValidationFailure("the split needs one choice per trade")
+    if len(open_choices) != len(held) or len(open_values) != len(held):
+        raise ValidationFailure("the split needs one choice per position still held, with its value")
+    with localcontext(_EXACT):
+        open_results = [_decimal_value(value) + position.sold - position.bought - position.fees
+                        for position, value in zip(held, open_values, strict=True)]
+    choices = (*trade_choices, *open_choices)
+
+    def rows(groups: Sequence[str], key) -> tuple[GroupResult, ...]:
+        if not groups:
+            return ()
+        return split_results(groups, [(key(choice), trip) for trip, choice in zip(trips, trade_choices, strict=True)],
+                             [(key(choice), result) for choice, result in zip(open_choices, open_results,
+                                                                              strict=True)])
+
+    versions = sorted({choice.strategy for choice in choices} - {NO_DAY_PLAN, CARRIED_IN_GROUP})
+    strategies = (*versions, *(group for group in (NO_DAY_PLAN, CARRIED_IN_GROUP)
+                               if any(choice.strategy == group for choice in choices)))
+    order = ({name: index for index, name in enumerate(strategies)},
+             {name: index for index, name in enumerate(MARKET_TYPES_AT_ENTRY)},
+             {name: index for index, name in enumerate(STANCES_AT_ENTRY)})
+    keys = sorted({choice.key for choice in choices},
+                  key=lambda item: tuple(rank[part] for rank, part in zip(order, item, strict=True)))
+    names = {key: "|".join(key) for key in keys}
+    combined = rows([names[key] for key in keys], lambda choice: names[choice.key])
+    with localcontext(_EXACT):
+        explained = sum((trip.result for trip in trips), Decimal("0")) + sum(open_results, Decimal("0"))
+        outside = metrics.result - explained
+    entries = [{"kind": "trade", "symbol": trip.symbol, "opened_at_utc": utc_iso(trip.opened_at),
+                "closed_at_utc": utc_iso(trip.closed_at), "first_fill_ref": trip.fill_refs[0],
+                "result_after_fees": _text(trip.result), "outcome": trip.outcome, **choice.document()}
+               for trip, choice in zip(trips, trade_choices, strict=True)]
+    entries += [{"kind": "open", "symbol": position.symbol, "opened_at_utc": utc_iso(position.opened_at),
+                 "closed_at_utc": None, "first_fill_ref": position.fill_refs[0], "result_after_fees": _text(result),
+                 "outcome": None, **choice.document()}
+                for position, result, choice in zip(held, open_results, open_choices, strict=True)]
+    totals = {"trades": metrics.trades, "wins": metrics.wins, "losses": metrics.losses,
+              "flat_trades": metrics.flat_trades, "open_positions": len(held), "result_after_fees": _text(explained)}
+    return ScorecardSplit(
+        available=True, reason=None, by_strategy=rows(strategies, lambda choice: choice.strategy),
+        by_market_type=rows(MARKET_TYPES_AT_ENTRY, lambda choice: choice.market_type),
+        by_stance=rows(STANCES_AT_ENTRY, lambda choice: choice.stance),
+        by_choice=tuple(zip(keys, combined, strict=True)), entries=tuple(entries), totals=totals,
+        outside_trades=outside)
+
+
+def _decimal_value(value: object) -> Decimal:
+    if type(value) is not Decimal or not value.is_finite():
+        raise ValidationFailure("a position's value at the end is a finite Decimal")
+    return value
+
+
 @dataclass(frozen=True)
 class Scorecard:
     portfolio_id: str
@@ -181,6 +347,7 @@ class Scorecard:
     eur: EurReporting
     ai: PeriodSpending
     owner_test_reading: OwnerTestReading
+    split: ScorecardSplit  # W13-A (D300): by strategy version, market type at entry and stance
 
     @property
     def status(self) -> str:
@@ -205,6 +372,7 @@ class Scorecard:
                 "basis": "the ledger's postings and marks; coins held at the start carried in at the start price; "
                          "coins held at the end valued as sold at their mark with the taker fee"},
             "metrics": metrics.to_document(),
+            "split": self.split.document(),
             "benchmarks": {
                 "cash": {"result": "0", "versus": _text(metrics.versus_cash), "beaten": metrics.versus_cash > 0,
                          "note": CASH_NOTE},
@@ -393,7 +561,78 @@ def _compute(connection, portfolio_id: str, start: datetime | None, end: datetim
         carried_in=tuple(start_held), equity_points=len(points), unvalued_points=unvalued,
         provisional=tuple(provisional), btc=btc,
         eur=_eur(ledger, portfolio["reporting_currency"], currency, start_iso, end_iso, metrics, btc, ai),
-        ai=ai, owner_test_reading=_reading(start, end, metrics))
+        ai=ai, owner_test_reading=_reading(start, end, metrics),
+        split=_split(connection, portfolio_id, events, metrics, marks, profile.taker_rate))
+
+
+def _split(connection, portfolio_id: str, events, metrics: TradeMetrics, marks: dict[str, _Mark | None],
+           taker_rate: Decimal) -> ScorecardSplit:
+    """The split of the scored trades (D300), or why it can't be read; the scorecard itself never depends on it."""
+    try:
+        trade_choices, open_choices = _entry_choices(connection, portfolio_id, events, metrics)
+        with localcontext(_EXACT):
+            values = []
+            for position in metrics.open_positions:
+                marked = position.quantity * marks[position.symbol.split("/")[0]].price
+                values.append(marked - marked * taker_rate)  # as the ending equity values it (exit_fees)
+        return split_scorecard(metrics, trade_choices=trade_choices, open_choices=open_choices, open_values=values)
+    except (TradeGraphError, sqlite3.DatabaseError, ArithmeticError, LookupError, TypeError, ValueError,
+            AttributeError) as error:
+        return ScorecardSplit.unavailable(f"the split by strategy version, market type and stance can't be read "
+                                          f"from the records ({type(error).__name__})")
+
+
+def _entry_choices(connection, portfolio_id: str, events,
+                   metrics: TradeMetrics) -> tuple[list[EntryChoice], list[EntryChoice]]:
+    """The choice behind each trade's and open position's first buy, from the records (D300): the fill's order intent,
+    the day-plan entry that owns it and its plan (strategy version), the plan's desk record (W12-A: the stance in the
+    same answer, the playbook revision) and the coin's newest label at the fill (W11-A, point in time)."""
+    intents: dict[str, str | None] = {}
+    for row in events:
+        if row["kind"] == "fill":
+            fill = json.loads(row["payload_json"]).get("fill") or {}
+            intents[row["external_ref"]] = fill.get("intent_id") if isinstance(fill, dict) else None
+    items = [*metrics.round_trips, *metrics.open_positions]
+    plans = _plans_of(connection, sorted({intents.get(item.fill_refs[0]) for item in items} - {None}))
+    records = read_day_plan_desk_records(connection, portfolio_id=portfolio_id,
+                                         plan_ids=sorted({plan_id for plan_id, _ in plans.values()})) if plans else {}
+    choices: list[EntryChoice] = []
+    for item in items:
+        first = item.fill_refs[0]
+        if first.startswith(CARRIED_IN):
+            choices.append(EntryChoice.carried_in())
+            continue
+        plan = plans.get(intents.get(first))
+        label = read_latest_market_types(connection, symbols=[item.symbol], as_of=item.opened_at).get(item.symbol)
+        market = ("missing" if label is None else label.market_type if label.is_fresh(item.opened_at, LABEL_MAX_AGE)
+                  else "stale")
+        record = None if plan is None else records.get(plan[0])
+        choices.append(EntryChoice(
+            strategy=NO_DAY_PLAN if plan is None else plan[1], market_type=market,
+            stance=record.stance if record is not None and record.stance else NOT_RECORDED,
+            plan_id=None if plan is None else plan[0], label_id=None if label is None else label.label_id,
+            labelled_at=None if label is None else label.as_of, stance_id=None if record is None else record.stance_id,
+            playbook_revision=None if record is None else record.playbook_revision))
+    trades = len(metrics.round_trips)
+    return choices[:trades], choices[trades:]
+
+
+def _plans_of(connection, intent_ids: list[str]) -> dict[str, tuple[str, str]]:
+    """``{intent_id: (plan_id, strategy_ref)}`` of the day-plan entries that own these buys (none before 0034)."""
+    if not intent_ids:
+        return {}
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if not {"day_plans", "day_plan_entries"} <= tables:
+        return {}
+    found: dict[str, tuple[str, str]] = {}
+    for offset in range(0, len(intent_ids), 500):
+        chunk = intent_ids[offset:offset + 500]
+        for row in connection.execute(
+                f"""SELECT e.intent_id, p.plan_id, p.strategy_ref FROM day_plan_entries e
+                JOIN day_plans p ON p.plan_id = e.plan_id WHERE e.intent_id IN ({",".join("?" for _ in chunk)})""",
+                tuple(chunk)):
+            found[row["intent_id"]] = (row["plan_id"], row["strategy_ref"])
+    return found
 
 
 def _period_start(connection, portfolio_id: str, start: datetime | None, opened_iso: str, currency: str,
@@ -719,6 +958,7 @@ def format_scorecard_text(card: Scorecard) -> str:
     lines.append(f"Trades: {metrics.trades} ({metrics.wins} won, {metrics.losses} lost, {metrics.flat_trades} even); "
                  f"win rate {_percent(metrics.win_rate)}; average win {_money(metrics.average_win, currency)}; "
                  f"average loss {_money(metrics.average_loss, currency)}.")
+    lines.extend(_split_lines(card.split, currency))
     if card.carried_in:
         lines.append(f"Coins already held at the start, counted as bought at the start price: "
                      f"{', '.join(card.carried_in)}.")
@@ -758,8 +998,101 @@ def format_scorecard_text(card: Scorecard) -> str:
     return "\n".join(lines)
 
 
+# --- What Learning reads (W13-A, C13; D301) ---------------------------------------------------------------------
+
+
+# Bounds on what one Learning turn is shown (its 128 KiB request), never on trades or strategies (D116): the rows with
+# a trade or a position still held, the most combinations and the newest trades, each with the number left out.
+LEARNING_STRATEGIES_SHOWN = 24
+LEARNING_CHOICES_SHOWN = 24
+LEARNING_TRADES_SHOWN = 12
+LEARNING_NOTE = (
+    "The paper scorecard since the account opened, split by the choice behind each trade's first buy: the strategy "
+    "version, the market type at entry and the Trading desk's stance. Use it to say which choice earned or lost in "
+    "which market. It is evidence about simulated paper trading: a small sample proves little, it is not a pass mark "
+    "and not permission for real money.")
+_ROW_KEYS = ("trades", "wins", "losses", "flat_trades", "open_positions", "result_after_fees")
+_TRADE_KEYS = ("symbol", "opened_at_utc", "closed_at_utc", "strategy_ref", "market_type", "stance",
+               "result_after_fees", "outcome", "plan_id")
+
+
+def _shown(rows: list[dict[str, Any]], names: tuple[str, ...], limit: int | None = None) -> tuple[list, int]:
+    used = [{**{name: row[name] for name in names}, **{key: row[key] for key in _ROW_KEYS}} for row in rows
+            if row["trades"] or row["open_positions"]]
+    return (used, 0) if limit is None else (used[:limit], max(0, len(used) - limit))
+
+
+def learning_view(card: Scorecard) -> dict[str, Any]:
+    """The scorecard as Learning's ``scorecard`` context key: the totals and the split's used rows, bounded."""
+    split = card.split.document()
+    strategies, strategies_omitted = _shown(split["by_strategy"], ("strategy_ref",), LEARNING_STRATEGIES_SHOWN)
+    choices, choices_omitted = _shown(split["by_choice"], ("strategy_ref", "market_type", "stance"),
+                                      LEARNING_CHOICES_SHOWN)
+    entries = split["entries"]
+    return {
+        "available": True, "split_available": split["available"], "reason": split["reason"],
+        "period": {"start": utc_iso(card.start), "end": utc_iso(card.end)}, "status": card.status,
+        "currency": card.currency, "result_after_fees": _text(card.metrics.result), "basis": SPLIT_BASIS,
+        "totals": split["totals"], "outside_trades": split["outside_trades"],
+        "by_strategy": strategies, "by_strategy_omitted": strategies_omitted,
+        "by_market_type": _shown(split["by_market_type"], ("market_type",))[0],
+        "by_stance": _shown(split["by_stance"], ("stance",))[0],
+        "by_choice": choices, "by_choice_omitted": choices_omitted,
+        "recent_trades": [{key: item[key] for key in _TRADE_KEYS} for item in entries[-LEARNING_TRADES_SHOWN:]],
+        "recent_trades_omitted": max(0, len(entries) - LEARNING_TRADES_SHOWN), "note": LEARNING_NOTE}
+
+
+def scorecard_for_learning(database, portfolio_id: str, *, end: datetime) -> dict[str, Any]:
+    """Learning's ``scorecard`` key: the paper scorecard since the account opened, to ``end``, with its split; or
+    why it can't be scored. Reads only."""
+    try:
+        return learning_view(compute_scorecard(database, portfolio_id=portfolio_id, end=end))
+    except ScorecardUnavailable as error:
+        return {"available": False, "reason": str(error), "note": LEARNING_NOTE}
+    except (TradeGraphError, sqlite3.DatabaseError, ArithmeticError, LookupError, TypeError, ValueError) as error:
+        return {"available": False, "reason": f"the scorecard can't be read from the records ({type(error).__name__})",
+                "note": LEARNING_NOTE}
+
+
+_SPLIT_WORDS = {
+    NO_DAY_PLAN: "no day plan", CARRIED_IN_GROUP: "carried in (held at the start)",
+    "stale": "stale (label older than 2 hours)", "missing": "missing (no label)", "buy_dips": "buy dips",
+    "follow_trend": "follow the trend", NOT_RECORDED: "not recorded",
+}
+
+
+def _split_row(name: str, row: GroupResult, currency: str) -> str:
+    words = f"{_SPLIT_WORDS.get(name, name)} {_plural(row.trades, 'trade')}"
+    if row.trades:
+        words += f" ({row.wins} won, {row.losses} lost)"
+    if row.open_positions:
+        words += f", {row.open_positions} still held"
+    return f"{words}, {_signed(row.result)} {currency}"
+
+
+def _split_lines(split: ScorecardSplit, currency: str) -> list[str]:
+    """The split in plain words (D300): only the groups with a trade or a position still held."""
+    if not split.available:
+        return [f"The split by strategy version, market type and stance is not available: {split.reason}."]
+    lines = []
+    for title, rows in (("By strategy version", split.by_strategy), ("By market type at entry", split.by_market_type),
+                        ("By the desk's stance", split.by_stance)):
+        shown = [_split_row(row.group, row, currency) for row in rows if row.trades or row.open_positions]
+        if shown:
+            lines.append(f"{title}: {'; '.join(shown)}.")
+    if split.outside_trades:
+        lines.append(f"Not from a trade: {_signed(split.outside_trades)} {currency}.")
+    return lines
+
+
 __all__ = [
     "AI_NOTE", "BENCHMARK_COIN", "DEFAULT_COST_PROFILE", "GATES_STATEMENT", "MARK_MAX_AGE", "MINIMUM_DAYS",
     "MINIMUM_TRADES", "SCORECARD_VERSION", "BtcComparison", "EurReporting", "OwnerTestReading", "Scorecard",
     "ScorecardUnavailable", "compute_scorecard", "format_scorecard_text",
+    # W13-A (D300): the split by strategy version, market type at entry and stance.
+    "CARRIED_IN_GROUP", "LABEL_MAX_AGE", "MARKET_TYPES_AT_ENTRY", "NOT_RECORDED", "NO_DAY_PLAN", "SPLIT_BASIS",
+    "SPLIT_VERSION", "STANCES_AT_ENTRY", "EntryChoice", "ScorecardSplit", "split_scorecard",
+    # W13-A (D301): what Learning reads.
+    "LEARNING_CHOICES_SHOWN", "LEARNING_NOTE", "LEARNING_STRATEGIES_SHOWN", "LEARNING_TRADES_SHOWN", "learning_view",
+    "scorecard_for_learning",
 ]

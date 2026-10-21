@@ -121,9 +121,10 @@ ServiceStatus = Literal["IDLE", "UNOBSERVED", "STARTING", "RUNNING", "MANAGEMENT
 SERVICE_STATUSES: Final = get_args(ServiceStatus)
 ACTIVE_SERVICE_STATUSES: Final = ("STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING")  # service_controller.py:28
 # W8-C (D250): the money-limit, day-plan and price-collector steps of the paper service report in plain words too.
-# W9-A (D255): the news check's step (``paper_service._poll_news``).
+# W9-A (D255): the news check's step (``paper_service._poll_news``). W13-A (D303): the strategy lab's step
+# (``paper_service._run_lab``, W11-B).
 ProblemPrefix = Literal["feed:", "reconciliation:", "pause:", "dispatch:", "scheduler:", "money_limits:", "day_plans:",
-                        "collector:", "news_poll:", "other"]
+                        "collector:", "news_poll:", "strategy_lab:", "other"]
 PROBLEM_PREFIXES: Final = get_args(ProblemPrefix)
 
 PauseProfile = Literal["RUNNING", "PAUSE_DECISIONS", "NO_NEW_EXPOSURE", "MANAGE_ONLY", "CANCEL_ALL", "FLATTEN",
@@ -178,7 +179,9 @@ CalendarStatus = Literal["planned", "estimated", "waiting", "due", "overdue", "d
 CALENDAR_STATUSES: Final = get_args(CalendarStatus)
 StoryKind = Literal["trader_decision", "fill", "turn_done", "turn_problem", "turn_skipped", "allowance_wait",
                     "ai_paused", "team_started", "team_stopped", "team_crashed", "routine_problem", "prices_problem",
-                    "history_problem", "safety_stop", "owner_action", "improvement", "account_opened"]
+                    "history_problem", "safety_stop", "owner_action", "improvement", "account_opened",
+                    # W13-A (D303): the strategy lab's finished requests (its ``strategy_lab`` activities).
+                    "lab_result"]
 STORY_KINDS: Final = get_args(StoryKind)
 StoryTone = Literal["good", "neutral", "attention"]
 
@@ -201,7 +204,9 @@ GlossaryKey = Literal["practice_money", "real_trading_off", "protect_only", "saf
                       "euro_rate", "currency_effect", "team_effect", "pays_for_itself", "bill_share",
                       "bills_complete", "history_gap", "avg_20h", "avg_50h", "trial", "rules", "sign_of_life",
                       "review_checkin", "review_prompt", "estimated_cost", "unresolved_cost", "testing_alert",
-                      "prepaid_credit", "loss_limit", "day_plan", "safety_exit", "scorecard", "price_collector"]
+                      "prepaid_credit", "loss_limit", "day_plan", "safety_exit", "scorecard", "price_collector",
+                      # W13-A (D302): the Trading desk room.
+                      "playbook", "stance", "market_type", "strategy_lab"]
 GLOSSARY_KEYS: Final = get_args(GlossaryKey)
 
 # --- Owner check-ins (spec §B.10) ----------------------------------------------------------

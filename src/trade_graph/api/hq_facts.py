@@ -37,7 +37,8 @@ DEFERRAL_STREAK_GAP = timedelta(seconds=90)
 # Allowance deferrals are read separately (deferral_streaks): one every 30 s per waiting turn would crowd
 # every other event out of the capped scan.
 STORY_EVENT_KINDS = ("subscription_ai_paused", "service_degraded", "service_recovered", "public_feed_health",
-                     "public_history_refresh", "role_failed", "portfolio_opened", "engineer_candidate")
+                     "public_history_refresh", "role_failed", "portfolio_opened", "engineer_candidate",
+                     "strategy_lab")  # W13-A (D303): the strategy lab's requests, W11-B's activities
 UNCLEAR_ORDER_STATES = frozenset({"UNKNOWN", "SUBMITTING", "CANCEL_PENDING"})
 OPEN_ORDER_STATES = frozenset({"SUBMISSION_PENDING", "SUBMITTING", "OPEN", "PARTIALLY_FILLED", "UNKNOWN",
                                "CANCEL_PENDING"})
