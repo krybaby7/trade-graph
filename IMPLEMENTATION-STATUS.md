@@ -8,6 +8,50 @@ dashboard continuation below adds presentation and bounded test tracking;
 the round 4 full-suite, installed-wheel and protected-image evidence remains
 historical and does not certify this newer source.
 
+## Owner Windows/WSL2 local setup — 2026-10-05
+
+Scoped local operation was verified on the owner's Windows PC using WSL2
+Ubuntu 26.04.1 LTS, Linux x86_64 and the Linux-home checkout
+`~/trade-graph`. Implementation branch:
+`codex/orchestrator-takeover-2026-10-04`; source checkpoint:
+`caae08262b67edb38aa2854f99cf68ec5f13a020`. Python 3.12.15 and the
+unchanged committed lockfile were installed with
+`uv sync --frozen --group dev --python 3.12`.
+
+No existing Linux runtime database was found. A fresh USD10,000 virtual paper
+account with EUR reporting was initialized once. Its runtime directory and
+owner-session file were verified at 0700 and 0600 respectively. The dashboard
+is running on loopback; the actual Windows browser address is
+`http://localhost:8000/login`. Windows localhost returned HTTP 200;
+authenticated login, `/progress` and `/api/v1/progress` returned HTTP 200,
+and unauthenticated progress access returned HTTP 401. The session token was
+kept out of command output and chat.
+
+Actual owner-authorized Mission Control results, retained in the private
+`runtime/progress-runs.sqlite` sidecar: local rehearsal passed all **14**
+scripted checks, with zero external provider calls and no Kraken orders;
+all **four actual Kraken public checks** passed (server time, online status,
+BTC/ETH pair rules and bid/ask spreads). Private-account connectivity and
+order execution were not tested. **36 targeted dashboard/progress/CLI tests**,
+Ruff for source/tests, the 23-task DAG validator and **10 planning tests**
+passed. The full suite and protected image/host acceptance were not run.
+
+`trade-graph doctor` returned **degraded**, with database integrity/schema
+current and warnings for a provisional financial result, pending model
+routing and no persisted market observations. Its separate network/public
+probe fields remain pending; Mission Control's public-check evidence does
+not populate those fields. The bounded paper service `run --mode paper
+--once` completed one tick with reconciled recovery, zero decisions and no
+failures. Paid calls and live trading remained disabled; actual spend was
+zero. No continuous trading service was started.
+
+Private local setup, doctor and maintenance reports are retained under
+`runtime/`; no tokens or private financial records are published in Git.
+This scoped evidence supersedes earlier statements that this local dashboard
+path had not been tested. Historical cloud proxy failures remain historical.
+T17–T22 acceptance states and all funding, private-account, economic,
+protected-host/image, production and live-authority gates remain unchanged.
+
 ## Kraken onboarding continuation — 2026-10-05
 
 **Latest host direction:** test on the owner's existing Windows PC using WSL2
