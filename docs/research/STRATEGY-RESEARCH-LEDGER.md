@@ -4,7 +4,7 @@
 
 **How to use it.** Append, never rewrite history. Every entry carries a date, the data it used, the numbers, and where the detail lives. A claim without a number and a source is a hypothesis, and goes in section 6, not section 4.
 
-**Status on 2026-10-22.** No profitable strategy has been found. Every real-data replay so far loses after fees, and the system has never placed a paper order. What has been built is a fair test bench and a Trading desk that can run it. The next work is strategy research on that bench, not more infrastructure.
+**Status on 2026-10-23 (updated after the owner's review, see the 2026-10-23 timeline entry and section 10).** No profitable strategy has been found. Every real-data replay so far loses after fees, and the system has never placed a paper order. What has been built is a fair test bench and a Trading desk that can run it. The next work is strategy research on that bench, not more infrastructure.
 
 Branches: the engine and all results live on `claude/day-trader-engine-20261012` (WSL checkout, head 4e54c6d; GitHub head 7764c43 plus later local commits). The exchange reference lives on `codex/exchange-strategy-reference-2026-10-21` and its integration branch `codex/exchange-reference-next-start-20261021`. The Hyperliquid study and this ledger live on `codex/orchestrator-takeover-2026-10-04` (Windows checkout). These need one merge before the desk can read all of it.
 
@@ -17,7 +17,7 @@ Branches: the engine and all results live on `claude/day-trader-engine-20261012`
 | Capital | USD 10,000 virtual, EUR reporting; real AI spend is separate and never paid from paper gains | D03, D203 |
 | Instruments | Spot crypto only, long only, no leverage. No futures, perpetuals, funding, shorting, margin, lending or interest; no stablecoins, yield or staking tokens | D127, D131, D184 |
 | Venue prices | Kraken USD pairs (archive + collector); OKX USDT pairs as a second source, never merged | D04, D168 |
-| Fees modelled | Kraken starting tier 0.40% maker / 0.80% taker; Kraken after USD 10k volume 0.22% / 0.38%; OKX Europe 0.10% / 0.20% | D14, D126, D146 |
+| Fees modelled | Kraken starting tier 0.40% maker / 0.80% taker; Kraken after USD 10k volume 0.22% / 0.38%; OKX Europe 0.10% / 0.20% (to be re-checked against 0.20% / 0.35%); to add: Bitfinex spot 0% / 0% and Hyperliquid spot base tier 0.040% / 0.070%, both as dated test profiles only | D14, D126, D146, section 10 |
 | Fill rules | A touch is not a fill; a limit fills only when price trades through it, as maker; market orders, rule exits and every stop or take-profit fill as taker at the next open plus 0.10% slippage | D145, D147, D148 |
 | Money limits | Daily loss 3% of day-start value, 20% per coin, 80% total; resting entries count as filled | D138 |
 | Coin universe | Hourly scanner over all Kraken USD pairs; excludes thin pairs (under USD 500k a day or spread over 0.50%), pegged coins, the excluded classes; shortlist = top 10 | D170–D173 |
@@ -59,6 +59,8 @@ Slow-trend-pullback traded 480–930 times per coin in 17 months; its fees at th
 **2026-10-21. Exchange reverse-engineering (Codex branch).** A 900-second public capture of Kraken and OKX books (1.35M records), client code review, fee and rule pages. Findings: same-quote depth gaps between the venues never exceeded 4.0 bp (BTC) / 4.6 bp (ETH) at ≤250 ms age, so cross-venue arbitrage produced zero positive observations even at a favourable 5 bp per leg; OKX's retail price-improvement liquidity showed at most 1.0–1.3 bp of displayed improvement; Kraken's derivatives Maker Protection (20 ms hold) is a structural idea but outside spot; the Kraken-minus-OKX funding differential summed to about 27 bp a month, against about 20 bp of fees for four legs. All of these are derivatives or latency plays and are excluded or unprofitable for us. The useful product is the venue mechanics reference (docs/strategy/KRAKEN.md, OKX.md) and a strategy-brief format. One discrepancy to resolve: that reference quotes OKX EEA spot at 0.20% / 0.35% for a regular account, while our `okx-eea-spot@1` profile uses 0.10% / 0.20%; the profile may be optimistic.
 
 **2026-10-22. The best Hyperliquid trader.** Wallet 0xecb6…, attributed to Wintermute. Two million fills over 14 days, USD 5.58B notional, 87% maker, median fill USD 200, spread capture 6–13 bp per round trip on BTC/ETH/SOL, lifetime 0.67 bp of volume, plus off-venue token delivery flows. It is a perpetuals market maker with a fee rebate and a hedge elsewhere, which is three things we cannot do. Transferable: judge strategies in basis points of volume after fees, prefer resting orders and measure markouts, cap inventory per coin, do not pause on losing days, measure edge by session. Detail: docs/research/2026-10-22-hyperliquid-wallet-0xecb6-study.md.
+
+**2026-10-23. Owner review of this ledger.** Four questions were settled in conversation and are recorded in section 10. In short: the desk stays a strategy author and selector, not a per-trade decider; no more trader-wallet downloads; the next research is slow (daily-to-weekly) trend families on the two-year data, which first needs the grammar to accept 60-minute and daily candles; and the fee refresh is limited to adding Bitfinex and Hyperliquid cost profiles to the test loop next to Kraken and OKX. Fee pages read the same day: Bitfinex's fee page shows zero maker and zero taker on spot, margin, derivatives and OTC with no date on the page (search results attribute the policy to 17 December 2025; the support article refused automated reading); Hyperliquid's docs show spot tier 0 at 0.070% taker / 0.040% maker, perps tier 0 at 0.045% / 0.015%, tiers by 14-day volume with spot counted double, HYPE-staking discounts of 5–40%, no date on the page. Two cautions go with those numbers. Zero fees make spread and slippage the whole cost, so the replay's 0.10% slippage per side becomes the binding assumption and must be checked against Bitfinex's real spreads. Hyperliquid is a decentralised venue: on-chain signing and DEX execution are outside R1 scope (docs/00-PRODUCT.md), its spot universe is the Unit-bridged and native tokens quoted in USDC, and EEA access to either venue is unverified. Both profiles are for replays; neither is an execution venue until separately decided.
 
 ---
 
@@ -120,7 +122,7 @@ Each one names a falsifying test the lab can already run, except where a gap is 
 
 **H7. News-driven stances cannot be backtested.** Record every news-driven stance with its reason and judge it in the scorecard split by stance after the fact. This is already built; it needs the install to produce data.
 
-**H8. Fee tier and venue.** Reaching Kraken's after-10k tier halves costs; OKX Europe may be a quarter of the starting tier, or may not (profile discrepancy above). Test: re-read both fee pages, correct the profiles, rerun the best candidate from H1–H6 on both. Not a strategy, but it decides whether any strategy clears the bar.
+**H8. Fee tier and venue.** Reaching Kraken's after-10k tier halves costs; OKX Europe may be a quarter of the starting tier, or may not (profile discrepancy above). Bitfinex (0% / 0%, undated) and Hyperliquid spot (0.040% / 0.070%, undated) are added to the loop on 2026-10-23 as test profiles. Test: correct the OKX profile, create the two new dated profiles, rerun the best candidate from H1–H6 under all of them, and report the spread-and-slippage sensitivity for the zero-fee case. Not a strategy, but it decides whether any strategy clears the bar. Expected result: venue choice changes the bar by at most 2× among reachable spot venues; it does not create an edge.
 
 **H9. Session timing.** The Hyperliquid account's activity and profit concentrate in US hours. Test: split a strategy's trades by hour of entry in the report (gap: the report has no hour split today).
 
@@ -155,11 +157,29 @@ What is missing for the loop to be honest rather than busy:
 
 ---
 
-## 9. Next actions, in order
+## 9. Next actions, in order (revised 2026-10-23)
 
 1. Merge the three branches into one so the desk's documentation, the exchange reference and this ledger are on the engine branch.
-2. Close H3 (maker take-profit) and the 60-minute-interval gap in the fill engine and grammar, with tests, before any new replay batch.
-3. Re-read the Kraken and OKX fee pages and correct `okx-eea-spot@1` if needed (H8).
-4. Run H1 + H2 + H4 as one new family on the five coins over two years, tune to March 2026, confirm Apr–Sep 2026; then H5 on the shortlist since April 2026.
-5. Record every result here with the try count. If nothing clears section 7, say so and continue; do not lower the bar.
-6. Install (L3) only once one candidate clears section 7, so the scored test starts with something that has at least passed a fair replay.
+2. Extend the grammar and replay engine: 60-minute and daily candle intervals, indicator lookbacks beyond 500 bars, and take-profits filled as maker limits (H3). With tests. No new replay batch before this, because the slow bands are the only ones the fee arithmetic allows and today they cannot be written.
+3. Compute the frequency budget per coin from the two-year candles: the distribution of 1, 3, 5 and 10-day moves against each cost profile, to fix the holding-period and parameter ranges before any search.
+4. Cost profiles: re-read the Kraken and OKX fee pages and correct `okx-eea-spot@1` if needed; add dated `bitfinex-spot-zero@1` (0% / 0%) and `hyperliquid-spot-base@1` (0.040% / 0.070%) profiles so every replay reports under Kraken, OKX, Bitfinex and Hyperliquid costs (H8).
+5. Test three slow families as new strategy ids on the five coins, tune to March 2026, confirm April–September 2026: a breakout rule (20–50-day high, exit on a 10–20-day low or trailing ATR stop), a moving-average trend rule gated on the `rising` market type (H1 + H2 + H4), and the buy-dips variant (H6). Then the winner on the daily scanner shortlist since April 2026 (H5).
+6. Literature scan through Perplexity Research for crypto time-series momentum and trend-following evidence with dated citations, each turned into a grammar hypothesis for the desk's lab inbox.
+7. Record every result here with the try count. If nothing clears section 7, say so and continue; do not lower the bar.
+8. Install (L3) only once one candidate clears section 7, so the scored test starts with something that has at least passed a fair replay.
+
+Not on the list, by decision: further trader-wallet downloads, and a broad venue survey beyond the four cost profiles above.
+
+---
+
+## 10. Owner decisions recorded 2026-10-23
+
+These were taken in conversation on 2026-10-23 and are recorded here because this branch's docs/DECISIONS.md is the pre-redesign copy. They are numbered provisionally from D310, the next free owner number on the engine branch, and must be transplanted into docs/DECISIONS.md there at the merge.
+
+- **D310 (provisional) — The Trader authors strategies; software executes them.** The desk writes strategy versions in the protected grammar, tests them in the lab, installs day plans, and software executes and protects. No language model sits in the per-trade path. Reasons: a model per trade is slow and expensive (17 no-actions on a 4-hour timer), discretionary trades cannot be backtested and so can never clear the start bar, and the invariants forbid the deployed Engineer from shipping arbitrary code. Judgment lives one level up, in stances and playbook revisions, where the scorecard can later measure it. This confirms D280 and closes the question "trades or bots".
+- **D311 (provisional) — No further trader-wallet downloads.** Public leaderboards select for market makers and hedged whales; the Hyperliquid study already yielded the transferable lessons. Strategy research instead uses published track records and literature that fit the owner's rules (long-only spot, daily-to-weekly horizons).
+- **D312 (provisional) — Research program for the first startable strategy.** In order: grammar and replay extension (60-minute and daily intervals, lookbacks beyond 500 bars, maker take-profit fills); frequency budget per coin; three slow families on two years with untouched confirmation windows; breadth on the scanner shortlist; literature scan. Every try is counted and recorded in this ledger. "Test all frequency bands" is declined: 1-minute replays cannot use the two-year history (100,000-candle cap) and unbounded tries weaken every confirmation.
+- **D313 (provisional) — Fee refresh limited to four cost profiles.** Bitfinex and Hyperliquid are added to the testing loop next to Kraken and OKX, as dated replay profiles: `bitfinex-spot-zero@1` at 0% maker / 0% taker (fee page retrieved 2026-10-23, undated) and `hyperliquid-spot-base@1` at 0.040% maker / 0.070% taker (docs retrieved 2026-10-23, undated). The OKX profile is re-checked against the 0.20% / 0.35% regular-account figure. No venue adapter, account, credential, on-chain execution or live authority follows from this; Hyperliquid in particular is a decentralised venue outside R1 execution scope, and EEA access to both is unverified.
+- **D314 (provisional) — Fees set the minimum edge; they are not the only problem.** The v1 families make roughly zero before fees, so cheaper fees alone cannot produce a profit. A startable strategy needs both a before-fee edge of at least twice its round-trip cost and a cost profile it can actually obtain. Section 7's bar stands.
+
+Still open for the owner: the five prerequisites for an honest self-improving desk in section 8 (ledger delivered as dated evidence, try counts, a retirement rule, the fill-engine gaps, and the replays-propose/forward-results-dispose instruction); whether Bitfinex or Hyperliquid should ever become execution venues; and the deferred stocks-and-ETFs direction (D82), which remains the largest fee lever available under the owner's rules.
