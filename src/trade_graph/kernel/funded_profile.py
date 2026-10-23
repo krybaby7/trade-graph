@@ -142,7 +142,11 @@ def verify_funded_network(profile: PreparedFundedPaperProfile, network: dict, pr
     peer = containers.get(profile.proxy_container_id, {})
     networks = proxy.get("NetworkSettings", {}).get("Networks", {})
     matching = [value for value in networks.values() if value.get("NetworkID") == profile.network_id]
-    from trade_graph.kernel.deployment_image import image_default_masked_paths, image_default_readonly_paths
+    from trade_graph.kernel.deployment_image import (
+        image_default_masked_paths,
+        image_default_readonly_paths,
+        same_protected_paths,
+    )
 
     host = proxy.get("HostConfig", {})
     user = proxy.get("Config", {}).get("User")
@@ -168,6 +172,6 @@ def verify_funded_network(profile: PreparedFundedPaperProfile, network: dict, pr
             or host.get("Devices") or host.get("DeviceRequests") or host.get("DeviceCgroupRules")
             or host.get("GroupAdd") or host.get("VolumesFrom") or host.get("Links") or host.get("Sysctls")
             or host.get("PublishAllPorts") is not False
-            or host.get("MaskedPaths") != image_default_masked_paths()
-            or host.get("ReadonlyPaths") != image_default_readonly_paths()):
+            or not same_protected_paths(host.get("MaskedPaths"), image_default_masked_paths())
+            or not same_protected_paths(host.get("ReadonlyPaths"), image_default_readonly_paths())):
         raise PermissionError("funded-paper network/proxy differs from separately reviewed owner pin")

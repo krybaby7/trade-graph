@@ -91,6 +91,10 @@
 | D84 | Confirm the eventual crypto execution venue before extensive fill-model work, and test that venue's own API | Kraken spot is the only implemented live adapter and remains a conditional candidate. Hosted virtual fills are still simulations; actual fill/fee acceptance needs a separately authorized small live pilot. Keep local replay/failure tests. Current practice API availability and authentic account acceptance remain unverified. |
 | D85 | Add [Mission Control](MISSION-CONTROL.md) to visualize recorded progress, departmental activity and bounded Kraken test missions | Five-second authenticated projections separate project acceptance from runtime state and test results. Only local scripted rehearsal and fixed public Kraken checks can run; private-account/order/live tests remain pending. A private test-history sidecar preserves results without altering financial state or granting readiness. |
 | D86 | Use the owner's [Windows PC with WSL2 Ubuntu](WINDOWS-LOCAL-TESTING.md) for initial testing; defer cloud hosting | This supersedes the proposed immediate VPS. Start with no-paid local/public checks; actual WSL2 acceptance remains pending. The current direct model API adapters are separate from Claude/Codex subscriptions, and no subscription-backed runtime adapter is implemented. |
+| D87 | Connect a BTC/USD owner-local hidden-prompt command to the existing signed, pinned read-only collector and a minimal historical Mission Control projection | A fresh bounded grant is separate from graph authority. Private retained evidence stays outside the checkout and runtime; the sidecar receives verifier-derived public metadata only. Browser execution stays disabled, expiry and partial stages remain visible, and synthetic tests do not establish account connectivity, reconciliation, permission inventory or T17–T22 acceptance. |
+
+| D88 | Accept legitimate Kraken public catalog asset codes of one to 32 characters, starting with an ASCII alphanumeric and allowing alphanumerics, dots and underscores thereafter | Retained and current public Assets contain one-character codes and USD_CREDIT. Validate the full catalog without expanding selected BTC/USD scope; retain credit identity and existing accounting/authority contracts. See the 2026-10-06 [verification](../IMPLEMENTATION-STATUS.md). |
+| D89 | Supply active strategy fields from completed Kraken hourly candles through a bounded public-only collector for BTC/USD and ETH/USD | [Documented lookbacks and Decimal formulas](KRAKEN-PRICE-HISTORY.md), immutable revisions, receipt-time availability, distinct public/synthetic sources and explicit missing slots preserve point-in-time evidence. Exclude Kraken's final uncommitted candle; unknown exchange publication stays unknown. This source slice grants no paid/live authority or acceptance transition. |
 
 The 2026-09-29 USD10,000 update supersedes EUR100 as the operating example. EUR100 golden accounting fixtures and small-live-allocation sensitivity language are tests/examples only. See docs/10-PAPER-CAPITAL.md; no live allocation has been set.
 
@@ -101,3 +105,68 @@ Owner/runtime: legal residence/entity and exchange eligibility; actual venue/pai
 Implemented local slices include the registered R1 artifact loop and the bounded preparation recorded in D68–D81. Actual Linux process isolation and immutable-container rehearsal are implemented; the historical D15 protocol fixture is not their proof. Credentialed model probes, downloaded provider bills, genuine forward economics, native venue conformance and owner-approved intended-host attestation remain open. Factual future venue partial-fill/fee bounds, authenticated external producers, complete public-data/funded routing, externally anchored host recovery, production application integration and owner grants of broader code classes remain required. See [implementation status](../IMPLEMENTATION-STATUS.md) for current evidence and scope.
 
 None prevents offline development. Mark credentialed verification pending when credentials are absent; do not invent successful tests or treat implementation completion as permission to trade or spend.
+
+| D90 | [A bounded Research subscription diagnostic](reviews/2026-10-06-research-subscription-preflight.md) collects public data but stops before inference when installed CLI constraints cannot meet owner authorization | Codex 0.125.0 has unconfigurable built-in retries under the documented route; Claude Code is logged out. Preserve unknown usage/cost, private evidence and financial state; no continuous graph, API funding or live authority. |
+
+| D91 | Owner-triggered Optimisation supersedes weekly/default/artifact/Leader automatic Optimisation; one bounded cycle retains protected Engineer/activation controls | Owner instruction 2026-10-06. Ordinary Research, Trader, Learning and Leader scheduling remain automatic within permissions. Repeated starts attach to one service. The same cycle request replays its saved outcome; another request while a cycle is active or unresolved is rejected explicitly. |
+| D92 | New startup controls use subscription-only AI admission, separate usage records and no retry/repair/fallback or direct model API billing | Official native CLI login and actual filesystem confinement must be verified; unsupported retry controls, unknown login/capacity or extra-usage permission block inference. Unknown subscription cost is not zero and paper capital cannot replenish it. |
+| D93 | Protected live startup remains separately commissioned and disabled in this installation | Scripted broker/conformance and local controller tests establish implementation behavior only. This task forbids private Kraken requests and real orders; source completion does not grant allocation, key permissions, host admission or live authority. |
+
+- **D94 (2026-10-06):** Owner-requested startup source can be implemented/tested while credentialed T17 acceptance is blocked. Retain acceptance states and all independent live/Engineer commissioning gates; synthetic tests do not satisfy missing dependencies.
+
+- **D95 (2026-10-07):** The owner permits bounded documented CLI-internal retries
+  within included subscription quota. Select the implemented native Claude route
+  with explicit zero transport/timeout retries and one structured attempt; retain
+  disabled application retries, fallback, extra usage and API billing. Earlier
+  Codex zero-retry blockers are historical, not a present owner restriction.
+  [Final-image evidence](reviews/2026-10-07-first-paper-cycle.md) gates this paper
+  route separately from subscription login, financial acceptance and live authority.
+
+
+- **D96 (2026-10-07):** Normal local Windows/WSL paper
+  operation supersedes D92/D95 and the first-cycle diagnostic operating policy.
+  Enable configured departmental schedules and recurring Optimisation, normal
+  supported CLI retries, bounded configurable application attempts and compatible
+  independently verified existing-subscription fallback. Remove a prerequisite
+  Research diagnostic, mandatory first-cycle pause and one-generation policy.
+  Reuse the existing portfolio/mandate without funding an API budget. Retain
+  structured contracts, truthful unknown subscription costs, protected credential
+  boundaries, persistent attempt receipts and order-state reconciliation. Real
+  trading, API billing, paid extras and purchases remain unauthorized. Native
+  Codex quota/credit metadata establishes actual included capacity; a
+  Claude-specific extra-usage checkbox cannot substitute for that evidence.
+  [Normal operating runbook](NORMAL-PAPER-OPERATION.md) records supported limits
+  and genuine missing capabilities. Historical diagnostic evidence remains intact.
+
+- **D97 (2026-10-07, owner model selection):** Use only GPT-6.1 Sol, exact model
+  ID `gpt-6.1-sol`, through the existing Codex subscription route for every AI
+  department and retry. This narrows D96: no alternate-model/provider fallback
+  is authorized. The protected primary profile selects `codex_subscription` /
+  `gpt-6.1-sol`, has `fallback_profiles: []`, and retains a catalog containing
+  only that exact model. If this model is unavailable or its allowance is
+  exhausted, pause affected AI work while retaining necessary paper-position
+  management. Keep this personal choice in protected owner configuration,
+  rather than hardcoding it into provider-neutral domain contracts. Preserve
+  requested and actually reported model identities; an unreported identity
+  remains unknown. Recording this choice does not establish a new inference
+  result or prove that the private PC configuration has been updated.
+
+- **D98 (2026-10-07, morning owner instruction):** Normal paper startup is
+  authorized after installing and verifying fresh, serialized subscription quota
+  admission. Preserve 30 percentage points of included quota plus 10 points of
+  practical headroom: a fresh weekly reading is required, and every reported native
+  window must have strictly more than 40% remaining before each dispatch or retry.
+  Missing shorter windows are disclosed without independently blocking admission.
+  Disclose unavailable windows,
+  shared-account consumption and unbounded active-call usage; this threshold does
+  not guarantee a 30% balance after a call or across unreported windows. Watch the
+  first normal run and stop new AI at 40% or below, on metadata failure, or after an
+  unexpected single-attempt drop greater than 10 points. Dashboard, deterministic
+  reconciliation and paper-order/position management continue under MANAGE_ONLY.
+  All six AI departments and their retries use **gpt-6.1-sol only**. The protected
+  profile has `fallback_profiles: []`; the pinned catalog contains only that model
+  slug. Unavailability pauses AI instead of selecting an alternate model, provider
+  or separately billed route. This supersedes D96's fallback permission and the
+  overnight start hold. Authorization is separate from actual execution evidence;
+  live trading, paid extras, API billing and purchases remain unauthorized. See the
+  [normal operating runbook](NORMAL-PAPER-OPERATION.md).

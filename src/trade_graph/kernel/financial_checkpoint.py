@@ -79,6 +79,7 @@ class FinancialHistoryCheckpoint:
         self.manifest, self.key = financial.manifest, financial._capability_key
         self.path = witness_path or self.database.path.with_suffix(".protected-financial-witness.json")
         self._highwater: dict[str, tuple[int, str]] = {}
+        self._witness_local = threading.local()
         self._database_highwater = self._database_identity()
 
     def _database_identity(self):
@@ -113,6 +114,26 @@ class FinancialHistoryCheckpoint:
 
     @contextmanager
     def witness_lock(self):
+        """Serialize one controller's threads before cross-process ownership.
+
+        Use the same local order as SQLite writers: some callers already hold a
+        writer transaction, while publication must keep its witness lock beyond
+        COMMIT. Nested checks reuse the securely opened directory and lock.
+        """
+        with self.database.serialized():
+            directory = getattr(self._witness_local, "directory", None)
+            if directory is not None:
+                yield directory
+                return
+            with self._locked_witness() as directory:
+                self._witness_local.directory = directory
+                try:
+                    yield directory
+                finally:
+                    self._witness_local.directory = None
+
+    @contextmanager
+    def _locked_witness(self):
         """Private parent/leaf handles, no links/FIFOs, and a cross-process lock."""
         path = self.path.absolute()
         if path == self.database.path.absolute() or ".." in path.parts:

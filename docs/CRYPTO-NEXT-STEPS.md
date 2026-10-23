@@ -56,6 +56,13 @@ Add a bounded, point-in-time history/feature path through the real departmental 
 
 Completion evidence should demonstrate the actual Research/Trader context changes when earlier available history changes, while later unavailable observations cannot change that snapshot. Cover restart, stale/gapped history and exact feature arithmetic. Keep synthetic and actual market observations distinct.
 
+Implementation continuation, 2026-10-06: the bounded public hourly collector,
+append-only retained candle revisions and active-template context features are
+specified in [KRAKEN-PRICE-HISTORY.md](KRAKEN-PRICE-HISTORY.md). Use its one-shot
+command in the existing private WSL2 paper checkout after updating source.
+Actual source/test results and any public observation are recorded separately
+in IMPLEMENTATION-STATUS.md; this slice does not close T17–T22 acceptance.
+
 ## 2. Make paper execution assumptions explicit
 
 The installed runtime constructs [PaperBroker](../src/trade_graph/adapters/brokers/paper.py) with default fees and participation. [PaperRuntimeConfig](../src/trade_graph/paper_runtime.py) does not expose an experiment-specific friction profile. The broker stores `latency_seconds`, but submission/matching does not apply it; current intent eligibility uses the current clock. Same-observation exclusion exists, but it is not a configurable arrival-delay simulation.

@@ -241,7 +241,8 @@ class BudgetGateway:
                                          (reservation_id,)).fetchone()
         if existing is not None:
             if (existing["status"] == "committed" and existing["provider"] == provider
-                    and existing["model"] == model and existing["usage_json"] == usage.model_dump_json()
+                    and existing["model"] == model
+                    and ModelUsage.model_validate_json(existing["usage_json"]) == usage
                     and Decimal(existing["reporting_cost"]) == reporting
                     and existing["fx_rate_id"] == row["fx_rate_id"]
                     and existing["fx_source_json"] == row["fx_source_json"]):

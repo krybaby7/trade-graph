@@ -210,7 +210,8 @@ class KrakenLiveBroker:
         )
 
     def _asset(self, value: str, *, aliases: dict[str, str] | None = None) -> str:
-        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9.]{2,32}", value):
+        # Public catalog codes include one-character assets and USD_CREDIT.
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._]{0,31}", value):
             raise ValidationFailure("Kraken asset code could not be normalized safely")
         registry = self._assets if aliases is None else aliases
         if value in registry:

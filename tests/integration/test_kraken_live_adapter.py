@@ -178,6 +178,47 @@ def test_metadata_normalizes_aliases_precision_minimums_and_conservative_fees():
     assert not hasattr(broker, "withdraw")
 
 
+@pytest.mark.parametrize(
+    "native,alt",
+    [
+        ("A", "A"), ("SYNTH", "A"), ("A", "SYNTH"), ("A" * 32, "A" * 32),
+        ("USD_CREDIT", "USD_CREDIT"), ("SYNTH", "USD_CREDIT"), ("USD_CREDIT", "SYNTH"),
+    ],
+)
+def test_selected_pair_accepts_unrelated_compatible_public_asset_codes(native, alt):
+    rest = ScriptedRest()
+    rest.results["Assets"][native] = {"altname": alt}
+    broker = _broker(rest, symbols=["BTC/USD"])
+
+    rules = asyncio.run(broker.instruments())
+
+    assert [item.symbol for item in rules] == ["BTC/USD"]
+    assert rules[0].base_asset == "BTC" and rules[0].quote_asset == "USD"
+    assert broker._assets[native] == alt
+    assert broker.fee_reserve_rate == Decimal("0.008")
+    assert rest.calls == [("Assets", {}), ("AssetPairs", {"pair": "XBTUSD"})]
+    with pytest.raises(LiveDisabled):
+        asyncio.run(broker.submit(_intent()))
+    assert rest.calls == [("Assets", {}), ("AssetPairs", {"pair": "XBTUSD"})]
+
+
+@pytest.mark.parametrize("field", ["native", "alt"])
+@pytest.mark.parametrize("invalid", ["", ".", "_", "_USD", "A/B", "A B", "A-B", "A\n", "A" * 33, None, 7])
+def test_public_asset_code_compatibility_preserves_validation_and_readiness_bounds(field, invalid):
+    rest = ScriptedRest()
+    native, alt = (invalid, "SYNTH") if field == "native" else ("SYNTH", invalid)
+    rest.results["Assets"][native] = {"altname": alt}
+    broker = _broker(rest, symbols=["BTC/USD"])
+
+    with pytest.raises(ValidationFailure, match="asset code|asset metadata"):
+        asyncio.run(broker.instruments())
+
+    assert rest.calls == [("Assets", {})]
+    assert broker._assets == {}
+    assert broker._rules == {}
+    assert broker.fee_reserve_rate is None
+
+
 @pytest.mark.parametrize("selection", [["ETH/USD"], ["BTC/USD", "ETH/USD"], ["BTCUSD"]])
 def test_selected_instrument_readiness_requires_the_exact_native_response(selection):
     rest = ScriptedRest()

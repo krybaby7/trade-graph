@@ -33,12 +33,14 @@ from trade_graph.kernel.runtime_manifest import ProtectedRuntimeManifest, canoni
 class ProtectedFinancialService:
     """Trusted paper decision gateway; live authority is deliberately separate."""
 
+    _execution_mode = "paper"
+
     def __init__(self, database: Database, clock: Clock, execution: Execution, *,
                  manifest: ProtectedRuntimeManifest, capability_key: bytes) -> None:
         if type(capability_key) is not bytes or not 32 <= len(capability_key) <= 64:
             raise ValueError("private protected capability key requires 32..64 bytes")
-        if execution.database is not database or execution.clock is not clock or execution.mode != "paper":
-            raise AuthorityDenied("this protected runtime requires the bound paper execution service")
+        if execution.database is not database or execution.clock is not clock or execution.mode != self._execution_mode:
+            raise AuthorityDenied("this protected runtime requires its bound execution mode")
         manifest.assert_current()
         self.database, self.clock, self.execution = database, clock, execution
         self.ledger: Ledger = execution.ledger
@@ -56,8 +58,8 @@ class ProtectedFinancialService:
                 previous, witness = self.history.previous(portfolio_id, directory)
                 portfolio = self.database.execute("SELECT * FROM portfolios WHERE portfolio_id=?",
                                                   (portfolio_id,)).fetchone()
-                if portfolio is None or portfolio["mode"] != "paper":
-                    raise AuthorityDenied("protected history requires a paper portfolio")
+                if portfolio is None or portfolio["mode"] != self._execution_mode:
+                    raise AuthorityDenied("protected history requires its bound portfolio mode")
                 policy, mandate = self.authority.active_policy(), self.authority.active_mandate(portfolio_id)
                 started, count = monotonic(), 0
                 for reservation in self.database.execute(
@@ -104,8 +106,8 @@ class ProtectedFinancialService:
                     raise StaleState("protected cost authority lacks existing financial preparation")
                 portfolio = self.database.execute("SELECT * FROM portfolios WHERE portfolio_id=?",
                                                   (portfolio_id,)).fetchone()
-                if portfolio is None or portfolio["mode"] != "paper":
-                    raise StaleState("protected cost authority lacks original paper portfolio")
+                if portfolio is None or portfolio["mode"] != self._execution_mode:
+                    raise StaleState("protected cost authority lacks original bound portfolio")
                 state = {"portfolio": dict(portfolio),
                          "policy": self.authority.active_policy().model_dump(mode="json"),
                          "mandate": self.authority.active_mandate(portfolio_id).model_dump(mode="json"),
@@ -127,8 +129,8 @@ class ProtectedFinancialService:
         """One protected read view, including all concurrent exposure constraints."""
         portfolio = self.database.execute("SELECT * FROM portfolios WHERE portfolio_id=?",
                                          (portfolio_id,)).fetchone()
-        if portfolio is None or portfolio["mode"] != "paper":
-            raise AuthorityDenied("unknown or non-paper protected portfolio")
+        if portfolio is None or portfolio["mode"] != self._execution_mode:
+            raise AuthorityDenied("unknown or differently bound protected portfolio")
         policy = self.authority.active_policy()
         mandate = self.authority.active_mandate(portfolio_id)
         if symbol not in policy.allowed_symbols or symbol not in mandate.symbols:
@@ -232,7 +234,7 @@ class ProtectedFinancialService:
                                                or len(document["no_action_reason"]) > 1024):
             raise ValidationFailure("bounded hold reason required")
         document.update(record_id=f"protected-{scope['request_id']}", created_at_utc=self.clock.now(),
-                        run_id=scope["instance_id"], portfolio_id=scope["portfolio_id"], mode="paper",
+                        run_id=scope["instance_id"], portfolio_id=scope["portfolio_id"], mode=self._execution_mode,
                         system_version_id=scope["release_id"], trace_id=scope["request_id"],
                         symbol=scope["symbol"], snapshot_id=scope["state_sha256"],
                         policy_revision=scope["policy_revision"], mandate_revision=scope["mandate_revision"])
@@ -285,7 +287,7 @@ class ProtectedFinancialService:
                     or current != {key: scope[key] for key in current}):
                 raise StaleState("protected authority, version or financial snapshot changed")
             decision = self._decision(scope, message["decision"])
-            self.authority.require_for_decision(decision, venue=self.execution.venue, mode="paper")
+            self.authority.require_for_decision(decision, venue=self.execution.venue, mode=self._execution_mode)
             if decision.action == "hold":
                 self.execution.record_non_order(scope["portfolio_id"], decision)
                 intent_id = None

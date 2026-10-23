@@ -11,6 +11,11 @@ from trade_graph.domain.money import Money
 
 Department = Literal["research", "learning", "optimisation", "trader"]
 
+EVIDENCE_CITATION_RULE = (
+    "For evidence_refs, copy IDs verbatim only from the top-level context.evidence_refs list. "
+    "Nested report references are provenance, not eligible citations unless also listed there."
+)
+
 
 class Assignment(ContractModel):
     kind: Literal["assign", "consult"]
@@ -61,7 +66,7 @@ Action = Annotated[
 
 
 class LeaderReply(ContractModel):
-    evidence_refs: list[str] = Field(min_length=1, max_length=40)
+    evidence_refs: list[str] = Field(min_length=1, max_length=40, description=EVIDENCE_CITATION_RULE)
     rationale: str = Field(min_length=1, max_length=2000)
     intended_outcome: str = Field(min_length=1, max_length=2000)
     review_criteria: str = Field(min_length=1, max_length=2000)
@@ -70,6 +75,6 @@ class LeaderReply(ContractModel):
 
 class DepartmentReply(ContractModel):
     # Together these fit the Secretary's 3,000-character/20-reference envelope.
-    evidence_refs: list[str] = Field(min_length=1, max_length=20)
+    evidence_refs: list[str] = Field(min_length=1, max_length=20, description=EVIDENCE_CITATION_RULE)
     summary: str = Field(min_length=1, max_length=1500)
     outcome: str = Field(min_length=1, max_length=1400)

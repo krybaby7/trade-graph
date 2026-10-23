@@ -91,3 +91,43 @@ def test_views_label_paper_results_and_redact_secrets(tmp_path) -> None:
     assert resumed.status_code == 409
     assert "unresolved orders" in resumed.json()["detail"]["barriers"]
     assert client.get("/api/v1/health", headers=headers).json()["pause"]["profile"] == "MANAGE_ONLY"
+
+
+def test_live_scope_labels_account_records_without_enabling_execution(tmp_path) -> None:
+    from trade_graph.application.service_controller import ServiceController
+
+    client, database, portfolio, token, _, _ = _client(tmp_path)
+    runtime = client.app.state.runtime
+    database.execute("UPDATE portfolios SET mode='live' WHERE portfolio_id=?", (portfolio,))
+    runtime.execution.mode = "live"
+    runtime.service_controller = ServiceController(runtime, prerequisites=lambda: {
+        "paper_available": False, "live_available": False, "ai_available": False,
+        "reasons": ["Subscription process not provisioned."],
+        "live_reasons": ["Protected owner mount is unverified."],
+    })
+    headers = {"Authorization": f"Bearer {token}"}
+    for path in ["/", "/trading", "/costs", "/organization", "/changes", "/progress", "/owner"]:
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200
+        assert "Live account operations" in response.text
+        assert ">Live scope</span>" in response.text
+        assert "Paper operations" not in response.text
+        assert "Paper results are simulated." not in response.text
+    overview = client.get("/", headers=headers).text
+    assert "Allocated live capital" in overview
+    assert "Current live portfolio value" in overview
+    assert "Simulated trading P" not in overview
+    assert "Simulated performance" not in overview
+    trading = client.get("/trading", headers=headers).text
+    assert "Simulated" not in trading
+    owner = client.get("/owner", headers=headers).text
+    assert "Protected live startup blocked" in owner
+    assert "Protected owner mount is unverified." in owner
+    progress = client.get("/progress", headers=headers).text
+    assert "Protected owner mount is unverified." in progress
+    assert "Subscription process not provisioned." in progress
+    assert 'data-runtime-mode>Live' in progress
+    assert client.get("/api/v1/costs", headers=headers).json()["simulated"] is False
+    assert database.execute("SELECT COUNT(*) FROM order_intents").fetchone()[0] == 0
+    assert database.execute("SELECT COUNT(*) FROM graph_service_runs").fetchone()[0] == 0
+    assert database.execute("SELECT COUNT(*) FROM process_leases").fetchone()[0] == 0

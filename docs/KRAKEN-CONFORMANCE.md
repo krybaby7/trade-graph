@@ -154,6 +154,14 @@ remain untested and disabled. T19 needs T17 delivery and actual separately autho
 venue eligibility, least-privilege permissions and authenticated conformance before
 completion. T20 real orders and protection tests need their separate owner grant.
 
+## Owner-local command and historical display
+
+`trade-graph kraken-read-only` connects the existing signed, pinned collector to Mission Control's **Kraken read-only account check**. The command reads the selected initialized database without migration or financial writes, pins its policy and active deployment artifact, and issues a separate bounded read-only grant. Private owner intent and grant pins are retained before collection. Credentials enter through hidden terminal prompts and remain in the owner-local collector process.
+
+The importer independently verifies the retained capture at the current time and checks its exact expected scope. It projects only allowlisted historical metadata into the private progress sidecar. It preserves partial completed stages and pending gates, labels injected transport synthetic, and computes expiry from the original observation time. An empty order-lookup request does not prove an authenticated native-order lookup. Native observation scope uses `mode=live` as an identity field; this grant does not enable live trading.
+
+The command and display are tested with synthetic fixtures. They do not close T17–T22 acceptance gates, reconcile the protected financial ledger, alter owner policy or authorize orders. Actual owner credentials and account behavior remain unverified until a separately authorized owner-local run.
+
 ## Official source and local verification
 
 Normal public Git HTTPS reads on 2026-10-02 independently resolved official HEADs:

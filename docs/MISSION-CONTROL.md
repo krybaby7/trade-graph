@@ -52,7 +52,9 @@ Results update as the check runs and survive dashboard restarts. One check can r
 
 The tracker retains the newest 20 runs per portfolio/deployment, with a 200-run total bound; older completed entries and their generated rehearsal workspaces are pruned. Preserve important test evidence through private backups. Financial records and project completion evidence are unaffected by this test-history limit.
 
-Kraken account reads, order validation and a small real-order pilot remain planned and unavailable here. The existing protected read-only collector is separate; this view does not accept trading keys, validate orders, enable live mode or grant capital. When those test producers are integrated, their verified evidence needs its own adapter into the tracker.
+**Kraken read-only account check** is a CLI-only mission. Its browser Run button stays disabled and displays the owner-local command from the [onboarding guide](KRAKEN-ONBOARDING.md). Enter credentials in that command's hidden terminal prompts. The browser never receives them.
+
+Imported results show verifier-confirmed stages, original observation time, actual owned HTTPS versus synthetic injected transport, freshness and pending checks. A historical result expires according to its original observation time; importing it does not refresh it. Partial failures preserve the verified completed prefix. An unrequested native-order lookup is still pending. These results do not establish full account reconciliation, permission inventory, account ownership or live readiness. Order validation and real-order pilots require separate future authorization.
 
 ## Where the progress comes from
 

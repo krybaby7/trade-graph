@@ -1,4 +1,4 @@
-"""Local paper dashboard assembly; no scheduler or paid integration starts here."""
+"""Owner dashboard assembly; serving never starts a service or external effect."""
 
 from __future__ import annotations
 
@@ -15,7 +15,60 @@ from trade_graph.application.ledger import Ledger
 from trade_graph.domain.clock import SystemClock
 
 
-def dashboard_runtime(path: Path, portfolio_id: str | None = None):
+def dashboard_runtime(path: Path, portfolio_id: str | None = None, *, config_path: Path | None = None,
+                      mode: str = "paper", protected_owner: Path | None = None):
+    from trade_graph.application.service_controller import ServiceController
+
+    if mode == "live":
+        from trade_graph.live_runtime import (
+            assemble_live_dashboard_runtime,
+            live_startup_prerequisites,
+            load_live_runtime_config,
+        )
+
+        runtime = assemble_live_dashboard_runtime(
+            path, portfolio_id=portfolio_id, protected_owner=protected_owner,
+            config=load_live_runtime_config(config_path) if config_path else None,
+        )
+
+        subscription = _subscription_prerequisites(protected_owner)
+
+        def prerequisites():
+            result = live_startup_prerequisites(path, config_path=config_path, protected_owner=protected_owner)
+            return {**subscription(), "paper_available": False, "live_available": result["ready"],
+                    "live_reasons": [] if result["ready"] else [result["reason"]]}
+
+        runtime.service_controller = ServiceController(runtime, config_path=config_path,
+                                                       protected_owner=protected_owner, prerequisites=prerequisites)
+        return runtime
+    if mode != "paper":
+        raise ValueError("choose paper or a separately commissioned protected live dashboard")
+    prerequisites = None
+    config = None
+    if protected_owner is not None:
+        if config_path is not None:
+            raise ValueError("protected dashboard loads paper-config.json only from its owner directory")
+        from trade_graph.application.deployment_runtime import _owner_bundle
+        from trade_graph.kernel.deployment_image import read_owner_file
+        from trade_graph.paper_runtime import PaperRuntimeConfig
+
+        manifest, _, _ = _owner_bundle(protected_owner)
+        manifest.assert_current()
+        try:
+            config = PaperRuntimeConfig.model_validate_json(
+                read_owner_file(protected_owner, "paper-config.json", 262144))
+        except FileNotFoundError:
+            config = PaperRuntimeConfig()
+        if config.models or config.price_cards or (protected_owner / "funded-paper-profile.json").exists():
+            raise ValueError("subscription dashboard rejects API model routing, price cards and funded API profiles")
+        subscription = _subscription_prerequisites(protected_owner)
+
+        def prerequisites():
+            from trade_graph.adapters.models.subscription import SubscriptionJournal
+
+            return {**subscription(journal=SubscriptionJournal(database, clock)),
+                    "paper_available": True, "live_available": False,
+                    "live_reasons": ["Live startup requires separately commissioned protected owner configuration."]}
     path = path.resolve()
     if not path.is_file():
         raise ValueError("database does not exist; initialize a paper account first")
@@ -36,9 +89,58 @@ def dashboard_runtime(path: Path, portfolio_id: str | None = None):
     clock = SystemClock()
     ledger = Ledger(database, clock)
     execution = Execution(database, ledger, clock, PaperBroker(database, clock))
-    return SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
-                           portfolio_id=row["portfolio_id"], deployment_id="deployment")
+    runtime = SimpleNamespace(database=database, clock=clock, ledger=ledger, execution=execution,
+                              portfolio_id=row["portfolio_id"], deployment_id="deployment", config=config,
+                              subscription_provider=subscription().get("selected_provider")
+                                  if protected_owner is not None else None)
+    runtime.service_controller = ServiceController(runtime, config_path=config_path,
+                                                   protected_owner=protected_owner, prerequisites=prerequisites)
+    return runtime
 
+
+
+def _subscription_prerequisites(protected_owner):
+    """Retain immutable admission while refreshing supported account metadata."""
+    from trade_graph.application.subscription_profile import load_subscription_profile, subscription_profile_unchanged
+
+    admission = load_subscription_profile(protected_owner)
+    declared = admission.config is not None or admission.profile_sha256 is not None
+    # A refused or unreadable existing profile still declares subscription use.
+    # Capture existence once without opening the profile or following symlinks.
+    try:
+        (protected_owner / "subscription-profile.json").lstat()
+        declared = True
+    except FileNotFoundError:
+        pass
+    except OSError:
+        declared = True
+
+    def status(*, journal=None):
+        from trade_graph.domain.errors import TradeGraphError
+
+        current = subscription_profile_unchanged(protected_owner, admission.profile_sha256)
+        observed = admission.status
+        if current and admission.adapter is not None:
+            try:
+                observed = {**admission.status, **admission.adapter.public_status(journal=journal)}
+            except (OSError, ValueError, RuntimeError, TradeGraphError):
+                observed = {**admission.status, "ready": False, "available_subscription_routes": [],
+                    "blockers": ["Subscription readiness refresh unavailable; management continues."]}
+        ready = bool(current and admission.adapter and observed.get("ready"))
+        reasons = [] if ready else list(observed.get("blockers", []))
+        if not ready and observed.get("quota_admission_blocked"):
+            for route in observed.get("quota_policy_routes", []):
+                reasons.extend(reason for reason in route.get("blockers", []) if reason not in reasons)
+                if route.get("provider_admission", {}).get("occupied"):
+                    reasons.append("Subscription inference admission is active or unresolved; management continues.")
+        if not current:
+            reasons = ["Protected subscription profile changed; restart after owner review. Management continues."]
+        return {"ai_available": ready, "selected_provider": admission.status.get("selected_provider"),
+                "subscription_declared": declared,
+                "available_subscription_routes": observed.get("available_subscription_routes", []),
+                "reasons": reasons, "subscription": observed}
+
+    return status
 
 def owner_session_file(runtime, path: Path) -> Path:
     """Write an owner session once to a restricted local file, never to stdout."""

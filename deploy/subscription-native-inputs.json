@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "platform": "linux/amd64",
+  "base_image": "python@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016",
+  "claude": {
+    "version": "2.1.292",
+    "sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+    "signing_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+  },
+  "allowed_debian_packages": [
+    "bubblewrap",
+    "libcap2",
+    "libseccomp2",
+    "libselinux1",
+    "libpcre2-8-0"
+  ],
+  "codex": {
+    "version": "0.160.1",
+    "sha256": "f34a4d2301892ae96c90097786bfe5dc269f187b6f69faf42a7b357b8c081e35",
+    "archive_sha256": "9226581be592d18f7e7f740a352fdb63aa61e45e39f7eb9b09d3888c84bba33f",
+    "source": "https://github.com/openai/codex/releases/tag/rust-v0.160.1",
+    "verification": "official HTTPS release asset digest; no signature verification claimed"
+  }
+}

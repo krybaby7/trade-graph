@@ -169,6 +169,7 @@ class KrakenRestTransport:
         timeout_seconds: float = 10,
         maximum_response_bytes: int = 4 * 1024 * 1024,
         read_observer: Callable[[KrakenReadResponse], None] | None = None,
+        proxy: str | None = None,
     ) -> None:
         if type(allow_order_writes) is not bool:
             raise ValueError("order-write authority must be an explicit boolean")
@@ -177,7 +178,9 @@ class KrakenRestTransport:
         self._api_key, self._api_secret = api_key, api_secret
         self._allow_order_writes = allow_order_writes
         self._owns_client = client is None
-        self._client = client or httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False)
+        self._client = client or httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False,
+                                                 trust_env=False, proxy=proxy,
+                                                 limits=httpx.Limits(max_keepalive_connections=0))
         self._timeout, self._maximum = timeout_seconds, maximum_response_bytes
         self._nonce, self._lock = nonce or MonotonicNonce(), asyncio.Lock()
         self._read_observer = read_observer

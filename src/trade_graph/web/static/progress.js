@@ -23,6 +23,8 @@
   let connected = false;
   let authExpired = false;
   let runningCheck = null;
+  let serviceAction = null;
+  const serviceRequests = new Map();
   let pollTimer = null;
   let polling = false;
   let pollController = null;
@@ -83,6 +85,7 @@
       one(".mc-sync").append(link);
     }
     updateControls();
+    renderLifecycle(snapshot?.lifecycle);
   }
   function renderProject(project) {
     write("[data-project-completed]", count(project.completed));
@@ -256,7 +259,13 @@
         heading.append(element("span", "mc-type-tag", typeLabel(check.kind, false, check.id)), status);
         card.append(heading, element("h3", "", check.label), element("p", "", check.description));
         const actions = element("div", "mc-check-action");
-        if (check.available && owner) {
+        if (check.id === "kraken-account") {
+          const button = element("button", "mc-button", "Run from owner CLI");
+          button.type = "button";
+          button.dataset.runCheck = "kraken-account";
+          button.disabled = true;
+          actions.append(button, element("code", "", "uv run trade-graph kraken-read-only --database runtime/trade_graph.sqlite --owner-directory ~/.local/share/trade-graph-owner/kraken --symbol BTC/USD"));
+        } else if (check.available && owner) {
           const button = element("button", "mc-button", check.id === "offline-loop" ? "Run local rehearsal →" : check.id === "kraken-public" ? "Check public Kraken API →" : "Run check →");
           button.type = "button";
           button.dataset.runCheck = text(check.id);
@@ -288,10 +297,10 @@
     for (const button of all("[data-run-check]")) {
       const check = list(snapshot?.checks).find(item => item.id === button.dataset.runCheck);
       const activeRun = list(snapshot?.test_runs).some(run => run.check_id === button.dataset.runCheck && ["queued", "running"].includes(run.status)) || acknowledgedChecks.has(button.dataset.runCheck);
-      button.disabled = preview || !connected || !owner || !csrf || authExpired || Boolean(runningCheck) || activeRun || !check?.available || unknownChecks.has(button.dataset.runCheck);
+      button.disabled = button.dataset.runCheck === "kraken-account" || preview || !connected || !owner || !csrf || authExpired || Boolean(runningCheck) || activeRun || !check?.available || unknownChecks.has(button.dataset.runCheck);
       const card = button.closest("[data-check-id]");
       const reason = card.querySelector("[data-check-reason]");
-      reason.textContent = preview ? "This is a saved preview. Run checks from the live dashboard server." :
+      reason.textContent = button.dataset.runCheck === "kraken-account" ? "Browser execution is disabled. Run the protected owner CLI on the WSL host." : preview ? "This is a saved preview. Run checks from the live dashboard server." :
         unknownChecks.has(button.dataset.runCheck) ? "The request outcome is uncertain. Check the saved run history before trying again." :
         activeRun ? "This check is running. Its saved status will update automatically." :
         !csrf ? "Sign in with an owner browser session to run this check." :
@@ -313,6 +322,29 @@
       summary.append(element("span", `mc-run-icon ${tone(run.status)}`, run.status === "passed" ? "✓" : "›"), name, badge(run.status), element("span", "mc-disclosure-arrow", "⌄"));
       const body = element("div", "mc-run-body");
       body.append(element("p", "", run.summary || "The run has not produced a summary yet."));
+      if (run.account_observation) {
+        const account = run.account_observation;
+        const observation = element("div", "mc-account-observation");
+        observation.append(element("h4", "", `Historical observation · ${text(account.symbol)}`));
+        const facts = element("dl");
+        for (const [name, value] of [
+          ["Observation time", time(account.observation_finished_at)],
+          ["Verified at", time(account.verified_at)],
+          ["Freshness", `${account.freshness === "fresh" ? "Fresh historical capture" : "Stale historical capture"} · Maximum age ${count(account.maximum_age_seconds)} seconds from observation time`],
+          ["Transport", run.synthetic ? "Synthetic injected transport; actual connectivity unverified" : "Actual collector-owned HTTPS transport"],
+          ["Authenticated private reads", count(account.authenticated_private_read_count)],
+          ["Source identity", "Current collector and adapter verified at import"]
+        ]) {
+          const pair = element("div");
+          pair.append(element("dt", "", name), element("dd", "", value));
+          facts.append(pair);
+        }
+        observation.append(facts, element("h4", "", "Pending checks"));
+        const pending = element("ul");
+        for (const item of list(account.pending_checks)) pending.append(element("li", "", item));
+        observation.append(pending);
+        body.append(observation);
+      }
       const steps = element("ol", "mc-run-steps");
       for (const step of list(run.steps)) {
         const item = element("li");
@@ -350,8 +382,84 @@
     if (!fragment.childNodes.length) fragment.append(element("li", "mc-empty", "No runtime activity is recorded yet. Departments will appear active only when there is journal evidence."));
     one("[data-activity]").replaceChildren(fragment);
   }
+  function renderLifecycle(lifecycle) {
+    const service = lifecycle?.service || {};
+    const ready = lifecycle?.prerequisites || {};
+    const profile = lifecycle?.pause_profile || "RUNNING";
+    write("[data-runtime-mode]", `${label(service.mode || "paper")} · ${service.mode === "live" && ready.live_available ? "Protected live startup eligible; final admission repeats before effects" : "Live disabled"}`);
+    write("[data-runtime-status]", `Service ${label(service.status || "IDLE")}. AI ${ready.ai_available ? "available" : "unavailable or paused"}. Portfolio ${label(profile)}.${service.error_type ? ` Last failure: ${text(service.error_type)}.` : ""}`);
+    const prerequisiteReasons = [...list(ready.reasons), ...(service.mode === "live" ? list(ready.live_reasons) : [])];
+    write("[data-runtime-prerequisites]", prerequisiteReasons.join(" ") || "Owner prerequisites satisfied for this configured mode.");
+    const resume = lifecycle?.live_resume;
+    write("[data-live-resume-status]", resume ? `Live Resume ${text(resume.request_id)}: ${label(resume.status)}. ${text(resume.reason)} Deadline ${time(resume.deadline_at)}.` :
+      "No queued live Resume. Use Owner controls to request reconciliation and resume within current live authority.");
+    const cycle = lifecycle?.optimisation;
+    const scheduleStatus = `Automatic Optimisation scheduling is ${lifecycle?.automatic_optimisation ? "enabled" : "disabled"}.`;
+    write("[data-optimisation-status]", cycle ? `Optimisation ${text(cycle.task_id)}: ${label(cycle.status)}; ${list(cycle.tasks).map(task => `${label(task.role)} ${label(task.status)}`).join(" · ")}. Deadline ${time(cycle.deadline_at)}. ${scheduleStatus}` : `Optimisation: no requested cycle recorded. ${scheduleStatus}`);
+    const usage = lifecycle?.ai_usage;
+    const providers = list(usage?.providers).map(provider => `${text(provider.provider)}${provider.ai_paused ? " paused" : ""}: ${text(provider.quota)}${provider.reason ? ` (${text(provider.reason)})` : ""}`).join(" · ");
+    const quotaPolicies = list(usage?.quota_policy_routes).map(route => {
+      if (!route.enabled) return `${text(route.provider)}: reserve policy disabled`;
+      const windows = list(route.readings).map(reading => `${text(reading.window || reading.name)} ${reading.remaining_percent == null ? "unknown" : `${text(reading.remaining_percent)}% remaining`}`).join("; ");
+      return `${text(route.provider)}: ${route.admitted ? "AI admitted" : "AI paused"}; reserve ${text(route.reserve_remaining_percent)}%, execution headroom ${text(route.execution_headroom_percent)}%, requires above ${text(route.admission_threshold_remaining_percent)}% remaining. ${windows} ${list(route.blockers).join(" ")} Missing windows: ${list(route.unavailable_windows).join(", ") || "none reported"}. Running-call consumption and unreported provider windows remain unknown.`;
+    }).join(" · ");
+    write("[data-ai-usage]", `Subscription quota: ${providers || "unknown"}. ${quotaPolicies} Unknown usage/cost records: ${count(usage?.unknown_usage_or_cost_records)}. Subscription usage, real expenses and virtual capital remain separate.`);
+    const active = ["STARTING", "RUNNING", "MANAGEMENT_ONLY", "STOPPING", "ATTACHED_EXISTING"].includes(service.status);
+    for (const button of all("[data-service-action]")) {
+      const action = button.dataset.serviceAction;
+      const enabled = action === "start-trading" ? ready[`${service.mode || "paper"}_available`] : action === "start-optimisation" ?
+        service.status === "RUNNING" && ready.ai_available && profile === "RUNNING" && !["QUEUED", "RUNNING", "BLOCKED"].includes(cycle?.status) : active;
+      button.disabled = !connected || !owner || !csrf || Boolean(serviceAction) || !enabled;
+    }
+  }
+  async function controlService(button) {
+    const action = button.dataset.serviceAction;
+    if (button.disabled || serviceAction || !owner || !csrf || !connected) return;
+    serviceAction = action;
+    const feedback = one("[data-service-feedback]");
+    feedback.classList.remove("is-error");
+    feedback.textContent = "Recording owner request…";
+    renderLifecycle(snapshot?.lifecycle);
+    let requestId = serviceRequests.get(action);
+    if (!requestId) {
+      try { requestId = sessionStorage.getItem(`tg-service-${action}`); } catch (_) { /* storage can be unavailable */ }
+      requestId ||= crypto.randomUUID();
+      serviceRequests.set(action, requestId);
+      try { sessionStorage.setItem(`tg-service-${action}`, requestId); } catch (_) { /* current page keeps the identity */ }
+    }
+    const body = action === "pause" ? {profile: "MANAGE_ONLY", reason: "Owner dashboard AI pause"} :
+      action === "start-trading" ? {request_id: requestId, mode: snapshot?.lifecycle?.service?.mode || "paper"} :
+      action === "stop-service" ? {request_id: requestId, position_policy: "manage-only"} : {request_id: requestId};
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let definite = false;
+    try {
+      const response = await fetch(`/api/v1/owner/${action}`, {method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf}, body: JSON.stringify(body), signal: controller.signal});
+      const result = await response.json();
+      definite = true;
+      if (response.status === 401 || response.status === 403) loginNotice();
+      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Request rejected (HTTP ${response.status}).`);
+      feedback.textContent = action === "start-optimisation" ? `One bounded cycle ${text(result.task_id)} recorded. Follow its saved status below.` :
+        action === "start-trading" ? `${result.attached ? "Attached to existing" : "Recorded startup for"} service ${text(result.run_id) || "already owned"}. Check its actual status below.` :
+        action === "pause" ? "AI paused. Reconciliation and protection continue." : text(result.management);
+      await poll();
+    } catch (error) {
+      feedback.classList.add("is-error");
+      feedback.textContent = definite ? text(error.message) : "Request outcome uncertain. Saved status will refresh; another click reuses this request identity.";
+    } finally {
+      clearTimeout(timeout);
+      if (definite) {
+        serviceRequests.delete(action);
+        try { sessionStorage.removeItem(`tg-service-${action}`); } catch (_) { /* no persisted request */ }
+      }
+      serviceAction = null;
+      renderLifecycle(snapshot?.lifecycle);
+    }
+  }
   function render(data) {
     snapshot = data;
+    renderLifecycle(data.lifecycle);
     renderProject(data.project || {});
     write("[data-service-label]", data.service?.status === "running" ? "Trading service is running" : data.service?.status === "idle" ? "Trading service is idle" : "Not observed");
     write("[data-service-note]", data.service?.last_seen ? `Last observed ${time(data.service.last_seen)}` : "Dashboard access does not mean agents are running");
@@ -395,6 +503,7 @@
       connected = false;
       if (!document.hidden) syncState("Updates unavailable · showing last saved snapshot", "offline");
       updateControls();
+      renderLifecycle(snapshot?.lifecycle);
     } finally {
       clearTimeout(timeout);
       polling = false;
@@ -404,7 +513,7 @@
   }
   async function runCheck(button) {
     const checkId = button.dataset.runCheck;
-    if (button.disabled || runningCheck || !owner || !csrf || !connected) return;
+    if (button.dataset.runCheck === "kraken-account" || button.disabled || runningCheck || !owner || !csrf || !connected) return;
     runningCheck = checkId;
     const feedback = button.closest("[data-check-id]").querySelector("[data-check-feedback]");
     feedback.classList.remove("is-error");
@@ -447,6 +556,8 @@
     if (department && !department.disabled) selectDepartment(department.dataset.departmentId);
     const filter = event.target.closest("[data-task-filter]");
     if (filter && !filter.disabled) { taskFilter = filter.dataset.taskFilter; filterTasks(); }
+    const serviceButton = event.target.closest("[data-service-action]");
+    if (serviceButton) void controlService(serviceButton);
     const button = event.target.closest("[data-run-check]");
     if (button) void runCheck(button);
   });

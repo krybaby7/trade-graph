@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import uuid
@@ -28,7 +29,19 @@ class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if str(self.path) != ":memory:":
+            # SQLite derives sidecar permissions from the main file. Create only
+            # new storage privately; admission of existing files belongs to callers.
+            try:
+                descriptor = os.open(
+                    self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600,
+                )
+            except FileExistsError:
+                pass
+            else:
+                os.close(descriptor)
         self._local = threading.local()
+        self._serialization = threading.RLock()
         self._connection = self._open()
         self._connection.execute("PRAGMA journal_mode=WAL")
         apply_migrations(self._connection, utc_iso(SystemClock().now()))
@@ -83,7 +96,25 @@ class Database:
             connection.close()
 
     @contextmanager
+    def serialized(self) -> Iterator[None]:
+        """Order this controller's writers and independent witness publication.
+
+        SQLite already permits only one writer. The local reentrant lock also
+        covers the committed-checkpoint/witness-publication interval, so worker
+        and management threads cannot interpret their own writer as a competing
+        controller. Cross-process witness ownership remains independently locked.
+        """
+        with self._serialization:
+            yield
+
+    @contextmanager
     def immediate(self) -> Iterator[sqlite3.Connection]:
+        with self.serialized():
+            with self._immediate() as connection:
+                yield connection
+
+    @contextmanager
+    def _immediate(self) -> Iterator[sqlite3.Connection]:
         active = getattr(self._local, "connection", None)
         if active is not None:
             savepoint = "nested_" + uuid.uuid4().hex

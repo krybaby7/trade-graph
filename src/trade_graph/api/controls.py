@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -466,6 +467,8 @@ def _budget(runtime, body: BudgetCommand) -> dict:
 
 
 def _assign(runtime, body: TaskCommand) -> dict:
+    if body.role == "optimisation":
+        raise AuthorityDenied("Optimisation requires the dedicated owner cycle control")
     authority = AuthorityRecord(runtime.database, runtime.clock)
     policy, mandate = authority.active_policy(), authority.active_mandate(runtime.portfolio_id)
     if mandate.expires_at_utc <= runtime.clock.now():
@@ -806,6 +809,15 @@ def register_controls(app: FastAPI, runtime, identity, owner_write) -> None:
     async def resume(request: Request) -> dict:
         owner_write(request)
         body = await _body(request, Command, empty=True)
+        if runtime.execution.mode == "live":
+            from trade_graph.api.service import controller
+
+            # The dashboard has no private broker. Native reads and permission
+            # admission belong exclusively to the protected running service.
+            result = _domain(lambda: controller(runtime).resume_live(
+                body.request_id or str(uuid.uuid4()), body.expected_revision,
+            ))
+            return JSONResponse(status_code=202, content=result)
 
         def preflight():
             if runtime.execution.profile(runtime.portfolio_id) == "RUNNING":
