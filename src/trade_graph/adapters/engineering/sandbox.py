@@ -4,10 +4,11 @@ The trusted checker loads its code before entering this boundary. Thereafter it
 cannot open/stat a file, create a socket/process, execute a program, access another
 process, change limits or acquire privilege. Only fd 0 can be read and fds 1/2
 written. No candidate code, mounts, production paths or database handles enter it.
-Unsupported kernels/architectures fail closed. The one exception is explicit: a development
-machine may set TRADE_GRAPH_UNCONFINED_CHECKER=development, and the checker then runs with
-portable resource limits only and records "unconfined-development-v1" as its mechanism. Where
-seccomp exists the switch changes nothing.
+Unsupported kernels/architectures fail closed. The one exception is explicit and narrow: a
+development machine may set TRADE_GRAPH_UNCONFINED_CHECKER=development, and the two trusted
+data-only children (this checker and the ledger replay probe) then run with portable resource
+limits only and record "unconfined-development-v1" as their mechanism. Children that execute
+candidate code never do. Where seccomp exists the switch changes nothing.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ CONFINED_MECHANISM = "linux-x86_64-seccomp-data-pipe-v1"
 UNCONFINED_MECHANISM = "unconfined-development-v1"
 UNCONFINED_ENV = "TRADE_GRAPH_UNCONFINED_CHECKER"
 UNCONFINED_VALUE = "development"
+CHILD_ENV = "TRADE_GRAPH_CONFINED_CHILD"  # set by run_bounded on every bounded child, never inherited
 _CONFINED_SHAPE = {"no_new_privs": True, "filesystem": "denied", "network": "denied", "process_creation": "denied"}
 _UNCONFINED_SHAPE = {"no_new_privs": False, "filesystem": "unrestricted", "network": "unrestricted",
                      "process_creation": "unrestricted"}
@@ -41,6 +43,17 @@ def development_unconfined_requested(environ=None) -> bool:
     """True only for the exact opt-in value; any other spelling leaves the switch off."""
     environ = os.environ if environ is None else environ
     return environ.get(UNCONFINED_ENV) == UNCONFINED_VALUE
+
+
+def _bounded_child(environ=None) -> bool:
+    """True only inside a process that run_bounded started with its scrubbed environment.
+
+    A developer's shell may export the switch; a test or tool that calls confine() in its own
+    process must still fail closed rather than close its own descriptors and inherit a
+    three-second CPU limit.
+    """
+    environ = os.environ if environ is None else environ
+    return environ.get(CHILD_ENV) == "1"
 
 
 def development_switch_env(environ=None) -> dict | None:
@@ -81,10 +94,16 @@ class CapData(ctypes.Structure):
     _fields_ = [("effective", ctypes.c_uint32), ("permitted", ctypes.c_uint32), ("inheritable", ctypes.c_uint32)]
 
 
-def confine() -> dict:
-    """Enter once, before reading any untrusted input; all failure paths abort."""
+def confine(*, allow_development: bool = False) -> dict:
+    """Enter once, before reading any untrusted input; all failure paths abort.
+
+    `allow_development` is passed only by the trusted, data-only children (the artifact checker
+    and the ledger replay probe). A child that executes candidate code never passes it: the
+    installed-image attack probe proves confinement by trying to kill its parent, and without
+    seccomp that attempt would succeed against the host.
+    """
     if not seccomp_available():
-        if development_unconfined_requested():
+        if allow_development and development_unconfined_requested() and _bounded_child():
             return _development_unconfined()
         raise RuntimeError("checker requires Linux x86_64 seccomp-bpf; a development machine without it may set "
                            f"{UNCONFINED_ENV}={UNCONFINED_VALUE} to run the checker unconfined")

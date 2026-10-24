@@ -29,8 +29,8 @@ def unhurried_ledger_verification(monkeypatch):
     """
     run_bounded = financial_checkpoint.run_bounded
 
-    def unhurried(command, payload, *, cwd, wall_seconds):
-        return run_bounded(command, payload, cwd=cwd, wall_seconds=max(wall_seconds, 30))
+    def unhurried(command, payload, *, cwd, wall_seconds, **options):
+        return run_bounded(command, payload, cwd=cwd, wall_seconds=max(wall_seconds, 30), **options)
 
     monkeypatch.setattr(financial_checkpoint, "run_bounded", unhurried)
     monkeypatch.setattr(financial_checkpoint, "MAXIMUM_SECONDS", 60)

@@ -30,7 +30,7 @@ from trade_graph.adapters.engineering.plugin_artifacts import (
 )
 from trade_graph.adapters.engineering.plugin_replay import PluginReplayValidator, validator_fingerprint
 from trade_graph.adapters.engineering.process import run_bounded
-from trade_graph.adapters.engineering.sandbox import INPUT_BYTES, development_switch_env
+from trade_graph.adapters.engineering.sandbox import INPUT_BYTES
 from trade_graph.kernel.process_boundary import ProtectedBoundaryHarness
 
 WORKER = Path(__file__).with_name("plugin_worker.py")
@@ -42,11 +42,15 @@ def strict_document(data: bytes, *, maximum_bytes: int = 131072) -> dict:
     return bounded_document(data, maximum_bytes=maximum_bytes)
 
 
-def runtime_environment_sha256() -> str:
+def runtime_environment_sha256(*, stdlib: Path | None = None) -> str:
     """Exact current Python/stdlib inventory; OS linker dependencies remain separate.
 
     Runtime invocation redirects bytecode-cache lookup to an absent path inside
     the sealed bundle and disables writes. Host .pyc caches are not consumed.
+    Directories the inventory excludes anyway (site-packages, dist-packages,
+    __pycache__) may be links; Homebrew's Python links site-packages into the
+    standard library tree. Any other linked directory is refused, because the
+    walk would silently omit its files.
     """
     digest = hashlib.sha256()
     digest.update(sys.version.encode())
@@ -54,13 +58,13 @@ def runtime_environment_sha256() -> str:
     executable = Path(sys.executable).resolve()
     digest.update(str(executable).encode())
     digest.update(_bounded_runtime_bytes(executable))
-    root = Path(sysconfig.get_path("stdlib")).resolve()
+    root = (Path(sysconfig.get_path("stdlib")) if stdlib is None else Path(stdlib)).resolve()
     files = []
     for base, directories, names in os.walk(root, followlinks=False):
-        if any((Path(base) / name).is_symlink() for name in directories):
-            raise PermissionError("runtime inventory cannot omit linked dependency directories")
         directories[:] = sorted(name for name in directories if name not in {"site-packages", "dist-packages",
                                                                             "__pycache__"})
+        if any((Path(base) / name).is_symlink() for name in directories):
+            raise PermissionError("runtime inventory cannot omit linked dependency directories")
         for name in sorted(names):
             path = Path(base) / name
             if path.suffix in {".py", ".so", ".pyd"}:
@@ -271,8 +275,7 @@ class PluginRuntimeBuilder:
         command = [str(Path(sys.executable).resolve()), "-I", "-S", "-B", "-X",
                    f"pycache_prefix={directory / 'absent-cache'}",
                    str(directory / "worker.py")]
-        process = run_bounded(command, payload, cwd=str(directory), wall_seconds=float(policy.wall_seconds),
-                              extra_env=development_switch_env())
+        process = run_bounded(command, payload, cwd=str(directory), wall_seconds=float(policy.wall_seconds))
         proposal, status = None, "rejected"
         if process["exit_code"] == 0:
             try:

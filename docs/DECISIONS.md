@@ -3498,20 +3498,36 @@ the live gates do not read the new switch.
   for confinement, recorded in every result.** `TRADE_GRAPH_UNCONFINED_CHECKER=development`
   (exact value) lets `sandbox.confine()` return an `unconfined-development-v1`
   record with `filesystem`, `network` and `process_creation` `"unrestricted"` and
-  portable resource limits, only where seccomp is unavailable; where it exists
-  the switch changes nothing. `run_bounded` admits exactly that one variable
-  into the scrubbed child environment; the Engineer runner and every launcher of
-  a confined child (department gateway, runtime controller, process boundary,
-  projection, plugin runtime, ledger replay probe) pass it when the parent
-  environment holds it; the runner and `VersionController` accept the unconfined
-  record only in that mode and annotate attestations with `confined: false`.
-  The demo report carries `checker_confinement`. Reason: the checker failed
-  closed on any non-x86-64-Linux host, so the offline loop could not run on a
-  Mac at all; the alternative, a silent scrub-only fallback, is what the sandbox
-  docstring forbids. Tests: `tests/unit/test_checker_development_confinement.py`;
+  portable resource limits, only where seccomp is unavailable and only inside
+  the two trusted data-only children, the artifact checker and the ledger replay
+  probe, which pass `allow_development=True`; where seccomp exists the switch
+  changes nothing. `run_bounded` admits exactly that one variable into the
+  scrubbed child environment and marks every child it starts
+  (`TRADE_GRAPH_CONFINED_CHILD=1`), so the switch is honoured only inside a
+  bounded child, never by a tool or test calling `confine()` in its own process.
+  The Engineer runner and the financial checkpoint pass the switch when the
+  parent environment holds it; the runner and `VersionController` accept the
+  unconfined record only in that mode and annotate attestations with
+  `confined: false`; the demo report carries `checker_confinement`. Children
+  that execute candidate code (the strategy, department, controller, plugin and
+  projection children) never run unconfined: the installed-image probe proves
+  confinement by running an attack that tries to `kill` its parent, and
+  unconfined it killed the test process while this was built. Reason: the
+  checker failed closed on any non-x86-64-Linux host, so the offline loop could
+  not run on a Mac at all; the alternative, a silent scrub-only fallback, is what
+  the sandbox docstring forbids. Tests: `tests/unit/test_checker_development_confinement.py`;
   kernel-only cases in `test_engineer_isolation.py` skip without seccomp.
 - **D318 (2026-10-24, implementation default): resource samples without
   procfs.** `operational_diagnostics._resources` falls back to
   `threading.active_count()` and `getrusage` peak RSS when `/proc/self/status`
   is absent, so the worker diagnostics always carry `threads` and `rss_bytes`.
   Test: `tests/unit/test_resource_sample_fallback.py`.
+- **D319 (2026-10-24, implementation default): the runtime inventory prunes
+  before it checks for links.** `plugin_runtime.runtime_environment_sha256`
+  drops `site-packages`, `dist-packages` and `__pycache__` from the walk first
+  and only then refuses a linked directory, so a link among the directories it
+  excludes anyway (Homebrew's Python links `site-packages` into the standard
+  library tree) no longer blocks every plugin and application-projection path,
+  while any other linked directory is still refused because the walk would
+  omit its files. The function takes an optional `stdlib` root for tests.
+  Test: `tests/unit/test_runtime_inventory_links.py`.

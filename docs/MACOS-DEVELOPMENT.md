@@ -22,16 +22,31 @@ looked like something else:
 export TRADE_GRAPH_UNCONFINED_CHECKER=development
 ```
 
-Only that exact value turns it on. With it, on a machine **without** seccomp:
+Only that exact value turns it on, and it reaches exactly two children, both
+trusted code that reads data and never executes candidate code: the Engineer's
+artifact checker (`adapters/engineering/checks.py`) and the ledger replay probe
+(`kernel/ledger_replay_probe.py`). With it, on a machine **without** seccomp:
 
-- the Engineer checker, the ledger replay probe and the confined department,
-  controller, projection and plugin children run with portable resource limits
-  only (CPU, file size, core, inherited descriptors closed) and report
-  `mechanism: "unconfined-development-v1"` with `filesystem`, `network` and
-  `process_creation` all `"unrestricted"`;
+- those two run with portable resource limits only (CPU, file size, core,
+  inherited descriptors closed) and report `mechanism: "unconfined-development-v1"`
+  with `filesystem`, `network` and `process_creation` all `"unrestricted"`;
 - the Engineer runner and the activation controller accept such a record, and the
   stored attestation keeps it, so HQ and the demo report say `unconfined`;
-- `trade-graph demo --offline` reports `"checker_confinement": "unconfined-development-v1"`.
+- `trade-graph demo --offline` reports `"checker_confinement": "unconfined-development-v1"`;
+- the bounded runner marks every child it starts (`TRADE_GRAPH_CONFINED_CHILD=1`),
+  and the switch is honoured only inside such a child, so a test or tool that
+  calls `confine()` in its own process still fails closed.
+
+Children that execute candidate code never run unconfined, whatever the
+environment says: the strategy child (`adapters/isolation/mutable_child.py`),
+the department and controller children, the plugin worker and the application
+projection child. The reason is concrete. The installed-image probe proves
+confinement by running an attack as candidate code that tries to open the
+owner's files, create sockets, fork and `kill` its parent; the kernel filter is
+what turns each attempt into `EPERM`. Unconfined, that attack would kill the
+developer's own process, and it did while this was being built. So on a Mac the
+protected-kernel, plugin and deployment-image tests fail closed as they always
+did there; they do not pass and they do not harm the host.
 
 Where seccomp exists (Linux x86-64) the switch changes nothing: the children
 confine themselves regardless, and the record says `linux-x86_64-seccomp-data-pipe-v1`.
@@ -56,5 +71,12 @@ uv run trade-graph dashboard --database runtime/trade_graph.sqlite
 
 Tests that can only pass with the kernel filter (host files, sockets and
 processes really denied) are skipped on a Mac with the reason shown; tests of the
-parent-side limits run in development mode. `ta-lib` ships an arm64 wheel, so no
-C library install is needed.
+parent-side limits run in development mode. The protected-kernel, plugin and
+deployment-image test modules fail here for the reason above and are read on
+Linux CI. `ta-lib` ships an arm64 wheel, so no C library install is needed.
+
+Use a uv-managed CPython (`uv python install 3.12`) rather than Homebrew's: the
+Homebrew framework links `site-packages` into the standard library tree, and the
+runtime inventory used to refuse that link before the fix in D319; the walk now
+prunes the excluded directories first and still refuses any other linked
+directory.

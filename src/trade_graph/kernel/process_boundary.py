@@ -17,7 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from trade_graph.adapters.engineering.process import run_bounded
-from trade_graph.adapters.engineering.sandbox import INPUT_BYTES, OUTPUT_BYTES, WALL_SECONDS, development_switch_env
+from trade_graph.adapters.engineering.sandbox import INPUT_BYTES, OUTPUT_BYTES, WALL_SECONDS
 from trade_graph.domain.money import canonical_decimal, parse_decimal
 
 CHILD = Path(__file__).resolve().parents[1] / "adapters" / "isolation" / "mutable_child.py"
@@ -161,8 +161,7 @@ class ProtectedBoundaryHarness:
         if len(payload) > INPUT_BYTES:
             raise ValueError("candidate input exceeds host bound")
         process = run_bounded([sys.executable, "-I", "-S", "-B", str(CHILD)], payload,
-                              cwd=str(CHILD.parent), wall_seconds=float(self._policy.wall_seconds),
-                              extra_env=development_switch_env())
+                              cwd=str(CHILD.parent), wall_seconds=float(self._policy.wall_seconds))
         result = {
             "status": "rejected", "source_sha256": expected_source_sha256,
             "kernel_sha256": self._expected_kernel, "policy_sha256": self._expected_policy,

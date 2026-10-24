@@ -16,6 +16,7 @@ from trade_graph.adapters.engineering.process import run_bounded
 from trade_graph.adapters.engineering.provenance import CHECKS_FILE
 from trade_graph.adapters.engineering.runner import EngineerRunner
 from trade_graph.adapters.engineering.sandbox import (
+    CHILD_ENV,
     CONFINED_MECHANISM,
     MEMORY_BYTES,
     UNCONFINED_ENV,
@@ -51,9 +52,9 @@ def test_without_the_switch_an_unsupported_platform_still_fails_closed(tmp_path)
     assert "requires Linux x86_64 seccomp-bpf" in result["stderr"]
 
 
-def test_with_the_switch_an_unsupported_platform_reports_unconfined_evidence(tmp_path):
+def test_with_the_switch_a_data_only_child_on_an_unsupported_platform_reports_unconfined_evidence(tmp_path):
     result = development_probe(
-        tmp_path, 'sys.platform="unsupported"\nprint(json.dumps(sandbox["confine"]()))\n')
+        tmp_path, 'sys.platform="unsupported"\nprint(json.dumps(sandbox["confine"](allow_development=True)))\n')
     assert result["exit_code"] == 0, result
     evidence = json.loads(result["stdout"])
     assert evidence["mechanism"] == UNCONFINED_MECHANISM
@@ -62,9 +63,18 @@ def test_with_the_switch_an_unsupported_platform_reports_unconfined_evidence(tmp
     assert evidence["uid"] != 0 and evidence["memory_bytes"] == MEMORY_BYTES
 
 
+def test_a_child_that_runs_candidate_code_never_unconfines(tmp_path):
+    """Only the trusted data-only children, the artifact checker and the ledger replay probe, may opt in.
+    A child that executes candidate code keeps failing closed without seccomp whatever the environment says:
+    the installed-image attack probe proves confinement by trying to kill its parent."""
+    result = development_probe(tmp_path, 'sys.platform="unsupported"\nsandbox["confine"]()\nprint("UNCONFINED")\n')
+    assert result["exit_code"] != 0 and "UNCONFINED" not in result["stdout"]
+    assert "requires Linux x86_64 seccomp-bpf" in result["stderr"]
+
+
 @pytest.mark.skipif(not seccomp_available(), reason="needs a platform with seccomp to prove it is kept")
 def test_the_switch_never_weakens_a_platform_that_has_seccomp(tmp_path):
-    result = development_probe(tmp_path, 'print(json.dumps(sandbox["confine"]()))\n')
+    result = development_probe(tmp_path, 'print(json.dumps(sandbox["confine"](allow_development=True)))\n')
     assert result["exit_code"] == 0, result
     assert json.loads(result["stdout"])["mechanism"] == CONFINED_MECHANISM
 
@@ -144,3 +154,30 @@ def test_activation_accepts_an_unconfined_attestation_only_in_development():
     strict = {**CONFINED, **bounds}
     assert attested_confinement_ok({**strict, "verified": True, "confined": True}, strict, allow_development=False)
     assert not attested_confinement_ok({**strict, "verified": False, "confined": True}, strict, allow_development=False)
+
+
+def test_every_bounded_child_carries_the_child_marker(tmp_path):
+    result = probe(tmp_path, 'print(json.dumps(os.environ.get("TRADE_GRAPH_CONFINED_CHILD")))\n')
+    assert result["exit_code"] == 0, result
+    assert json.loads(result["stdout"]) == "1"
+    assert CHILD_ENV == "TRADE_GRAPH_CONFINED_CHILD"
+
+
+def test_the_switch_alone_never_unconfines_a_process_that_is_not_a_bounded_child(tmp_path):
+    """A developer's shell may export the switch; a test or tool calling confine() in its own process
+    must still fail closed, or it would close its own descriptors and inherit a 3-second CPU limit."""
+    import subprocess
+
+    script = tmp_path / "in-process.py"
+    script.write_text(
+        "import runpy,sys\n"
+        f"sandbox = runpy.run_path({str(CHECKS_FILE.parent / 'sandbox.py')!r})\n"
+        'sys.platform = "unsupported"\n'
+        'sandbox["confine"]()\n'
+        'print("UNCONFINED IN PROCESS")\n'
+    )
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", UNCONFINED_ENV: UNCONFINED_VALUE}
+    outcome = subprocess.run([sys.executable, "-I", "-S", "-B", str(script)], env=env, capture_output=True,
+                             text=True, timeout=30)
+    assert outcome.returncode != 0 and "UNCONFINED IN PROCESS" not in outcome.stdout
+    assert "requires Linux x86_64 seccomp-bpf" in outcome.stderr

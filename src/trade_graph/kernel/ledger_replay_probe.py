@@ -34,7 +34,7 @@ def unique(pairs):
 
 def main():
     try:
-        SANDBOX["confine"]()
+        SANDBOX["confine"](allow_development=True)  # trusted code over data only; see sandbox.confine
         chunks, size = [], 0
         while True:
             chunk = os.read(0, min(65536, MAXIMUM_BYTES + 1 - size))

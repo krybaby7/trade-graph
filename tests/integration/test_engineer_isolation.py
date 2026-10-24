@@ -87,7 +87,7 @@ print(json.dumps({{"isolation": evidence, "probes": failures}}))
 
 def test_checker_cpu_limit_is_kernel_enforced(tmp_path):
     # RLIMIT_CPU is set on every platform, confined or (in development) not.
-    result = probe(tmp_path, 'sandbox["confine"]()\nwhile True: pass\n', wall=8,
+    result = probe(tmp_path, 'sandbox["confine"](allow_development=True)\nwhile True: pass\n', wall=8,
                    development=not seccomp_available())
     assert result["exit_code"] < 0
     assert "wall-clock" not in result["stderr"]
@@ -96,9 +96,9 @@ def test_checker_cpu_limit_is_kernel_enforced(tmp_path):
 @pytest.mark.parametrize(
     "body, wall, expected",
     [
-        ('sandbox["confine"]()\ntime.sleep(30)\n', 0.3, "wall-clock"),
+        ('sandbox["confine"](allow_development=True)\ntime.sleep(30)\n', 0.3, "wall-clock"),
         # The output cap must stop the flood by itself, so the wall clock gets the full default.
-        ('sandbox["confine"]()\nwhile True: os.write(1,b"x" * 8192)\n', 10, "output limit"),
+        ('sandbox["confine"](allow_development=True)\nwhile True: os.write(1,b"x" * 8192)\n', 10, "output limit"),
     ],
 )
 def test_checker_wall_and_output_limits_are_enforced(tmp_path, body, wall, expected):

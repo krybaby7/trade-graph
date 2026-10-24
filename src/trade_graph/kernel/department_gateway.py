@@ -17,7 +17,6 @@ from decimal import Decimal
 from pathlib import Path
 
 from trade_graph.adapters.engineering.process import run_bounded
-from trade_graph.adapters.engineering.sandbox import development_switch_env
 from trade_graph.application.gateway import _bounded_json, _validate_schema
 from trade_graph.application.model_invocations import InvocationJournal
 from trade_graph.contracts.models import ModelRequest, ModelResult
@@ -202,8 +201,7 @@ class ProtectedDepartmentGateway:
             self.financial.revoke(request_id)
             raise ValidationFailure("protected departmental serialized input exceeded")
         process = run_bounded([sys.executable, "-I", "-S", "-B", str(CHILD)], payload,
-                              cwd=str(CHILD.parent), wall_seconds=self.manifest.wall_seconds,
-                              extra_env=development_switch_env())
+                              cwd=str(CHILD.parent), wall_seconds=self.manifest.wall_seconds)
         mutable_failure = True
         try:
             if process["exit_code"] != 0:

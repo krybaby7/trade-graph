@@ -17,7 +17,7 @@ POLICY = runpy.run_path(str(HERE / "artifact_policy.py"))
 
 def main() -> int:
     try:
-        isolation = SANDBOX["confine"]()
+        isolation = SANDBOX["confine"](allow_development=True)  # trusted code over data only
         chunks, size = [], 0
         while True:
             chunk = os.read(0, min(65536, SANDBOX["INPUT_BYTES"] + 1 - size))
