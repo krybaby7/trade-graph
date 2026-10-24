@@ -120,17 +120,32 @@ class _DiscardStream(io.TextIOBase):
         pass
 
 
-def _resources():
+def _resources(status_path=Path('/proc/self/status')):
     result = {}
     try:
-        for line in Path('/proc/self/status').read_text().splitlines():
+        for line in Path(status_path).read_text().splitlines():
             if line.startswith('Threads:'):
                 result['threads'] = int(line.split()[1])
             elif line.startswith('VmRSS:'):
                 result['rss_bytes'] = int(line.split()[1]) * 1024
     except (OSError, ValueError):
         pass
+    # Without procfs (macOS, the BSDs) the interpreter's own counters stand in.
+    if 'threads' not in result:
+        result['threads'] = threading.active_count()
+    if 'rss_bytes' not in result:
+        result['rss_bytes'] = _resident_bytes()
     return result
+
+
+def _resident_bytes():
+    """Peak resident size from getrusage: bytes on macOS, kibibytes elsewhere; 0 when unavailable."""
+    try:
+        import resource
+        peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except (ImportError, OSError, ValueError):
+        return 0
+    return peak if sys.platform == 'darwin' else peak * 1024
 
 
 def emit_event(event, *, error=None, **fields):

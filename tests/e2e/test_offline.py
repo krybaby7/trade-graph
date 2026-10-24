@@ -4,6 +4,13 @@ from decimal import Decimal
 import pytest
 
 from trade_graph.adapters.brokers.kraken_live import KrakenLiveBroker
+from trade_graph.adapters.engineering.sandbox import (
+    CONFINED_MECHANISM,
+    UNCONFINED_ENV,
+    UNCONFINED_MECHANISM,
+    UNCONFINED_VALUE,
+    seccomp_available,
+)
 from trade_graph.adapters.models.transport import HttpxProviderHttp
 from trade_graph.adapters.persistence.db import Database
 from trade_graph.application.learning import LearningJournal
@@ -17,9 +24,12 @@ def test_offline_loop(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(HttpxProviderHttp, "post_json", forbidden)
     monkeypatch.setattr(KrakenLiveBroker, "submit", forbidden)
+    if not seccomp_available():
+        monkeypatch.setenv(UNCONFINED_ENV, UNCONFINED_VALUE)  # the loop runs unconfined on a machine without seccomp
     work = tmp_path / "work"
     report = run_offline(work)
     assert report["passed"] is True and all(report["checks"].values())
+    assert report["checker_confinement"] == (CONFINED_MECHANISM if seccomp_available() else UNCONFINED_MECHANISM)
     assert json.loads((work / "evidence.json").read_text()) == report
     assert report["paid_calls_enabled"] is report["live_enabled"] is False
     assert report["external_provider_calls"] == 0

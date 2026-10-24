@@ -21,15 +21,26 @@ from trade_graph.adapters.engineering.artifact_files import (
 from trade_graph.adapters.engineering.artifact_policy import PREFIXES
 from trade_graph.adapters.engineering.process import run_bounded
 from trade_graph.adapters.engineering.provenance import CHECKS_FILE, checks_module_hash, scrubbed_env
-from trade_graph.adapters.engineering.sandbox import INPUT_BYTES
+from trade_graph.adapters.engineering.sandbox import (
+    CONFINED_MECHANISM,
+    INPUT_BYTES,
+    UNCONFINED_ENV,
+    UNCONFINED_VALUE,
+    development_unconfined_requested,
+    evidence_acceptable,
+)
 from trade_graph.kernel.authority import path_is_protected
 
 ALLOWLIST_PREFIXES = PREFIXES
 
 
 class EngineerRunner:
-    def __init__(self, source_root: Path) -> None:
+    def __init__(self, source_root: Path, *, development_unconfined: bool | None = None) -> None:
         self.source_root = source_root
+        # Off unless the environment holds the exact opt-in value (sandbox.py). Where seccomp
+        # exists the switch changes nothing: the checker confines itself regardless.
+        self.development_unconfined = (development_unconfined_requested() if development_unconfined is None
+                                       else bool(development_unconfined))
 
     def stage(self, destination: Path, *, snapshot: dict[str, str] | None = None) -> str:
         source_root = self.source_root.resolve()
@@ -84,17 +95,18 @@ class EngineerRunner:
         if len(payload) > INPUT_BYTES:
             report["stderr"] = "checker input resource limit exceeded"
             return report
+        extra_env = {UNCONFINED_ENV: UNCONFINED_VALUE} if self.development_unconfined else None
         with tempfile.TemporaryDirectory(prefix="tg-checks-") as neutral:
-            report.update(run_bounded([sys.executable, "-I", "-S", "-B", str(CHECKS_FILE)], payload, cwd=neutral))
+            report.update(run_bounded([sys.executable, "-I", "-S", "-B", str(CHECKS_FILE)], payload, cwd=neutral,
+                                      extra_env=extra_env))
         try:
             result = json.loads(report["stdout"])
             isolation = result["isolation"]
             if (result["input_sha256"] != hashlib.sha256(payload).hexdigest()
-                    or isolation["mechanism"] != "linux-x86_64-seccomp-data-pipe-v1" or isolation["uid"] == 0
-                    or isolation["filesystem"] != "denied" or isolation["network"] != "denied"
-                    or not isolation["no_new_privs"]):
+                    or not evidence_acceptable(isolation, allow_development=self.development_unconfined)):
                 raise ValueError("invalid checker confinement evidence")
-            report["isolation"] = {**isolation, "verified": True}
+            report["isolation"] = {**isolation, "verified": True,
+                                   "confined": isolation["mechanism"] == CONFINED_MECHANISM}
             report["failures"] = result["failures"]
             if not result["passed"]:
                 report["exit_code"] = 1

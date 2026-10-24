@@ -3465,3 +3465,53 @@ none authorizes live trading, real orders or paid calls.
   fees alone cannot produce a profit. A startable strategy needs both a
   before-fee edge of at least twice its round-trip cost and a cost profile it can
   actually obtain. The ledger's section 7 bar stands.
+
+Local step of 2026-10-24 (D315–D318, implementation defaults; branch
+`mvp/consolidate-and-macos`). The engine lineage was merged with the takeover
+branch's research documents and made to run on macOS for development. Evidence:
+`docs/MACOS-DEVELOPMENT.md`, `IMPLEMENTATION-STATUS.md` (2026-10-24 entry). No
+paid call, order, credential or live setting is touched; the protected image and
+the live gates do not read the new switch.
+
+- **D315 (2026-10-24, implementation default): the database lease is a sidecar
+  file.** `DatabaseFile.exclusive_lock` holds `flock()` on `<database>.lock`
+  (mode 0600, created beside the database through the same no-follow directory
+  handle) instead of on the database inode. Reason: on macOS and the BSDs
+  `flock()` and `fcntl()` share one lock table, so the lease collided with
+  SQLite's own locks in the same process ("another paper service owns this
+  database" on a fresh install); Linux keeps the two apart, so nothing changes
+  there. The lock file is never unlinked (unlinking a live lock file lets two
+  holders coexist); identity checks on the database file are unchanged.
+  Tests: `tests/integration/test_database_lock_sidecar.py`, the existing
+  `tests/integration/test_database_locks.py`.
+- **D316 (2026-10-24, implementation default): Apple's three root links are
+  canonicalised, nothing else.** `artifact_files.canonical_system_path` rewrites
+  `/etc`, `/tmp` and `/var` to `/private/...` on darwin only when the root link
+  really points at `private/<name>`; every other component is still opened with
+  `O_NOFOLLOW` and a user-placed link is refused as before. Reason: pytest's and
+  Python's temporary directories live under `/var/folders` on a Mac, and the
+  walk reported "database secure path refused" for all of them. Tests:
+  `tests/unit/test_secure_paths_macos.py`; the symlink-refusal tests in
+  `tests/integration/test_engineer_isolation.py` still pass. The offline-module
+  allowlist admits `sys` for this module.
+- **D317 (2026-10-24, implementation default): one explicit development switch
+  for confinement, recorded in every result.** `TRADE_GRAPH_UNCONFINED_CHECKER=development`
+  (exact value) lets `sandbox.confine()` return an `unconfined-development-v1`
+  record with `filesystem`, `network` and `process_creation` `"unrestricted"` and
+  portable resource limits, only where seccomp is unavailable; where it exists
+  the switch changes nothing. `run_bounded` admits exactly that one variable
+  into the scrubbed child environment; the Engineer runner and every launcher of
+  a confined child (department gateway, runtime controller, process boundary,
+  projection, plugin runtime, ledger replay probe) pass it when the parent
+  environment holds it; the runner and `VersionController` accept the unconfined
+  record only in that mode and annotate attestations with `confined: false`.
+  The demo report carries `checker_confinement`. Reason: the checker failed
+  closed on any non-x86-64-Linux host, so the offline loop could not run on a
+  Mac at all; the alternative, a silent scrub-only fallback, is what the sandbox
+  docstring forbids. Tests: `tests/unit/test_checker_development_confinement.py`;
+  kernel-only cases in `test_engineer_isolation.py` skip without seccomp.
+- **D318 (2026-10-24, implementation default): resource samples without
+  procfs.** `operational_diagnostics._resources` falls back to
+  `threading.active_count()` and `getrusage` peak RSS when `/proc/self/status`
+  is absent, so the worker diagnostics always carry `threads` and `rss_bytes`.
+  Test: `tests/unit/test_resource_sample_fallback.py`.

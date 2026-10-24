@@ -89,6 +89,9 @@ uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-off
 uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
 ```
 
+On a Mac, read [developing on macOS](docs/MACOS-DEVELOPMENT.md) first: the paper service and the
+offline demo run there since 2026-10-24, the latter with an explicit unconfined development switch.
+
 Use a fresh demo work directory. Its private `evidence.json` records checked outcomes and
 request/receipt/version provenance. Scripted receipts are synthetic. Offline functional checks,
 actual public/provider observation, economic evidence and live authority have separate gates.

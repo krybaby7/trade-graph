@@ -153,20 +153,46 @@ class DatabaseFile:
                     with _registry_lock:
                         _drain(retained)
 
+    LOCK_SUFFIX = ".lock"
+
+    def _lock_descriptor(self) -> int:
+        """Open, creating it if needed, the private sidecar lock file beside the database.
+
+        The lease is held with flock() on this file, never on the database inode. On
+        macOS and the BSDs flock() and fcntl() share one lock table, so a lease on the
+        inode collides with SQLite's own locks in the same process; Linux keeps the two
+        families apart, so the sidecar changes nothing there. The file is never
+        unlinked: unlinking a live lock file would let two holders coexist.
+        """
+        directory = None
+        try:
+            directory = open_directory(self.path.parent)
+            flags = os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC
+            descriptor = os.open(self.path.name + self.LOCK_SUFFIX, flags, 0o600, dir_fd=directory)
+        except OSError:
+            raise StaleState("database lock file refused") from None
+        finally:
+            if directory is not None:
+                os.close(directory)
+        try:
+            status = os.fstat(descriptor)
+            if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1:
+                raise StaleState("database lock file must be a single regular file")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return descriptor
+
     @contextmanager
     def exclusive_lock(self, purpose: str, *, single_link: bool = True) -> Iterator[int]:
         with self._mutex:
             mutex = self._leases.setdefault(purpose, threading.Lock())
         if not mutex.acquire(blocking=False):
             raise DatabaseOwnershipConflict("another local controller owns the database")
-        acquired = False
-        retained = None
+        descriptor, acquired = -1, False
         try:
-            with self._mutex:
-                descriptor = self.descriptor("lock:" + purpose, single_link=single_link)
-                retained = self.inode
-                with _registry_lock:
-                    retained.owners += 1
+            self.identity(single_link=single_link)
+            descriptor = self._lock_descriptor()
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
@@ -177,10 +203,8 @@ class DatabaseFile:
         finally:
             if acquired:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
-            if retained is not None:
-                with _registry_lock:
-                    retained.owners -= 1
-                    _drain(retained)
+            if descriptor >= 0:
+                os.close(descriptor)
             mutex.release()
 
     def close(self) -> None:

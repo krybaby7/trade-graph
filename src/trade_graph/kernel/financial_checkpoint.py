@@ -24,6 +24,7 @@ from time import monotonic
 
 from trade_graph.adapters.engineering.artifact_files import open_directory
 from trade_graph.adapters.engineering.process import run_bounded
+from trade_graph.adapters.engineering.sandbox import development_switch_env
 from trade_graph.domain.clock import parse_utc, utc_iso
 from trade_graph.domain.errors import StaleState
 from trade_graph.domain.money import canonical_decimal
@@ -688,7 +689,8 @@ class FinancialHistoryCheckpoint:
         helper = Path(__file__).with_name("ledger_replay_probe.py")
         self.financial.manifest.assert_current()
         result = run_bounded([sys.executable, "-I", "-B", str(helper)], raw,
-                             cwd=str(helper.parent), wall_seconds=min(2, remaining))
+                             cwd=str(helper.parent), wall_seconds=min(2, remaining),
+                             extra_env=development_switch_env())
         self.financial.manifest.assert_current()
         if result["exit_code"] != 0:
             raise StaleState("owner-pinned complete native Ledger verification refused")

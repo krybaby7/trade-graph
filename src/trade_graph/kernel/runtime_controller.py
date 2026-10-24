@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 
 from trade_graph.adapters.engineering.process import run_bounded
+from trade_graph.adapters.engineering.sandbox import development_switch_env
 from trade_graph.domain.clock import utc_iso
 from trade_graph.domain.errors import AuthorityDenied, StaleState, TradeGraphError
 from trade_graph.kernel.financial_service import ProtectedFinancialService
@@ -158,7 +159,8 @@ class ProtectedRuntimeController:
             raise AuthorityDenied("issued immutable release changed")
         payload = json.dumps({"source": release["source_text"], "context": context}, allow_nan=False).encode()
         process = run_bounded([sys.executable, "-I", "-S", "-B", str(CHILD)], payload,
-                              cwd=str(CHILD.parent), wall_seconds=self.manifest.wall_seconds)
+                              cwd=str(CHILD.parent), wall_seconds=self.manifest.wall_seconds,
+                              extra_env=development_switch_env())
         diagnostic = {name: process[name] for name in ("exit_code", "timed_out", "output_exceeded") if name in process}
         self.manifest.assert_current()
         if cancelled is not None and cancelled.is_set():

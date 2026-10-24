@@ -12,7 +12,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from trade_graph.adapters.engineering.artifact_files import content_hash, manifest
 from trade_graph.adapters.engineering.provenance import checks_module_hash
-from trade_graph.adapters.engineering.sandbox import CPU_SECONDS, INPUT_BYTES, MEMORY_BYTES, OUTPUT_BYTES, WALL_SECONDS
+from trade_graph.adapters.engineering.sandbox import (
+    CPU_SECONDS,
+    INPUT_BYTES,
+    MEMORY_BYTES,
+    OUTPUT_BYTES,
+    WALL_SECONDS,
+    development_unconfined_requested,
+    evidence_acceptable,
+)
 from trade_graph.adapters.persistence.db import Database, atomic
 from trade_graph.application.artifact_store import ArtifactStore
 from trade_graph.application.change_authority import authorized_change
@@ -32,10 +40,28 @@ class ObservationPolicy(BaseModel):
     max_context_bytes: int = Field(default=262144, ge=1024, le=1048576)
 
 
+def attested_confinement_ok(isolation: dict, checked: dict, *, allow_development: bool) -> bool:
+    """The runner's verified record must name an acceptable profile, carry the fixed bounds and
+    equal the checker child's own record once the runner's two annotations are set aside."""
+    try:
+        return (bool(isolation["verified"])
+                and evidence_acceptable(isolation, allow_development=allow_development)
+                and isolation["memory_bytes"] == MEMORY_BYTES and isolation["cpu_seconds"] == CPU_SECONDS
+                and isolation["wall_seconds"] == WALL_SECONDS and isolation["input_bytes"] == INPUT_BYTES
+                and isolation["output_bytes"] == OUTPUT_BYTES
+                and checked == {k: v for k, v in isolation.items() if k not in {"verified", "confined"}})
+    except (KeyError, TypeError):
+        return False
+
+
 class VersionController:
     def __init__(self, database: Database, clock: Clock, *,
-                 observation_policy: ObservationPolicy | None = None) -> None:
+                 observation_policy: ObservationPolicy | None = None,
+                 development_unconfined: bool | None = None) -> None:
         self.database, self.clock = database, clock
+        # Same switch as the runner: an unconfined attestation activates only in development.
+        self.development_unconfined = (development_unconfined_requested() if development_unconfined is None
+                                       else bool(development_unconfined))
         self.store = ArtifactStore(database, clock)
         self.observation_policy = observation_policy or ObservationPolicy()
 
@@ -135,14 +161,8 @@ class VersionController:
                     or report["checks_module_hash"] != checks_module_hash() or report["exit_code"] != 0
                     or not checked["passed"] or checked["failures"]
                     or checked["input_sha256"] != hashlib.sha256(raw).hexdigest()
-                    or not isolation["verified"] or isolation["uid"] == 0
-                    or isolation["mechanism"] != "linux-x86_64-seccomp-data-pipe-v1"
-                    or isolation["filesystem"] != "denied" or isolation["network"] != "denied"
-                    or isolation["process_creation"] != "denied" or not isolation["no_new_privs"]
-                    or isolation["memory_bytes"] != MEMORY_BYTES or isolation["cpu_seconds"] != CPU_SECONDS
-                    or isolation["wall_seconds"] != WALL_SECONDS or isolation["input_bytes"] != INPUT_BYTES
-                    or isolation["output_bytes"] != OUTPUT_BYTES
-                    or checked["isolation"] != {k: v for k, v in isolation.items() if k != "verified"}):
+                    or not attested_confinement_ok(isolation, checked["isolation"],
+                                                   allow_development=self.development_unconfined)):
                 raise ValidationFailure("tested artifact manifest/confinement identity mismatch")
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
             raise ValidationFailure("invalid tested artifact bytes/manifest") from exc

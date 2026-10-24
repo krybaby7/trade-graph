@@ -92,6 +92,7 @@ ALLOWED_LIBRARIES = {
 EXTRA_LIBRARIES = {
     "trade_graph.market_data_cli": {"importlib", "pkgutil", "types"},  # finds the command modules next to it
     "trade_graph.adapters.persistence.inode_locks": {"fcntl"},  # file locks on the candle database
+    "trade_graph.adapters.engineering.artifact_files": {"sys"},  # sys.platform: macOS keeps /tmp and /var in /private
 }
 # The os functions that start another program (a download tool would be one), plus ways to run text as code.
 PROCESS_AND_CODE_NAMES = {

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 from trade_graph.adapters.engineering.artifact_policy import PREFIXES, artifact_class
@@ -16,9 +17,31 @@ MAX_TREE_FILES = 32
 MAX_TREE_ENTRIES = 128
 
 
+_APPLE_ROOT_LINKS = ("etc", "tmp", "var")
+
+
+def canonical_system_path(path: Path, *, platform: str = sys.platform, readlink=os.readlink) -> Path:
+    """Rewrite only macOS's three root-owned links, /etc, /tmp and /var, to their /private targets.
+
+    Apple ships those as symbolic links, which the no-follow walk below would refuse, so on a
+    Mac every temporary directory would be "not a directory". Nothing else is rewritten: a
+    user-placed link anywhere in the path is still opened with O_NOFOLLOW and refused.
+    """
+    path = path.absolute()
+    if platform != "darwin" or len(path.parts) < 2 or path.parts[1] not in _APPLE_ROOT_LINKS:
+        return path
+    try:
+        target = readlink("/" + path.parts[1])
+    except OSError:
+        return path
+    if target != "private/" + path.parts[1]:
+        return path
+    return Path("/private", *path.parts[1:])
+
+
 def open_directory(path: Path) -> int:
     """Resolve each component with directory FDs and O_NOFOLLOW, including parents."""
-    path = path.absolute()
+    path = canonical_system_path(path)
     if ".." in path.parts:
         raise PermissionError("parent traversal")
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
@@ -35,7 +58,7 @@ def open_directory(path: Path) -> int:
 
 def ensure_directory(path: Path) -> None:
     """Create through verified parents, rather than following a symlink in mkdir(parents)."""
-    path = path.absolute()
+    path = canonical_system_path(path)
     if ".." in path.parts:
         raise PermissionError("parent traversal")
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)

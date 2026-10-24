@@ -9,13 +9,20 @@ import subprocess
 import time
 
 from trade_graph.adapters.engineering.provenance import scrubbed_env
-from trade_graph.adapters.engineering.sandbox import OUTPUT_BYTES, WALL_SECONDS
+from trade_graph.adapters.engineering.sandbox import OUTPUT_BYTES, UNCONFINED_ENV, WALL_SECONDS
 
 
-def run_bounded(command: list[str], payload: bytes, *, cwd: str, wall_seconds: float = WALL_SECONDS) -> dict:
+def run_bounded(command: list[str], payload: bytes, *, cwd: str, wall_seconds: float = WALL_SECONDS,
+                extra_env: dict[str, str] | None = None) -> dict:
+    environment = scrubbed_env()
+    if extra_env:
+        # The scrubbed environment admits exactly one addition: the checker's development switch.
+        if set(extra_env) - {UNCONFINED_ENV}:
+            raise ValueError("only the checker's development switch may join the scrubbed environment")
+        environment.update(extra_env)
     output = {"stdout": bytearray(), "stderr": bytearray()}
     stopped = ""
-    with subprocess.Popen(command, cwd=cwd, env=scrubbed_env(), close_fds=True, start_new_session=True,
+    with subprocess.Popen(command, cwd=cwd, env=environment, close_fds=True, start_new_session=True,
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
         deadline, sent = time.monotonic() + wall_seconds, 0
         with selectors.DefaultSelector() as selector:

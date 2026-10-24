@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
+from trade_graph.adapters.engineering.sandbox import UNCONFINED_ENV, UNCONFINED_VALUE, seccomp_available
 from trade_graph.api.app import create_app
 from trade_graph.api.auth import issue_session
 from trade_graph.dashboard import dashboard_runtime
@@ -12,7 +13,9 @@ from trade_graph.demo import run_offline
 from trade_graph.domain.clock import FrozenClock
 
 
-def test_dashboard_reconciles_full_loop_and_navigates_retained_evidence(tmp_path):
+def test_dashboard_reconciles_full_loop_and_navigates_retained_evidence(tmp_path, monkeypatch):
+    if not seccomp_available():
+        monkeypatch.setenv(UNCONFINED_ENV, UNCONFINED_VALUE)  # the loop runs unconfined on a machine without seccomp
     work = tmp_path / "loop"
     work.mkdir(mode=0o700)
     report = run_offline(work)

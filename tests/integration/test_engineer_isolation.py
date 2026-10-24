@@ -14,18 +14,29 @@ from trade_graph.adapters.engineering.artifact_policy import artifact_class, val
 from trade_graph.adapters.engineering.process import run_bounded
 from trade_graph.adapters.engineering.provenance import CHECKS_FILE, checks_module_hash, scrubbed_env
 from trade_graph.adapters.engineering.runner import EngineerRunner
-from trade_graph.adapters.engineering.sandbox import MEMORY_BYTES, OUTPUT_BYTES
+from trade_graph.adapters.engineering.sandbox import (
+    MEMORY_BYTES,
+    OUTPUT_BYTES,
+    UNCONFINED_ENV,
+    UNCONFINED_VALUE,
+    seccomp_available,
+)
 
 
-def probe(tmp_path, body, *, wall=10):
+def probe(tmp_path, body, *, wall=10, development=False):
+    """Run a trusted probe through the bounded runner; `development` passes the unconfined switch
+    so parent-side limits can be exercised on a machine without seccomp."""
     script = tmp_path / "trusted-probe.py"
     script.write_text(
         "import runpy,os,sys,json,socket,ctypes,resource,time\n"
         f"sandbox = runpy.run_path({str(CHECKS_FILE.parent / 'sandbox.py')!r})\n" + body
     )
-    return run_bounded([sys.executable, "-I", "-S", "-B", str(script)], b"", cwd=str(tmp_path), wall_seconds=wall)
+    extra_env = {UNCONFINED_ENV: UNCONFINED_VALUE} if development else None
+    return run_bounded([sys.executable, "-I", "-S", "-B", str(script)], b"", cwd=str(tmp_path), wall_seconds=wall,
+                       extra_env=extra_env)
 
 
+@pytest.mark.skipif(not seccomp_available(), reason="kernel confinement exists only on Linux x86-64")
 def test_kernel_blocks_host_files_network_processes_and_inherited_descriptors(tmp_path):
     secret = tmp_path / "production.sqlite"
     secret.write_text("world-readable synthetic production sentinel")
@@ -75,7 +86,9 @@ print(json.dumps({{"isolation": evidence, "probes": failures}}))
 
 
 def test_checker_cpu_limit_is_kernel_enforced(tmp_path):
-    result = probe(tmp_path, 'sandbox["confine"]()\nwhile True: pass\n', wall=8)
+    # RLIMIT_CPU is set on every platform, confined or (in development) not.
+    result = probe(tmp_path, 'sandbox["confine"]()\nwhile True: pass\n', wall=8,
+                   development=not seccomp_available())
     assert result["exit_code"] < 0
     assert "wall-clock" not in result["stderr"]
 
@@ -89,7 +102,7 @@ def test_checker_cpu_limit_is_kernel_enforced(tmp_path):
     ],
 )
 def test_checker_wall_and_output_limits_are_enforced(tmp_path, body, wall, expected):
-    result = probe(tmp_path, body, wall=wall)
+    result = probe(tmp_path, body, wall=wall, development=not seccomp_available())
     assert result["exit_code"] != 0 and expected in result["stderr"]
     assert len(result["stdout"].encode()) <= OUTPUT_BYTES
 
@@ -157,7 +170,7 @@ def test_independent_checker_cannot_be_shadowed_and_checks_bound_artifact_bytes(
     source = tmp_path / "source"
     ensure_directory(source)
     write_file(source, "artifacts/context_policy.json", json.dumps(POLICY))
-    runner = EngineerRunner(source)
+    runner = EngineerRunner(source, development_unconfined=not seccomp_available())
     runner.stage(tmp_path / "stage")
     # A candidate cannot modify checker imports, cwd, environment or command.
     monkeypatch.setenv("PYTHONPATH", str(tmp_path / "stage"))

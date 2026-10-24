@@ -316,6 +316,11 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
     engineer_output = json.loads(completed_engineer[0])
     assert engineer_output["_status"] == "SUCCEEDED"
     candidate_id = engineer_output["candidate_id"]
+    # The retained attestation names the confinement the checker really had: the seccomp data pipe,
+    # or "unconfined-development-v1" on a machine without seccomp that set the development switch.
+    checker_confinement = json.loads(database.execute(
+        "SELECT report_json FROM candidate_attestations WHERE candidate_id = ?", (candidate_id,),
+    ).fetchone()[0])["isolation"]["mechanism"]
     secretary.process(portfolio)
     gateway.scripted.outputs["leader"] = {
         "evidence_refs": [candidate_id],
@@ -523,6 +528,7 @@ def run_offline(work: Path, source_root: Path | None = None) -> dict:
         "worker_completed": worker_completed,
         "engineer_worker_completed": engineer_completed,
         "engineer_candidate_id": candidate_id,
+        "checker_confinement": checker_confinement,
         "engineer_usage_reservations": engineer_output["usage_reservations"],
         "leader_decision_id": leader_decision_id,
         "leader_activation_decision_id": activation_decision_id,

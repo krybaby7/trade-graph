@@ -30,7 +30,7 @@ from trade_graph.adapters.engineering.plugin_artifacts import (
 )
 from trade_graph.adapters.engineering.plugin_replay import PluginReplayValidator, validator_fingerprint
 from trade_graph.adapters.engineering.process import run_bounded
-from trade_graph.adapters.engineering.sandbox import INPUT_BYTES
+from trade_graph.adapters.engineering.sandbox import INPUT_BYTES, development_switch_env
 from trade_graph.kernel.process_boundary import ProtectedBoundaryHarness
 
 WORKER = Path(__file__).with_name("plugin_worker.py")
@@ -271,7 +271,8 @@ class PluginRuntimeBuilder:
         command = [str(Path(sys.executable).resolve()), "-I", "-S", "-B", "-X",
                    f"pycache_prefix={directory / 'absent-cache'}",
                    str(directory / "worker.py")]
-        process = run_bounded(command, payload, cwd=str(directory), wall_seconds=float(policy.wall_seconds))
+        process = run_bounded(command, payload, cwd=str(directory), wall_seconds=float(policy.wall_seconds),
+                              extra_env=development_switch_env())
         proposal, status = None, "rejected"
         if process["exit_code"] == 0:
             try:

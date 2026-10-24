@@ -43,6 +43,7 @@ from trade_graph.adapters.engineering.plugin_runtime import (
     authenticated_report,
     runtime_environment_sha256,
 )
+from trade_graph.adapters.engineering.sandbox import development_switch_env
 from trade_graph.application.secretary import Secretary
 from trade_graph.domain.errors import AuthorityDenied, StaleState, ValidationFailure
 
@@ -469,7 +470,8 @@ class OfflineApplicationProjection:
             f"pycache_prefix={self.store.root / 'stages' / build / 'absent-cache'}",
             str(CHILD),
         ]
-        outcome = process.run_bounded(command, payload, cwd=str(CHILD.parent), wall_seconds=self.policy.wall_seconds)
+        outcome = process.run_bounded(command, payload, cwd=str(CHILD.parent), wall_seconds=self.policy.wall_seconds,
+                                      extra_env=development_switch_env())
         self._assert_pinned()
         diagnostic = {"exit_code": outcome["exit_code"], "input_sha256": sha256(canonical_bytes(snapshot))}
         try:
