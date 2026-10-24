@@ -3419,3 +3419,49 @@ steps L1–L4; new owner decisions start at D310.
   packages are unchanged; HQ's new code is a view like the other HQ projections
   (not protected). Nothing here refuses, approves or changes a plan, an order or
   the playbook (D280 item 5). Reason: the package ("prefer none"), AGENTS.md.
+
+Owner decisions of 2026-10-23 (D310–D314), transplanted on 2026-10-24 from
+`docs/research/STRATEGY-RESEARCH-LEDGER.md` section 10 at the merge of
+`codex/orchestrator-takeover-2026-10-04` onto the engine lineage. The ledger
+numbered them provisionally from D310, the next free owner number named in
+CLOUD-BUILD-PLAN.md "Reserved numbers"; the numbers stand. None changes code, and
+none authorizes live trading, real orders or paid calls.
+
+- **D310 (2026-10-23, owner decision): the Trader authors strategies; software
+  executes them.** The desk writes strategy versions in the protected grammar,
+  tests them in the lab, installs day plans, and software executes and protects.
+  No language model sits in the per-trade path. Reasons: a model per trade is
+  slow and expensive (17 no-actions on a 4-hour timer), discretionary trades
+  cannot be backtested and so can never clear the start bar, and the invariants
+  forbid the deployed Engineer from shipping arbitrary code. Judgment lives one
+  level up, in stances and playbook revisions, where the scorecard can later
+  measure it. This confirms D280 and closes the question "trades or bots".
+- **D311 (2026-10-23, owner decision): no further trader-wallet downloads.**
+  Public leaderboards select for market makers and hedged whales; the
+  Hyperliquid study (`docs/research/2026-10-22-hyperliquid-wallet-0xecb6-study.md`)
+  already yielded the transferable lessons. Strategy research instead uses
+  published track records and literature that fit the owner's rules (long-only
+  spot, daily-to-weekly horizons).
+- **D312 (2026-10-23, owner decision): research program for the first startable
+  strategy.** In order: grammar and replay extension (60-minute and daily
+  intervals, lookbacks beyond 500 bars, maker take-profit fills); frequency
+  budget per coin; three slow families on two years with untouched confirmation
+  windows; breadth on the scanner shortlist; literature scan. Every try is
+  counted and recorded in the ledger. "Test all frequency bands" is declined:
+  1-minute replays cannot use the two-year history (100,000-candle cap) and
+  unbounded tries weaken every confirmation.
+- **D313 (2026-10-23, owner decision): fee refresh limited to four cost
+  profiles.** Bitfinex and Hyperliquid are added to the testing loop next to
+  Kraken and OKX, as dated replay profiles: `bitfinex-spot-zero@1` at 0% maker /
+  0% taker (fee page retrieved 2026-10-23, undated) and
+  `hyperliquid-spot-base@1` at 0.040% maker / 0.070% taker (docs retrieved
+  2026-10-23, undated). The OKX profile is re-checked against the 0.20% / 0.35%
+  regular-account figure. No venue adapter, account, credential, on-chain
+  execution or live authority follows from this; Hyperliquid in particular is a
+  decentralised venue outside R1 execution scope, and EEA access to both is
+  unverified.
+- **D314 (2026-10-23, owner decision): fees set the minimum edge; they are not
+  the only problem.** The v1 families make roughly zero before fees, so cheaper
+  fees alone cannot produce a profit. A startable strategy needs both a
+  before-fee edge of at least twice its round-trip cost and a cost profile it can
+  actually obtain. The ledger's section 7 bar stands.
