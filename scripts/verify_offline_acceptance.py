@@ -270,10 +270,16 @@ def require_external(path: Path, root: Path) -> Path:
     return path
 
 
-def offline_env(runtime: Path) -> dict[str, str]:
+# The one variable the allowlist may forward, spelled exactly as in
+# src/trade_graph/adapters/engineering/sandbox.py (this script imports nothing from the package).
+UNCONFINED_ENV = "TRADE_GRAPH_UNCONFINED_CHECKER"
+UNCONFINED_VALUE = "development"
+
+
+def offline_env(runtime: Path, environ: dict[str, str] | None = None) -> dict[str, str]:
     # Do not inherit credentials, pytest options, PYTHONPATH, tracing endpoints,
     # or proxies. XDG configuration is temporary; Git global/system config is disabled.
-    return {
+    environment = {
         "PATH": os.defpath,
         "LANG": "C.UTF-8",
         "TMPDIR": str(runtime / "tmp"),
@@ -284,6 +290,13 @@ def offline_env(runtime: Path) -> dict[str, str]:
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "HYPOTHESIS_STORAGE_DIRECTORY": str(runtime / "hypothesis"),
     }
+    # A development machine without seccomp may ask for unconfined children (D317). Only the
+    # exact value passes, and the report says so; the kernel-only case still skips there, so the
+    # gate cannot read "complete" from an unconfined run.
+    source = os.environ if environ is None else environ
+    if source.get(UNCONFINED_ENV) == UNCONFINED_VALUE:
+        environment[UNCONFINED_ENV] = UNCONFINED_VALUE
+    return environment
 
 
 # These hooks run only in the child pytest process when loaded with -p.
@@ -401,6 +414,9 @@ def main(argv: list[str] | None = None) -> int:
         "command": command,
         "offline_controls": {
             "inherited_credentials": False,
+            "confinement": ("development switch forwarded; confined children ran unconfined where seccomp is absent"
+                            if offline_env(runtime).get(UNCONFINED_ENV) == UNCONFINED_VALUE
+                            else "platform confinement; no development switch"),
             "environment": "allowlist; no inherited proxies, tracing, pytest options or PYTHONPATH",
             "configuration": "temporary XDG_CONFIG_HOME; Git global/system configuration disabled",
             "pytest_plugin_autoload": False,

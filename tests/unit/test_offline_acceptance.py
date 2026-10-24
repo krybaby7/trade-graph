@@ -345,3 +345,13 @@ def test_commit_tree_lock_and_working_bytes_are_bound_to_evidence(tmp_path):
     assert before["uv_lock_sha256"] != after["uv_lock_sha256"]
     assert before["working_files_sha256"] != after["working_files_sha256"]
     assert after["working_tree_status"]
+
+
+def test_only_the_exact_development_switch_is_forwarded_to_the_pytest_child(tmp_path):
+    from trade_graph.adapters.engineering.sandbox import UNCONFINED_ENV, UNCONFINED_VALUE
+
+    assert harness.UNCONFINED_ENV == UNCONFINED_ENV and harness.UNCONFINED_VALUE == UNCONFINED_VALUE
+    assert UNCONFINED_ENV not in harness.offline_env(tmp_path, environ={})
+    assert UNCONFINED_ENV not in harness.offline_env(tmp_path, environ={UNCONFINED_ENV: "1", "OPENAI_API_KEY": "x"})
+    forwarded = harness.offline_env(tmp_path, environ={UNCONFINED_ENV: UNCONFINED_VALUE, "OPENAI_API_KEY": "x"})
+    assert forwarded[UNCONFINED_ENV] == UNCONFINED_VALUE and "OPENAI_API_KEY" not in forwarded
