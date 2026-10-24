@@ -157,7 +157,8 @@ def test_activation_rejects_candidate_evidence_tampering_and_retains_receipt(tmp
         checked["input_sha256"] = "0" * 64
         report["stdout"] = json.dumps(checked)
     elif mutation == "privileges":
-        report["isolation"]["no_new_privs"] = False
+        # Flip the recorded value: confined records say True, an unconfined development record says False.
+        report["isolation"]["no_new_privs"] = not report["isolation"]["no_new_privs"]
     else:
         report["isolation"]["process_creation"] = "allowed"
     stack.database.execute(
