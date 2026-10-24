@@ -1,0 +1,16 @@
+{
+  "id": "resp_synthetic_refusal_1",
+  "object": "response",
+  "model": "anthropic/claude-sonnet-5-5",
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_synthetic_refusal",
+      "role": "assistant",
+      "status": "completed",
+      "content": [{"type": "refusal", "refusal": "I can't help with that."}]
+    }
+  ],
+  "usage": {"input_tokens": 900, "output_tokens": 12, "total_tokens": 912}
+}

@@ -1,0 +1,4 @@
+{
+  "id": "search_synthetic_malformed_1",
+  "results": {"title": "not a list", "url": "https://news.example.org/x"}
+}

@@ -1,0 +1,60 @@
+"""Plain words for the reasons the software refuses an order (spec §D.5)."""
+
+import pytest
+
+from trade_graph.api import hq_copy
+
+MINIMUM = "the order was smaller than the exchange's minimum"
+VALUATION = "the account's value couldn't be confirmed at that moment"
+
+
+@pytest.mark.parametrize(("raw", "words"), [
+    ("below venue minimum; size was not increased", MINIMUM),
+    ("rounding would exceed authorization", MINIMUM),
+    ("single asset exposure", "it would have put more than the allowed share of the money into one coin"),
+    ("gross exposure", "it would have put more than the allowed share of the money into coins"),
+    ("insufficient available balance", "there wasn't enough free money or coins for it"),
+    ("no equity", "there wasn't enough free money or coins for it"),
+    ("provisional valuation", VALUATION),
+    ("native USD valuation lacks a mark or FX for BTC, ETH", VALUATION),
+    ("stale native USD valuation", VALUATION),
+    ("missing or stale USD to EUR FX for native exposure", VALUATION),
+    ("pending order has no price for exposure valuation", VALUATION),
+    ("pause NO_NEW_EXPOSURE blocks new exposure", "a pause was on that doesn't allow this order"),
+    ("pause FREEZE blocks reduction", "a pause was on that doesn't allow this order"),
+    ("symbol is outside the active mandate", "its trading permission doesn't cover that order"),
+    ("order type is outside the active mandate", "its trading permission doesn't cover that order"),
+    ("venue is outside the owner policy", "its trading permission doesn't cover that order"),
+    ("incomplete account reconciliation blocks new exposure", "the account's balances were still being double-checked"),
+    ("unknown instrument BTC/XYZ", "the exchange's rules for that coin aren't known"),
+    ("no positive reference price", hq_copy.REASON["prices"]),
+    ("expired mandate allows management only", hq_copy.REASON["mandate"]),
+    # T32: the owner's money limits and coin list.
+    ("daily loss limit reached: new entries wait for the next day start at 2026-10-17T00:00:00.000000Z; "
+     "protective exits and exits continue", hq_copy.REASON["loss_limit"]),
+    ("the daily loss limit can't be checked: the day-start value is not known yet", hq_copy.REASON["loss_limit_check"]),
+    ("symbol is outside the owner's coin rule: thin_volume", hq_copy.REASON["coin_list"]),
+    ("the owner's coin rule can't be checked: no_recent_scan", hq_copy.REASON["coin_list_check"]),
+    ("'BTCPERP/USD' names a derivative: futures and perpetuals are refused (D127)", hq_copy.REASON["riba"]),
+    ("day-plan orders stay off until the owner records money limits (trade-graph money-limits --confirm)",
+     hq_copy.REASON["limits_missing"]),
+])
+def test_refusal_reasons_map_to_plain_words(raw, words):
+    assert hq_copy.reason_plain(raw) == words
+    assert hq_copy.reason_segment(raw) == {"t": "text", "v": words, "code": raw}
+    live = hq_copy.reason_plain(raw, live=True)
+    assert "practice" not in live
+    assert hq_copy.reason_segment(raw, live=True) == {"t": "text", "v": live, "code": raw}
+
+
+def test_refused_order_story_has_practice_and_live_wording():
+    before, after = hq_copy.STORY["order_refused"]
+    assert "practice" in before and after == ". No money moved."
+    live_before, live_after = hq_copy.LIVE_STORY["order_refused"]
+    assert "practice" not in live_before + live_after
+    assert hq_copy.reason_plain("no positive reference price", live=True) == hq_copy.LIVE_REASON["prices"]
+
+
+def test_error_class_names_still_read_as_a_technical_error():
+    assert hq_copy.reason_plain("StaleState") == "a technical error"
+    assert hq_copy.reason_plain("ValidationFailure") == "a technical error"

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "evidence": "synthetic_fixture",
+  "written": "2026-10-16",
+  "note": "Hand-written feeds in the published formats. The cloud build network refused every feed host, so nothing here was recorded; recording each real feed is step L2.",
+  "feeds": {
+    "kraken-status": {"file": "kraken-status.atom.xml", "url": "https://status.kraken.com/history.atom", "content_type": "application/atom+xml"},
+    "kraken-blog": {"file": "kraken-blog.rss.xml", "url": "https://blog.kraken.com/feed", "content_type": "application/rss+xml"},
+    "coindesk": {"file": "coindesk.rss.xml", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "content_type": "application/rss+xml"},
+    "cointelegraph": {"file": "cointelegraph.rss.xml", "url": "https://cointelegraph.com/rss", "content_type": "application/rss+xml"},
+    "decrypt": {"file": "decrypt.rss.xml", "url": "https://decrypt.co/feed", "content_type": "application/rss+xml"}
+  }
+}

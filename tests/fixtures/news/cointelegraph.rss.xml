@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE. Written by hand on 2026-10-16 in the RSS 2.0 format that news sites publish.
+     It was not recorded from cointelegraph.com (the cloud build network refused the host).
+     Every item is invented test data; recording the real feed is step L2. -->
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Cointelegraph (synthetic)</title>
+    <link>https://cointelegraph.com</link>
+    <description>Synthetic test channel</description>
+    <item>
+      <title>An exploit drains a lending protocol on another chain (synthetic)</title>
+      <link>https://cointelegraph.com/news/synthetic-lending-protocol-exploit</link>
+      <guid>https://cointelegraph.com/news/synthetic-lending-protocol-exploit</guid>
+      <pubDate>Fri, 16 Oct 2026 11:35:00 +0000</pubDate>
+      <description><![CDATA[Synthetic test item.]]></description>
+    </item>
+  </channel>
+</rss>

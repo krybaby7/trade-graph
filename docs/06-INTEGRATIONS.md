@@ -27,6 +27,15 @@ The domain/app layers call `ModelGateway.invoke(ModelRequest) -> ModelResult`. M
 
 ModelResult returns validated payload or typed failure, tool requests with call IDs, finish status, provider request/model IDs, raw usage receipt, elapsed time and redacted response reference. Errors distinguish credentials, unsupported capabilities/schema, rate limit, temporary failure, timeout/uncertain billing, refusal, truncation and validation failure. Never map all of them to an empty successful result.
 
+Native Codex failures retain an optional bounded diagnostic envelope in durable
+attempt and invocation results: process exit code, a fixed failure category,
+allowlisted native error code, and a schema path verified against the supplied
+public output schema. Raw stdout/stderr, provider messages, URLs and account
+identifiers are not retained as diagnostic causes. Quota and model-availability
+control messages remain exact; a generic native failure records its exit code
+without asserting an unobserved cause. Earlier Leader failures whose original
+cause was not retained remain unexplained by this instrumentation.
+
 Provider adapters own SDK/wire differences: message roles, schema dialect subset, tool blocks/results, continuation tokens, finish reasons, usage/cache categories and supported reasoning controls. OpenAI structured responses and Anthropic structured outputs do not have identical request fields [S03, S06]. Local Pydantic validation and business-authority checks remain mandatory even with strict output formatting.
 
 Maintain an explicit capability table per approved model. For example, current Sonnet 5.5 documentation lists `claude-sonnet-5-5` and warns that forced tool use and non-default sampling settings can fail [S19]. Do not emit one universal `temperature=0` or forced-tool configuration to every model. During T06 verify the selected model's API access and settings; record the resolved model identifier in receipts and decisions. Do not claim cross-provider outputs are behaviorally identical.

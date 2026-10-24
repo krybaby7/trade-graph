@@ -1,0 +1,15 @@
+{
+  "id": "resp_synthetic_no_usage_1",
+  "object": "response",
+  "model": "anthropic/claude-sonnet-5-5",
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_synthetic_no_usage",
+      "role": "assistant",
+      "status": "completed",
+      "content": [{"type": "output_text", "text": "{\"summary\": \"Nothing relevant found.\", \"findings\": []}", "annotations": []}]
+    }
+  ]
+}

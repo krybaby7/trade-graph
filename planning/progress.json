@@ -1,1 +1,1217 @@
-{"schema_version":1,"updated_at":"2026-09-29","status_note":"Plan only; runtime implementation has not started.","tasks":{"T00":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T01":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T02":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T03":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T04":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T05":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T06":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T07":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T08":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T09":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T10":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T11":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T12":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T13":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T14":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T15":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T16":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T17":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T18":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T19":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T20":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T21":{"status":"todo","owner":null,"branch":null,"evidence":[]},"T22":{"status":"todo","owner":null,"branch":null,"evidence":[]}}}
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-17T17:33:45.000000Z",
+  "status_note": "Cloud wave 7 merged on claude/day-trader-engine-20261012 on 2026-10-17 (D225-D229): W7-A T45 news alarms wake people (T44's would-wake verdicts become event engine wake-ups: the Leader always and the Trader when the paper account holds the coin, the headline read as quoted data that cannot place, approve or block a trade, a news-only wake never moving a check-in; shipped in shadow mode, which records whom an alarm would wake and wakes nobody; the owner switch trade-graph news-wakes goes live only from real shadow evidence; HQ's wake log names the source and counts news wake-ups, and with the event engine on HQ's rooms and calendar read each department's check-in). Built and tested in source on synthetic values; no paid, feed, exchange or network call and nothing deployed. Waves 1-7 are merged. Not built yet: the news poll next to the installed service (L3 checklist step 17) and Research and the Leader on Perplexity in the installed service (step 12). The full suite runs as GitHub's test job on the candidate commit (claude/night-candidate-wave7); step L2 can run any time and L3 needs the owner.",
+  "tasks": {
+    "T00": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "uv.lock pins the Python 3.12 toolchain; default CI workflow has no credentials",
+        "2026-09-30 review: Python 3.12 locked CI run 36699717463 passed lint and 113 tests at 2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0; this is test evidence, not full-product acceptance."
+      ]
+    },
+    "T01": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/unit/test_contracts.py and tests/unit/test_import_boundary.py reject invalid contracts and SDK imports in domain",
+        "tests/unit/test_protocols.py checks Broker, InferenceAdapter and point-in-time MarketData",
+        "tests/integration/test_authority_binding.py binds caps to persisted revisions and rejects immutable-policy, expiry, withdrawal and binding mismatches",
+        "2026-09-30 local Python 3.12 uv run pytest: 124 passed after T01; ruff check src tests passed. Not a paid-provider or exchange result."
+      ]
+    },
+    "T02": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_ledger_store.py covers restart, duplicate financial ids, and backup checksum failure",
+        "Revalidated after T01 on 2026-09-30: full local pytest 124 passed, including ledger restart/duplicate/backup coverage. Dependency T01 is now done."
+      ]
+    },
+    "T03": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/unit/test_books.py covers A01-A05 and A43 with Decimal native units, including the USD10,000 EUR FX case",
+        "tests/e2e/test_offline.py asserts A44 synthetic receipts do not change real budget across a paper reset; tests/integration/test_review_regressions.py covers shared-cost allocation once",
+        "Revalidated after T01/T02 on 2026-09-30: those tests passed in the 124-test local suite."
+      ]
+    },
+    "T04": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_public_market.py covers REST metadata/ticker, attributed ECB FX, websocket reconnect/backfill, out-of-order quotes, and point-in-time replay",
+        "A13 stale increase remains covered in tests/integration/test_execution.py and by the stale public-book authorization case",
+        "2026-09-30 public smoke, labeled separately from unit tests: Kraken AssetPairs XBTUSD, REST ticker, one WebSocket v2 snapshot, Frankfurter ECB USD/EUR 0.88067 for 2026-09-29. No credentials, no orders, live reconnect not exercised."
+      ]
+    },
+    "T05": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "paper partial fills, minimums, stop gap, and same-bar exclusion pass in tests/integration/test_execution.py; fee tier is the explicit fixed conservative schedule",
+        "tests/integration/test_public_market.py::test_normalized_public_book_drives_paper_partial_fill uses a normalized Kraken ticker shape on the paper ledger path",
+        "2026-09-30 local Python 3.12 uv run pytest: 129 passed, 0 failed, 0 skipped; ruff check src tests passed."
+      ]
+    },
+    "T06": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_models_and_budget.py covers structured output, usage, refusal, truncation, rate limit and timeout fixtures for both adapters",
+        "tests/integration/test_provider_transport.py covers scripted HTTP, one registered tool continuation, one-provider rejection, unregistered tools, unsupported temperature, unknown models and bad JSON. Calls without an API key write synthetic receipts and leave the real allowance unchanged",
+        "Credentialed OpenAI/Anthropic probes were not run. HttpxProviderHttp was not invoked. A scripted transport is not a billed provider success."
+      ]
+    },
+    "T07": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_models_and_budget.py still covers concurrent reservations, uncertain usage, paid-call refusal and cache/reasoning usage",
+        "tests/integration/test_expense_controls.py covers schema-repair and timeout-retry receipts, a root limit that stops the next retry, a fallback on a separate price card, leader and engineer receipts, role/task/version views, a persisted unexplained invoice difference, and an unchanged allowance after a EUR10000 paper deposit",
+        "Migration 0003 is additive. No provider invoice was downloaded and no credentialed model call was made.",
+        "2026-10-06 b1ca4c5: subscription journal costs and shared fees remain unknown and separate from API expenses. Actual configured, refused or unreadable dashboard profiles and interrupted attempts make economics provisional/null. Known spend, allowance, trading P&L and virtual capital are unchanged; 84 independent financial/dashboard tests pass. No paid-provider result."
+      ]
+    },
+    "T08": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_execution.py and tests/integration/test_review_regressions.py cover lost acknowledgement, duplicate-fill rejection, cancel/fill reservation hold, stale quotes, owner halt, and restart without a second submit",
+        "tests/integration/test_pause_profiles.py covers PAUSE_DECISIONS, MANAGE_ONLY, NO_NEW_EXPOSURE, CANCEL_ALL, FLATTEN and STOPPED achieved states. Protective sells survive no-new-exposure and are cancelled by cancel-all. Flatten stays flattening until the exit fill, then STOPPED is reached only when flat",
+        "An unknown cancel stays cancelling-orders. A lost acknowledgement is cancelled from broker state without a second submit. Paper fill pagination now ends on an empty page. No live venue outage was run."
+      ]
+    },
+    "T09": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_scheduler_recovery.py covers lease fencing, coalesced missed runs, deduplication and delegation depth",
+        "tests/integration/test_models_and_budget.py reruns one LangGraph checkpoint without a second visit",
+        "tests/integration/test_role_worker.py covers a single process lease, reconciliation before a reclaimed effect, a version mismatch with zero attempts, and a snapshot written only when a handler runs. The worker does not call a provider. Role behavior itself remains T10."
+      ]
+    },
+    "T10": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_research_trader.py covers stripped injection, private-URL rejection, immutable refresh, fresh-versus-stale context, an enter without a Leader row, an experimental hold with a counterfactual, and a timeout that does not add a hold",
+        "slow-trend-pullback and range-reversion are unproven templates. No credentialed search or live order was made."
+      ]
+    },
+    "T11": {
+      "status": "done",
+      "owner": "cursor-agent",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_learning.py keeps prior counterexamples across a revision, reloads the contradicted revision after restart, grades an invalid winning process and a valid losing thesis by process, and values a no-trade at the quote available then rather than a later high",
+        "An optimisation proposal that disables reconciliation is rejected. Cost per decision uses Decimal. No model call was made."
+      ]
+    },
+    "T12": {
+      "status": "done",
+      "owner": "implementation-review",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_leader.py rejects an allowance increase, an attempt to clear an owner halt, and per-trade approval. The Leader assigns a research task, sets a coalesced schedule, and installs a tighter mandate. A wider mandate is rejected",
+        "Secretary.digest reports pause and task count and does not insert an order. This is not a dashboard.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "66d6f9a and 0025141 persisted Secretary reports, bounded/deduplicated digests, scheduled gateway-backed Leader decisions, atomic allowed effects, receipt attribution and completed departmental consultations under the same bounded root. Full original 229-test suite reproduced locally.",
+        "tests/integration/test_leadership_workflow.py and test_leadership_followup.py exercise positive assignments, consultation return and evidence incorporation, schedules across restart, mandate/resource changes, own-pause resume, invalid/stale decisions, atomic failure and crash recovery before another model call.",
+        "5d5ce35: tests/integration/test_candidate_review_flow.py adds ten initially failing regressions. Real commissioned READY/FAILED artifacts now produce scoped Secretary completion reports and bounded candidate cards in persisted Leader snapshots. Gateway decisions activate/reject only reviewed, cited and unchanged candidates; cross-portfolio/guessed/stale results are blocked and committed effects recover without another model call.",
+        "Full Python 3.12.14 locked-dependency suite: 239 passed, zero failures/errors/skips; Ruff passed. Credential-free runtime CI 36744681382 and planning CI 36744681372. See docs/reviews/2026-09-30-continuation.md for exact scope and verification."
+      ],
+      "acceptance_scope": "T12 application workflows only. Scripted inference exercises the real gateway, persisted worker, authority and effects. This does not complete the Engineer model/worker lifecycle (T13), artifact consumption/observation (T14), or continuous operator service (T17)."
+    },
+    "T13": {
+      "status": "done",
+      "owner": "codex-continuation",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_engineer.py covers a scrubbed check environment, a worktree that omits .env and kernel files, a shadowed checks module that cannot make a failing policy pass, advice-only and protected-path failures, a file-limit failure that leaves the active hash unchanged, and rejection of a forged runner label and a mismatched checks hash",
+        "Migration 0004 stores controller_attestations. The local check is not a paid model call. No production secret or database was mounted.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Authorization now binds commissions to real persisted Leader decisions, owner/mandate revisions, task hash, portfolio and worker. Nonrunnable changes cannot stage; revocation during checks retains failed evidence. Existing authorization/Engineer suites passed in the full 239-test run.",
+        "2026-10-01 continuation: recovered latest remote 9376d2d, installed unchanged uv.lock on Python 3.12.14, baseline 280 tests passed with zero failures/errors/skips; commissioned Engineer lifecycle implementation and regression validation in progress.",
+        "f3231b7 persists scoped gateway invocations and billing outcomes; 9376d2d confines the data-only checker with Linux seccomp/path/resource limits. Recovered baseline: 280 tests passed locally with the unchanged lockfile.",
+        "a503cac: EngineerHandler integrates real Leader commissions, durable requests, budget-gateway generation, bounded schema/patch repairs, delayed retries, independent checks, scoped Secretary reports and scheduler-fenced candidate publication. Crash recovery reuses durable responses/candidates and preserves unknown billing even after authority revocation. Local validation recovery is capped at three per invocation.",
+        "2026-10-01 Python 3.12.14 locked full suite: 349 passed, zero failures/errors/skips; 40 new Engineer workflow tests plus 29 HTTPX failure tests. Ruff, all 10 planning tests and standalone CLI demo passed. Actual staged artifacts and seccomp evidence were exercised; no paid-provider/exchange result is claimed.",
+        "The offline CLI now generates a rejected protected patch and successful repair through the commissioned worker with two actual synthetic receipts, then routes candidate evidence to a persisted gateway-backed Leader activation. Four fills survive restart with zero new submissions. See docs/reviews/2026-10-01-engineer.md."
+      ],
+      "acceptance_scope": "T13 registered allowlisted data artifacts and explicit permitted prompts, bounded gateway/check/recovery workflow. Independent grammar/path/obligation/confinement checks do not establish trading quality, token savings, T14 artifact loading/observation, T17 continuous service or T21 broader code isolation. Paid calls remain disabled."
+    },
+    "T14": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_activation.py blocks activation while a trader task is RUNNING, cancels a queued trader task pinned to the old hash, rejects a stale baseline, and rolls the pointer back without deleting the fill, the receipt, or the opening and closing version ids",
+        "The activated candidate is OBSERVING and the rolled-back candidate is ROLLED_BACK. Reopen keeps the restored hash and the fill. A caller-supplied runner label is still ignored.",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "Revalidated persisted candidate/commission/attestation binding, no-side-effect unauthorized rejection, baseline CAS, trader quiescence, concurrent activation and pointer rollback. New candidate-review tests exercise actual Leader gateway activation without manually injecting a candidate ID.",
+        "8447f4c068a62433a2975bccb2292696640baca4: immutable bounded artifact bundles and manifests, grammar-valid predecessors, candidate/commission/checker identity checks and monotonic generations. Additive protected application migration 0007; actual consumers read stored tested bytes rather than worktrees.",
+        "ArtifactRuntime and gateway-backed TraderHandler load context policy, permitted prompts and registered strategy guidance; software consumes report layouts and scoped schedules with trusted bounded allocation. Request, snapshot, receipt and Decision share loaded provenance. Old/ABA generations are fenced before inference and effects.",
+        "Protected predeclared functional observation uses actual scoped invocation/Decision/failed-task evidence, real usage categories and receipt labels; task finish and grading commit atomically. Unknown billing waits without decision/order effects. Automatic failure/deadline rollback reconciles and reloads a verified predecessor or blocks fresh mutable work; owner pauses and all financial history remain.",
+        "2026-10-01 Python 3.12.14 unchanged locked dependencies: 391 passed, zero failures/errors/skips; Ruff and all 10 planning tests passed. New lifecycle 24, consumer 15 and schedule/report 3 regressions exercise tamper, stale generations, crashes, reopens, observation and real paper unknown/partial opening+closing order preservation.",
+        "Offline CLI/e2e demonstrates commissioned Engineer and Leader activation, actual Trader context 8 -> 5, five-lesson consumption after database reopen, three healthy decisions then charged invalid output, automatic reload 5 -> 8 and the next restored-baseline decision. Four fills survive restart with zero resubmissions; costs/receipts retained."
+      ],
+      "acceptance_scope": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    },
+    "T15": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/integration/test_api_security_live.py still rejects a missing session, a leader budget write and a cookie write without CSRF. An owner cookie write now persists a EUR allowance of 9 and does not enable live",
+        "tests/integration/test_dashboard.py redacts a key-like task objective, labels an UNKNOWN order as degraded, separates actual spend from simulated trading, and resumes only after reconcile. Leader activation without a controller attestation returns 422",
+        "2026-09-30 recovery: previous completion label superseded; evidence above is historical, not current acceptance.",
+        "5a732f7 fixes cookie-write CSRF centrally; tests/integration/test_cookie_writes.py and test_authorization_review.py verify malformed Authorization headers do not bypass cookie CSRF, genuine Bearer/cookie writes succeed, and denied writes have no side effects. Portfolio-scoped change projections also pass.",
+        "2026-10-01: claimed after recovering verified T14 remote head 85bfb1c; implementing dashboard projections, evidence navigation, owner controls and A34/A35/A37 validation.",
+        "8760fb2667d4e677cac67646a01e86bdb4d563eb: T15 integrated paper dashboard, protected owner controls, snapshot-based financial/evidence APIs, redaction, private loopback startup and packaged web assets. See docs/reviews/2026-10-01-dashboard.md and D36-D40.",
+        "tests/integration/test_dashboard_financial.py verifies authoritative ledger/receipt/allocation money, native cash benchmark, event-time reporting FX, shared expenses once, portfolio/as-of isolation, freshness and sampled trading drawdown; missing provenance and stale observations remain disclosed.",
+        "tests/integration/test_dashboard_evidence.py and dashboard render/boundary/session tests verify scoped decisions/research/lessons/versions, independently attested persisted artifact diffs, pagination, one read snapshot, redaction, role sessions, CSRF, private session/database startup and evidence pages.",
+        "tests/integration/test_dashboard_controls.py verifies durable request identity, shared deployment revisions, role/root limits, atomic writes, trusted activation, unknown-order/billing resume barriers, cancellation/crash manage-only latch, newer-owner fencing, terminal failure replay and emergency manage-only.",
+        "tests/e2e/test_dashboard_loop.py reopens the actual credential-free demo, reconciles dashboard equity and spend to persisted records, navigates activation/rollback evidence, and retains four fills without new effects.",
+        "tests/unit/test_repository_hygiene.py verifies forbidden runtime paths, recognized credentials and index-byte scanning; CI runs scripts/check_repository_hygiene.py before source/test artifact upload.",
+        "Chromium: login plus eight actual routes passed desktop/mobile/dark-theme checks with no overflow/page/CSP errors. Scripted control responses verified stale CAS reload, exact-ID retries, terminal failures, emergency manage-only and malformed HTTP 200 acknowledgements without false success.",
+        "Final Python 3.12.14 locked local suite: 534 passed, zero failures/errors/skips, independently verified JUnit. Ruff, ten planning tests, dependency/reference validation, cost illustration, staged hygiene and packaged wheel assets passed. No new CI or credentialed-provider success is claimed.",
+        "2026-10-05 Mission Control continuation: interactive /progress graph, task roadmap, runtime activity and private bounded test history; 191 targeted tests and actual desktop/mobile browser checks passed. Local rehearsal passed 14 scripted checks; actual public Kraken connection failed through the workspace proxy. Private/account/order/live checks remain unavailable. See docs/reviews/2026-10-05-mission-control.md; no acceptance or live authority change."
+      ],
+      "acceptance_scope": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
+    },
+    "T16": {
+      "status": "done",
+      "owner": "codex-orchestrator",
+      "branch": "cursor/trade-graph-r1-548a",
+      "evidence": [
+        "tests/e2e/test_offline.py completes the offline trade, learn, implement, activate, and recover loop",
+        "2026-09-30: reran the standalone offline demo and full e2e tests. Four fills remained four after restart; zero restart submits; rejected change, budget exhaustion and A43/A44 checks passed. This does not close the complete fault catalogue or prove artifact reload.",
+        "2026-10-01 T15 checkpoint: dashboard full-loop/reconciliation evidence and repository index-secret/runtime scan cases now pass. This is partial fault-suite evidence; T16 remains todo and must close the complete acceptance catalogue and production-equivalent role paths.",
+        "2026-10-01: recovered remote T15 checkpoint af8e64e and claimed dependency-ready T16 in an isolated worktree; completing real offline role paths, A14/A16 storage faults and machine-readable acceptance evidence.",
+        "1cddb349492a8b83f83ba1424f1709533e95d687 (tree f8c609b673d61e88b7fe722340ceb36781d4aedf): verified T16 application-local offline closure from recovered T15 af8e64e; no newer work reset.",
+        "Offline demo now routes all three executable entry/exit/lost-ack decisions through TraderHandler, ModelGateway and RoleWorker. Typed LearningJournal and OptimisationReview preserve actual decision links and counterevidence; all six roles produce synthetic gateway receipts. Actual commissioned Engineer repairs/checks and Secretary-routed Leader activation remain, followed by loaded-byte consumption, restart, observation and rollback. Saved evidence.json contains 14 checked outcomes and request/snapshot/receipt/version traces; failed checks cannot return successful verification.",
+        "tests/property/test_accounting_invariants.py runs 200 deterministic generated conservation/cash-flow examples. test_trader_snapshot.py proves coherent authoritative cash/inventory/reservations/orders and venue/event/availability-filtered market snapshots, including concurrent deposit and stale inputs. test_evidence_acceptance.py proves cursor/routing atomicity, root step exhaustion, rejected graph cycles, unavailable data/budget versus hold, retirement and future evidence exclusion, and unchanged persisted live prerequisites across reset.",
+        "tests/integration/test_storage_faults.py adds 47 real SQLite/full-disk/commit/journal/response/fill fault and abrupt-process-death cases. UNKNOWN/pending orders retain reservations through outage; reconciliation precedes another increase. Restore validates a self-consistent-checksum corrupt database, preserves prior data on failure, and uses a private validated atomic replacement only for an offline destination without sidecars.",
+        "tests/integration/test_execution_acceptance.py adds 28 cases: a fill completed before a lost acknowledgement, partial cancel/replace and final-fill races, unsupported feature/minimum/rounding refusals, conservative broker-fee coverage, and the actual public-feed health gate while deterministic protection remains available.",
+        "tests/integration/test_cost_acceptance.py adds 148 cases for supplied invoice corrections/historical reporting, independent concurrent caps and paid-tool bounds, and both providers structured output/tool/schema/settings failures. Complete bounded Draft 2020-12 validation denies external schema retrieval and retains supplied usage/model attribution. New direct dependencies jsonschema 4.26.0 and referencing 0.37.0 are locked; earlier dependency versions remain unchanged.",
+        "planning/offline-acceptance.json maps all 40 applicable A01-A38/A43-A44 to concrete node IDs. scripts/verify_offline_acceptance.py runs each selected test once with no inherited credentials, isolated XDG/Git configuration and denied Python socket connections in its pytest process. Commit/tree/working bytes/lock/Python and actual collected JUnit outcomes are bound to the report; missing, skipped, interrupted or partial coverage cannot close T16.",
+        "Final documented uv run pytest: 808 passed, zero failures/errors/skips, independently parsed /tmp/t16-final-results.xml. Final mapped acceptance: 465 passed, all 40 accepted, gate_complete=true; report /tmp/trade-graph-t16-final-acceptance.json binds clean source 1cddb349 and lock SHA256 1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39. Ruff, ten planning tests, DAG/reference and cost illustration passed.",
+        "Fresh git-archive checkout of 1cddb349 installed its frozen Python 3.12.14 environment from the package cache and completed standalone offline CLI demo: all 14 checks passed, four fills retained, zero restart submissions. Generated JUnit, acceptance JSON and demo JSON passed exact-byte credential/private-runtime scan. CI now gates mapped acceptance and scans generated evidence before upload; no new CI conclusion is claimed.",
+        "Final integration corrected harness test loading under uv run pytest and a fixture assumption about random outbox ID order. The earlier rejected report is retained privately; final completion uses only the corrected passing run.",
+        "2026-10-02: normal fast-forward push published T16 through bd46493 to cursor/trade-graph-r1-548a. Configured repository-local GitHub HTTPS credential helper for subsequent pushes. Earlier API authentication failure did not prevent Git publication; no new CI conclusion is claimed."
+      ],
+      "acceptance_scope": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "bd464930704e6b0287cfeec5b9de47b6531a38f5",
+        "transport": "GitHub HTTPS using gh auth git-credential; normal fast-forward push",
+        "previous_blocker": "Initial Git push had no HTTPS credential helper. GitHub API authentication checks remain forbidden, but Git push succeeded with the existing CLI credential."
+      },
+      "local_branch": "codex/t16-offline-fault-suite"
+    },
+    "T17": {
+      "status": "in_progress",
+      "owner": "codex-live-dashboard",
+      "branch": "codex/live-dashboard-20261009",
+      "evidence": [
+        "2026-10-02 recovered published T16 f6c36e7; baseline 808 passed; implementation continued without resetting newer work.",
+        "Continuous PaperService with OS flock/leases, isolated DB handles, scoped coalesced graph work and all-paper-account protection; cancellation/maintenance/heartbeat/shutdown regressions preserve ownership until work drains. Final feed failures remain degraded.",
+        "Installed six-role approved immutable model routing, explicit routing class grant, real departmental consumers and tested activation/restart; provider wire schemas normalize from official SDK sources with original validation, pre-dispatch refusal and durable billing recovery.",
+        "Controller-evidenced owner-command crash recovery, revision/idempotency fences and separately funded paid permission are implemented. Init installs a bounded mandate/baseline, no funding.",
+        "Actual doctor/report, consistent private backup/offline restore, package defaults and runbook/systemd template implemented. Fresh frozen checkout and wheel each pass all 14 offline checks withfour retained fills and zero restart submissions; bounded installed maintenance uses no paid/live/new decisions.",
+        "Opt-in soak requires owner/runtime permission, real allowance, credentialed routes and data; reports known/estimated/synthetic costs, forecast bounds, unresolved holds and degraded/interrupted evidence. All exercised calls are fixtures.",
+        "Final source ca4d463: 1,232 full tests passed; 464 mapped tests and all 40 criteria accepted; Ruff/planning/hygiene passed. Actual public REST paper smoke failed feed:ProxyError,zero observations/decisions,exit 1 with management continuing. No funded provider soak performed.",
+        "2026-10-02 workstream integrated 321f6cc and 01067ee: bounded public acquisition requires actual sourced FX identity/date. 113 focused tests and the local backup/restore/restart drill passed; actual public probes remain ProxyError/CONNECT 403.",
+        "Round2 e388030/29a68ee: bounded host/source observation and backup/restore artifacts; 93 focused tests passed, actual local offline restore/restart drill succeeded; public probes failed ProxyError/CONNECT403. Funded/invoice/intended-host acceptance absent.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Takeover native public pair/ticker identities and descriptor-protected installed operations preflight integrated (ea56c0e/1db9a08). Author 201 tests and independent native/path reviews passed; actual backup/offline restore preserved source facts. Three opt-in official public GETs remain ProxyError through configured proxy; no funded observation.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: exact service-unit/configuration/process/package binding and actual paper lost-ack/restart proof integrated; author 195 tests and final installed two-process proof passed, one fill/attempt, owner pause and drained leases retained. Actual systemd/intended host remains unverified.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: protected subscription adapter and six-role startup tested; Codex retries/native Claude login/intended-image provider egress/isolation block actual inference and continuous paper acceptance.",
+        "2026-10-06 b1ca4c5: 435 final startup, subscription, controller, manual-cycle, dashboard, cost, storage and proxy regressions pass. Frozen full-run 2,905 passes, corrected 227 unit/funded passes and final 435 passes cover 2,998 collected cases; no clean monolithic final-source full pass is claimed. Actual child/UI lifecycle and installation postflight preserve every old financial/progress row and 30 protected files. Research inference is zero; continuous paper AI was not run. Native subscription login, zero retries, provider egress and intended-image admission remain blocked.",
+        "2026-10-07 owner-authorized narrow continuation claimed from preserved e36e447: one actual Kraken public-data subscription paper cycle; implementation/testing underway, no new acceptance completion. See docs/superpowers/plans/2026-10-07-first-paper-cycle.md.",
+        "2026-10-07: docs/reviews/2026-10-07-first-paper-cycle.md records final actual image/public-data checks and 445 local passing tests at 643f185. Native login absent; zero credentialed inference, no Research/Trader result, no acceptance transition. Original financial/owner state preserved except requested MANAGE_ONLY pause; private evidence excluded from Git.",
+        "2026-10-07: owner authorized normal local paper graph, departmental schedules, compatible verified subscription fallback and configurable supported retries/limits; obsolete diagnostic restrictions are superseded. See docs/superpowers/plans/2026-10-07-normal-paper-operation.md. Actual inference not yet established.",
+        "2026-10-07 fbed4be normal paper preparation: Codex0.160.1 ChatGPT auth/allowance and final-image nine-boundary/production checks pass; 168 completed hourly candles per pair/zero gaps and ECB FX refreshed. Dashboard-only STOPPED/AI available/MANAGE_ONLY. Latest owner hold prevents graph start; zero inference/results/orders/fills. 126 and129 overlapping focused regressions pass. See docs/reviews/2026-10-07-normal-paper-operation.md.",
+        "2026-10-07 morning continuation claimed bycodex-root oncodex/normal-paper-2026-10-07 from59f5729. Owner authorizes normal start after30%reserve/headroom enforcement and restricts every department/retry togpt-6.1-sol, fallback_profiles empty. Additive0020preservation/schema tests pass at233edc6; existing paper state backed up, public-only refresh performed, no inference/start yet. Plan docs/superpowers/plans/2026-10-07-quota-reserve-paper-start.md.",
+        "2026-10-07 morning: protected source 6bf6697 passed 218 focused checks plus actual intended-image isolation/production inspection. Existing owner resume/start controls began normal local paper service. First actual Research/Trader/Learning invocation and applied results verified; legitimate no_action, no orders/fills, Decimal accounting and financial baseline preserved. Five invocations/seven application attempts include three failed Leader attempts; Optimisation inference completed but applied citation validation failed. Records/cost uncertainty retained. See docs/reviews/2026-10-07-morning-paper-operation.md.",
+        "2026-10-07: c056faf citation/native-diagnostic fixes pass 164 focused cases, Ruff and independent review; new image passes nine actual isolation and production checks. Worker startup then refuses changed manifest under existing financial continuity design, with zero new inference. No transition API exists. Exact verified 6bf6697 image/pins restored against current DB/witness without financial rollback; RUNNING/AI available/fresh heartbeat and future schedules verified. All 199 active source files, protected model/fallback/quota policy and running security/network checks pass. Prior failures and new lifecycle rows retained.",
+        "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
+        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
+        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure.",
+        "2026-10-09 live dashboard continuation: docs/reviews/2026-10-09-live-dashboard.md; executable c488e67 based on capacity/logging 493c25c. 302 focused tests, lint/hygiene pass; actual Windows Edge sign-in/home/export/decision/mobile/offline recovery verified. Both supported original-inode/witness transitions applied; exactly one NORMAL worker resumed, no inference forced. New-AI pauses 587.293 and 172.396 seconds. Broader acceptance remains open."
+      ],
+      "remaining": "Broader funded soak, full-product economic evidence and live/off-host acceptance remain open. Accepted historical observation gaps, earlier failures, unknown usage/model echo and absent owner bill evidence remain explicit. Normal paper operates on retained healthy storage; dashboard slice is deployed.",
+      "execution_state": "normal_paper_running",
+      "execution_scope": "owner_authorized_live_dashboard_paper_continuation",
+      "execution_result": "live_dashboard_deployed_supported_continuity_verified"
+    },
+    "T18": {
+      "status": "in_progress",
+      "owner": "codex-agent:next_economic_producers",
+      "branch": "codex/t18-next-2026-10-04",
+      "evidence": [
+        "Immutable ForwardProtocol/private TrialRegistry implements preregistration, untouched fixed blocks, three baseline arms, variant/failed-work retention, globally bounded cost allocation and sealed complete inventory.",
+        "Conditional Decimal uncertainty/sensitivity reports include actual/failed/setup/shared costs, full sampled cumulative drawdown and actual dated block expenses. Missing provenance/dependence/flow/cost timing or unresolved costs cannot support. Regressions reproduce and reject false-support drawdown/cost cases.",
+        "Tests use synthetic source fixtures; no real registered forward horizon or profitability result. See docs/FORWARD-EVALUATION.md.",
+        "2026-10-02 workstream integrated a653969: immutable snapshots bind exact retained bytes and the full current registry/protocol/cost inventory. 47 focused tests passed; upstream verification remains unverified_imports.",
+        "Round2 1cb33a8/b2c99cb/d0e63aa: bounded current complete runtime inventory and derived expense exports; 123 focused and 77 independent tests passed. Native ownership, global retained cost continuity, invoice arithmetic/cutoffs and untouched initial chronology reviewed. External provenance remains false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Bounded opt-in lossless runtime archive and atomic immutable snapshots integrated (ab314c0/1bd3fdb): 4,096 capture/binding and 4,096 snapshot limits,128 MiB stored/2 GiB expanded, complete historical cost/trial checks. Author 200 and independent 34 archive/snapshot tests passed. External provenance remains false.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: protected four-arm preregistered paper producer, complete native fee/rebate/cost projections and schema2 historical verification integrated. Author 258 and independent 258 cases passed; legitimate later operations preserve historical captures while omitted current expenses/trials refuse. External economics remains unverified.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
+      ],
+      "remaining": "Untouched actual future four-arm blocks; authenticated market/billing provenance, complete failed/shared costs, actual baseline execution and dependence/regime/useful-decision assessment. Historical producers and exact paper/live mapping are implemented; complete economic source remains8 MiB / 20,000 rows and larger horizons need design.",
+      "execution_state": "idle",
+      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
+      "execution_result": "local_implementation_verified_acceptance_pending"
+    },
+    "T19": {
+      "status": "in_progress",
+      "owner": "codex-startup-integration",
+      "branch": "codex/start-controls-2026-10-06",
+      "evidence": [
+        "KrakenLiveBroker and protected REST transport normalize metadata/balances/native fees/order IDs/statuses/precise bounded history, preserve uncertainty and default to read-only/disabled orders. No withdrawal method.",
+        "Protected execution scopes dispatch/reconciliation/cancel/replace by venue/account/mode, ingests global chronology once, uses deterministic FIFO and retains incomplete-account health across restart. Missing fees, malformed/unowned history and late replay requirements refuse increases.",
+        "Native fill precision is checked before booking; unsupported native costs/fees/protection remain explicit. Pinned official SDK source was read; direct REST docs were proxy-blocked. Synthetic signing/wire/realSQLite recovery fixtures passed; no private venue call or real order.",
+        "See docs/reviews/2026-10-02-kraken-foundation.md and docs/reviews/2026-10-02-orchestration.md.",
+        "2026-10-02 workstream integrated 3c57eb0 and b47be62 with core 426cd9f: validated native ownership and durable scoped identity recover cold FILLED/CANCELLED history. 243 combined tests passed; no private venue request and time-in-force conformance remains pending.",
+        "Round2 8c479f7: separately owner-granted read-only Kraken evidence collection with exact native wire/source retention, SDK lowercase gtc/ioc and fee-info correction; 269 focused tests passed. No private observation or live order occurred.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Exact native selected scope/replay/fact-window conformance plus separately retained rounded native quote principal integrated (07e8cb6/059f77c/e88cb83). Exact cash/FIFO/reserves and sticky over-limit incidents preserve executed facts. Retained replay verifies synchronously inside async dispatch (61f5d07). Native-cost independent 208 and broad author 319 async/conformance tests passed; no private venue observation or order.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: exact signed multiasset fee/rebate accounting, append-only earlier-fill correction preserving known-at history, paper auxiliary holds and conditional unverified partial arithmetic integrated. Final independent 309 conservation/reserve cases passed; legacy-fee incident, Ledger substitution, bounded materialization/time/max-ID findings fixed. No factual native venue proof granted.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
+        "2026-10-06: codex-orchestrator claims a scoped T19 public asset-catalog compatibility bugfix on codex/fix-kraken-one-character-assets-2026-10-06, based on clean owner checkpoint 5f7225e. Retained redacted failure is instruments/ValidationFailure after Assets only; retained public catalog contains legitimate one-character codes. Existing 104 adapter tests passed before changes. No private requests or T19 acceptance completion authorized.",
+        "2026-10-06: scoped catalog compatibility fix verified: one-character asset names/altnames and USD_CREDIT normalize without expanding BTC/USD pair selection. 29 added synthetic cases include invalid syntax/type/length/readiness and disabled-write controls; 264 relevant tests passed. Full retained public Assets replay plus actual public AssetPairs GET passed using production Decimal decoding, with no private requests. Ruff, planning and repository hygiene passed; independent source review found no blockers. Private retained evidence and runtime hashes/modes stayed unchanged. Full T19 acceptance and owner-authority gates remain open.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: protected live startup/dashboard/native Resume pass scripted conformance. No private requests, orders or explicit live commissioning. T17 credentialed acceptance remains pending.",
+        "2026-10-06 b1ca4c5: protected live assembly, exclusive management and queued owner Resume pass scripted conformance, restart, allocation, uncertainty and duplicate controls in the 435-test slice. Whole-account reconciliation and current grant checks precede Resume or fresh dispatch. Live remains disabled. No private Kraken request, order, withdrawal or credentialed commissioning."
+      ],
+      "remaining": "Eligible least-privilege actual native venue/account conformance and complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Signed fees/rebates, correction and paper fee holds are implemented; larger replay beyond 4,096 rows / 8 MiB, finer execution ties and late fee-only amendments remain contract work.",
+      "execution_state": "idle",
+      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
+      "execution_result": "local_implementation_verified_acceptance_pending"
+    },
+    "T20": {
+      "status": "blocked",
+      "owner": "codex-agent:next_pilot_controls",
+      "branch": "codex/t20-next-2026-10-04",
+      "evidence": [
+        "Paper CLI/dashboard live enablement remains false and virtual USD10,000 never sets real allocation.",
+        "No live pilot/real order authorized or performed; prerequisite evaluation/venue verification, eligibility, explicit owner allocation and real operating budget remain absent.",
+        "2026-10-02 workstream integrated 073c441, b7afa6f and 5fe61ee: private issuer evidence/current-state projection and unresolved owner recovery fail closed. 69 focused tests and 58 independent checks passed; readiness, enablement and diagnostic permission remain false.",
+        "Round2 46bd9e1/root93051fe: exact retained producer revalidation and private-safe unresolved reasons; 189 focused and 173 independent tests passed. Economic issuer declarations remain separate from insufficient verified evidence; readiness and enablement false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Migration 0013 and durable closed pilot lifecycle, permanent committed holds, scoped fresh post-effect observations and concrete atomic execution/dispatch adoption integrated (292c3d8/13d820c/11f2c8b/eb96c10/8560dfd). Root timestamp/owned-history corrections included. Author 383 and independent 28 dispatch tests passed; no callbacks or caller booleans grant live increases.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: root 0014 immutable owner incident review/revocation, private full-scope paper/live mapping and exact optional Execution resolver integrated; synthetic native capture remains pending. Root hook fail-closed/binding regressions passed; no hold release, owner resume or buying grant. Genuine upstream evidence still absent.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
+      ],
+      "remaining": "Genuine T17/T18/T19/T21 evidence, complete external account history, explicit owner capital/loss/all-role expense permissions and protected live commissioning; then separately authorized measured pilot/protection/recovery/stop evidence. Authenticated mapping and incident review grant no buying/resume authority; readiness and enablement false.",
+      "execution_state": "idle",
+      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
+      "execution_result": "local_implementation_verified_acceptance_pending"
+    },
+    "T21": {
+      "status": "in_progress",
+      "owner": "codex",
+      "branch": "codex/resource-capacity-20261009",
+      "evidence": [
+        "ProtectedBoundaryHarness pins controller/worker/sandbox/interpreter/policy and uses bounded numeric snapshot/proposal RPC to a fresh isolated exec child.",
+        "Irreversible Linux seccomp precedes untrusted parsing/compilation; actual-host synthetic attacks cover filesystem/descriptors/network/process memory/resources/deep output and independent controller survival. Shared process runner reaps children whose output pipes close before completion.",
+        "Production financial kernel/gateway/controller not extracted; authenticated business RPC, immutable owner deployment images and actual production rollback remain unfinished. See docs/PROCESS-BOUNDARY.md. Deployed Engineer retains R1 artifact permissions.",
+        "2026-10-02 workstream integrated c4d5776 and root migration 3e0b02f: opt-in actual paper financial services use durable authenticated scoped RPC, confined workers, independent management and fenced rollback. 116 combined tests plus 67 independent combined checks passed. Full graph/model extraction and immutable intended-host images remain unfinished.",
+        "Round2 7aeb508/root56c9c20: all six durable handlers use confined graph planning/transformation around protected routing, credentials, budgets, invocation recovery and validated effects; 196 combined and 67 independent tests passed plus local-adapter checks. Atomic genuine-effect rollback baselines and scoped management-only recovery preserve finance/cost/queued work.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Owner-pinned protected service bootstrap and complete immutable offline image/container configuration integrated (0cb3caf/57682d3). All six actual handlers run confined stages under protected parent effects and exclusive service ownership. Source/default paper boot and package pins validated; final root image build/rehearsal recorded in review checkpoint.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: root 0014 / 0016 financial checkpoint/budget origins and concrete full streaming history/local witness, pre-provider/post-settlement publication and optional strict provider proxy preparation integrated. 353 author,87 independent finance,125 independent funded and209 root integration tests passed; 49 direct privilege/network attacks refused. Final frozen-source offline image proof passed; intended host/funded operation remains unverified.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change.",
+        "Claim 2026-10-06: owner-requested subscription, dashboard lifecycle/manual optimisation and protected live startup slice; isolated WSL worktrees from clean 937437e; no paid/private/live authority. Acceptance status preserved pending actual evidence.",
+        "2026-10-06: native WSL process/file denial and root-pinned subscription profiles tested. Credentialed intended-image isolation/provider egress remain uncommissioned; broader authority unchanged.",
+        "2026-10-06 b1ca4c5: actual WSL namespace isolation and protected source, CLI and controller admission are tested. The current wheel installs offline with frozen dependencies; 58 packages are compatible. A clean WSL fast-forward and dashboard-only restart preserve the session, settings and evidence. Subscription-specific protected provider egress remains unimplemented and unverified. No current protected image or credentialed intended-host admission is claimed.",
+        "2026-10-08 repair claimed from 5eb7fc6 in registered first-paper-cycle worktree; owner pause MANAGE_ONLY achieved managing, private SQLite quick_check ok and consistent backup/witness retained. Implementation and deployment checks pending.",
+        "2026-10-08: all five focused source repairs plus reproduced SQLite descriptor-lock repair integrated 7be13b1; equivalent sanitized publication source 4570876 preserves newer remote manual schedule. Final focused 363 pass, independent continuity 108 pass, Ruff/planning 10/hygiene pass. Bounded-read and expiry-seal review findings fixed. Actual old worker exited during unproven multi-page corruption; dashboard stopped. Current main matches frozen evidence, healthy backup/witness/settings/15 attempts / 13 invocations retained. No restore/deploy/resume or new credentialed AI result; see docs/reviews/2026-10-08-paper-repair.md.",
+        "2026-10-08: tested authenticated database recovery preserves original witness scopes and explicitly binds a new inode, source manifests/deployment, complete state and retained attempt/mark/FX prefixes. Independent150-case source checks and actual pinned SQLite3.53.4 candidate-image ext4 lock/1,000-WAL-commit checks pass. Actual installation remains stopped because newer financial payloads are missing; no production acceptance or recovery promotion.",
+        "2026-10-08 docs/reviews/2026-10-08-partial-history-recovery.md: explicitly owner-approved historical reporting-only gap, authenticated identity recovery + manifest transition actually deployed; original authority/financial/AI state retained with legacy proof limits; exact-image SQLite3.53.4 locking/isolation, one MANAGE_ONLY worker/dashboard, fresh public collection and consistent checkpoint verified. 184 focused + independent147 selected tests pass; broader acceptance remains in progress.",
+        "2026-10-09 owner-authorized capacity/diagnostic continuation: docs/reviews/2026-10-09-subscription-capacity.md; source986c19d/97f1290; supported original-inode financial transition and exact inspected image deployed, normal scheduled role applied. 196 focused resource/isolation/controller/diagnostic tests and92financial tests; actual image/WAL/ownership/nine isolation checks. No broader acceptance closure."
+      ],
+      "remaining": "Current installation storage recovery and reviewed SQLite runtime; actual repaired intended-host/image admission and independent financial transition/deployment proof. Owner-approved manifest transition source is implemented with synthetic evidence; actual application pending. External whole-host rollback anchor, protected key rotation and generic interrupted-checkpoint recovery remain separate gates. No paid/live authority.",
+      "execution_state": "idle",
+      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
+      "execution_result": "continuity_source_verified_actual_application_blocked_storage_recovery"
+    },
+    "T22": {
+      "status": "blocked",
+      "owner": "codex-agent:next_application_engineer",
+      "branch": "codex/t22-next-2026-10-04",
+      "evidence": [
+        "Executable plugin/application-code promotion remainsdisabled; AST/protocol fixtures and standaloneprocess scaffold do not grant deployed authority.",
+        "T18 actual economic evidence, T21 production boundary and explicit owner broader class grant are unfinished; no broader code grant supplied.",
+        "2026-10-02 workstream integrated adf6ccf: private sealed pure-feature staging and parent-authenticated finite replay bind exact source/baseline/corpus/protected identities. 25 new focused tests passed; no broader class grant or production promotion.",
+        "Round2 687cdf8/root6dbcb7d: sealed actual executable plugin bundles and baseline/candidate functional shadow with bounded point-in-time numeric corpus, exact Decimal comparisons and retained negative pin-drift attempts; 89 relevant focused tests passed and independent review closed. Production/broader class authorization false.",
+        "Integrated clean source d0e63aa07f2c4d00b48816a0c9bd62f08e13da90: 1721 full tests passed, zero failures/errors/skips;464 mapped tests/all 40 applicable offline criteria accepted. Installed wheel financial/Research/plugin shadow smoke passed. Details docs/reviews/2026-10-02-remaining-gates.md.",
+        "2026-10-04: Class-scoped offline commissioned Engineer/spend/repair integrated(d1d34bb), authenticated autonomous synthetic plugin activation/health/restart/rollback(9e07365) and separate confined Secretary projection effects/compatible sidecar expansion/backfill/disposable contraction(f0937c6). Author 33 combined plugin and 26 application tests passed; independent 14 rollout and 26 projection repeats passed. No default runtime scheduling, real model route or owner class grant added.",
+        "Final clean integrated source 959d2cd67dffa4d30cc840916b83f507c7212780: 2057 full tests passed, zero failures/errors/skips; 464 mapped tests/all 40 applicable offline cases passed. Exact-commit installed-wheel and whole-source immutable offline image actual local rehearsal passed. See docs/reviews/2026-10-04-orchestrator-takeover.md; real acceptance remains open.",
+        "Round4: actual synthetic Secretary application Engineer/gateway commissions and opt-in compatible activation/finite confined health/restart/rollback loop integrated. Final 65 author / 13 independent cases passed; stale-owner and final-health checkpoint defects fixed. Actual final installed workflow passed, preserving one paper fill / two application records, synthetic costs and zero repeated model/child effects. No production class authority.",
+        "Final clean frozen source 153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c, tree f00d10dc928a60fb6617279f1707ad1aa5301995: 2544 full tests passed, zero failures/errors/skips; 464 mapped / all 40 applicable offline cases passed. Exact installed wheel through 0016 and whole-source actual four-container image rehearsal/hash audit passed. See docs/reviews/2026-10-04-next-contracts.md; actual acceptance remains open.",
+        "2026-10-05: all 26 linked workspaces independently audited; this workstream's deliverables are already integrated, with no unpublished omission. Integrated GitHub branch created and exact remote 48fecba verified. See docs/reviews/2026-10-05-publication-audit.md. No acceptance/paid/live/production grant change."
+      ],
+      "remaining": "Genuine T18/T21 evidence, broader owner class grants, production scheduling/routing/admission, funded commissioning and broader compatible migration/deployment proof. Commissioned Secretary application and fenced synthetic preparation are implemented; finite functional proof grants no default/broader production authority.",
+      "execution_state": "idle",
+      "execution_scope": "remaining_software_contracts_and_dependency_gated_preparation",
+      "execution_result": "local_implementation_verified_acceptance_pending"
+    },
+    "T23": {
+      "status": "done",
+      "owner": "claude-opus-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "223f5e0 hourly features v2: tests/integration/test_price_history_pending_tail.py failed on 3838a2d (values {} / KeyError 'sma_20') and passes; a pending newest candle gives stale-but-present fields.",
+        "ebf1d47 latest close and 24 recent candles available at as-of: tests/integration/test_trader_latest_close.py failed on 3838a2d with KeyError 'latest_close' and passes, including the first-run :13 vs :40 timing.",
+        "d07296c/6cf81a2 schedule grid and bounded candle wait with history.expected_candle: tests/integration/test_schedule_anchoring.py, tests/property/test_schedule_occurrence.py and tests/integration/test_decision_candle_wait.py failed on 3838a2d (04:00:07 != 04:00:00; Trader ran at 01:00:05 without the candle) and pass.",
+        "0de75e7 tests/integration/test_first_run_replay.py replays the first run end to end and fails on the pre-fix source.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed."
+      ]
+    },
+    "T24": {
+      "status": "done",
+      "owner": "claude-opus-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "12f5be1/e1415ad native USD exposure: tests/integration/test_native_exposure_stale_reporting_fx.py failed 20 of 22 on 3838a2d with StaleState 'provisional valuation' (weekend and weekday-before-ECB) and passes; D16 regression tests unchanged and passing.",
+        "ab0c42d/8d7e9f1 refused orders: tests/integration/test_order_refusal.py failed on 3838a2d with ('FAILED', 'MANAGE_ONLY') and passes with SUCCEEDED, RUNNING, an order_refused event and portfolio.recent_order_refusals on the next turn; HQ wording in tests/integration/test_hq_order_refusal.py.",
+        "71aa92a/c1626c2/da384f3 mandate default and owner cleanup: tests/integration/test_mandate_legacy_ids.py failed on 3838a2d and passes; revision N+1 leaves revision 1 and its decisions unchanged.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at daae41d: 4053 passed, 19 failed, 8 skipped; every failure also fails on the base (e2e dashboard loop, 4 paper_soak CLI, 6 flaky plugin_staging timing, 3 progress_dashboard, 4 progress_projection, 1 subscription_smoke timeout). ruff passed. Synthetic data only; not deployed.",
+        "548d9c3 (D130) unusable Trader answers fail only their turn: tests/integration/test_trader_turn_failure_scope.py failed on 9e6952c with KeyError 'failure_scope' and passes; lost credentials still pause.",
+        "3b7f062 (D130) a euro reference-rate outage keeps quotes and buys: tests/integration/test_reference_fx_outage.py (old code raised OSError out of the poll) passes for the paper and live feeds.",
+        "Full suite at 3b7f062: 4070 passed, 20 failed, 8 skipped; all failures pre-existing or timing flakes (test_engineer_isolation checker wall passed alone twice). Not deployed."
+      ]
+    },
+    "T25": {
+      "status": "done",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Store contract a0b2375 (D132): separate private candle file with append-only revisions keyed by series, open time and revision, receipt-time availability, point-in-time and replay reads, coverage reports and run records; tests/unit/test_candle_contract.py and tests/integration/test_candle_store.py. Existing hourly_candles, hourly feature snapshots and the financial schema are unchanged; tests/integration/test_candle_collection_isolation.py shows a collection run leaves the hourly BTC/ETH history and a feature snapshot byte for byte unchanged.",
+        "Collector merged as 09b3c2a (stream head dea575e): pair catalog and classification (D131), rate limiter, OHLC fetcher that drops the final forming row and takes receipt time after the network call, bounded collect_candles with perishable-first order, early-stop lists and per-series gap reports, commands collect-kraken-candles and candle-coverage. Recorded public fixtures: 1 AssetPairs response (1,460 pairs, 53 kept) and 17 OHLC responses for 8 pairs at 1, 5, 15 and 60 minutes; default tests make no network calls (network guard). Test files test_kraken_rate_limit.py, test_candle_collection_plan.py, test_kraken_candles.py, test_collect_candles.py, test_collect_candles_cli.py, test_kraken_catalog.py and others.",
+        "Two independent reviews found 16 issues; each was reproduced then fixed (for example a rate-limit answer to the pair list not stopping the run, the continuity gap boundary, a financial-database guard that failed open for a log-only database, an unrelated SQLite file being accepted as the candle file in the integration).",
+        "Live smoke, labelled live_public_smoke and separate from tests, 2026-10-15: collect-kraken-candles --smoke exit 0, 3 requests, 1,440 BTC/USD and ETH/USD 15-minute candles stored, 677 USD pairs, 591 eligible; no gap.",
+        "Full suite uv run pytest -p no:cacheprovider -rf at 28689d4: 6274 passed, 20 failed, 12 skipped; 18 are the known failures and the 2 others were a merge README heading (fixed in 987bba8, passing) and a 2-second ledger-replay helper limit under load (financial_recovery file passes alone). ruff passes. Synthetic and recorded data only for the tests; not deployed. Findings: Kraken fills quiet intervals with flat rows; since is inclusive."
+      ]
+    },
+    "T26": {
+      "status": "done",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Importer merged as a35e959 (stream head 9d07a75): local-file-only Kraken OHLCVT reader and importer with streamed SHA-256, quarter, per-pair and interval coverage, zip-bomb and path limits, import-time availability, idempotent re-import and revisions for changed rows; command import-kraken-archive. Synthetic end-to-end test imports 95 days of 15-minute candles for five pairs with a planted gap and replays 92 days in one window read; tests/unit/test_kraken_archive.py, test_archive_modules_stay_offline.py (static import closure plus sockets blocked), tests/integration/test_import_candle_archive.py and test_archive_cli.py.",
+        "Every report names expected-but-missing pairs and states that delisted pairs are absent so coin-selection history is optimistic (SURVIVORSHIP_NOTICE, pinned by tests/unit/test_archive_docs.py).",
+        "Public Trades backfill with a resumable cursor in the run report, bounded requests, boundary-trade de-duplication by trade id, completed candles only, id-gap withholding that survives a resume, SIGTERM and Ctrl-C recording; commands backfill-kraken-trades and reconcile-candles; reconciliation reports differences with no tolerance and never blends sources; precedence_window labels the supplying source and any disagreement. Tests: test_kraken_trades.py, test_trade_aggregation.py, test_trades_rate_limit.py, test_backfill_trades.py, test_backfill_cli.py, test_reconcile_candles.py; six recorded public Trades pages.",
+        "Three independent two-reviewer rounds (the workflow was resumed twice) found issues in this stream, for example a taint lost on resume, a truncated ZIP escaping as a traceback, a limiter that no test proved was used; each was reproduced then fixed, and mutation checks now fail on the removed guards.",
+        "Live smoke, labelled live_public_smoke, 2026-10-15: backfill-kraken-trades --smoke for BTC/USD 12:45-13:00Z used 3 requests and 3,000 trades and built 1 candle with no id gaps; reconcile-candles against Kraken's own candle for that slot: open, high, low, close, volume and trade count identical, vwap differs by 0.00004% (Kraken rounds vwap to one decimal). One slot only.",
+        "NOT done: no real Kraken archive has been imported or downloaded (owner approval needed; Q3 file 576,348,633 bytes); the real file's timestamp unit, folder layout and open-or-close convention are unconfirmed. Full suite at 28689d4: 6274 passed, 20 failed (18 known, 2 explained in T25 evidence). Synthetic and recorded data only; not deployed."
+      ]
+    },
+    "T27": {
+      "status": "done",
+      "owner": "claude-sonnet-5.5",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 272b01c (stream head 882ad04): TA-Lib 0.8.2 (Python 3.12 manylinux wheel with bundled C library 0.8.1) and NumPy 2.5.4 locked in uv.lock (uv lock --check consistent; capped below 0.9); 26-entry menu contract in contracts/indicators.py with bounded settings and library-reported warm-up; wrapper application/indicators/library.py only converts, calls and labels. TA-Lib and NumPy are kept out of domain, contracts and kernel (test_import_boundary.py imports every module in a fresh interpreter).",
+        "Every menu entry is cross-checked against pandas-ta-classic (test-only, covers all entries) and talipp (test-only, own conventions; 17 of 24 compared) within documented tolerances and against 50 hand-derived reference cases; seeding differences (MACD, ADX and DI, ATR, Parabolic SAR) are written in docs/INDICATOR-MENU.md and tests/fixtures/indicators/cross_check.json, not patched. TradingView differences are an unverified recollection and are marked so. Hypothesis property test keeps candle and money types Decimal; only indicator outputs are floats.",
+        "Engine application/indicators/engine.py reads completed candles only through CandleStore.window, supplies measured settling history, returns ready, warming_up or gapped with exact missing close times and revisions used, and withholds every value when a slot is missing; compare_to_level rounds value and level alike and an unready indicator never satisfies it. Same candle gives the same value for any requested count (tested).",
+        "D89 hourly fields re-expressed with TA-Lib as hourly-price-features-v3; pullback_from_high, pullback_depth and midpoint_distance retired and highest_high_20 added, with an AST guard and sentinel-library tests so a hand-written formula cannot return. Stored v2 snapshots (tests/fixtures/hourly/snapshots_v2.json, produced by the v2 code) still hash to their source_ref and pass the readers. Existing price-history, context, candle-wait, first-run-replay and subscription tests pass except the known test_subscription_smoke timeout.",
+        "Two independent reviews found 9 and 6 issues in this stream (for example the same MACD histogram differing with the requested count, hand-written max/min passing the guard test, a retained v2 template that would have supplied neither the ratio nor its ingredient); each was reproduced, then fixed.",
+        "Full suite at 28689d4: 6274 passed, 20 failed (18 known, 2 explained in T25 evidence); ruff passes. Synthetic data only; not deployed. Before deploying: protected image build with the new wheels was not exercised; an existing database keeps its old strategy template until the owner approves a baseline replacement."
+      ]
+    },
+    "T28": {
+      "status": "done",
+      "owner": "cloud package W1-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 934d20d (W1-B, pull request #2, package head 8fdb323, code f331ff0): one cautious fill and protective-exit engine in the protected kernel (kernel/fills.py, contracts/fills.py) shared by the paper broker and the coming practice range; the old private matcher is removed. Three dated, sourced, hash-pinned cost profiles in kernel/cost_profiles.json: kraken-spot-starting-tier@1 (0.40%/0.80%), kraken-spot-after-10k-volume@1 (0.22%/0.38%), okx-eea-spot@1 (0.10%/0.20%). Decisions D145-D149.",
+        "Acceptance: golden cases under all three profiles (touch-only bar does not fill a resting buy limit; a gap through a stop fills at the worse open; a bar hitting both exits takes the stop) in tests/unit/test_fill_engine.py; profile pins, append-only revisions and per-fill profile and policy references and hashes in tests/unit/test_cost_profiles.py and tests/integration/test_paper_fill_engine.py (a later profile never rewrites an earlier fill); broker conformance and the T05 guarantees (test_venue_conformance.py, test_execution_acceptance.py, test_paper_service.py, test_pause_profiles.py, test_broker_identity.py) pass after the merge: 88 and 94 tests.",
+        "Behaviour change at installation: a paper stop exit now fills at the gapped bid less 0.10% slippage (D147; test_a13 asserts 89.9 instead of 90). Open for step L2: the fee pages were unreachable from the cloud, so each profile keeps the build-plan figure and says so; re-read them and publish a new revision if a figure differs.",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
+    },
+    "T29": {
+      "status": "done",
+      "owner": "cloud package W2-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 0d5d9f2 (W2-A, pull request #9, package head 904d5c2, code 1e5a9a6): practice range in application/practice_range (replay, store, service, summary) with the bounded strategy grammar contracts/practice_range.py and two example versions in strategies/practice/; candles only through CandleStore.window, point-in-time; fills only through the kernel fill engine (bar-replay@1) under each cost profile; result sums in kernel/trade_metrics.py for the scorecard; OKX public candles as source okx_public_candles (candle database 0002) with candles-okx-import and candles-okx-fetch; state migration 0030; commands practice-range-register, -study, -run, -report, -verify. Decisions D165-D169.",
+        "Acceptance: hand-checked Decimal golden replay (fills 101.31, 106.27, 100.61, 96.90 through a stop gap and 100.31; ending equity 9814.41264; worst drawdown 0.0345463093) in tests/integration/test_practice_range_replay.py and a partial-fill metrics golden case in tests/unit/test_trade_metrics.py; the recorded public Kraken BTC/USD 15-minute fixture replays with its gaps reported; a 90-day study (60 tuning plus 30 confirmation days) under all three profiles; reports persist version, data sources, cost profile and windows and practice-range-verify reproduces them (test_practice_range_service.py); the later window cannot be reused for tuning (store and SQL triggers, test_migration_0030.py); every report carries the evidence label (not a pass mark, profitability claim or live authorization); offline checks in test_practice_range_stays_offline.py. 114 package tests; 139 with the candle store after the merge.",
+        "OKX fixture: okx.com refused the cloud (HTTP 403), so the OKX part of the recorded-fixture acceptance item is met with a labelled synthetic OKX-format fixture, as the build plan's W2-A section prescribes; step L2 records a real OKX fixture and confirms the format, host and limits (S44). Also L2: the first real three-month reports on the imported Kraken history.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job (run 38975744115, job 117224635295) on candidate commit `4c134c0` (claude/night-candidate-wave2), CPython 3.12.15, paid and live calls off, 47 min 53 s: 6929 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T30": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T31": {
+      "status": "done",
+      "owner": "cloud package W2-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as c4a8002 (W2-B, pull request #8, package head a95e872, code 0fbe7a5): dated, versioned scanner rules (contracts/coin_scanner.py), one keyless public Kraken Ticker request per live scan (adapters/market/kraken_ticker.py), per-pair inputs through CandleStore.window and the T27 engine (24-hour volume, NATR swing relative to the W1-B round-trip fee, ROCP trend, ticker spread), the price-peg check for unreviewed coins, rank-sum-v1 ranking and a shortlist of 10, CoinScanStore with the coin_rule contract for T32, state migration 0031, commands scan-coins and coin-shortlist. No model call. Decisions D170-D174.",
+        "Acceptance: the recorded public fixtures of 2026-10-13 (53-pair pair list, 120 hourly candles of BTC, SOL, LINK and USDUC) give the same scan every time, with every exclusion and missing input named (tests/integration/test_coin_scanner_recorded.py); with 120 recorded hours NATR 14 (710 candles) is still warming up, so the recorded scan ranks no pair, and a ranked shortlist is shown deterministic on synthetic candles (test_coin_scanner.py) and by property tests (order independent of input order; a better value never moves a pair down). Replays are always labelled optimistic (delisted_pairs_missing, no_historical_spread). Stablecoin, yield-token, fiat, status, thin-pair, peg and hold-list exclusions in test_coin_scanner.py and test_coin_scanner_rules.py; the record and its triggers in test_coin_scan_store.py and test_migration_0031.py. 75 package tests; 112 with every state-migration test after the merge.",
+        "Open for step L2: the first real scan and one recorded Ticker answer (kraken.com refused the cloud, S45); the swing needs about 30 days of hourly collector candles per pair (L1). Hourly scheduling is W5-A or W6-D. Owner, optional: review any of U, STBL, UNITAS, CAP, DEBIT, RE and ST.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job (run 38975744115, job 117224635295) on candidate commit `4c134c0` (claude/night-candidate-wave2), CPython 3.12.15, paid and live calls off, 47 min 53 s: 6929 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T32": {
+      "status": "done",
+      "owner": "cloud package W3-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as ba14f1a (W3-A, pull request #10, package head 53fc001, code 837a57f; first merged as 918a0ec at 9fb6041): OwnerPolicy.money_limits and coin_scope (contracts/money_limits.py; absent blocks are left out so older revisions hash as before; Mandate.coin_scope is left out of the JSON schema, so a model-made mandate is always listed), the protected Decimal rules kernel/money_limits.py (trading day, loss limit, check_entry) and kernel/riba.py (spot pairs only, interest-like postings flagged), MoneyLimitGuard and the owner revision (application/money_limits.py), Execution.authorize(..., day_plan=True) and enforce_money_limits (run by the paper service every tick), the coin rule on CoinScanStore.coin_rule, state migration 0033 (four append-only tables), owner command money-limits (preview unless --confirm, audited, revision-checked, refused while the paper service runs). Shared change (D181): every entry and resting entry is valued as if filled at the highest of its price, the buy quote and the mark against the equity left after their fees, and the balance check runs before the exposure check. Decisions D180-D184.",
+        "Acceptance: day-plan entries are refused until owner-recorded values exist and tests record synthetic values only (test_money_limits.py::test_day_plan_orders_stay_off_until_the_owner_records_money_limits, test_money_limits_cli.py); no sequence of resting-entry fills breaches the per-coin or total share (tests/property/test_money_limit_properties.py, 400 examples on the pure rule, and test_money_limit_execution_properties.py through Execution; the old valuation fails both); a synthetic day across the loss limit cancels resting entries, refuses new ones, keeps the protective exit and resumes at the next day start (test_a_day_across_the_loss_limit_cancels_resting_entries_refuses_new_ones_and_keeps_protective_exits); agents cannot record or raise the limits, the Leader may only narrow, D127 products are refused and interest-like postings are flagged once (test_no_agent_can_record_or_raise_the_owner_money_limits, test_derivatives_and_staking_variants_are_refused_even_with_known_rules, test_margin_short_sales_and_lending_have_no_way_in, test_interest_like_postings_are_flagged_once_for_the_owner, tests/unit/test_money_limit_rules.py). After the second merge the package's own tests with test_hq_refusal_copy.py: 177 passed, 0 failed, 0 skipped.",
+        "On the first merge (918a0ec), the package's tests together with every module that uses the changed execution, authority, paper service, paper runtime, owner-policy and HQ wording code, including venue (broker) conformance, broker identity, the paper soak, both end-to-end tests, the execution, paper fill, paper service and authority modules and the accounting and fill-engine property tests (98 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13, no TRADE_GRAPH_* variable set so paid and live calls are off), 36 min: 2194 passed, 0 failed, 0 skipped; ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "First candidate 290713e (package at 9fb6041) failed the full suite: GitHub Actions test job 117269384964, 38 min, 7080 passed, 2 failed, 18 skipped. Both failures were the Leader on the OpenAI wire in tests/integration/test_provider_wire_schemas.py (test_actual_six_role_wire_dialects_and_original_typed_replies[OpenAIAdapter-leader], test_real_six_role_schema_goes_through_gateway_http_fixture[leader-OpenAIAdapter]); the base 868cda0 passes that file 65 of 65. Cause: Mandate.coin_scope was in the JSON schema but left out of a listed mandate's document, and OpenAI's strict wire requires every schema property. Fixed by W3-A in 837a57f (head 53fc001): coin_scope is SkipJsonSchema; under the coin rule a listed mandate may name any pair the rule covers (kernel.authority.owner_scope_covers); D180 and D183 updated; two new tests fail before and pass after; W3-A ran 113 related modules on its branch: 2832 passed, 0 failed, 14 skipped (bubblewrap not in the container). After the second merge (ba14f1a): test_provider_wire_schemas.py 65 passed, 0 failed; 68 related modules (Leader reply, mandate and owner-policy checks, JSON and wire schemas, authority, paper runtime, paper soak, execution, paper service and the package's modules), 32 min: 1764 passed, 0 failed, 14 skipped (bubblewrap); offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete; ruff (both CI lines), check_plan, test_planning and repository hygiene passed.",
+        "Open: the owner records the D138 values at step L3 (trade-graph money-limits, then --confirm with the paper service stopped). For W4-A (pre-existing in W1-B's quote path, not fixed here; fixed in wave 4 by W4-A, D189): on a quote without a volume figure a crossed resting limit fills half of its remainder, never rounded to the quantity increment, and after about 29 such quotes Execution._consume_reservation raises decimal.Inexact inside record_fill. Live (off, out of scope): LiveService._management does not run enforce_money_limits and kernel/financial_service.py still reads allowed_symbols. HQ does not show the day's loss status yet.",
+        "Full suite: GitHub Actions `test` job (run 38999619551, job 117299581747) on the second candidate commit `ce17fcb` (claude/night-candidate-wave3), CPython 3.12.15, paid and live calls off, 49 min 41 s: 7084 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T33": {
+      "status": "done",
+      "owner": "cloud package W1-D",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 87a7c75 (W1-D, pull request #5, package head 2d7f48e): alarm contract (contracts/alarms.py) for quote, completed-candle and T27 indicator conditions with one owning department; migration 0029 with SQLite triggers for one fire per arming, re-arm only after a fire and append-only history; AlarmBook, AlarmQueue (the per-department delivery queue W5-A claims one batch per wake) and PriceWatcher, which reads candles only through CandleStore.window and calls no model. Decisions D155-D159; queue contract in docs/PRICE-ALARMS.md.",
+        "Acceptance: deterministic-clock tests show no double fire across restarts and re-arms, no fire before a candle is completed and received, and batched delivery (tests/property/test_price_alarm_properties.py, tests/integration/test_price_alarm_watcher.py, test_price_alarm_book.py, test_alarm_queue.py, test_migration_0029.py); feed loss is recorded and sent as a notice, never read as a quiet market; no field or setting limits alarm count or firing frequency (tests/unit/test_alarm_contract.py). 114 tests with the migration and startup files after the merge.",
+        "The package pushed its evidence after the code merge (6a068f2, handoff only, merged as 39af56b): full suite at 2d7f48e, 6338 passed, 14 failed, 23 skipped, every failure also failing on the untouched base 435db71 in the same container (13 known and the bubblewrap egress test), so no new failure. Waking departments from the queue and calling the watcher from the service are T35 (W5-A).",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
+    },
+    "T34": {
+      "status": "done",
+      "owner": "cloud package W4-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 2b6a4f7 (W4-A, pull request #11, package head a193b8c, code 20dac09) on the integration head de43cc2 with no conflict: the DayPlan contract (contracts/day_plans.py: focus coin, registered practice-range strategy version, menu indicators and settings, alarms, resting limit entries each with a stop below and an optional take-profit above and an optional expiry, concise rationale and invalidation; exact decimals, unknown fields refused, no confidence, score, approval or vote field), DayPlans.install, manage, status and active (application/day_plans.py), DayPlanProtection (application/day_plan_protection.py, called by Execution.record_fill inside the fill's transaction), Execution.place_protection(take_profit_price=, protective=), dispatch(protection_only=) and cancel_intents, AuthorizedOrderIntent.take_profit_price and BrokerCapabilities.native_take_profit (left out of saved documents when unset), pause_allows_protection and three new protected paths (kernel/authority.py), a take-profit leg on paper sell stops, the paper service's day-plan management step and prompt protective dispatch, state migration 0034 (four append-only tables; Alembic 0033 -> 0034, one head). Also D189 in kernel/fills.py: paper partial fills rounded down to the lot and finished cleanly at the minimum, fixing the decimal.Inexact bug wave 3 recorded as open. Decisions D185-D189.",
+        "Acceptance: every open paper position carries a protective exit while the Trader sleeps (tests/property/test_day_plan_protection_properties.py::test_open_positions_always_carry_their_protective_exits over random whole and partial fills with and without volume, stops and take-profits, Trader cancels, expiries, every protecting pause, the owner's cancel-all and restarts; test_day_plans.py test_a_filled_entry_carries_its_protective_exit_at_once, test_every_partial_fill_is_protected_and_the_stop_closes_the_whole_position, test_a_pause_cancels_resting_entries_and_keeps_protective_exits); unknown order status is reconciled before replacement and no entry is duplicated after a crash (test_an_entry_whose_status_is_unknown_is_reconciled_before_any_replacement, test_a_lost_acknowledgement_is_reconciled_and_never_resent, test_day_plan_recovery.py: crash after installation, while sending, in the middle of a replacement, fills made while the service was down, management after restarts); no confidence threshold, committee or Leader approval (test_no_confidence_figure_committee_or_leader_approval_is_involved, test_day_plan_contract.py). Plans stay off until owner-recorded money limits exist (test_plans_stay_off_until_the_owner_records_money_limits) and need a practice-range confirmation report (test_a_strategy_version_needs_a_practice_range_confirmation_report).",
+        "After the merge (2b6a4f7), CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off: the package's own 8 test modules 105 passed, 0 failed, 0 skipped; 84 related modules (the package's six non-unit modules among them; every non-unit module that mentions the paper broker, the fill engine, kernel.authority, AuthorizedOrderIntent, BrokerCapabilities, protected paths, pause rules, the paper service, the money limits, the practice range or day plans, plus test_provider_wire_schemas.py, test_venue_conformance.py, the execution, broker identity, paper runtime, financial transition, live pilot dispatch, owner-expense upgrade and checkpoint modules, the paper soak and both end-to-end tests) in four parallel shards, 5 min: 1530 passed, 0 failed, 0 skipped; tests/unit (including test_contracts.py and test_protocols.py): 2138 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode checks the root container cannot make). Ruff (both CI lines), check_plan (46 tasks), test_planning (11 OK), repository hygiene and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: the owner's money-limits --confirm at step L3 gates every plan. W5-A (T35) owns the Trader's daily turn that writes plans and a Trader tool to close a day-plan position or move its exit; the reconcile issue (an UNKNOWN intent stays UNKNOWN while the broker reports it open, blocking new entries on that coin until it fills or is cancelled) is passed to W5-A. T19 (live): per-fill exits may be below a real exchange's minimum order value. Practice range: passing the lot to fill_order_on_candle changes replay results and needs its own decision. HQ views of plans (W5-B, W6-C).",
+        "Full suite: GitHub Actions `test` job (run 39010257667, job 117331111013) on candidate commit `b09cae4` (claude/night-candidate-wave4), CPython 3.12.15, paid and live calls off, 65 min 53 s: 7189 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T35": {
+      "status": "done",
+      "owner": "cloud package W5-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as cd28455 (W5-A, pull request #14, package head b84f5a2, code 2711ee9) on the integration head d6feac5 with no conflict in its own files (kernel/authority.py: both wave 5 protected-path lines kept at the W5-C merge): the wake, check-in and focus-step contracts (contracts/wakes.py: WakeTrigger with 16 kinds, WakeContext, WakeOutcome, CheckInRequest/CheckIn, ScanReference, ShortlistCoin, FocusCoin, FocusSelection, FocusRecord, AllowanceReading, WakeRecord, WakeOutcomeRecord, AppliedPlan, and the strict provider replies TraderWakeReply and ResearchFocusReply, which pass the OpenAI and Anthropic wire schemas), the event engine (application/events/: EventEngine.step, dispatch, before_run, finish_task, request_wake, notify and the reads wakes, wake, next_check_ins, focus, cycle; triggers from T33's alarm queue, day-plan entry and protective-exit fills, other fills, the daily loss stop, due check-ins and outside department tasks; the daily cycle day_start, scan (CoinScanStep), focus, day_plan and day_end_review; the allowance reading), PaperService(event_engine=EngineOptions(...)) opt-in and off by default, two protected paths, state migration 0035 (six orchestration tables with SQL guards; Alembic 0034 -> 0035, one head). Decisions D190-D194; guide docs/EVENT-ENGINE.md.",
+        "Acceptance: no cap on wakes or activity, coalescing batches and never drops, delegation bounds inside a wake and never on the number of wakes, the allowance floor pauses new AI while management continues (tests/integration/test_wake_engine.py, test_wake_service.py, tests/property/test_wake_properties.py over random events, failed turns, day changes and restarts, plus an alarm firing during dispatch); restart neither loses nor repeats a wake and obsolete wakes never become trades (test_wake_engine.py, test_wake_cycle.py, test_wake_service.py); a scripted day with scripted Research produces scanner, focus, plan, alarm wake, fill wake, exit wake and day-end review (tests/integration/test_scripted_day.py::test_a_scripted_day_runs_scan_focus_plan_alarm_fill_exit_and_the_day_end_review, with the real coin scanner, price watcher and day plans on synthetic inputs).",
+        "After the merge (cd28455): the package's own 7 test modules with tests/integration/test_provider_wire_schemas.py, tests/unit/test_contracts.py, test_protocols.py and test_import_boundary.py: 129 passed, 0 failed, 0 skipped (40 s). On the merged tree with the integration fix (8cc7f50), CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off: 161 related non-unit modules (all of the wave's own, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the alarm queue or price watcher, day plans, kernel.authority, the trade metrics, AI spending, the ledger, create_app, dashboard_runtime, the CLI parser, hq_copy, the image builder or pyproject, plus every HQ and dashboard module, test_provider_wire_schemas.py, test_import_boundary.py and the load-sensitive test_hourly_history_refresh.py, which passed) in four parallel shards of whole modules with tests/unit alongside, 23 min: 3011 passed, 0 failed, 15 skipped (14 bubblewrap boundary cases, not installed in the container, 1 file-mode case the root container cannot make); tests/unit: 2180 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: the real subscription Trader on wakes (TraderWakeReply as the wake reply type, the wake context key in the protected ROLE_CONTEXT_KEYS and the owner's pinned profile at L3, the event_engine switch in run_subscription_operation and PaperRuntimeConfig) is assigned to W6-D; until then the installed service keeps its fixed timers. The hourly scan in the service, the live ticker for the day start's scan and the candle store kept current for candle and indicator alarms: W6-D. Not built: a Trader tool to close a day-plan position or move its exit. Not changed: W4-A's reconcile finding (an UNKNOWN intent stays UNKNOWN while the broker reports it open); W5-A's handoff proposes a fix for its own package.",
+        "Full suite: GitHub Actions `test` job (run 39020715997, job 117361802700) on candidate commit `e1008e5` (claude/night-candidate-wave5), CPython 3.12.15, paid and live calls off, 51 min 50 s: 7347 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T36": {
+      "status": "done",
+      "owner": "cloud package W1-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 36cc045 (W1-C, pull request #4, package head 105d5cc, code 9efcccc): PerplexityAgentAdapter behind the provider-neutral InferenceAdapter (no SDK), Search API client, software-run web_search tool that stores every result before the model reads it, PerplexityWebResearch rounds with a receipt for every step and search, the owner PerplexitySpendPolicy and PerplexitySpendGuard, the private key-file reader, migration 0028 with six append-only tables, two dated price cards and the opt-in perplexity-smoke command. Decisions D150-D154.",
+        "Acceptance: scripted fixtures cover success, refusal, truncation, timeout, missing usage and malformed search results (tests/unit/test_perplexity_adapter.py, test_perplexity_search_client.py, tests/integration/test_perplexity_research.py); a finding citing a source outside its round's snapshot rejects the whole reply; test_an_owner_limit_pauses_rounds_while_trader_and_records_continue shows a set limit giving paused_at_limit while the Trader's model path and records continue; the credentialed smoke is opt-in (--confirm-paid-call) and labelled real only when the pinned transport ran. 96 package tests; 158 with the migration tests and 302 related tests after the merge.",
+        "Open: one real call with the D125 test key and the official prices (Search API priced high at USD0.005 per request, unconfirmed) at step L2; Research and the Leader switch to Perplexity in T37 and T38; the 2026-10-12 price card goes stale on 2026-11-11. Found, not fixed: a repeated provider request id raises IntegrityError out of BudgetGateway.commit (for the gateway owner).",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
+    },
+    "T37": {
+      "status": "done",
+      "owner": "cloud package W6-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 129e22d (W6-A, pull request #16, package head c3d0d1f, code c5d1871, docs 5a65509) after W6-D's fec3fb9, with no conflict (paper_service.py keeps W6-D's collector task and W6-A's _wake_task; EVENT-ENGINE.md keeps both sides): Research's focus handler FocusResearch (application/focus_research.py: the day's focus wake names the focus coins in one Perplexity round through W1-C's PerplexityWebResearch, other Research wakes refresh; the round is recorded before anything is sent, every result stored before the model reads it, every call receipted; recover returns a saved answer or records interrupted, never a second paid round), the reply contract FocusResearchReply (contracts/focus_research.py, OpenAI and Anthropic strict wire schemas), focus_scope_refusals (application/focus_scope.py), the owner's protected switch for Research and the Leader (contracts/perplexity_switch.py, application/perplexity_switch.py: perplexity_enabled_for fails closed, perplexity_setting carries the spend rule; the owner command trade-graph perplexity-departments, preview by default, --confirm records, refused while the service runs; shipped off), WebResearchAsk.findings_expire_at and run(check=) in application/web_research.py, the engine's stricter _focus (no coin outside the owner's coin list, none on a day without a shortlist) and WakeContext.focus_step (FocusStepState), PaperService._wake_task giving a switched-on department the owner's paid root allocation, eight protected paths and the Leader forbidden switch_perplexity_departments, state migration 0038 (Alembic 0035 -> 0038). Decisions D205-D209; guide docs/FOCUS-RESEARCH.md.",
+        "Acceptance: focus coins come only from the shortlist and the owner's coin scope, checked in the workflow and again by the engine (tests/integration/test_focus_research.py, tests/unit/test_focus_scope.py, the updated tests/integration/test_wake_cycle.py::test_a_failed_scan_is_recorded_and_the_day_goes_on_without_a_shortlist); empty or failed research is visible and the Trader still decides, an error is never saved as 'nothing today' (test_focus_research.py, test_focus_research_service.py: failed steps carry focus_step with the reason to the Trader's wake); web content is data, never authority, with the synthetic injection fixture tests/fixtures/perplexity/search_injection.json (a pick resting only on instruction-like results rejects the reply). Research findings last until the trading day ends, set by software.",
+        "After the merge (129e22d): the package's own tests (tests/unit/test_focus_research_contracts.py, test_focus_scope.py, tests/integration/test_migration_0038.py, test_perplexity_switch.py, test_focus_research.py, test_focus_research_service.py, test_wake_cycle.py) with W6-D's test_subscription_trader_wakes.py, test_install_wiring.py and test_price_collector_service.py: 68 passed, 0 failed, 0 skipped (42 s). After the W6-B merge, with W6-B's tests and test_migration_0035.py: 112 passed, 0 failed, 0 skipped. On the merged tree (wave 6 integration, CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off): 217 related non-unit modules (every wave 6 module, the provider wire schemas, the wake engine, cycle, service, scripted day and wake property tests, the subscription runtime, network and department-graph tests, the paper service, every HQ and dashboard module, the image builder and packaging tests, the candle store, collector, coin scanner and backfill tests, every migration test, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the event engine, the leadership gateway, the Trader workflow, the Kraken limiters, the hourly features, the paper feed, the deployment image, HQ's copy, money and chart modules, create_app, Perplexity web research or plugin staging, found with grep -rlE over tests) in four parallel shards of whole modules, 24 min: 4279 passed, 0 failed, 16 skipped (14 bubblewrap boundary cases, not installed in the container, as on GitHub; 2 file-mode cases the root container cannot make); tests/unit: 2258 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene, uv lock --check and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments, a scripted Perplexity with a made-up key and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: switching Research to Perplexity changes nothing in the installed service yet. Running Research and the Leader on Perplexity there is not built; docs/L3-INSTALL-CHECKLIST.md step 12 lists six prerequisites (paid-enabled handlers inside the protected process, a pinned reviewed route to both Perplexity endpoints since the market proxy admits only Kraken and Frankfurter, the key from the owner's private file, re-verified price cards (the 2026-10-12 card goes stale on 2026-11-11), the wake allocation (this package's _wake_task, merged) and event_engine: true). Until then, with the engine on, each day's focus step is recorded as failed and the Trader works from the scanner shortlist. Research tasks made outside the engine need the old handler as fallback (not wired). Refreshes use the day start's shortlist; widening it from the collector's hourly scans is an owner decision for a later package.",
+        "Full suite: GitHub Actions `test` job (run 39039860661, job 117416949304) on candidate commit `0595d98` (claude/night-candidate-wave6), CPython 3.12.15, paid and live calls off, 71 min 38 s: 7600 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T38": {
+      "status": "done",
+      "owner": "cloud package W6-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 9674281 (W6-B, pull request #18, package head 7c2da30, code 02fd19d) after 129e22d; conflicts in adapters/persistence/migrate.py (0038 before 0039 kept) and kernel/authority.py (W6-A's and W6-B's protected paths kept); migrations/versions/0039_leader_news_rounds.py re-linked to down_revision 0038, one Alembic head 0039. Built: the reply contract LeaderNewsReply (contracts/leader_news.py: summary, headlines, deep dives, at most one Trader note, strategy ideas for Research or Optimisation, a required next check-in, findings always empty, extra fields refused, no field to order, approve, block, pause, set a mandate or change a setting), the Leader's wake handler LeaderNewsRounds (application/leader_news/: one Perplexity news round per engine wake through W1-C's PerplexityWebResearch, the brief from saved records, the reply vetted against the round's stored sources before anything is kept, every request routed as an engine wake request; the switch and spend rule injected and read fresh for every task, fail closed), LeaderNewsStore, two protected paths, state migration 0039. Decisions D210-D214; guide docs/LEADER-NEWS-ROUNDS.md.",
+        "Acceptance: the Leader cannot place, approve or block individual trades (tests/integration/test_leader_news_rounds.py: a Trader note saying 'block every SOL entry' while the Trader's plan installs anyway, a reply that tries to trade or approve is refused and changes nothing, an injected headline changes nothing; the trading state before and after a round is identical); every round has receipts and stored sources and the Leader names its next check-in (test_leader_news_rounds.py: five calls, five committed receipts under the Leader's wake task, five stored sources, a reply citing outside the round rejected whole, a round that read nothing rejected, restart recovery without a second paid round; tests/integration/test_leader_news_service.py through the paper service; tests/unit/test_leader_news_contracts.py; tests/integration/test_migration_0039.py).",
+        "Integration test (wave 6 integration): tests/integration/test_leader_news_switch.py composes LeaderNewsRounds(..., enabled=lambda: perplexity_enabled_for(database, 'leader'), spend_policy=lambda: perplexity_setting(database).spend_policy) with W6-A's switch: with nothing recorded, or only Research switched on, the Leader stays off Perplexity and nothing is reserved or sent; once the owner's switch is recorded the round completes with the owner's recorded spend rule (synthetic, scripted transport, no paid call): 3 passed; with the switch hard-wired on, the two fail-closed cases fail (mutation check).",
+        "After the merge (9674281): the package's own tests (tests/unit/test_leader_news_contracts.py, tests/integration/test_migration_0039.py, test_leader_news_rounds.py, test_leader_news_service.py) with W6-A's test_migration_0038.py, test_perplexity_switch.py, test_focus_research.py, test_focus_research_service.py and test_migration_0035.py: 112 passed, 0 failed, 0 skipped (38 s). On the merged tree (wave 6 integration, CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off): 217 related non-unit modules (every wave 6 module, the provider wire schemas, the wake engine, cycle, service, scripted day and wake property tests, the subscription runtime, network and department-graph tests, the paper service, every HQ and dashboard module, the image builder and packaging tests, the candle store, collector, coin scanner and backfill tests, every migration test, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the event engine, the leadership gateway, the Trader workflow, the Kraken limiters, the hourly features, the paper feed, the deployment image, HQ's copy, money and chart modules, create_app, Perplexity web research or plugin staging, found with grep -rlE over tests) in four parallel shards of whole modules, 24 min: 4279 passed, 0 failed, 16 skipped (14 bubblewrap boundary cases, not installed in the container, as on GitHub; 2 file-mode cases the root container cannot make); tests/unit: 2258 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene, uv lock --check and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments, a scripted Perplexity with a made-up key and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: the installed service does not build the Leader's news-round handler yet (the same six prerequisites as T37, docs/L3-INSTALL-CHECKLIST.md step 12, plus a protected route for the registered web_search tool). The old Leader handler, kept as fallback for non-wake tasks and switched-off wakes, still has its R1 portfolio-level pause and mandate actions: an owner question. Perplexity Leader rounds wait under the subscription allowance floor although Perplexity spends no Codex allowance (conservative, unchanged). Showing rounds in HQ is not built.",
+        "Full suite: GitHub Actions `test` job (run 39039860661, job 117416949304) on candidate commit `0595d98` (claude/night-candidate-wave6), CPython 3.12.15, paid and live calls off, 71 min 38 s: 7600 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T39": {
+      "status": "done",
+      "owner": "cloud package W6-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 96b32e7 (W6-C, pull request #15, package head b6542ba, code f322dde) after 9674281, with no conflict (EVENT-ENGINE.md keeps W6-A's, W6-C's and W6-D's paragraphs): the trade-graph.hq.wakes.v1 document (api/hq_wakes_contract.py), the projection and read-only route GET /api/v1/hq/wakes (api/hq_wakes.py: pages of 20 wakes, at most 30, newest first, with today's five daily steps, each department's next check-in as EventEngine.next_check_ins reads it, the focus coins, the armed alarms and the wake counts; plain SQL in one Database.snapshot()), the WAKES copy block and three section-help entries (api/hq_copy.py), the panels 'Next check-ins' and 'Today's focus coins and alarms' in the Calendar tab and 'Wake log' in the Story tab (web/templates/hq.html, web/static/hq-wakes.js, hq-core.js, hq.js, hq-glossary.js, hq.css). No state migration (0040 unused). Decisions D215-D219; docs/HQ-DASHBOARD.md 'Wake-ups'.",
+        "Acceptance: built only from persisted records and reading starts no inference or order (a test parses the projection's imports, nothing from trade_graph.application, the model or broker adapters or the kernel; the whole state database hashes the same before and after repeated reads and through the route, also with a check-in due); a busy synthetic day (600 wakes of 12 reasons, 45 alarms, 16 focus coins) is 51.2 KB per default page and 70.7 KB at 30 wakes, inside the 80 KB budget; no horizontal scroll at phone width, checked by the package in Chromium (Playwright 1.56.1) at 390x844, iPad portrait and landscape and desktop, light and dark, before and after 'Load earlier' (tests/unit/test_hq_wakes_contract.py, tests/integration/test_hq_wakes.py, test_hq_wakes_routes.py, tests/test_hq_wakes_static.py, tests/js/hq_wakes.test.mjs).",
+        "After the merge (96b32e7): the package's own tests (tests/unit/test_hq_wakes_contract.py, tests/integration/test_hq_wakes.py, test_hq_wakes_routes.py, tests/test_hq_wakes_static.py) with tests/test_hq_static.py and tests/test_hq_js_behaviour.py: 133 passed, 0 failed, 0 skipped (82 s); node --test tests/js/hq_*.test.mjs: 77 passed, 0 failed. On the merged tree (wave 6 integration, CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off): 217 related non-unit modules (every wave 6 module, the provider wire schemas, the wake engine, cycle, service, scripted day and wake property tests, the subscription runtime, network and department-graph tests, the paper service, every HQ and dashboard module, the image builder and packaging tests, the candle store, collector, coin scanner and backfill tests, every migration test, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the event engine, the leadership gateway, the Trader workflow, the Kraken limiters, the hourly features, the paper feed, the deployment image, HQ's copy, money and chart modules, create_app, Perplexity web research or plugin staging, found with grep -rlE over tests) in four parallel shards of whole modules, 24 min: 4279 passed, 0 failed, 16 skipped (14 bubblewrap boundary cases, not installed in the container, as on GitHub; 2 file-mode cases the root container cannot make); tests/unit: 2258 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene, uv lock --check and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments, a scripted Perplexity with a made-up key and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: HQ's room tiles and main calendar still read the old fixed timers (role_schedules), which stop moving once the event engine is on, so they would show old turns as overdue: assigned to W7-A tonight (take them from department_check_ins as the wake log reads them, or retire the schedule rows with the switch). Done in wave 7 (W7-A T45, D229, merge d2b0a1c): with event_engine: true the room tiles and the calendar take each department's next turn from its own check-in (hq_wakes.engine_check_ins); with the engine off nothing changes. A new wake trigger kind needs its words in hq_copy.WAKES (a test fails otherwise). Owner, after L3: look at the Calendar and Story tabs on a phone and an iPad (Safari/WebKit and a real iPad were not checked), and use the wake counts before deciding the allowance floor (D138 item 8).",
+        "Full suite: GitHub Actions `test` job (run 39039860661, job 117416949304) on candidate commit `0595d98` (claude/night-candidate-wave6), CPython 3.12.15, paid and live calls off, 71 min 38 s: 7600 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T40": {
+      "status": "done",
+      "owner": "cloud package W2-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as cfa74d1 (W2-C, pull request #7, package head c6e1c22, code 4623b32): AI spending read model (application/ai_spending.py) over budget reservations and receipts, per department, with actual, estimated and unresolved costs apart and synthetic calls apart; additive HQ contract block ai_spending and attention code spending_alert; the Money tab's AI spending panel; Codex allowance use per department over 7 days; owner records for the prepaid credit and alert amounts (state migration 0032); commands ai-spending-report and ai-spending-record (preview unless --confirm). Decisions D175-D179.",
+        "Acceptance: totals and department lines reconcile to receipts and unknown usage is unresolved ('up to' or not known), never zero (tests/integration/test_ai_spending.py, test_hq_spending.py, tests/property/test_ai_spending_properties.py, tests/unit/test_hq_spending_contract.py); practice records change nothing in the block and no practice wording appears (test_practice_gains_never_appear_to_pay_for_ai, test_practice_money_never_enters_the_report); crossing USD20 (Perplexity) or USD5 (Jev) adds a watch card and writes no pause, task or budget record (test_crossing_the_alert_notifies_in_hq_without_pausing_anything). 71 package tests and 10 JS tests; 162 with the HQ projection, JS behaviour and migration tests after the merge, and node --test tests/js/hq_spending.test.mjs 10 passed.",
+        "Open: no real receipt exists yet (first real calls at L2); the owner looks at the panel on a phone and an iPad, light and dark (L2). Found outside the package and not changed: the older T15 'Pays for itself?' box on the Money tab compares practice results with entered real costs; whether its wording should change is an owner or reviewer question.",
+        "After all three merges, the three packages' new tests and the related files named in their handoffs, run together (156 files, uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled): 3945 passed, 0 failed, 9 skipped (5 file-mode checks the root container cannot make, 4 cross-checks talipp has no indicator for); ruff (both CI lines), check_plan, test_planning, repository hygiene and the offline acceptance step: all passed, offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic, scripted and recorded public fixtures only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Full suite: GitHub Actions `test` job (run 38975744115, job 117224635295) on candidate commit `4c134c0` (claude/night-candidate-wave2), CPython 3.12.15, paid and live calls off, 47 min 53 s: 6929 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T41": {
+      "status": "done",
+      "owner": "cloud package W5-B",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as 5fa9bf7 (W5-B, pull request #12, package head 72a2d8e, code 9942f99) after bb8a837 with no conflict, plus the integration fix 8cc7f50 (import order in tests/chart_support.py, which failed ruff without its cache): TradingView Lightweight Charts 5.2.1 (Apache-2.0) vendored under web/static/vendor/lightweight-charts/ with LICENSE.txt, NOTICE.txt and VENDOR.json, verified against the npm registry integrity, checked offline by scripts/vendor_lightweight_charts.py --check and loaded from HQ's own origin with a pinned Subresource Integrity value; the trade-graph.hq.chart.v1 contract (api/hq_chart_contract.py) and GET /api/v1/hq/chart (api/hq_chart.py) from saved records only: candles from the candle file opened read-only (adapters/persistence/market_data_readonly.py), the indicator engine's outputs, alarm lines, resting entries, safety exits, other orders and fills; the Price charts panel in HQ's Money tab (hq-charts.js) with the attribution line and TradingView link under every chart; trade-graph dashboard --market-database. No state migration (0036 unused). Source S46. Decisions D195-D199.",
+        "Acceptance: chart data comes from persisted candles and indicator outputs with no third-party script or data request (tests/integration/test_hq_chart.py, test_hq_chart_routes.py, test_market_data_readonly.py, tests/test_hq_charts_static.py, tests/test_hq_static.py allowing only the attribution link, tests/js/hq_charts.test.mjs; hq_chart.py has no indicator formula); phone and iPad widths in light and dark (W5-B's browser check in Chromium at 390x844, 820x1180, 1180x820 and 1280x900, light and dark and the Theme toggle: the chart drew, no CSP violation, console error, outside request or horizontal overflow; CSS and JS tests for the layouts); the attribution link and licence notice are visible wherever a chart is shown (the template's attribution line, and the script draws no chart without it: test_hq_charts_static.py, hq_charts.test.mjs).",
+        "After the merge (5fa9bf7): the package's new and changed modules (test_hq_chart.py, test_hq_chart_routes.py, test_market_data_readonly.py, test_hq_chart_contract.py, test_hq_charts_static.py, test_hq_static.py) with test_hq_template.py and test_hq_js_behaviour.py: 139 passed, 0 failed, 0 skipped (23 s); node --test tests/js/hq_charts.test.mjs: 12 of 12 passed; scripts/vendor_lightweight_charts.py --check: the vendored copy matches its pins. On the merged tree with the integration fix (8cc7f50), CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off: 161 related non-unit modules (all of the wave's own, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the alarm queue or price watcher, day plans, kernel.authority, the trade metrics, AI spending, the ledger, create_app, dashboard_runtime, the CLI parser, hq_copy, the image builder or pyproject, plus every HQ and dashboard module, test_provider_wire_schemas.py, test_import_boundary.py and the load-sensitive test_hourly_history_refresh.py, which passed) in four parallel shards of whole modules with tests/unit alongside, 23 min: 3011 passed, 0 failed, 15 skipped (14 bubblewrap boundary cases, not installed in the container, 1 file-mode case the root container cannot make); tests/unit: 2180 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: the owner opens the Money tab on a phone and an iPad, light and dark, at L2 or L3 once the price collector fills runtime/market_data.sqlite (the browser check used Chromium and synthetic candles only; Safari/WebKit and a real iPad not checked). W6-D gives the dashboard process read access to the candle file and keeps .txt in the image builder's suffixes. Later: gzip or long-lived caching for the 198 KB vendored script (HQ sends no-store).",
+        "Full suite: GitHub Actions `test` job (run 39020715997, job 117361802700) on candidate commit `e1008e5` (claude/night-candidate-wave5), CPython 3.12.15, paid and live calls off, 51 min 50 s: 7347 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T42": {
+      "status": "done",
+      "owner": "cloud package W5-C",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as bb8a837 (W5-C, pull request #13, package head 751bf0e, code cb114a5) after cd28455; one conflict in kernel/authority.py PROTECTED_PATH_PREFIXES, both wave 5 lines kept: the read-only scorecard (application/scorecard.py: compute_scorecard, Scorecard.document with scorecard_sha256, format_scorecard_text, ScorecardUnavailable, GATES_STATEMENT; a protected path), TradeFill.from_fill_record in the shared kernel sums (kernel/trade_metrics.py; summarize, round_trips, worst_drawdown, worst_losing_streak and hold_benchmark reused unchanged), period_spending in application/ai_spending.py (HQ's report unchanged), Ledger.fx_rate (read only), and the command trade-graph scorecard [--start] [--end] [--cost-profile] [--format json|text]. No state migration (0037 unused). Decisions D200-D204; guide docs/SCORECARD.md.",
+        "Acceptance: exact Decimal golden fixtures including partial fills and fees (tests/integration/test_scorecard.py hand-checked golden day: two partial maker buys and two partial taker sells of ETH, a BTC stop-out, an open position valued as sold with the taker fee; the whole document equals tests/fixtures/scorecard/golden_scorecard.json; fees in the quote, in the coin and in a third asset in tests/unit/test_trade_metrics.py; tests/property/test_scorecard_properties.py checks the books against the ledger's replay); the scorecard states that functional success, economic evidence and live authorization are separate gates (GATES_STATEMENT and a gates block judging none of them, in JSON and text, tested in test_scorecard.py and test_scorecard_cli.py). It reaches no network (tests/unit/test_scorecard_stays_offline.py).",
+        "After the merge (bb8a837): the package's own 6 test modules with W2-C's tests/integration/test_ai_spending.py, test_ai_spending_cli.py, test_hq_spending.py and tests/property/test_ai_spending_properties.py (and test_wake_contracts.py): 104 passed, 0 failed, 0 skipped (33 s). On the merged tree with the integration fix (8cc7f50), CPython 3.12.13 from uv in a cloud container, no TRADE_GRAPH_* variable set so paid and live calls are off: 161 related non-unit modules (all of the wave's own, and every module that mentions the paper service, the subscription operation, protected paths, the migration list, JSON or wire schemas, the alarm queue or price watcher, day plans, kernel.authority, the trade metrics, AI spending, the ledger, create_app, dashboard_runtime, the CLI parser, hq_copy, the image builder or pyproject, plus every HQ and dashboard module, test_provider_wire_schemas.py, test_import_boundary.py and the load-sensitive test_hourly_history_refresh.py, which passed) in four parallel shards of whole modules with tests/unit alongside, 23 min: 3011 passed, 0 failed, 15 skipped (14 bubblewrap boundary cases, not installed in the container, 1 file-mode case the root container cannot make); tests/unit: 2180 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). Ruff (both CI lines, without cache), check_plan (46 tasks), test_planning (11 OK), repository hygiene and git diff --check passed; offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Synthetic values, scripted departments and scripted quotes only: no paid, exchange or network call, no order, no key, nothing deployed.",
+        "Open: no real paper run exists to score until the engine is installed (L3); T43 calls compute_scorecard with the test's start and end. Not in HQ yet (D204; needs caching and the 80 KB payload budget). A later migration could index valuation_marks (portfolio_id, asset, observed_at).",
+        "Full suite: GitHub Actions `test` job (run 39020715997, job 117361802700) on candidate commit `e1008e5` (claude/night-candidate-wave5), CPython 3.12.15, paid and live calls off, 51 min 50 s: 7347 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    },
+    "T43": {
+      "status": "todo",
+      "evidence": []
+    },
+    "T44": {
+      "status": "done",
+      "owner": "cloud package W1-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as c4bde76 (W1-A, pull request #3, package head 24904b1, code fa882ef): Jev decision contract and adapter (contracts/decisions.py, adapters/decisions/jev.py, pinned jev-1.13.0, aliases refused), five keyless feeds with a bounded RSS/Atom reader, question set news-alarm-questions-v1 and rule news-alarm-rule-v1, receipted Jev checks through BudgetGateway (role news_alarm), migration 0026 with five append-only tables, and the news-alarm-poll and news-alarm-report commands. Jev is off by default and wakes_sent is always 0 (shadow mode). Decisions D140-D144.",
+        "Acceptance: scripted fixtures cover success, HTTP 400, 401, 422, 429 and 529 (also 413, 415 and 5xx), timeout, missing usage, an unexpected answering model and malformed answers (tests/unit/test_jev_adapter.py, tests/integration/test_jev_checks.py); a headline with instructions changes no setting, wake-up, order or tool (tests/security/test_news_alarm_boundary.py); answers are stored as received with their digits and never recomputed (test_news_alarm_shadow.py, test_news_alarm_report.py); property tests show the would-wake rule only adds wake-ups (tests/property/test_news_alarm_rule_properties.py); the CLI report works on labelled synthetic fixtures (test_news_alarm_cli.py). The credentialed Jev smoke is opt-in and separate (step L2). 155 package tests; 315 with migrations and related files after the merge.",
+        "Open for step L2: one real sample of each feed (every feed host was refused from the cloud) and, if the owner adds a key, one opt-in Jev call to confirm the wire names. Before real calls under the protected deployment (W6-D/L3), bind Jev checks to protected budget origins.",
+        "Integration full suite at c4bde76 (all five wave 1 merges), uv run pytest -p no:cacheprovider -rf on CPython 3.12.13 with paid calls and live disabled, 105 min in a cloud container: 6664 passed, 0 failed, 23 skipped; ruff, check_plan, test_planning and repository hygiene pass. Synthetic and scripted data only: no paid, exchange or feed call, no order, no key, nothing deployed."
+      ]
+    },
+    "T45": {
+      "status": "done",
+      "owner": "cloud package W7-A",
+      "branch": "claude/day-trader-engine-20261012",
+      "evidence": [
+        "Merged as d2b0a1c (W7-A, pull request #19, package head c03c95e, code b7d3782) on 9fa7efb with no conflict: the switch's contract and the woken department's note (contracts/news_wakes.py: compose_note, at most 500 characters, the headline as quoted data), OwnerPolicy.news_wakes (shadow, live or absent = shadow, left out of the document when absent so older revisions hash byte for byte), the event engine's news source (application/news_wakes.py NewsWakeRouter: the Leader for every would-wake verdict, the Trader when the coin is held when Jev was asked or when routed, or the headline is about Kraken while anything is held; shadow routes record whom and why, live routes add one news_alarm trigger through EventEngine.notify), the owner command trade-graph news-wakes (application/news_wake_switch.py, market_data_cli/news_wakes.py), the check-in rule (contracts/wakes.py CHECK_IN_KEEPING_KINDS, application/events/engine.py), the Leader's wake context (application/leadership.py, the protected ROLE_CONTEXT_KEYS['leader'] in application/subscription_runtime.py), four protected paths (kernel/authority.py), state migration 0042 (news_alarm_wake_routes, append-only; Alembic 0039 -> 0042, one head; 0040 and 0041 unused), HQ (api/hq_wakes.py, hq_copy.py, hq_facts.py, hq_state.py, hq_calendar.py: news wake-ups name their source, the day's counts say how many wake-ups news alarms made or would have made, and with event_engine: true the rooms and calendar read each department's check-in, W6-C's follow-up) and docs (NEWS-ALARM.md 'Wake-ups (T45)', EVENT-ENGINE.md, HQ-DASHBOARD.md, L3-INSTALL-CHECKLIST.md step 3 and new step 17). Decisions D225-D229. No dependency or price record changed.",
+        "Acceptance: a news alarm only adds wake-ups and never delays, merges away or blocks another (tests/property/test_news_wake_properties.py: over random event sequences every trigger is delivered once and a news-only wake never moves a check-in; tests/integration/test_news_wakes.py: a news and a price alarm together, a busy department, a failing news source and an unreadable verdict hold back nothing); the Leader and Trader read the headline as data (tests/integration/test_news_wake_day.py: an order-giving headline changes no order, plan, money limit, policy or pause; test_subscription_leader_wakes.py: the subscription Leader reads the alarm in its wake; the Leader's Perplexity round reads it in its brief); the scripted day through the paper service (test_news_wake_day.py: a planted delisting wakes the Leader and the Trader holding the coin, an unrelated headline wakes nobody, shadow mode wakes nobody); going live is decided from T44 shadow evidence and HQ wake counts, not fixtures (tests/integration/test_news_wake_switch.py: a fixture-only database is refused and nothing is written; a would-be wake-up from a live_public headline with a real Jev answer allows the owner revision and its audit row; HQ's counts in test_hq_news_wakes.py). The real shadow evidence and the switch itself are owner steps after L3 (checklist step 17).",
+        "After the merge (d2b0a1c), on CPython 3.12.13 from uv in a cloud container with no TRADE_GRAPH_* variable set (paid and live calls off): W7-A's nine new modules (tests/unit/test_news_wake_contracts.py, tests/integration/test_migration_0042.py, test_news_wakes.py, test_news_wake_switch.py, test_subscription_leader_wakes.py, test_hq_news_wakes.py, test_hq_engine_turns.py, test_news_wake_day.py, tests/property/test_news_wake_properties.py): 65 passed, 0 failed, 0 skipped (94 s). On the merged tree, 140 related non-unit modules (W7-A's nine, the provider wire schemas, the wake engine, cycle, service, scripted day and wake property tests, the subscription Trader's wakes, W1-A's news-alarm tests, the Leader, Leader-news and leadership tests, every subscription test, the paper service, every HQ and dashboard module, every migration test, and every module that mentions the owner policy, protected paths, the event engine, the Leader allowlist, the migration list, the news alarm, the leadership gateway or HQ, found with grep -lE over tests) in four parallel shards of whole modules, 23 min: 2210 passed, 0 failed, 14 skipped (bubblewrap boundary cases, not installed in the container, as on GitHub); alembic heads: one head, 0042. tests/unit (with test_contracts.py, test_protocols.py and test_import_boundary.py): 2270 passed, 0 failed, 7 skipped (4 talipp cross-checks, 3 file-mode cases). node --test tests/js/hq_*.test.mjs: 77 passed, 0 failed. Offline acceptance 464 of 464 tests and 40 of 40 cases, gate complete. Ruff (both CI lines), check_plan (46 tasks), test_planning (11 OK), repository hygiene, uv lock --check and git diff --check passed. Invented headlines on a synthetic feed, scripted Jev answers receipted as synthetic, scripted departments, a scripted Perplexity and the synthetic USD10,000 paper account only: no paid, feed, exchange or network call, no order, no key, nothing deployed.",
+        "Open: the news poll next to the installed service is not built (T44's news-alarm-poll every 5 minutes with the owner's Jev key against the installation's state database, and a reviewed network route from the protected container to the five feed hosts and TypeSafe; the subscription market proxy admits only Kraken and Frankfurter); until then nothing is routed in the installation and the switch cannot go live (checklist step 17). news-alarm-poll still reports \"wakes_sent\": 0 by design (the poll never wakes anyone; the engine does, by the owner's switch). Owner at L3 step 3: add \"wake\" to allowed_context_keys.leader in the pinned subscription profile, else the Leader is woken without seeing why. Not checked: Safari/WebKit and a real iPad.",
+        "Full suite: GitHub Actions `test` job (run 39054413899, job 117459336159) on candidate commit `3008446` (claude/night-candidate-wave7), CPython 3.12.15, paid and live calls off, 72 min 33 s: 7665 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch."
+      ]
+    }
+  },
+  "review_checkpoint": {
+    "implementation_commit": "153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c",
+    "implementation_tree": "f00d10dc928a60fb6617279f1707ad1aa5301995",
+    "preserved_previous_head": "1cb4e5af401ba79b22705a677af388ad03acfbab",
+    "python": "3.12.14",
+    "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+    "baseline_tests": 2057,
+    "tests": 2544,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "full_seconds": 1528.618,
+    "mapped_tests": 464,
+    "applicable_acceptance_cases": 40,
+    "accepted_cases": 40,
+    "gate_complete": true,
+    "validation_scope": "Frozen clean full suite/independent JUnit, clean identical bound offline gate, scoped Ruff/planning/DAG/hygiene, exact frozen dependency archive/offline installed wheel Python -I with migrations through 0016/service restart/fee correction/commissioned application actual effects, fresh immutable image actual four-container adversarial/lostack/management/rollback/restart/defaultboot, independent exact 150 installed source / 166 context hash audit. No new CI result.",
+    "acceptance_note": "Local remaining software contracts and finite synthetic preparation implemented; genuine external provider/forward/venue/intended-host evidence and owner pilot/production/broader-class grants remain open. Capacity/recovery/public-data/venue partial-contract gaps remain explicit. No paid/private/live operation.",
+    "next_work": "Prepare owner-designated host and separately reviewed provider/public-data routes/current prices/keys/budget, then authorized funded paper observation; preregister genuine T18 forward blocks and separately authorize eligible T19 conformance. Implement larger economic/native capacity and external anchor/protected continuity procedures where required. T20/T22 stay gated.",
+    "review": "docs/reviews/2026-10-04-next-contracts.md",
+    "full_junit": "/tmp/trade-graph-r4-final.xml",
+    "full_junit_sha256": "4c8579ce6f3ac1666877c560f79c0e0ae27cd263f0f9d53342680302589956bd",
+    "acceptance_report": "/tmp/trade-graph-r4-final-acceptance.json",
+    "acceptance_report_sha256": "d6a7b9a8f9dd52bdbbebc1a2697724cf1e6d31b9d9d208458a94db8aa60aa729",
+    "installed_proof": "/tmp/trade-graph-r4-installed-9z4c__6j/installed-work/installed-proof.json",
+    "installed_proof_sha256": "33b2eabcf13c87ca45574c5c2ca6ff6e5c6ced1a35cf336f29df2b125e6e2d81",
+    "installed_contracts_proof": "/tmp/trade-graph-r4-installed-9z4c__6j/installed-work/installed-contracts.json",
+    "installed_contracts_proof_sha256": "3585f509fd9772a7198d5c29dbdd9db9cc95ba366ff82a1373856867f54e564c",
+    "installed_application_proof": "/tmp/trade-graph-r4-installed-9z4c__6j/installed-application-work/installed-application-proof.json",
+    "installed_application_proof_sha256": "c1be07e1339d3fc6d6d85bc45ce0eb350634a95a23f51278d6431808ba25ac17",
+    "installed_archive_sha256": "bfec24352b35282d5d4e88131a712818f789d36cbc36966dab857f27d1436a7f",
+    "installed_wheel_sha256": "5d19b68db4ab9607f28b7797d8b2b1eea08c84760db7cc2a107176d556429ba9",
+    "image_pin": "/tmp/trade-graph-r4-image-153c6a5/image-pin.json",
+    "image_id": "sha256:8466abac94a81d2c88c13a81afb619d0ab47d0dd29971a4035da15263072b8d5",
+    "image_archive_sha256": "91f42f43c626378afe87fd92f4a5fa83afa8058df0af4ed515c399f146c7fb71",
+    "image_seal_sha256": "a86ac6f7dbcaede5b99833317e642a9b91192f3bc35e3d7aae468b8eefda0816",
+    "image_proof": "/tmp/trade-graph-r4-image-proof-153c6a5/proof.json",
+    "image_proof_sha256": "4fd6ce4fd2a8228951b943806dec022de293ac17877f99b09f6c4db3b5010ff6",
+    "source_artifact_audit": "/tmp/trade-graph-r4-image-153c6a5/final-source-image-verification.json",
+    "source_artifact_audit_sha256": "25dc1e3c56617018984ef3ea5c01266e94c48f027444153b4e5035c0d1549369",
+    "public_probe_status": "No new public probe requested. Historical 12:03 official GETs failed configured proxy; connectivity remains unverified.",
+    "publication": {
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "canonical_branch": "cursor/trade-graph-r1-548a",
+      "status": "published_source",
+      "transport": "GitHub HTTPS; new integration branch; existing implementation branch is the normal fast-forward publication target; no force push or history rewrite",
+      "published_at": "2026-10-05",
+      "verified_pushed_commit": "48fecba2c62df14fa1b56dbcd653f9ec381c79de",
+      "documentation_follows_verified_source": true,
+      "push_or_merge_performed": true,
+      "push_performed": true,
+      "merge_performed": false,
+      "main_unchanged": true,
+      "audit": "docs/reviews/2026-10-05-publication-audit.md",
+      "workspaces_audited": 26,
+      "unintegrated_deliverables_found": 0,
+      "ci_outcome": "not_verified_github_actions_api_forbidden"
+    }
+  },
+  "historical_submission": {
+    "commit": "a4bdce6c3bfad834d0044c8dcc443e2818e8d581",
+    "owner": "cursor-agent",
+    "reported_tests": 34,
+    "note": "Original per-task evidence is retained below; shared original lint/test claim is recorded here once. This historical submission overclaimed full completion and is superseded by the review status."
+  },
+  "review_checkpoint_history": [
+    {
+      "implementation_commit": "2e5f1d86c826ab60075301dbc7ed1cf7b1ddb2c0",
+      "preserved_previous_fix_commit": "9e908d4ca22786d1ee49bff963ac98179c79e0b3",
+      "runtime_ci_run": 36699717463,
+      "python": "3.12",
+      "tests": 113,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "new_scheduler_regression_cases": 31,
+      "historical_evidence_note": "Existing evidence below records the earlier submission; it is not a new certification of full task acceptance. See IMPLEMENTATION-STATUS.md."
+    },
+    {
+      "implementation_commit": "5d5ce35a7a0f955f14cbb4ef4c7ca920e4432c09",
+      "implementation_tree": "308d552fc2bb424b1bcb660f9a3678c8627faa5a",
+      "preserved_previous_head": "0025141e7b094a5536deb6fbceb873574c4160a1",
+      "runtime_ci_run": 36744681382,
+      "planning_ci_run": 36744681372,
+      "python": "3.12.14",
+      "tests": 239,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "new_candidate_review_regression_cases": 10,
+      "next_dependency_ready_task": "T13",
+      "acceptance_note": "T12 workflow closure, not complete autonomous R1, production isolation, paid-provider verification or profitability.",
+      "junit_artifact_id": 11111353237,
+      "runtime_ci_conclusion": "success",
+      "planning_ci_conclusion": "success"
+    },
+    {
+      "implementation_commit": "a503cacd481f6f84c1e37723ebcfa2293c26cf07",
+      "preserved_previous_head": "9376d2dc4d1947ce23160a86567af97a3e6ff015",
+      "python": "3.12.14",
+      "tests": 349,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 280,
+      "new_engineering_workflow_cases": 40,
+      "new_httpx_failure_cases": 29,
+      "next_dependency_ready_task": "T14",
+      "validation_scope": "Local locked full suite, Ruff, planning, standalone CLI demo and staged hygiene scan. New CI outcome not retrieved (GitHub GraphQL Forbidden).",
+      "acceptance_note": "T13 data-artifact application workflow closure; T14 consumer/observation, full autonomous R1, paid provider verification and profitability are not complete."
+    },
+    {
+      "implementation_commit": "8447f4c068a62433a2975bccb2292696640baca4",
+      "preserved_previous_head": "51e48b60bfe179b71b53060bc00322c3353d58ec",
+      "python": "3.12.14",
+      "tests": 391,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 349,
+      "new_version_lifecycle_cases": 24,
+      "new_artifact_consumer_cases": 15,
+      "new_schedule_report_cases": 3,
+      "next_dependency_ready_task": "T15",
+      "validation_scope": "Local full locked suite, JUnit, Ruff, ten planning tests, standalone offline demo and staged hygiene scan. No new CI result is claimed.",
+      "acceptance_note": "T14 registered R1 data artifacts and allowed prompts: tested loaded-byte behavior, controlled consumer reconstruction, functional health observation, deterministic rollback and provenance. Does not certify strategy quality, economic benefit, paid providers, continuous T17 service or T21 protected-host/code isolation."
+    },
+    {
+      "implementation_commit": "8760fb2667d4e677cac67646a01e86bdb4d563eb",
+      "implementation_tree": "a75fe189ae9dfb5b639fe1aae4cacef961602f9e",
+      "preserved_previous_head": "85bfb1c424cbcde9947ab4d31dc10c5a5125343f",
+      "python": "3.12.14",
+      "tests": 534,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 391,
+      "next_dependency_ready_task": "T16",
+      "validation_scope": "Local locked full suite, independently parsed JUnit, Ruff, ten planning tests, dependency/reference validation, cost illustration, actual offline-loop dashboard evidence, Chromium desktop/mobile/control-response checks, wheel packaging and staged repository hygiene. No new CI result is claimed.",
+      "acceptance_note": "T15 application dashboard and A34/A35/A37 local evidence. Model-routing writes and interrupted-command controller recovery await T17; legacy cross-currency receipt FX source IDs and historical economic drawdown remain explicitly incomplete. Continuous R1 service, paid provider verification, live operation and profitability are not certified."
+    },
+    {
+      "implementation_commit": "1cddb349492a8b83f83ba1424f1709533e95d687",
+      "implementation_tree": "f8c609b673d61e88b7fe722340ceb36781d4aedf",
+      "preserved_previous_head": "af8e64e1a85400b19d75f5dbb0133c7d9b4151b0",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "tests": 808,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "baseline_tests": 534,
+      "mapped_tests": 465,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "next_dependency_ready_task": "T17",
+      "validation_scope": "Local locked full suite and independently parsed JUnit, strict mapped offline acceptance, Ruff/planning/hygiene, and fresh-checkout frozen installation/standalone demo. New CI is pending verification.",
+      "acceptance_note": "T16 application-local, credential-free offline A01-A38/A43-A44: real protected application paths, scripted providers, durable paper broker, generated accounting, fault/security/recovery/provenance coverage and actual bound outcomes. This does not certify paid-provider behavior, continuous T17 operation, T18 economic evidence, live authorization or P6 host/kernel isolation. Legacy FX source IDs are disclosed as missing, not fabricated."
+    },
+    {
+      "implementation_commit": "ca4d463b9e83218d1e80f863da8b598190575280",
+      "implementation_tree": "78187546d5044f716a7d3b70081c3a4b6c17bf21",
+      "preserved_previous_head": "f6c36e7b6a4b6f0782f8ed72f47874458c708c84",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 808,
+      "tests": 1232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Local locked full suite and independently parsed JUnit, clean bound offline acceptance, Ruff/JS/planning/hygiene and fresh frozen checkout/installed wheel demos plus bounded maintenance. No new CI conclusion.",
+      "acceptance_note": "T17 operating software and T18/T19/T21 preparation. Actual public/funded paper observation, forward economics, authenticated venue conformance, live pilot and production kernel extraction/isolation remain pending. No paid/live/broader Engineer authority granted.",
+      "next_work": "Finish T17 actual authorized public/funded verification; complete T21 production extraction and intended-host evidence; then real T18/T19 observation-dependent gates.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published",
+        "transport": "GitHub HTTPS; normal fast-forward to existing implementation branch; no merge or history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "1b6b800d6246f08d61719fd4015cac265b2d2e07"
+      }
+    },
+    {
+      "implementation_commit": "9664707d5fb12b709424ef0ae8ce45bed2ce77c4",
+      "implementation_tree": "4868b219a49639b403c27748aaae18e074952e37",
+      "preserved_previous_head": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 1232,
+      "tests": 1473,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/exact generated+repository hygiene; fresh frozen checkout dependency install and wheel install outside checkout with actual import assertion/offline4fill0restart/protectedhold+recovery/two confinedpluginreplays. No new CI conclusion.",
+      "acceptance_note": "Local task-agent checkpoints add tested implementation. Actual T17 public/funded/host verification, real T18 future collection/authenticated costs, T19 read-only conformance, T20 pilot authority, full T21 graph/model/image extraction and T22 class/deployment gates remain unfinished. No paid/private-venue/live/broader Engineer authority is granted.",
+      "next_work": "Continue full T21 model/budget/departmental graph extraction and arrange intended-host verification; close T17 external network/funded evidence when configured; collect real T18 forward period and finish owner-selected T19 venue verification before T20/T22 gates.",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published_source",
+        "transport": "Normal fast-forward to existing implementation branch; main unchanged, no history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "9664707d5fb12b709424ef0ae8ce45bed2ce77c4"
+      }
+    },
+    {
+      "implementation_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+      "implementation_tree": "3fa27a5d7127fcecc9caa1fcc8cdc4ab62003b39",
+      "preserved_previous_head": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 1473,
+      "tests": 1721,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Locked full suite and independent JUnit parse; clean source-bound offline gate; Ruff/planning/DAG/source and exact artifact hygiene; fresh frozen archive installation followed by installed wheel execution outside checkout: migration0012, offline4fills0restart, protected hold/recovery and actual Research, sealed runtime/functional shadow. No new CI result claimed.",
+      "acceptance_note": "Implementation checkpoints and finite local functional proof; genuine funded/forward/venue/intended-host evidence, immutable full deployment images, owner pilot/class grants and selected-application commissioning/migration/deployment remain unfinished. No paid/private/live/broader deployed authority granted.",
+      "next_work": "Close T17 connectivity/approved funding/host; collect real T18 forward period and owner-selected T19 read-only conformance in parallel; T21 immutable intended-host proof can proceed independently. T20/T22 remain prerequisite and owner-authority gated.",
+      "full_junit": "/tmp/trade-graph-gates-r2-full.xml",
+      "acceptance_report": "/tmp/trade-graph-gates-r2-acceptance.json",
+      "installed_proof": "/tmp/trade-graph-gates-r2-install-4cwq5kue/installed-work/installed-proof.json",
+      "publication": {
+        "target_branch": "cursor/trade-graph-r1-548a",
+        "status": "published_source",
+        "transport": "Normal fast-forward; main unchanged; no merge/history rewrite",
+        "published_at": "2026-10-02",
+        "verified_pushed_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+        "documentation_follows_verified_source": true
+      }
+    },
+    {
+      "implementation_commit": "959d2cd67dffa4d30cc840916b83f507c7212780",
+      "implementation_tree": "78756537f3ce158488123ccc9efd62f911499165",
+      "preserved_previous_head": "264e7b0686979310c77c2e6a1848474c61ab61f4",
+      "python": "3.12.14",
+      "uv_lock_sha256": "1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39",
+      "baseline_tests": 1721,
+      "tests": 2057,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "mapped_tests": 464,
+      "applicable_acceptance_cases": 40,
+      "accepted_cases": 40,
+      "gate_complete": true,
+      "validation_scope": "Frozen clean full suite and independent JUnit parse; clean identical source-bound offline gate; Ruff source/tests/four verification scripts, ten planning tests/DAG and tracked/staged/exact artifact hygiene; fresh frozen archive environment and offline built/installed wheel outside checkout, migrations through 0013, four offline fills with zero restart/provider calls, backup/restore and confined selected application effects/migration/restart; actual final immutable Docker image with four inspections, 30 OS and five loader attacks, lost-ack fill, independent management/rollback/restart and fixed protected service boot. No new CI result claimed.",
+      "acceptance_note": "Local implementation preparation only; unsupported native financial contracts, authenticated economic producers/live mappings, production plugin/application commissioning/routing, funded provider/forward/venue evidence, intended-host proof and owner pilot/code-class authority remain open. No paid/private/live operation or production/broader Engineer grant.",
+      "next_work": "T17 approved public/funded/intended-host setup, then genuine untouched T18 forward collection and separately authorized T19 conformance; T21 intended-host verification independently. Implement remaining native financial/producer/production integration contracts before T20/T22 admission.",
+      "full_junit": "/tmp/trade-graph-takeover-final.xml",
+      "full_junit_sha256": "ca7b00bc37361843fadcc445788a8ff7112c78d4837635325bfbd7872cb9a622",
+      "acceptance_report": "/tmp/trade-graph-takeover-final-acceptance.json",
+      "acceptance_report_sha256": "db0139ba8a206815f4a55fc32522dd56aa9c1823e61c8f41ce6348e469d12236",
+      "installed_proof": "/tmp/trade-graph-takeover-installed-dnfyc7dj/installed-work/installed-proof.json",
+      "installed_proof_sha256": "931b9f60338768b030def5eb2150f18ad893866cff6e77f09eb94ec952b00dfe",
+      "installed_archive_sha256": "60a1560c1438d5ac61583e997dde7b75891c4adfe17f80206d85e8a2667b8f00",
+      "installed_wheel_sha256": "a8ba88bc814bcdb9e2a8d374e90a0cb92c74c6d13c97f6fad89579a4cf118c9a",
+      "image_pin": "/tmp/trade-graph-final-image-20261004-959d2cd/image-pin.json",
+      "image_id": "sha256:af4e55b39b365de186ee1de09c88680749ee3aabfedd96a5fea6bb7c9578a6ee",
+      "image_archive_sha256": "83703804372b9b1b9472d0d7d660a16e7e719e20a0dcc33380b4b25b7b5a3b06",
+      "image_seal_sha256": "88b69aa9fa112b57c8d80b37360f47066e13e902a242775d6049299977b288df",
+      "image_proof": "/tmp/trade-graph-final-image-proof-20261004-959d2cd/proof.json",
+      "image_proof_sha256": "223ae95280a3e43c042489a5a30ab910129a8a1cc0f2ae8148580c209ce73fda",
+      "public_probe_status": "three opt-in official GETs failed ProxyError/proxy_connection_failed; no response digests",
+      "publication": {
+        "target_branch": "codex/orchestrator-takeover-2026-10-04",
+        "status": "local_only",
+        "documentation_follows_verified_source": true,
+        "push_or_merge_performed": false
+      }
+    }
+  ],
+  "orchestration": {
+    "started_at": "2026-10-04T12:49:10.945883Z",
+    "integration_owner": "codex-orchestrator",
+    "integration_branch": "codex/orchestrator-takeover-2026-10-04",
+    "base_commit": "1cb4e5af401ba79b22705a677af388ad03acfbab",
+    "state": "checkpoint_complete",
+    "round": 4,
+    "workstreams": {
+      "T17": "next_operations",
+      "T18": "next_economic_producers",
+      "T19": "next_native_accounting",
+      "T20": "next_pilot_controls",
+      "T21": "next_deployment",
+      "T22": "next_application_engineer"
+    },
+    "authority": "Repository development, synthetic local runtime/container checks and approved public observations only; no paid/private/live/production authority.",
+    "shared_contracts": "Root additive 0014 immutable incident/checkpoint, 0015 original paper fee holds, 0016 protected budget origins; isolated source streams integrated and reviewed.",
+    "finished_at": "2026-10-04T14:49:19.271754+00:00",
+    "source_commit": "153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c",
+    "review": "docs/reviews/2026-10-04-next-contracts.md",
+    "execution_note": "All six local implementation and independent-review streams integrated and idle; root frozen full/gate/installed/image/hash verification completed. Actual acceptance and owner authority remain open. 2026-10-05: all 26 linked workspaces independently audited, no omitted implementation; integrated source published and exact remote 48fecba verified. Final publication documentation follows; acceptance unchanged.",
+    "publication": {
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "canonical_branch": "cursor/trade-graph-r1-548a",
+      "status": "published_source",
+      "transport": "GitHub HTTPS; new integration branch; existing implementation branch is the normal fast-forward publication target; no force push or history rewrite",
+      "published_at": "2026-10-05",
+      "verified_pushed_commit": "48fecba2c62df14fa1b56dbcd653f9ec381c79de",
+      "documentation_follows_verified_source": true,
+      "push_or_merge_performed": true,
+      "push_performed": true,
+      "merge_performed": false,
+      "main_unchanged": true,
+      "audit": "docs/reviews/2026-10-05-publication-audit.md",
+      "workspaces_audited": 26,
+      "unintegrated_deliverables_found": 0,
+      "ci_outcome": "not_verified_github_actions_api_forbidden"
+    }
+  },
+  "orchestration_history": [
+    {
+      "started_at": "2026-10-02T11:28:27Z",
+      "integration_owner": "codex-orchestrator",
+      "integration_branch": "codex/orchestrator-continuation",
+      "base_commit": "4bf8ef74eaca7d76be8eb49aecb0755f8ad4d0db",
+      "state": "checkpoint_complete",
+      "workstreams": {
+        "T17": "t17_operations",
+        "T18": "t18_evaluation",
+        "T19": "t19_adapter",
+        "T20": "t20_pilot_gate",
+        "T21": "t21_kernel",
+        "T22": "t22_engineer"
+      },
+      "authority": "Repository development and credential-free/public checks only; paid, private venue and live authority unchanged.",
+      "finished_at": "2026-10-02T13:35:20Z",
+      "source_commit": "d0e63aa07f2c4d00b48816a0c9bd62f08e13da90",
+      "execution_note": "All six task agents finished implementation and independent reviews and are idle. Root integrated/verified/published the checkpoint. External observation and production authority gates remain pending.",
+      "round": 2,
+      "start_checkpoint": "0eb0bdf343259eba1f6dc838c56ea0de66f9dcd6"
+    },
+    {
+      "started_at": "2026-10-04T10:40:40Z",
+      "finished_at": "2026-10-04T12:15:02.524066Z",
+      "integration_owner": "codex-orchestrator",
+      "integration_branch": "codex/orchestrator-takeover-2026-10-04",
+      "base_commit": "264e7b0686979310c77c2e6a1848474c61ab61f4",
+      "state": "checkpoint_complete",
+      "round": 3,
+      "source_commit": "959d2cd67dffa4d30cc840916b83f507c7212780",
+      "workstreams": {
+        "T17": "t17_operations",
+        "T18": "t18_evaluation",
+        "T19": "t19_adapter",
+        "T20": "t20_pilot_gate",
+        "T21": "t21_kernel",
+        "T22": "t22_engineer"
+      },
+      "authority": "Repository development and credential-free/public checks only; paid/private/live/production authority unchanged.",
+      "execution_note": "All six local implementation and independent-review streams integrated and idle; root combined verification completed. Actual acceptance and owner-authority gates remain open.",
+      "review": "docs/reviews/2026-10-04-orchestrator-takeover.md"
+    }
+  ],
+  "hourly_history_continuation": {
+    "status": "complete",
+    "owner": "codex-orchestrator",
+    "branch": "codex/kraken-hourly-history-2026-10-06",
+    "base_commit": "9dedf976ef18944e96e7127ca1e2ce7006d0d243",
+    "task_scope": "Dependency-ready continuation of completed T04/T10 runtime history inputs, serving T17; no task acceptance transition",
+    "dependencies": [
+      "T04",
+      "T10"
+    ],
+    "contracts": "docs/superpowers/plans/2026-10-06-kraken-hourly-history.md",
+    "authority": "Public data and synthetic source/test work only; no private requests, paid calls or live trading",
+    "source_commit": "ce4dbb7cca688a657e65095bd3d5eabb435ab166",
+    "evidence": [
+      "354 relevant WSL2 Python 3.12.15 tests passed; exact Decimal/history/restart/retained context and existing controls verified",
+      "Full src/tests Ruff, 23-task DAG, ten planning checks, independent reviews and repository/staged hygiene passed",
+      "Offline wheel build and isolated locked-dependency installed wheel smoke passed",
+      "Actual public-only two-GET smoke retained 60 completed candles per pair, zero missing requested slots, in a disposable paper database",
+      "Historical authenticated read-only observation recorded using redacted retained evidence; no new private account request"
+    ],
+    "acceptance_transition": false,
+    "pending": "T17\u2013T22 acceptance, funded/forward economics, full venue conformance, intended-host/protected-image and live authorization unchanged",
+    "guide": "docs/KRAKEN-PRICE-HISTORY.md",
+    "publication": {
+      "target_branch": "codex/orchestrator-takeover-2026-10-04",
+      "status": "published_verified",
+      "verified_pushed_commit": "25611438809ecadb3436c7338b0378b36efc4a83",
+      "published_at": "2026-10-06",
+      "documentation_follows_verified_source": true,
+      "force_push": false,
+      "main_unchanged": true,
+      "ci_outcome": "not_rerun_or_verified"
+    }
+  },
+  "research_diagnostic_continuation": {
+    "status": "checkpoint_complete",
+    "owner": "codex-orchestrator",
+    "branch": "codex/research-diagnostic-2026-10-06",
+    "base_commit": "e920cb7",
+    "dependencies": [
+      "T04",
+      "T10",
+      "T16"
+    ],
+    "task_scope": "Owner-requested bounded public-data/official subscription Research diagnostic serving T17; acceptance unchanged",
+    "authority": "Public Kraken/FX, documented local subscription metadata, one zero-retry Research inference only if safely verified; no private Kraken, live trading, API spend or purchases",
+    "evidence": [
+      "WSL git pull --ff-only preserved local commits and reached e920cb7",
+      "Real public collection inserted 168 completed hourly candles per BTC/USD and ETH/USD, zero gaps; single public-data tick created zero decisions",
+      "Consistent backups and exact before/after comparisons preserved existing financial/authority/expense state, private Kraken evidence, progress history and owner-session bytes",
+      "Official Codex 0.125.0 ChatGPT account and quota verified without inference; built-in zero-retry override unsupported; Claude Code 2.1.280 logged out",
+      "Public-only packet/schema prepared privately; Research inference attempts 0, actual model/result none; unknown subscription/controller usage/cost retained as unknown",
+      "162 targeted locked WSL tests passed; dashboard restored using same database/session, HTTP 200 in WSL and Windows",
+      "Full source/test Ruff, 23-task planning validator, ten directly invoked planning tests, repository/staged secret hygiene and diff checks passed; initial planning pytest invocation error corrected"
+    ],
+    "ai_status": "blocked_before_inference",
+    "source_commit": "e920cb7",
+    "acceptance_transition": false,
+    "review": "docs/reviews/2026-10-06-research-subscription-preflight.md",
+    "next_work": "Official Claude subscription login, verify included quota and disabled extra usage, then verify documented zero-retry/no-fallback/no-tool structured invocation; refresh public inputs. No continuous/runtime acceptance."
+  },
+  "owner_startup_continuation": {
+    "status": "implementation_checkpoint",
+    "owner": "codex-owner-startup",
+    "branch": "codex/start-controls-2026-10-06",
+    "base_commit": "937437e708bda23a0286de7d9c10fa4e6de9b219",
+    "source_commit": "b1ca4c5c7612f1ececa207aa2ed900da36c13395",
+    "authority": "Source/scripted credential-free tests and readonly official CLI/app metadata only; live disabled, no private Kraken/orders/withdrawals/API billing/purchases. One conditional Research call refused before dispatch.",
+    "final_scoped_tests": 435,
+    "final_scoped_failures": 0,
+    "final_scoped_skips": 0,
+    "combined_collected_cases_covered": 2998,
+    "verification_basis": "Frozen 90d4f55 full run: 2,905 passed and one stale test assertion failed. Corrected 98af9a4 unit/funded follow-up: 227 passed. Final b1ca4c5 combined regressions: 435 passed. All 2,998 collected cases covered across these runs; no clean monolithic final-source full pass claimed.",
+    "subscription_status": "blocked_before_inference",
+    "research_actual_model": null,
+    "research_result": null,
+    "research_inference_attempts": 0,
+    "continuous_paper_ai_run": false,
+    "live_enabled": false,
+    "live_commissioned": false,
+    "automatic_optimisation": false,
+    "public_history_refreshed": false,
+    "blockers": [
+      "Codex built-in zero retries remain unsupported in current official 0.160.1.",
+      "Windows Codex 0.125.0 login status fails the current ultra configuration; current CLI login is unverified and earlier ChatGPT evidence is historical.",
+      "Windows Claude 2.1.280 is logged out; native 2.1.285+ and disabled extra usage are required.",
+      "Native official login, root pin and intended-image isolation proof are absent.",
+      "Subscription-specific protected provider-egress assembly is unimplemented and unverified."
+    ],
+    "quota": {
+      "source": "read-only official shared-account metadata",
+      "exact_readings": "retained privately; excluded from public status",
+      "shorter_window": "unavailable",
+      "billing_evidence": "included subscription and no spendable-credit admission checked without token extraction"
+    },
+    "usage_cost_attribution": "Unknown, not free; no Research inference receipt or shared-fee settlement is attributed.",
+    "preservation": "All 75 main and two progress tables unchanged except additive 0018; all 30 protected contents and modes unchanged; integrity checks pass. Windows local changes untouched; consistent private backups retained.",
+    "acceptance_transition": false,
+    "review": "docs/reviews/2026-10-06-start-controls.md",
+    "publication": "local only; no push; final sanitized documentation checkpoint follows source"
+  },
+  "normal_paper_preparation": {
+    "status": "prepared_awaiting_owner_green_light",
+    "owner": "codex-root",
+    "branch": "codex/normal-paper-2026-10-07",
+    "source_commit": "fbed4be",
+    "original_checkpoint_preserved": "e36e447",
+    "review": "docs/reviews/2026-10-07-normal-paper-operation.md",
+    "provider": "codex_subscription",
+    "model_configured": "gpt-6.1-sol",
+    "cli_version": "0.160.1",
+    "authentication": "chatgpt_verified",
+    "actual_image_isolation_checks_passed": 9,
+    "production_inspection_passed": true,
+    "dashboard_status": "STOPPED",
+    "owner_hold": "MANAGE_ONLY; do not start until explicit owner green light",
+    "automatic_optimisation_configured": true,
+    "inference_attempts": 0,
+    "research_result": null,
+    "trader_decision": null,
+    "orders": 0,
+    "fills": 0,
+    "graph_started": false,
+    "usage_cost_attribution": "unknown; exact private account metadata excluded from Git",
+    "live_enabled": false,
+    "api_billing_enabled": false,
+    "acceptance_transition": false,
+    "publication": "sanitized final documentation checkpoint; remote verification reported separately"
+  },
+  "normal_paper_operation": {
+    "status": "running_with_retained_departmental_failures",
+    "owner": "codex-root",
+    "branch": "codex/normal-paper-2026-10-07",
+    "first_deployed_source": "6bf6697",
+    "original_checkpoint_preserved": "e36e447",
+    "review": "docs/reviews/2026-10-07-morning-paper-operation.md",
+    "provider": "codex_subscription",
+    "model_pinned": "gpt-6.1-sol",
+    "provider_model_echo": null,
+    "fallback_profiles": [],
+    "cli_version": "0.160.1",
+    "authentication": "chatgpt_verified",
+    "quota_policy": {
+      "enabled": true,
+      "reserve_remaining_percent": 30,
+      "execution_headroom_percent": 10,
+      "admission_requires_remaining_percent_strictly_greater_than": 40,
+      "exact_readings": "private",
+      "shorter_window": "unavailable",
+      "exact_all_window_guarantee": false
+    },
+    "graph_started": true,
+    "dashboard_status": "RUNNING",
+    "automatic_schedules": true,
+    "mandatory_one_cycle_stop": false,
+    "initial_invocations": 5,
+    "initial_application_attempts": 7,
+    "research_result": "validated and applied; two attributed findings",
+    "trader_decision": "validated and applied no_action",
+    "learning_result": "validated and applied",
+    "initial_leader_result": "failed after three native attempts; cause unknown",
+    "initial_optimisation_result": "completed inference; applied result failed evidence-membership validation",
+    "orders": 0,
+    "fills": 0,
+    "native_internal_retry_count": null,
+    "usage_cost_attribution": "unknown fields and shared costs remain unknown; exact private receipts excluded",
+    "live_enabled": false,
+    "api_billing_enabled": false,
+    "acceptance_transition": false,
+    "publication": "sanitized final checkpoint; exact remote verification reported separately",
+    "deployed_source": "6bf6697",
+    "tested_update_source": "c056faf",
+    "update_deployed": false,
+    "update_blocker": "protected financial manifest continuity transition is unimplemented",
+    "update_startup_result": "FAILED StaleState before heartbeat; no new inference",
+    "recovery": "exact previous verified image and matching pins; current database/witness retained, no financial rollback",
+    "current_invocations": 5,
+    "current_application_attempts": 7,
+    "newer_retry_executed": false,
+    "source_files_verified_against_active_image": 199
+  },
+  "live_dashboard_continuation": {
+    "branch": "codex/live-dashboard-20261009",
+    "executable_source": "c488e67",
+    "image_id": "sha256:34abee6a44d00647f3e53bc8fd1febce6b7399fa18875146309f9677969c477b",
+    "focused_tests": 302,
+    "normal_paper_resumed_at": "2026-10-09T13:56:21.883521+00:00",
+    "new_ai_pause_seconds": [
+      587.292884,
+      172.396283
+    ],
+    "database_witness_key_and_history_preserved": true,
+    "owner_expense_evidence_entered": false,
+    "unknown_economic_coverage": true,
+    "live_enabled": false,
+    "billed_and_extra_routes_enabled": false,
+    "strategy_and_schedules_changed": false,
+    "acceptance_transition": false
+  }
+}

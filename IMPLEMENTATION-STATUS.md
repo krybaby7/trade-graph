@@ -1,55 +1,1742 @@
-# Implementation status
+# Branches consolidated and the engine runs on macOS (D310–D318), not deployed — 2026-10-24
 
-Updated: 2026-09-29. **Plan and orchestrator handoff delivered; trading runtime not implemented.**
+Branch `mvp/consolidate-and-macos`, a local session on a Mac (Apple Silicon, macOS 26.5, Homebrew CPython 3.12.12), started from `claude/day-trader-engine-20261012` at `4e54c6d`. **Nothing was deployed, installed or pushed;** no paid, model-provider or exchange-account call was made and no order was placed. The only network calls were the paper service's public Kraken quote and Frankfurter reference-rate reads under `run --public-data`.
 
-## Default and next action
+- **Merge** ([STRATEGY-RESEARCH-LEDGER.md](docs/research/STRATEGY-RESEARCH-LEDGER.md) timeline, 2026-10-24): `codex/orchestrator-takeover-2026-10-04` merged with `--no-ff` (`5d16490`), bringing the research ledger, the Hyperliquid wallet study and one ignore rule; no conflict and no source, dependency or migration change. The ledger's provisional owner decisions D310–D314 were transplanted into [DECISIONS.md](docs/DECISIONS.md) (`b81b656`). The exchange-reference branches the ledger names (`codex/exchange-strategy-reference-2026-10-21`, `codex/exchange-reference-next-start-20261021`) were never pushed to GitHub and exist only on the owner's Windows checkout, so `docs/strategy/KRAKEN.md` and `OKX.md` are still not on this lineage.
+- **macOS, D315–D319** ([MACOS-DEVELOPMENT.md](docs/MACOS-DEVELOPMENT.md)): the database lease moved to a sidecar file `<database>.lock` because `flock()` and `fcntl()` share one lock table on macOS and the BSDs; Apple's root links `/etc`, `/tmp` and `/var` are canonicalised in the no-follow walk and nothing else is; one explicit switch, `TRADE_GRAPH_UNCONFINED_CHECKER=development`, lets exactly two trusted data-only children, the artifact checker and the ledger replay probe, run with portable limits where seccomp is absent, recorded as `unconfined-development-v1` (filesystem, network and process creation `unrestricted`) in every attestation, with `confined: false` from the runner and `checker_confinement` in the demo report, forwarded by the acceptance mapper, and honoured only inside a child the bounded runner marked `TRADE_GRAPH_CONFINED_CHILD=1`; resource samples fall back to `threading` and `getrusage` without procfs; the runtime inventory prunes `site-packages` before refusing linked directories (D319), because Homebrew's Python links it into the standard library tree. Children that execute candidate code (strategy, department, controller, plugin and projection children) never run unconfined: the installed-image attack probe is candidate code that tries to `kill` its parent to prove confinement, and a first, wider version of the switch let it SIGKILL the test process twice (exit 137) before the scope was narrowed. Where seccomp exists the switch changes nothing; without it a machine without seccomp still fails closed.
+- Tests, written first: `tests/integration/test_database_lock_sidecar.py`, `tests/unit/test_secure_paths_macos.py`, `tests/unit/test_checker_development_confinement.py` (including that a candidate-code child never unconfines and that the switch alone cannot unconfine a non-child process), `tests/unit/test_resource_sample_fallback.py`, `tests/unit/test_runtime_inventory_links.py`, and the mapper's forwarding test in `tests/unit/test_offline_acceptance.py`. The `unhurried` wrapper in `test_financial_transition.py` forwards the runner's new keyword. Kernel-only isolation cases skip without seccomp with the reason shown; parent-side limit tests and both end-to-end demo tests run in development mode there; the privileges tamper in `test_version_lifecycle.py` now flips the recorded value so it tampers on both platforms. The offline-module allowlist admits `sys` for `artifact_files`.
 
-Paper capital: USD10,000; initial reporting: EUR. Actual AI/operating spend requires separate owner configuration. No paid calls or live trading have been enabled. Read IMPLEMENTATION-START-HERE.md and begin T00; all 23 runtime tasks remain `todo` in planning/progress.json.
+Evidence (this Mac; `uv sync --frozen --group dev --python 3.12` from the unchanged lock; `TRADE_GRAPH_UNCONFINED_CHECKER=development` where stated):
+- Before the fixes, on the untouched lead branch: `uv run pytest tests/unit tests/property`: 2,566 passed, 14 failed, 11 skipped, all 14 from the four causes above; `trade-graph demo --offline` crashed at the Engineer step (`KeyError: '_status'`); `trade-graph run` refused with `StaleState` on a fresh database.
+- After: `trade-graph demo --offline` (switch): exit 0, `passed: true`, every check true, `checker_confinement: unconfined-development-v1`. `trade-graph init`, `doctor`, `report`, `scorecard`, `run --mode paper --once` and `run --public-data --max-ticks 3` (3 ticks, 2 Kraken observations, 1 reference FX rate, USD 10,000 valued at EUR 8,934.20, `failures: []`) all completed; the sidecar `trade_graph.sqlite.lock` (0600) sits beside the database. The dashboard was served and signed in at 127.0.0.1:8000 on the lead branch before the fixes; its code is unchanged.
+- `python scripts/verify_offline_acceptance.py --report` (switch): **463 passed, 1 skipped, 0 failed** of 464 mapped tests; 39 of 40 cases passed and A29 stays `unverified` because its kernel-only test skips here, so `gate_status: incomplete` by design on a Mac; `offline_controls.confinement` names the switch.
+- Full suite (switch), run as seven parallel partitions because one end-to-end pass took over an hour here and two attempts were SIGKILLed by the attack probe before the switch was narrowed: **8,361 tests collected (the same count as GitHub's `test` job), 7,983 passed, 303 failed, 48 errors, 27 skipped**. Every non-pass sits in 42 modules of the protected kernel, plugins, subscription CLI, deployment image, systemd binding and procfs-dependent paths. The same 42 modules on the untouched lead branch (`4e54c6d`, its own venv, no switch) have 530 non-passes; this tree has 351, and no module is worse. Causes on a Mac: children that execute candidate code fail closed by design (D317), `/proc/self/fd` and `/proc/self/mountinfo` reads, `systemctl`, the native Codex/Claude CLI requirement, Linux x86-64 wheel pins. They are read on Linux CI.
+- `uv run ruff check src tests` and the four scripts: all checks passed. `python3 scripts/check_repository_hygiene.py` and `--staged` before each commit: passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: OK. `uv lock --check`: lockfile unchanged. `uv run alembic heads`: one head, 0052.
 
-## Published and verified checkpoint
+Missing credentials and real-data checks: none were needed, and nothing below changes. A Mac proves the loop's logic, accounting and recovery, not confinement: the kernel-only tests skip here, and the protected image build and the live gates do not read the switch. GitHub's `test` job on Linux x86-64 remains the confinement evidence for this branch once it is pushed.
 
-The complete planning package was published to `main` at commit `dab766f7c362577a792e84c1b5a21227316e1860`. The documentation branch `docs/implementation-plan-2026-09-29` preserves the same checkpoint. This status update records verification after that publication. Always inspect newer commits before resuming; never reset current work to this anchor.
+Next: pushing and fast-forwarding `main` on GitHub are the owner's call. Then the ledger's section 9 in order: the grammar and replay extension (60-minute and daily candles, lookbacks beyond 500 bars, maker take-profit fills), the frequency budget, the three slow families on two years with untouched confirmation windows. The exchange-reference branch needs a push from the Windows checkout before it can join this lineage.
 
-GitHub Actions full-checkout validation succeeded for that commit:
+---
 
-- Run: https://github.com/krybaby7/trade-graph/actions/runs/36618799789
-- Job: `planning`, ID `109578591784`, conclusion `success`.
-- Specification-reference and task-dependency check: success.
-- Planning-utility tests: success.
-- Next-task prompt generation: success.
-- Illustrative cost calculation: success.
+# L2 part 3: Perplexity works for real (D231); L3 preparation started, not deployed — 2026-10-21
 
-The successful job and individual step conclusions were read through the GitHub connector. These are planning checks, not tests of an implemented trading runtime.
+Branch `claude/day-trader-engine-20261012`, a local session on the owner's PC, with the owner's yes to start L3's preparation and to run Research and the Leader on Perplexity from day one ("test call first", then "fix it first"). **Nothing is installed yet;** the old installation stays stopped. Real paid calls: three Perplexity smoke rounds on the D125 test key, about USD0.08 in receipts; no exchange call, no order.
 
-## Included
+- **D231** ([PERPLEXITY-RESEARCH.md](docs/PERPLEXITY-RESEARCH.md) "Confirmed at L2"; [L2.md](planning/handoffs/L2.md) part 3): the first real Agent API call was refused ("custom function name \"web_search\" is reserved"); the software search function is now `search_the_web` (`adapters/models/perplexity.py`, the instructions in `application/web_research.py`, `focus_research.py`, `leader_news/rounds.py`, `contracts/leader_news.py`), functions named after any Perplexity tool are refused before sending, and the software function in Perplexity's usage report is not a billed provider tool. The smoke's output cap is 3,000 (Claude spent 800 of 803 tokens reasoning at the old 800). The third smoke completed: one search, five sources, two findings, USD0.0435. Price cards re-checked on the official pages and renewed as cards verified 2026-10-21. `scripts/build_protected_image.py` allows the docker build an hour (10 minutes timed out twice on this PC).
+- **L3 preparation:** the protected image builds from a new folder `/opt/trade-graph-subscription/l3-20261021/` (root), reusing the reviewed native inputs of 2026-10-07 (`native-inputs-normal`) with `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` for the uv-managed Python. The old installation's last state is `partial-recovery-20261008T170759Z/state` with owner folder `live-dashboard-20261009/owner-r5`; its pause row reads RUNNING (owner, 2026-10-09), so step 4's owner pause is needed before the books move. Not in the checklist and needed: a fresh `subscription-isolation.json` from the new image (the miss behind the 2026-10-09 refusal), a new proxy image and container for the `--route` flags, and `sqlite3` (absent in WSL) replaced by Python's backup at step 7.
+- Tests: the adapter's tests name `search_the_web`, plus a refusal test for each Perplexity tool name and a usage-report test; the Perplexity, research, focus, Leader-news and spending tests pass; ruff is clean.
 
-Architecture, role contracts/triggers/tools, native accounting and EUR valuation, cost receipts/budgets, reliable execution and pause semantics, learning/provenance, actual automatic artifact-engineering lifecycle, integrations with official sources, cost model, dashboard/runbooks and phased acceptance gates. Machine-readable dependency/progress manifests and standard-library planning utilities are included.
+---
 
-## Other checks performed
+# L2: two years on Kraken and OKX, and market-type rules version 2 (D230), not deployed — 2026-10-21
 
-Existing repository inspected before edits; only the placeholder README was present. Current official model/search and reference exchange pricing reviewed; FX and hosting values remain explicitly hypothetical allowances.
+Branch `claude/day-trader-engine-20261012`, a local session on the owner's PC. **Nothing was deployed or installed;** no paid, model-provider, exchange-account or network call was made, no order was placed, and the trading system was not started. The owner was told each `trade-graph` command before it ran (D263).
 
-`python3 scripts/test_planning.py`: 10 local tests passed, covering DAG validation, ready-task selection, invalid dependencies/completion, exact cost totals, model/cadence sensitivity and invalid monetary inputs. The planning scripts also compiled locally.
+- **L2 part 1b** ([L2.md](planning/handoffs/L2.md)): both starting strategies replayed on BTC, ETH, SOL, XRP and DOGE over two years of real Kraken and OKX prices (tune 2024-11-01 to 2026-04-01, confirm 2026-04-01 to 2026-10-01, every cost profile, the new market-type split): 40 runs, 120 reports, **0 profitable** (best −571); no edge before fees; both lose most in sideways markets. It also found that `market-type-rules@1` leaves a coin `unclear` for about 36 days after one missing hour.
+- **D230, market-type rules version 2** ([MARKET-TYPES.md](docs/MARKET-TYPES.md), "Version 2"): `market-type-rules@2`, now the default for live labels, the lab and the practice range, skips a hole of up to 6 missing hourly slots with a candle on both sides, at most 24 skipped slots in a label's 887-slot look-back (`kernel/market_type.py` `bridged_slots`, `look_back_slots`; `application/indicators/rolling.py` `rolling_latest(skip=...)`; `application/market_types/labeller.py`). `@1` is unchanged with its pinned hash. Real data: on Kraken BTC/USD over 17 months, `unclear` trades went from 82 to 0 with identical trades and result.
+- Tests: new `tests/unit/test_market_type_gap_bridging.py` (written first; failed at import before the change), `tests/integration/test_market_type_gap_bridging_labels.py`, a Hypothesis property test with random holes in `tests/property/test_market_type_properties.py`; tests that relied on version 1 being the default now name it (`test_market_type_labels.py`, `test_practice_range_market_types.py`) or expect version 2 (`test_market_type_store.py`, `test_market_types_cli.py`, `test_market_type_rules.py`). The 79 related test files pass; ruff is clean; the full suite on this PC (`uv run pytest -p no:cacheprovider -q -rf`, CPython 3.12.15, WSL, 50 min): **8,427 passed, 0 failed, 16 skipped**. GitHub's `test` job runs on the push.
 
-`python3 scripts/cost_model.py`: executed locally; lean paid-AI/search estimate USD3.4848, EUR3.13632 at hypothetical EUR0.90/USD; USD10,000 virtual starting balance. These totals depend on the documented request/token assumptions and are not a usage or profitability guarantee.
+Next: the owner's further proposal before L3; then L2's remaining free checks and L3.
 
-The local environment could not clone GitHub because network/DNS access was unavailable. Local utility tests used the generated scripts/manifests. The successful GitHub Actions run subsequently provided complete-checkout path validation and ran those utilities in the published repository.
+---
 
-## Not tested or implemented
+# Cloud wave 13 merged (C13), not deployed — 2026-10-21
 
-No real model request, exchange authentication/order, strategy profitability, runtime ledger/recovery, sandbox deployment, paper soak or live pilot was tested. A01-A44 are future acceptance requirements, not completed runtime tests. No real API/trading credentials were configured.
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift of 2026-10-20. The merged result was pushed as the candidate branch `claude/night-candidate-wave13`; GitHub's `test` job, the full suite, passed on it (`69926c3`), the same commit was pushed to the integration branch (a fast-forward, which closed #30 as merged), and one docs-only commit on top records the result. Merged with `git merge --no-ff` on the integration head `df988da` (wave 12 merged and fully tested at `bd405c7`/`e006d07`, plus the night report's commits): W13-A C13 `50b68cf` ([#30](https://github.com/krybaby7/trade-graph/pull/30), package head `f8bd10c`, code `14808c0`); no integration fix. Decisions [D300–D304](docs/DECISIONS.md) are copied from `planning/handoffs/W13-A.md`. **Nothing was deployed or installed.** No paid, model-provider, Perplexity, Jev/TypeSafe, news-feed, Kraken, OKX or other network call was made, no order was placed and no key exists in the cloud; every candle, label, headline, Jev verdict, Leader round, desk answer, fill and report is synthetic and labelled `synthetic_fixture` or scripted, and the account and paper broker are scripted.
 
-## Commands available now
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C13 the Trading desk room and the scorecard by strategy** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md) "The Trading desk room", [SCORECARD.md](docs/SCORECARD.md), [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md) step 3 and "The Trading desk"): HQ's home tab gains a **Trading desk room** below the map (the left column on a desktop; the Trader's room on the map has a button that opens it). In plain words it shows the desk's **playbook** (for rising, sideways, falling and unclear markets: the tested strategy version it means to use or "wait in cash", the reason in its own words, the revision in force and the one it replaced), **today's choice per coin** (wait, buy dips, follow the trend or other, with the market type the desk saw then and the coin's label now; a label older than 2 hours or none is "not known", never a guess), the **strategy lab** (queued and running requests, the newest results with each report's trades and result after fees next to simply holding the coin, the tries per strategy family), the **Leader news the desk read** at its last turn (round, lab inbox, Jev's verdicts) and **what each strategy earned** in each market type. The **scorecard** now splits every trade by the choice behind its first buy: strategy version, market type at entry (the label at the fill) and the desk's stance, together and one by one, with exactly the same totals (D300; the kernel's `split_results`, unchanged; property-tested), in the JSON (`split`) and in three plain lines of `trade-graph scorecard --format text`. **Learning** reads that split under a new context key `scorecard`, so its lessons can say which choice earned or lost in which market (D301). The room is its own read, `GET /api/v1/hq/desk`, not part of HQ's snapshot (D302), and reading it starts and writes nothing. HQ's problems name a failing strategy-lab step in plain words ("the strategy lab's last step failed") and the Story lists the lab's finished requests (D303). No state migration (D304). Owner step at L3: step 3 adds `scorecard` to `allowed_context_keys.learning` (without it Learning answers as before, without the split); after L3, a look at the room on the phone and iPad, light and dark.
+
+Integration:
+- No conflict: the package was based on `e006d07`, and the only later integration commit (`df988da`) changes the night report. `pyproject.toml` and `uv.lock` are unchanged (`uv lock --check` passes; `uv sync --frozen --group dev --python 3.12` changed nothing). No integration fix was needed.
+- **Migrations.** None: W13-A's reserved 0053 stays unused, and `uv run alembic heads` still shows one head, **0052** (the chain ends 0042 → 0044 → 0050 → 0051 → 0052; the never-used 0043, 0045–0049 and now 0053 stay unused). The candle database schema is unchanged. Every state migration test, including the single-head checks, passes on the merged tree.
+- **Check 1, the new endpoint.** `GET /api/v1/hq/desk` is registered in `api/app.py` next to `hq_chart`, `hq_wakes` and `hq_plans` with the same `register(app, runtime, identity)` pattern: the handler first calls the same `identity(request)` as every HQ read (a bearer token or the `tg_session` cookie checked by `role_for_token`, 401 otherwise; CSRF applies only to non-GET), then returns `redact(desk(runtime))`, and the same middleware sets `Cache-Control: no-store` and the same CSP, frame and referrer headers. `desk()` reads inside one `runtime.database.snapshot()` (the read transaction HQ's other reads use, ended by a rollback) through the record packages' own read functions (playbook and stances, labels, `lab_context`, `news_context`, `PracticeRangeStore.run`, all `SELECT`s) and takes the split from HQ's existing 60-second trading cache (`hq_trading.facts`, the Money tab's scorecard). It imports no engine, scheduler, worker, provider or broker (an AST test). Tests: `test_reading_the_room_writes_nothing_and_starts_nothing` (the lab queue's and desk store's write methods raise if called; the database dump is byte-for-byte the same after three reads), `test_reading_hq_and_the_room_writes_nothing` (snapshot, Story and room), `test_any_signed_in_role_reads_the_room_and_nobody_else` (401 without a session, 200 and `no-store` for owner and reader, POST refused). The page fetches only `/api/v1/hq/desk` (added to the static test's fetch allowlist and HQ's read set). D302's deviation from "update the snapshot contract" is documented in `docs/HQ-DASHBOARD.md` (the data rule and the routes table, "any signed-in role", like HQ's other reads); the snapshot gains only vocabulary (`strategy_lab:`, `lab_result`, four glossary terms) and stays within its 80 KB budget (`test_hq_payload.py`). Accepted.
+- **Check 2, older records.** Scorecards are not stored as records of their own: the CLI, HQ's trading cache and Learning compute them on read, and `scorecard_sha256` is a self-hash of each computed document that no code stores or re-verifies (no table, migration, report or HQ record holds one), so no old stored scorecard can fail to verify. The change is additive (`split`); the golden fixture differs from the base only in `split` and `scorecard_sha256` (checked key by key). A database before 0052, 0051 or 0050 (tables dropped, the referring desk tables first) still renders HQ's snapshot and Story, the room (its parts say "isn't recorded in this database yet") and the scorecard with the same metrics and a split that names what it can't (`not_recorded`, `missing`, `no_day_plan`): `test_hq_older_databases.py`, `test_hq_desk.py::test_an_older_database_still_renders_the_room`, `test_scorecard_split.py::test_an_older_database_still_scores_and_names_what_it_cannot_split_as_such` (also before 0034). An edited, hash-checked label makes only the split unavailable, never the scorecard.
+- **Check 3, the L3 checklist.** Step 3 lists `"scorecard"` for `allowed_context_keys.learning`, alongside `"lab"`, `"playbook"` and `"news"` (with `"wake"` and `"practice_range"`) for the Trader; "The Trading desk" and "The configuration" sections say the same, and `ROLE_CONTEXT_KEYS["learning"]` gains `scorecard`.
+- Reviewed against the plan's rules and the package section: no key or private data (hygiene check, and the diff read), paid calls off, no real orders (the room and the split are reads; nothing refuses, approves or changes a plan, an order or the playbook, D280 item 5), no cap on agent activity (the room's and Learning's lists are display bounds with the rest counted, D116), and only reserved numbers (D300–D304; no migration). No dependency or price record changed. `kernel/` is unchanged; the protected scorecard (`application/scorecard.py`) changes, so the protected package fingerprint changes and the normal L3 re-pin (steps 2 and 3) covers it. No package edited a shared planning file.
+- C13 is a cloud package, not a task in `planning/tasks.json`: recorded here and on the status board only; `planning/progress.json` is unchanged, as for waves 8 to 12. Acceptance, per the package's "Done when": **met in source**: HQ's JS tests (105, 9 new for the room) and Chromium at phone, iPad and desktop sizes in light and dark (the package; rerun here at one phone and one desktop size) show the room on the scripted week within the payload budget (busiest synthetic room 62,699 bytes; the week's 11,508), and `tests/property/test_scorecard_split_properties.py` shows the split sums to the scorecard's totals (300 kernel examples, 25 ledger examples).
+- Build plan: status board rows W13-A and L3, the status paragraph, "In one minute", "Reserved numbers", "Known failures" and the L3 step.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the merge (`50b68cf`): `node --test tests/js/hq_*.test.mjs`: **105 passed, 0 failed** (96 before + 9 new in `hq_desk.test.mjs`).
+- On the merged tree, the related Python tests (159 files, 1,831 tests: W13-A's new tests; every HQ module, `tests/integration/test_hq_*.py`, `tests/test_hq_*.py`, `tests/unit/test_hq_*.py` with the JS runner, state, contract, copy, fixtures, payload, chart, plans, wakes, spending and no-safety-exit tests; the dashboard loop `tests/e2e/test_dashboard_loop.py`; the scorecard and `tests/unit/test_trade_metrics.py`; Learning and the subscription and runtime departments; the trading desk and its scripted week; market types; the strategy lab; the practice range; day plans and day-plan actions; every property test; every module that checks protected paths; every state and candle migration test with the single-head checks), `uv run pytest -p no:cacheprovider -rfs --junitxml`, one process: **1,831 passed, 0 failed, 0 skipped** (752 s, exit 0, at `69926c3`; a first run 00:07–00:20 UTC passed every test too, but its summary line was hidden by an extra `-q` on top of the project's own, so it was rerun for the exit code and counts).
+- Chromium (Playwright 1.56.1, `/opt/pw-browsers`; nothing installed) on the merged tree, as the W13-A handoff describes: the real app (`create_app`) served by uvicorn on 127.0.0.1 over W13-A's scripted week (synthetic records, frozen clock), signed in as the owner with a cookie session, the HQ tab at phone 390×844 and desktop 1280×900, each in light and dark: all five parts of the room drew `shown` (playbook revision 2, two coins, the lab, the news, the split row "dip-rebound@1 when sideways, buying dips: 2 trades (1 won, 1 lost) and 1 still held, result after fees −$7.05"), with every folded part opened no horizontal page or part overflow, no console error or warning, no request outside HQ's origin; the Trader's room sheet's button brought the room into view; the Money tab's scorecard still drew; backgrounds rgb(245, 247, 250) light and rgb(16, 23, 32) dark; the panel 358 px wide on the phone and 808 px on the desktop; the room 11,508 bytes and the snapshot 39,712 bytes as served. Not checked here: iPad sizes (the package checked them), Safari/WebKit, a real phone or iPad, real records.
+- `uv run ruff check src tests`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches. `uv run alembic heads`: one head, 0052.
+- Base: wave 12's full suite on `bd405c7` (GitHub's `test` job, check run 118896468198): **8306 passed, 0 failed, 18 skipped**. Collected on the merged tree: 8,379 tests, 55 more than the base's 8,324 (W13-A's 52 new tests, plus the JS runner's and the static test's cases for `hq-desk.js`).
+- **Full suite:** GitHub Actions `test` job (run 39519960563, job and check run 118961096365) on `69926c3` (`claude/night-candidate-wave13`: the merge and the fold), CPython 3.12.15, paid and live calls off, pytest 84 min 1 s (job 86 min, 00:13 to 01:39 UTC): **8361 passed, 0 failed, 18 skipped** (1 warning, the known duplicate-name `UserWarning` of `test_sqlite_image_runtime.py`); offline acceptance 464 of 464, gate complete; the artifact hygiene check passed; the `planning` check passed too. 8306 (wave 12) + 55 (W13-A's new tests and the cases for `hq-desk.js`) = 8361. No failure and no timing-dependent flake appeared, so nothing was re-run, fixed or reverted. The same commit was pushed to the integration branch; this docs-only commit records the result.
+
+Missing credentials and real-data checks: none needed for C13 in the cloud. Everything is synthetic and labelled; a scripted desk is not a model test and a test browser is not a real phone or iPad (only Chromium was available, not Safari/WebKit). The room and the split were seen only on synthetic records; the desk's first real playbook, stances and lab results appear after L3. Owner steps: at **L3**, step 3 adds `scorecard` to Learning's context keys, and the normal re-pin covers the package; after L3, open the HQ tab's Trading desk room once on the phone and iPad in light and dark.
+
+Open, for later work and the owner (the package's "not done, open or for someone else"):
+- **Owner questions:** none. W13-A says nothing needs the owner's decision.
+- Seen by W13-A, outside the package and unchanged: a stance's `news` count is the number of news references the desk named, not a check that they exist; the room shows the lab's `confirmation_offer` nowhere (the desk sees it in its own context); a Story group of lab results cut by a 72-hour page boundary shows as two items.
+- Still open from earlier waves: how long stances, labels and scans are kept; the step 17 decision after L3; the items in the build plan's "Later, not packaged"; the live pilot (T19) applies D248 to live orders through its own lifecycle (D260).
+
+Next: no cloud wave remains. The local real-data reruns on the owner's PC (a local session labels real coins and reruns the practice range so the reports split by market type; L2's coin scan, recordings, fee pages and paid smoke calls, each with the owner's yes), then **L3 with the owner's yes** ([L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md); step 3 now adds `lab`, `playbook` and `news` for the Trader and `scorecard` for Learning), then L4. Owner: nothing needed now.
+
+---
+
+# Cloud wave 12 merged (C12), not deployed — 2026-10-20
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift of 2026-10-20. The merged result was pushed as the candidate branch `claude/night-candidate-wave12`; GitHub's `test` job, the full suite, failed one test on the first candidate `c3212cf` (a test's setup, fixed in `44ad04b`) and passed on the second, `bd405c7`; that commit was pushed to the integration branch (a fast-forward, which closed #29 as merged), and one docs-only commit on top records the result. Merged with `git merge --no-ff` on the integration head `97664f6` (wave 11 merged and fully tested at `c6afa53`/`1afc10f`, plus the night report's first commit): W12-A C12 `abab5bd` ([#29](https://github.com/krybaby7/trade-graph/pull/29), package head `f19f85a`, code `4b6b809`); one integration fix, `44ad04b` (a test's setup, found by GitHub's full suite on the first candidate `c3212cf`). Decisions [D295–D299](docs/DECISIONS.md) are copied from `planning/handoffs/W12-A.md`. **Nothing was deployed or installed.** No paid, model-provider, Perplexity, Jev/TypeSafe, news-feed, Kraken, OKX or other network call was made, no order was placed and no key exists in the cloud; every candle, label, headline, Jev verdict, Perplexity answer and desk answer is synthetic and labelled `synthetic_fixture` or scripted, and the account and paper broker are scripted.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C12 one Trading desk** ([L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md) "The Trading desk", [EVENT-ENGINE.md](docs/EVENT-ENGINE.md), [LEADER-NEWS-ROUNDS.md](docs/LEADER-NEWS-ROUNDS.md)): the Trader is now the Trading desk. On every wake it sees each of its coins' market type (held, planned, focus, alarmed and the day's shortlist coins, at most 32 shown: `current` when the label is at most 2 hours old, otherwise `stale` or `missing`, never a guess), its playbook and the news: the Leader's newest round (summary, headlines, the desk's note and the strategy ideas addressed to it), a lab inbox of those ideas and Jev's verdicts and would-be alarms on its coins, shadow mode included. Its instruction (`DESK_WAKE_INSTRUCTION`, `prompts/trader.md`) says in plain terms: read each coin's market type, the lab and the news, choose per coin to wait in cash, buy dips, follow the trend or something else, use the lab to find and confirm better strategies, and weigh how often to trade, because fees decide most results. Its answer may revise its **playbook** (per market type the strategy versions it means to use, or "wait", each with a reason and the reports it rests on; stored append-only with who, when, why and the previous revision, readable at any past moment like lessons, D295) and give a **stance** per coin it considered (wait, buy dips, follow the trend or other, the market type it saw, the strategy version, the news it weighed and a one-sentence reason, D296). The Leader now sends strategy ideas to the desk (cost and quality ideas to Optimisation); an idea wakes the desk with a note and waits in its lab inbox, and the desk decides what to test: software never queues a lab run from an idea. Every installed day plan records the coin's market type at that moment, the playbook revision in force and the desk's stance (D298). **Software never refuses a day plan for not following the playbook or a market type** (D280 item 5, tested). Discretion stays real: no confidence threshold, committee or pass mark. A busy day's request is trimmed in a fixed, counted order so it stays under the 128 KiB bound (measured 99,604 bytes; 143,852 without the trim, D297). The desk's contract and package are protected paths (D299). State migration 0052. Owner step at L3: step 3 adds `playbook` and `news` to `allowed_context_keys.trader`.
+
+Integration:
+- **Integration fix `44ad04b` (a test's setup).** GitHub's full suite on the first candidate `c3212cf` failed one test, `tests/integration/test_hq_chart.py::test_an_older_state_database_without_alarm_day_plan_or_scan_tables_still_charts` (`sqlite3.IntegrityError: FOREIGN KEY constraint failed`): to imitate a database older than the day-plan, alarm and scan tables it drops them, but since 0052 an installed plan also has a row in `day_plan_desk_records`, which refers to `day_plans`. A database that old has no desk record either, so the test now drops `day_plan_desk_records` first. It passes on the base `97664f6`, failed on the merge in the container too, and passes with the fix (`test_hq_chart.py`: 23 passed); the HQ chart code is unchanged and no other test drops `day_plans`. W12-A's related set had not included the HQ chart tests.
+- No conflict: the package was based on `1afc10f`, and the only later integration commit (`97664f6`) adds the night report. `pyproject.toml` and `uv.lock` are unchanged (`uv lock --check` passes; `uv sync --frozen --group dev --python 3.12` changed nothing). `PROTECTED_PATH_PREFIXES` in `kernel/authority.py` gains `contracts/trading_desk.py` and `application/trading_desk/` after W11-B's lines; `ROLE_CONTEXT_KEYS["trader"]` gains `playbook` and `news`; `prompts/trader.md` and its copy in `runtime_artifacts.json` change together.
+- **Migrations.** `migrations/versions/0052_trading_desk.py` has `down_revision = "0051"` and is registered after 0051 in `migrate.py`. `uv run alembic heads`: one head, **0052**; the chain ends 0042 → 0044 → 0050 → 0051 → 0052, and the never-used 0043 and 0045–0049 stay unused. 0052 rebuilds `leader_round_requests` (no table refers to it, so the rebuild needs nothing around it; the 0039 statements stay exactly as merged) so a strategy idea may go to `trader`, and adds `desk_playbook_revisions`, `desk_stances` and `day_plan_desk_records`, all append-only. The existing 0039 test now checks that an idea for the Leader is refused (an idea for the desk is allowed since 0052, checked in `test_migration_0052.py`); the contract test `test_leader_news_contracts.py` changes the same way. Every state migration test (0025 to 0052, including the single-head checks) passes.
+- Reviewed against the plan's rules and the package section: no key or private data (hygiene check, and the diff read), paid calls off, no real orders (stances and the playbook are records; the desk's day plans go through the unchanged money-limit, riba and safety-exit checks), no cap on agent activity (`stances` has a per-answer envelope of 32, like `day_plans`; `market_types` and the `playbook` and `news` keys are display bounds with the rest counted, D116), and only reserved numbers (D295–D299, migration 0052). No dependency or price record changed. No package edited a shared planning file.
+- **D280 item 5** is covered by `tests/integration/test_trading_desk_wakes.py::test_software_never_refuses_a_day_plan_for_not_following_the_playbook_or_the_market_type` (the playbook says wait in falling markets, the coin is labelled falling, and the desk's plan with a version the playbook does not name is installed and records `falling` and the revision) and `test_a_plan_without_label_playbook_or_stance_still_installs_and_records_that`; the record is written in a savepoint of the installation, and a record that cannot be written leaves the plan installed (`installed` event: `not recorded: <reason>`).
+- The protected package fingerprint changes, as with every wave; the normal L3 re-pin (steps 2 and 3) covers it.
+- C12 is a cloud package, not a task in `planning/tasks.json`: recorded here and on the status board only; `planning/progress.json` is unchanged, as for waves 8 to 11. Acceptance, per the package's "Done when": **met in source** by the scripted week (`tests/integration/test_trading_desk_week.py`: synthetic hourly candles labelled by the protected labeller, SOL/USD `sideways` and BTC/USD `falling`; daily scripted Leader rounds, the first with a strategy idea for the desk; Jev verdicts on BTC in shadow mode; the real Trader handler on a scripted model): every BTC stance is `wait`; the Leader's idea became four lab requests citing it (register, study, tune, confirm) and a confirmation report for `dip-rebound@1`; seven SOL day plans use `dip-rebound@1`, each recording `sideways` (current) and playbook revision 2; 15 desk requests, the largest 66,322 bytes (bound 131,072); no BTC order, plan or intent.
+- Build plan: status board rows W12-A, W13-A and L3, the status paragraph, "In one minute", "Reserved numbers" and the L3 step.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the merge (`abab5bd`): W12-A's eight new test files and the two changed ones (`test_migration_0039.py`, `test_leader_news_contracts.py`): **83 passed, 0 failed, 0 skipped** (39 s).
+- On the merged tree (`c3212cf`), 183 related test files (2,394 tests: wakes and the event engine with its cycle, scan and sources, the Trader workflow, its subscription and wake tests, Leader news, the news alarm and news wakes, focus research, market types, the strategy lab, day plans and actions, the practice range, coin scans, the price collector, the paper service, every state migration test 0025 to 0052, HQ's wake, plan and copy tests, artifact consumers, the Engineer and protected-path tests, every property test and `tests/security`), `uv run pytest -p no:cacheprovider -rfs`, one process per slice, added up: **2,380 passed, 0 failed, 14 skipped** (the 14 are the bubblewrap cases of `test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub). The first one-process run was stopped by the session's 30-minute limit for a background command after 814 passed and none failed (inside `test_plugin_engineering.py`, whose 19 tests take about 50 s each); the slices were the 800 tests through `test_perplexity_installation.py` from that run, `test_plugin_engineering.py` alone (19 passed, 16 min) and the remaining 117 files (1,561 passed, 14 skipped, 16 min). The earlier-seen flaky candidate `test_owned_subscription_service.py` passed in it.
+- `uv run ruff check src tests`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- Base: wave 11's full suite on `c6afa53` (GitHub's `test` job, check run 118778910228): **8262 passed, 0 failed, 18 skipped**. Collected on the merged tree: 8,324 tests, 44 more than the base's 8,280 (W12-A's new test files).
+- **Full suite, first candidate:** GitHub Actions `test` job (run 39489484431, job and check run 118858508989) on `c3212cf` (`claude/night-candidate-wave12`), CPython 3.12.15, paid and live calls off, 20:08–21:24 UTC, pytest 75 min 11 s: **1 failed, 8305 passed, 18 skipped**, the HQ chart test above (the job's artifact hygiene step then failed only because pytest's failure left no offline-acceptance evidence). Not merged into the integration branch.
+- **Full suite, second candidate:** GitHub Actions `test` job (run 39500500144, job and check run 118896468198) on `bd405c7` (`claude/night-candidate-wave12`: the fix and this entry), CPython 3.12.15, paid and live calls off, pytest 81 min 27 s (job 83 min, 21:27 to 22:51 UTC): **8306 passed, 0 failed, 18 skipped**; offline acceptance 464 of 464, gate complete; the artifact hygiene check passed; the `planning` check passed too. 8262 (wave 11) + 44 (W12-A's new tests) = 8306. No timing-dependent flake appeared on GitHub or in the container, so nothing was re-run or reverted. The same commit was pushed to the integration branch; this docs-only commit records the result.
+
+Missing credentials and real-data checks: none needed for C12 in the cloud. Everything is synthetic and labelled; a scripted desk is not a model test, a scripted Leader is not a Perplexity test and a scripted Jev is not a TypeSafe test. Real labels need 863 hourly candles per coin (on the owner's PC from about 2026-10-24, W11-A); the desk's first real playbook and stances appear after L3. Owner steps: at **L3**, step 3 adds `playbook` and `news` to the Trader's context keys (without them the desk still answers but sees neither) and the normal re-pin covers the package; nothing else changes.
+
+Open, for later packages and the owner (the package's "not done, open or for someone else"):
+- **Owner questions:** none. W12-A says nothing needs the owner's decision.
+- **For W13-A (the desk's room in HQ and the scorecard split by strategy version, market type at entry and stance):** the read functions are in `application/trading_desk/store.py` (`read_playbook(connection, portfolio_id, as_of=)`, `read_playbook_revisions`, `read_stances`, `read_latest_stances`, `read_day_plan_desk_records(connection, portfolio_id=, plan_ids=)`), `application/trading_desk/news.py` (`news_context`) and `application/trading_desk/context.py` (`playbook_context`); all take an `sqlite3.Row` connection (HQ's read-only one works) and give `None` / `[]` / `{}` on a database before 0052. A day plan's record gives the label at installation (`market_type_in_force` is None unless the label was current); for the market type at entry of a fill, `market_types.store.read_latest_market_types(connection, symbols=[symbol], as_of=<fill time>)`; a plan installed before 0052 has no record. Each wake's outcome names `playbook_revision_id` and `stance_ids` (`WakeOutcomeRecord`). HQ was not changed by W12-A (the wake log shows the new outcome notes only through the existing `refused` text). `kernel/trade_metrics.split_results` (W11-A) is ready for the split.
+- How long stances are kept (about 0.5 KB each; a few hundred a day at most), as for labels and scans.
+- Seen once by the builder, outside this package: `tests/integration/test_owned_subscription_service.py::test_reserve_marker_cannot_revoke_or_replay_a_started_subscription_invocation[COMPLETED]` failed once (the task was still `QUEUED` after the tick) while two other test runs competed for the container's CPU; it passed 12 of 12 alone. It is a security test: it is not skipped, loosened or rewritten. It passed in GitHub's full suite on both candidates and in the container's related run.
+- Still open from earlier waves: the step 17 decision after L3; the items in the build plan's "Later, not packaged"; the live pilot (T19) applies D248 to live orders through its own lifecycle (D260).
+
+Next: wave 13 (W13-A, C13: HQ's Trading desk room with the playbook, today's stances, the lab and the news the desk read, and the scorecard split by strategy version, market type at entry and stance); L3 waits for it and starts with the owner's yes. Owner: nothing needed now.
+
+---
+
+# Cloud wave 11 merged (C10, C11), not deployed — 2026-10-20
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift of 2026-10-20. The merged result was pushed as the candidate branch `claude/night-candidate-wave11`; GitHub's `test` job, the full suite, passed on it (`c6afa53`), the same commit was pushed to the integration branch (a fast-forward, which closed #27 and #28 as merged), and one docs-only commit on top records the result. Merged in the plan's order, each with `git merge --no-ff`, on the integration head `663465e`: W11-A C10 `fb46a5c` ([#28](https://github.com/krybaby7/trade-graph/pull/28), package head `60843f4`, code `5640174`), then W11-B C11 `4c567b7` ([#27](https://github.com/krybaby7/trade-graph/pull/27), `1b4e9c2`, code `5ef6c4e`); one integration fix, `8235c51`. Decisions [D285–D289 and D290–D294](docs/DECISIONS.md) are copied from `planning/handoffs/W11-A.md` and `W11-B.md`. **Nothing was deployed or installed.** No paid, model-provider, Perplexity, Jev/TypeSafe, news-feed, Kraken, OKX or other network call was made, no order was placed and no key exists in the cloud; every candle is synthetic and labelled `synthetic_fixture`, and the desk, account, quotes and paper brokers are scripted.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C10 market types** ([MARKET-TYPES.md](docs/MARKET-TYPES.md), [PRACTICE-RANGE.md](docs/PRACTICE-RANGE.md), [COIN-SCANNER.md](docs/COIN-SCANNER.md)): once an hour, after the coin scan, software labels every coin the team works with (the shortlist and the day's focus, held, planned and alarmed coins) as rising, sideways, falling or unclear, from hourly Kraken candles and fixed, versioned rules (`market-type-rules@1`, D285: the 168-hour average and its slope over a day, the price's side of it, ADX, +DI and -DI 14 with a trend at ADX 20 or more); no AI takes part. Live labels and replays call the same protected function, and a label never uses a candle that closed after its moment. `trade-graph market-types` prints the newest labels (read-only). A coin needs 863 complete hours before its first label (on the owner's PC from about 2026-10-24). Every new practice-range report splits its trades by the market type at entry (trades, wins, losses and result after fees, summing to the report's totals), and a strategy may require a market type at entry (`{"market_type": "rising", "relation": "is"}`). Older reports, the two starting strategies and their hashes are unchanged, and `practice-range-verify` still reproduces old reports. State migration 0050 (`market_type_labels`).
+- **C11 the strategy lab inside the service** ([PRACTICE-RANGE.md](docs/PRACTICE-RANGE.md) "The strategy lab inside the service", [EVENT-ENGINE.md](docs/EVENT-ENGINE.md), [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md)): the Trader's wake answer may carry lab requests (register a strategy version, create a study, tune, confirm), as many as it likes (D116). A lab worker in its own thread of the installed service runs them in order against the candle file (read-only), writes practice-range reports, never places, sends or cancels an order and never delays trading, protection, reconciliation or the money-limit step; the queue survives a restart. When a batch is done the desk is woken with the new trigger `lab_results`, and its new `lab` context key gives the newest results in plain sentences (now including the split by market type), the queue, the tries per strategy family and the newest untouched confirmation window (walk-forward), within 24 KiB. A refused request comes back with its reason. On first start an installation without strategies registers the two starting examples; confirming them is the desk's own request. The practice range and the lab are protected paths, so the deployed Engineer cannot change how the test is kept fair. State migration 0051 (the `lab_results` kind in `wake_triggers`, rebuilt with `news_alarm_wake_routes`, and the queue tables). Owner step at L3: step 3 adds `lab` to `allowed_context_keys.trader`; the lab replaces the confirmation step L2 part 1 found missing.
+
+Integration:
+- Conflicts: `docs/PRACTICE-RANGE.md` (the file table: both rows kept) and `src/trade_graph/adapters/persistence/migrate.py` (both lines kept, 0050 before 0051). `PROTECTED_PATH_PREFIXES` in `kernel/authority.py` merged without a conflict: W11-A's `application/market_types/` sits after the T42 scorecard line and W11-B's `contracts/practice_range.py`, `application/practice_range/`, `contracts/strategy_lab.py` and `application/strategy_lab/` at the end; both packages' path tests pass on the merged tree. The L3 checklist, `EVENT-ENGINE.md` and `COIN-SCANNER.md` were changed by one package each; the new `market-types` command is a discovered module, so `cli.py` is unchanged.
+- **Migrations.** Both Alembic files followed 0044; the W11-B merge commit re-links `migrations/versions/0051_strategy_lab.py` to `down_revision = "0050"`. `uv run alembic heads`: one head, 0051; the chain ends 0042 → 0044 → 0050 → 0051, and the never-used 0043 and 0045–0049 stay unused. 0050's table refers to no wake table, so 0051's rebuild needs nothing more. Every state migration test (0025 to 0051, including the single-head checks of 0050 and 0051) passes.
+- **Integration fix `8235c51` (the shared contract).** W11-A gave `PracticeRange.run` the current market-type rules by default, but W11-B's worker builds its own `ReplayRequest`, whose `market_type_rules` defaults to none. So the lab's reports had no split by market type, and a version requiring a market type at entry was refused ("its replay needs the market-type rules"). The worker now passes the current rules and lists the label candles' runs in the report's evidence, as `PracticeRange.run` does. New test `tests/integration/test_strategy_lab_market_types.py` (2 tests; both failed before the fix: `None == 'market-type-rules@1'` and a refused tune): the desk's `lab` context shows `by_market_type` rows summing to each report's trades and result, and the "By market type at entry" sentences; a version with `{"market_type": "falling", "relation": "is_not"}` is tuned and confirmed. With W11-B's synthetic series (15-minute candles only, no hourly candles) every label is `unclear` and the report says so, never an error. Lab replays now also read the hourly label candles (about 0.9 s per cost profile for 122 days in W11-A's measure).
+- Reviewed against the plan's rules and each package section: no key or private data (hygiene check, and both diffs read), paid calls off, no real orders (the lab worker only replays and records; W11-B tests that a safety exit fills while a long queue runs), no cap on agent activity (`lab_requests` has no item bound; the `lab` key's 24 KiB is a display bound with the rest counted, D116), and only reserved numbers (D285–D289, D290–D294, migrations 0050 and 0051). No dependency or price record changed; `pyproject.toml` package-data gains `application/strategy_lab/starting/*.json` (`uv lock --check` passes). No package edited a shared planning file.
+- The protected package fingerprint changes, as with every wave; the normal L3 re-pin (steps 2 and 3) covers it.
+- C10 and C11 are cloud packages, not tasks in `planning/tasks.json`: recorded here and on the status board only; `planning/progress.json` is unchanged, as for wave 10. Acceptance, per package section: **C10 met in source** (golden series for a rise, a fall, a flat range and a gap give the expected labels from candle 862; a label never changes when later candles arrive, by property; a replay with the condition sees the live label at all 379 decisions of a four-day window; the split sums to the totals, by property). **C11 met in source** (on a scripted installation with synthetic candles: the desk registers, tunes and confirms, the worker runs them, the desk is woken with `lab_results` and its next day plan citing the confirmed version is installed; a confirmation on spent days, a tuning run on confirmation days and a malformed strategy are refused with their reasons in the next wake; the queue survives a restart; a safety exit fills while a long queue runs).
+- Build plan: status board rows W11-A, W11-B, W12-A and L3, the status paragraph, "In one minute", "Reserved numbers", the known-failures paragraph and the L3 step.
+
+Evidence (CPython 3.12 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the W11-A merge (`fb46a5c`): W11-A's ten test files: **88 passed, 0 failed, 0 skipped** (47 s).
+- After the W11-B merge (`4c567b7`): W11-B's eight test files, `tests/integration/test_hq_wakes.py` and every state migration test (`test_migration_0025.py` to `test_migration_0051.py`): **234 passed, 0 failed, 0 skipped** (167 s).
+- After the fix (`8235c51`): the lab's test files, the new integration test, `test_practice_range_market_types.py` and `test_practice_range_compatibility.py`: **65 passed, 0 failed, 0 skipped** (75 s).
+- On the merged tree (`8235c51`), 134 related test files (every practice-range, strategy-lab, market-type, migration, protected-path, event-engine and wake, subscription, paper-service, coin-scanner, collector, Trader, day-plan, installation, scorecard and HQ wake-log module, `tests/security` included), `uv run pytest -p no:cacheprovider -rfs`, one process: **1,684 passed, 0 failed, 14 skipped** (24 min; the 14 are the bubblewrap cases of `test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub). `tests/unit` on the same tree: **2,451 passed, 0 failed, 7 skipped** (40 s; 4 cross-checks talipp has no indicator for, 3 file-mode cases the root container cannot make).
+- `uv run ruff check src tests`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- Base: GitHub's `test` job on the untouched base `663465e` (with the OKX fetch commits `f18cef1` and `7b92e05`), run 39453284497, check run 118733454925, 15:58–16:53 UTC, CPython 3.12.15: **8113 passed, 0 failed, 18 skipped**, pytest 53 min 56 s; offline acceptance 464 of 464. The two waves add 149 tests in new files (W11-A 88, W11-B 59, the integration test 2).
+- **Full suite:** GitHub Actions `test` job (run 39466424579, job and check run 118778910228) on candidate commit `c6afa53` (`claude/night-candidate-wave11`), CPython 3.12.15, paid and live calls off, pytest 66 min 44 s (job 69 min, 17:32 to 18:41 UTC): **8262 passed, 0 failed, 18 skipped**; offline acceptance 464 of 464, gate complete; the artifact hygiene check passed; the `planning` check passed too. 8113 (the base) + 149 (the new test files) = 8262. No failure and no timing-dependent flake appeared on GitHub or in the container, so nothing was reverted. GitHub's `test` job on W11-A's package head `60843f4` passed as well (job 118760910231); W11-B's head runs were still in progress when this was written. The same commit was pushed to the integration branch; this docs-only commit records the result.
+
+Missing credentials and real-data checks: none needed for C10 or C11 in the cloud. Everything is synthetic and labelled; a scripted desk is not a model test and a scripted paper broker is not an exchange test. After the merge a **local session** labels real coins (`scan-coins` on the owner's candle file) and checks that the labels look sensible on BTC, ETH, SOL, XRP and DOGE over April–October, reruns the L2 practice range so its reports carry the split, and can run the lab on copies of the candle file and the L2 practice database. Owner steps: at **L3**, step 3 adds `lab` to the Trader's context keys and the normal re-pin covers both packages; nothing else changes.
+
+Open, for later packages and the owner (the packages' "left for later"):
+- **Owner questions:** none. W11-A and W11-B each say nothing needs the owner's decision.
+- **For W12-A (the Trading desk):** labels are read with `application/market_types/store.read_latest_market_types(connection, symbols=, as_of=)` (`{}` before 0050; `StoredMarketType.is_fresh` marks labels older than 2 hours); the day-start `CoinScanStep` does not label (the hourly scan does). `lab_requests` is the last field of `TraderWakeReply` and `WakeOutcome`, applied in `EventEngine._lab_requests`; the `lab` key is built by `lab_context` and briefed by the separate `LAB_WAKE_INSTRUCTION`/`LAB_INSTRUCTION`, which do not yet mention the market-type condition or the split (the desk's instruction is W12-A's). The lab has no list of the candle series it can replay (coins, sources, first and last day); a cached summary written by the lab thread would do.
+- **For W13-A:** `kernel/trade_metrics.split_results` is ready for the scorecard's split by strategy, market type and stance; HQ's problem list does not name `strategy_lab:` yet (a failed lab step shows as "a routine step is failing") and HQ's Story does not list `strategy_lab` activities (the general activity list does).
+- How long hourly labels are kept (about 1 MB a day), like the hourly scans; a replay reads the hourly label candles once per cost profile (a per-run cache is possible later). The lab replays with the virtual USD10,000 and no instrument rules, as L2 did. The mandate's `strategy_ids` limit families only when `discretionary_experiment` is off (paper mandates default to on).
+- Still open from earlier waves: the step 17 decision after L3; the items in the build plan's "Later, not packaged"; the live pilot (T19) applies D248 to live orders through its own lifecycle (D260).
+
+Next: wave 12 (W12-A, C12: one Trading desk that chooses per coin to wait, buy dips or follow the trend, keeps a playbook and reads the news), then wave 13 (W13-A, the desk in HQ and the scorecard by strategy and market type); L3 waits for both and starts with the owner's yes. Owner: nothing needed now.
+
+---
+
+# Owner adds waves 11–13: one Trading desk with its own strategy lab (D280), plan only — 2026-10-20
+
+Branch `claude/day-trader-engine-20261012`. Plan and decision log only: no code changed, nothing deployed, no paid, network or exchange call, no order. L1 is done (`planning/handoffs/L1.md`, 2026-10-19). L2 part 1 (`planning/handoffs/L2.md`, 2026-10-19) replayed both starting strategies on five coins over April–September 2026 at all three fee levels: 59 of 60 results lose after fees, and before fees both roughly break even. It also found that no department can create or replay a strategy (only the owner's `practice-range-*` commands make the confirmation reports a day plan needs), that no software labels market types, and that the L3 checklist lacks a step giving any strategy a confirmation report in the installed database, so as written the scored test would make no trade. The owner chose ([D280](docs/DECISIONS.md)) one Trading desk that owns trading and strategy work, with a strategy lab inside the service, software market types, and the Leader's news and Jev in its strategy choice. [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md) adds wave 11 (W11-A C10 market types, W11-B C11 the strategy lab), wave 12 (W12-A C12 one Trading desk) and wave 13 (W13-A C13 the desk in HQ and the scorecard by strategy and market type), reserving D285–D304 and migrations 0050–0053; new owner decisions start at D310. L3 waits for waves 11 to 13.
+
+Local commits not yet pushed (as of this entry): `f5622b0`, `137deb4` (L1), `4e03a5c` (L2 part 1), `f18cef1`, `7b92e05`, `aafc9fb` (two-year price download, including two small OKX fetch code changes), and this plan.
+
+Next: push the integration branch, then the cloud waves 11 to 13 (one night lead can run them in order); meanwhile L2's other free checks on the PC.
+
+---
+
+# Two years of Kraken and OKX prices for BTC, ETH, SOL, XRP and DOGE — 2026-10-20
+
+Owner request: download the last two years (20 Oct 2024 to 20 Oct 2026) for the five practice coins from Kraken and OKX. Free public data only: no key, no paid call, no order; the trading system was not started. The owner was told each command before it ran (D263) and approved the scope in chat (Kraken 5/15/60-minute candles; OKX 60/15/5-minute candles, with a one-line cap change for 5-minute). Everything is in the private candle file `~/.local/share/trade-graph-market/market_data.sqlite` (now 3.27 GB), nothing in Git.
+
+**Kraken (done).** `Kraken_OHLCVT_Full.zip` is the only bulk source before 2026Q1 (Kraken lists quarterly files only from 2026Q1; 2025Q4 returns 404), and this PC's link ran at about 0.5 MB/s (5 parallel connections did not help), so the 9.55 GB download was stopped after 207 MB (kept in `archives/full/`, resumable with `curl -C -`). Instead `kraken_zip_subset.py` (scratchpad, not committed) read the zip's central directory with HTTP range requests (via `curl`; Kraken's server answers Python's default client with 403) and copied only the 15 CSV files of the five coins at 5, 15 and 60 minutes plus `MANIFEST.json` into `archives/full-subset/Kraken_OHLCVT_Full_subset_5coins.zip` (133,902,849 bytes, sha256 `42a9496d…8c9ddb`; 187 MB fetched, CRC-checked on read, `testzip` clean). **Not checked:** Kraken's whole-archive and per-part SHA-256 (only partial parts were downloaded). DOGE is `XDGUSD` in the archive. `import-kraken-archive` (run 30, status ok, 6,106,099 rows read, 0 rejected, 5,733,135 inserted, 4 minutes) stores it as `kraken_ohlcvt_archive`; the importer cannot cut by date, so each coin's whole history is loaded (BTC from 2013, ETH 2015, XRP 2017, DOGE 2019, SOL 2021). The Full file now runs to 30 Sep 2026. It re-stored 135,682 April–September 2026 candles as revision 2: only the volume text differs, by float noise of at most 6e-14 relative; prices and trade counts are identical.
+
+**OKX (done).** `candles-okx-fetch` (public `history-candles`, 0.25 s pause plus about 0.5 s per request) for BTC-USDT, ETH-USDT, SOL-USDT, XRP-USDT and DOGE-USDT: 60-minute 180 pages (17,999 candles), 15-minute 710 pages (70,999), 5-minute 2,110 pages (210,899–210,999) per coin, all `okx_public_candles` / `live_public`. Coverage over the window is complete: 0 missing slots in all 15 series. USDT pairs were used because a BTC-USDC probe returned no history for the window; the practice range still prices OKX fees on Kraken USD prices (D126) unless pointed at this series. Hourly closes agree with Kraken's: typical difference 0.04–0.05%, 99th percentile about 0.2%, largest single hour 0.9% (BTC) to 4.9% (XRP). The fetch is a snapshot taken on 20 Oct 11:00–14:40 UTC; nothing keeps OKX current (the scheduled collector is Kraken only).
+
+**Code (local commits on this branch, not pushed).** `f18cef1` raises `MAX_LIVE_PAGES` from 2,000 to 2,500 (two years of 5-minute candles is 2,103 pages). `7b92e05` adds `candles-okx-fetch --before-ms` and `collect_okx_candles(before_ms=…)`: three 5-minute runs stopped with `request_failed` after 334 to 1,404 requests (one-off network failures; the same request worked when repeated by hand) and a retry used to restart from the newest candle. Tests: `tests/unit/test_okx_candles.py` and `tests/integration/test_okx_history.py` pass (20), ruff clean. Scripts in the market folder: `run_kraken_full_2y.sh` (the abandoned full download), `run_okx_2y.sh` (60/15-minute), `run_okx_5m_resume.sh`; status in `logs/okx-2y.status`, `logs/okx-5m.status`, `logs/kraken-full-2y.status`; Kraken import report `logs/import-full-subset-5-15-60.json`.
+
+**Known gaps (Kraken, last two years).** (1) 1 Nov 2025, about 15:05–21:40 UTC, missing for all five coins at every size (the same slots for every coin, so Kraken itself had no candles; 80 five-minute slots). (2) 1–16 Oct 2026 for SOL, XRP and DOGE (15-minute from 1 to 11 Oct, 5-minute from 1 to 16 Oct; 1-hour is complete), because the collector reaches back only 720 candles and the Q4 archive does not exist yet; BTC and ETH have those days from the Trades rebuild. The Q4 archive (expected early January) fills them for free; `backfill-kraken-trades` could fill them sooner. (3) Quiet intervals are not in Kraken's files, so small-coin 5-minute series have a few missing slots by nature (about 2% including gap 2). No 1-minute data was added.
+
+Next: nothing blocks L2 part 2 or L3. To compare venues over two years, the practice range reads one `--source` per run (`kraken_ohlcvt_archive` covers to 30 Sep; `okx_public_candles` is a separate series). Delete `archives/full/` (207 MB of partial parts) if the whole-archive checksum is not wanted.
+
+# Cloud wave 10 merged (C8, C9, C7), not deployed — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. With this wave all ten cloud waves are merged and L3 waits for no cloud package. The merged result was pushed as the candidate branch `claude/night-candidate-wave10`; GitHub's `test` job, the full suite, passed on it (`b24422e`), the same commit was pushed to the integration branch (a fast-forward, which closed #24, #25 and #26 as merged), and one docs-only commit on top records the result. Merged in the plan's order, each with `git merge --no-ff`, on the integration head `1eeeea8`: W10-B C8 `460485e` ([#26](https://github.com/krybaby7/trade-graph/pull/26), package head `a9b67c1`, code `c059b55`), W10-C C9 `18c58c3` ([#24](https://github.com/krybaby7/trade-graph/pull/24), `05bf782`, code `4b8959b`), W10-A C7 `bb3ae6c` ([#25](https://github.com/krybaby7/trade-graph/pull/25), `7b64f17`, code `eb3427c`); no integration commit was needed. Decisions [D264–D266, D269–D273 and D274–D278](docs/DECISIONS.md) are copied from `planning/handoffs/W10-A.md`, `W10-B.md` and `W10-C.md`; D267 and D268 are unused. **Nothing was deployed or installed.** No paid, model-provider, Perplexity, Jev/TypeSafe, news-feed, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on the synthetic USD10,000 paper account, synthetic weeks of prices, scripted quotes and paper brokers (one refusing the safety exit's placement), the real protected paper runtime over a synthetic account with a labelled synthetic capability key, and a scripted Perplexity transport with a made-up key.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C8 money checks and the scorecard stay fast** ([MONEY-LIMITS.md](docs/MONEY-LIMITS.md) "Which mark", [SCORECARD.md](docs/SCORECARD.md)): the money-limit step that runs on every tick (the 3% daily loss limit and the per-coin caps), HQ's today's loss, the per-order checks, the Trader's and the Secretary's equity and the forward producer now read only the newest price of each coin held (and only the newest exchange rate of each currency pair a valuation may convert), through migration 0044's index, instead of every price ever recorded. The scorecard reads a coin's prices only while it is held. On four synthetic weeks of 10-second prices (967,684 marks) the results are identical and the money-limit check reads 4 price rows instead of 1,935,370 (about 0.013 s instead of 12.6 s in the package's measure); the scorecard reads 81,383 instead of 967,687 (0.76 s instead of 5.5 s). One small behaviour change, kept by the integration (D271): of two prices of one coin stamped with exactly the same microsecond, the per-coin cap now uses the first recorded, like the account's value in the same check (it used the last). No migration.
+- **C9 HQ asks you when a coin has no safety exit** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md), [DAY-PLANS.md](docs/DAY-PLANS.md)): when a filled day-plan buy has had no safety exit for 10 minutes, HQ's "For you to do" list shows a card per coin (at most three, then one card naming the rest): which coin and how much, since when, that nothing sells the coins by itself if the price falls, and what the system is doing (trying again at every step with the last failure, or nothing while the cancel-all setting is on, the sell-everything setting is selling, the account is stopped or the team is off). It has no button and HQ never trades; it clears on the next 30-second poll once the exit is in place or the coin is sold. The software that places exits, the day plans panel, the card and the Trader's position view now share one coverage arithmetic (`kernel/day_plan_coverage.py`, protected), so they cannot disagree. `news-alarm-poll` and `news-alarm-report` now refuse a malformed number in `news-alarm.json` with "news alarm settings refused (a malformed number); nothing was read or sent" (exit 2) instead of a traceback. No migration; the snapshot gains no key.
+- **C7 the AI-spending records are locked** ([PERPLEXITY-IN-SERVICE.md](docs/PERPLEXITY-IN-SERVICE.md)): `application/budget.py`, `application/gateway.py` (reservations, receipts, allocations and the gateway around every paid call; D261) and the `domain/` package are protected paths, so `kernel/protected_budget.py` imports only protected code. Every reservation of the installed Perplexity route now gets an authenticated protected budget origin in its own transaction, like Jev's (D258), validated at dispatch, settlement, commit and allocation; each receipt is sealed with a full allocation to the paper portfolio; before each round and at start the route checks fresh price cards, a running protected controller and a bounded audit of its origins. A missing or forged origin refuses the round with the reason (a failed wake and a `perplexity_route` activity `refused`), nothing is sent, and its hold stays unresolved at its maximum, never free. The news route and the Perplexity route now share one protected `ProtectedRouteBudget` in the kernel (D266). D125 (no money limit while testing) and the owner's later monthly limit (D243, which pauses only the Perplexity rounds) are unchanged. No migration.
+
+Integration:
+- No conflict: all three packages branched from `f6abbd8` and changed different files. The expected conflict at the end of `PROTECTED_PATH_PREFIXES` in `kernel/authority.py` did not happen, because W10-C added no path there (its new `kernel/day_plan_coverage.py` is covered by the existing `kernel/` prefix). `uv run alembic heads` shows one head, 0044; the reserved 0047, 0048 and 0049 are unused, like 0043, 0045 and 0046. No dependency or price record changed (`pyproject.toml`, `uv.lock` and `planning/model-prices.json` untouched; `uv lock --check` passes). No package edited a shared planning file.
+- Reviewed against the plan's rules and each package section: no key or private data (hygiene check and a pattern scan of each package diff; the only key-like strings are labelled synthetic ones such as `synthetic-perplexity-route-key-0265`), paid calls off (the Perplexity switch still ships off, and the route now also refuses to build without the protected runtime; Jev is unchanged), no real orders (C9 only reads: tested that reading HQ leaves the database unchanged and that placing, sending or cancelling would fail the test; C8 changes reads, not orders), no cap on agent activity (C9's three cards plus a "more" card naming every other coin are a page bound for the 80 KB budget; C7's 500-row sweep and 5 s bound limit verification and fail closed with the reason, D116), and only reserved numbers (D264–D266, D269–D273, D274–D278; no migration).
+- **D271, kept.** The package was asked to align `money_limits.py`'s tie rule with the ledger's; it also changed `Execution._native_mark` (a coin's value in the per-coin cap of `authorize`) to read the ledger's `newest_mark`, so of two marks with an identical timestamp it now takes the first recorded instead of the last. This is slightly beyond the bullet. The night lead's call, applied here: keep it, because one tie rule across the system is the point of D271 (before, the cap and the account's equity in the same check could use different prices), and a tie needs two marks of one coin with the same microsecond timestamp, which the paper feed does not produce outside a frozen test clock. `test_mark_reads.py::test_money_limit_reads_break_ties_between_prices_of_one_moment_as_the_ledger_does` pins it.
+- **D264, accepted as stricter.** D261 names `application/budget.py` and `application/gateway.py`; W10-A also protects the whole `domain/` package (the clock, the typed errors, Decimal helpers, precision and provider protocols, 293 lines), because `kernel/protected_budget.py` imports `domain.clock` and `domain.errors` and the package's acceptance says it must import only protected code afterwards. That is stricter than D261, not looser. It breaks nothing here: the R1 Engineer's write allowlist (`artifacts/`, `prompts/`, `strategies/templates/`) never covered `src/`, and `tests/security` (463 passed) and `tests/unit` (2,379 passed, including every wave's protected-path tests) pass on the merged tree.
+- **Protected paths, W10-C with W10-A.** W10-C changed two protected application files (`application/day_plan_protection.py`, `application/day_plan_actions.py`) and added `kernel/day_plan_coverage.py`, which imports only the standard library; `api/hq_protection.py` and `api/hq_plans.py` are ordinary HQ code that import the protected kernel module (the allowed direction). On the merged tree `path_is_protected` is true for the new kernel module, both day-plan files, `money_limits.py`, `scorecard.py`, `budget.py`, `gateway.py` and `domain/clock.py`, and false for `api/hq_protection.py`, `application/ledger.py` and `application/execution.py`; W10-A's import check of `kernel/protected_budget.py` passes. The protected package hash changes, as with every wave; the normal L3 re-pin (steps 2 and 3) covers it, so no owner step changes and `docs/L3-INSTALL-CHECKLIST.md` is unchanged.
+- **W10-B with W10-C.** They share no file. HQ, money-limit, day-plan, scorecard and Perplexity/news installation modules were run together on the merged tree (below).
+- C7, C8 and C9 are cloud packages, not tasks in `planning/tasks.json`: recorded here and on the status board only. `planning/progress.json` is unchanged (wave 10 has no task there). Acceptance, per package section:
+  - **C8: met in source.** The money-limit step, HQ's today's loss and the scorecard give identical results on old and new code (`tests/property/test_mark_read_properties.py`: Hypothesis against the reads as they were at `f6abbd8`, tied timestamps included; `tests/property/test_scorecard_properties.py` unchanged and passing) with a bounded number of rows read (`tests/integration/test_mark_reads.py`: the same rows after ten times the history, every mark read seeking one coin through `valuation_marks_newest` by EXPLAIN QUERY PLAN, the scorecard reading a coin's prices only while held). Assertions count statements, rows and SQLite steps, never seconds (D273).
+  - **C9: met in source.** A scripted day whose exit placement is refused shows the card after 10 minutes (9 min 59 s: none) and clears it once the exit is in place or the Trader closes the position (`tests/integration/test_hq_no_safety_exit.py`, 19 tests including cancel-all, team off, coins sold another way, unknown start, more than three coins and the 80 KB budget: 71,309 B for the busiest week); the shared arithmetic (`tests/unit/test_day_plan_coverage.py`, `tests/property/test_day_plan_coverage_properties.py`); the page (`tests/js/hq_protection.test.mjs`); the malformed-number refusal (`test_news_alarm_cli.py`, 8 new cases). The package checked the card in Chromium at phone, iPad portrait and landscape and desktop sizes, light and dark, on a synthetic account (not repeated here: no browser change in the page scripts).
+  - **C7: met in source.** Both files protected with a parametrized test (`tests/unit/test_ai_spending_record_paths.py`); a scripted Perplexity round reserves with a protected origin, passes the audit and ends receipted, while missing, forged (six ways), replayed and changed origins are refused (`tests/integration/test_perplexity_route_origins.py`, 17 tests); the in-service acceptance day asserts 11 reservations with 22 origin records and one allocation each, and a mid-day forgery refuses the next round with nothing more sent (`test_perplexity_in_service.py`). No real call.
+- Build plan: status board rows W10-A, W10-B, W10-C and L3, the status paragraph, "In one minute", the L3 step and "Later, not packaged".
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container with 4 CPUs, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the W10-B merge (`460485e`): `tests/integration/test_mark_reads.py`, `tests/property/test_mark_read_properties.py`, `tests/property/test_scorecard_properties.py`, `tests/integration/test_scorecard.py`: **26 passed, 0 failed, 0 skipped** (25 s).
+- After the W10-C merge (`18c58c3`): `tests/unit/test_day_plan_coverage.py`, `tests/property/test_day_plan_coverage_properties.py`, `tests/integration/test_hq_no_safety_exit.py`, `test_news_alarm_cli.py`, `test_news_alarm_cli_installation.py`, `tests/unit/test_hq_contract.py`, `tests/test_hq_js_behaviour.py`: **140 passed, 0 failed, 0 skipped** (18 s); `node --test tests/js/hq_*.test.mjs` (Node 22.22.0): **96 passed, 0 failed** (92 before and W10-C's 4).
+- After the W10-A merge (`bb3ae6c`): `tests/unit/test_ai_spending_record_paths.py`, `tests/integration/test_perplexity_route_origins.py`, `test_perplexity_installation.py`, `test_perplexity_in_service.py`, `tests/unit/test_news_installation_paths.py`, `test_perplexity_installation_paths.py`: **74 passed, 0 failed, 0 skipped** (105 s).
+- On the merged tree (`bb3ae6c`): `tests/unit` **2,379 passed, 0 failed, 7 skipped** (33 s; 4 cross-checks talipp has no indicator for, 3 file-mode cases the root container cannot make); `tests/security` **463 passed, 0 failed, 14 skipped** (the bubblewrap cases of `test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub) and `tests/property` **39 passed, 0 failed** (one run, 166 s).
+- On the merged tree (`bb3ae6c`), 173 related non-unit modules (of 276 outside `tests/unit`, `tests/property` and `tests/security`): every wave 10 module and every module that mentions HQ (`hq_`, `create_app`), money limits, day plans, the scorecard, Perplexity, the news installation, news alarms or polls, Jev, protected budget origins, the budget gateway, protected paths (`kernel.authority`, `PROTECTED_PATH`), the ledger (`Ledger(`, `native_equity`, `valuation_marks`, `observe_mark`, `fx_rates`), `Execution(`, the forward producer or the Trader workflow, or uses the day-plan, money-limit, scorecard, HQ trading, Perplexity service, news service, mark-read, spending or wake test helpers (found with `grep -rlE` over `tests`), in two parallel shards of whole modules beside the security and property run (`uv run pytest -p no:cacheprovider -rfs`, JUnit reports, no parallel plugin), 10 min: **3,067 passed, 0 failed, 0 skipped** (1,492 and 1,575). This includes W10-B with W10-C together: the HQ, money-limit, day-plan, scorecard and Perplexity/news installation modules ran on one tree.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete (68 s); the artifact hygiene check on its report passed.
+- `uv run ruff check src tests` and the CI line `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- GitHub's `test` job on each package head, CPython 3.12.15, all before the merges: W10-B `a9b67c1` push run 39129969355, job 117682958634: **8025 passed, 0 failed, 18 skipped**, pytest 66 min 7 s; W10-C `05bf782` push run 39128762517, job 117679382593: **8073 passed, 0 failed, 18 skipped**, pytest 45 min 22 s; W10-A `7b64f17` push run 39129757964, job 117682322244: **8046 passed, 0 failed, 18 skipped**, pytest 79 min 49 s. The pull_request runs on the same heads gave the same counts (W10-B run 39129972570, job 117682967654, 56 min 35 s; W10-C run 39128766025, job 117679393776, 75 min 18 s; W10-A run 39129761087, job 117682332398, 78 min 33 s). Each had offline acceptance 464 of 464 and passed the artifact hygiene check. The base had 8016 tests passing; 8016 + 9 (W10-B) + 57 (W10-C) + 30 (W10-A) = 8112, the candidate's count.
+- **Full suite:** GitHub Actions `test` job (run 39131413324, job 117687192959) on candidate commit `b24422e` (claude/night-candidate-wave10), CPython 3.12.15, paid and live calls off, pytest 75 min 34 s (job 77 min, 13:24 to 14:42 UTC): **8112 passed, 0 failed, 18 skipped**; offline acceptance 464 of 464, gate complete; the artifact hygiene check passed; the `planning` check passed too. No timing-dependent failure appeared on GitHub or in the container, so no test needed a fix. The same commit was pushed to the integration branch; this docs-only commit records the result.
+
+Missing credentials and real-data checks: none needed for C7, C8 or C9 in the cloud. Everything is synthetic and labelled; a scripted Perplexity is not a paid-provider test and a scripted paper broker is not an exchange test. Owner steps: nothing new at **L2**; at **L3**, the normal re-pin of the protected package (steps 2 and 3) covers all three packages, and after L3 one look at the HQ tab on a phone and an iPad (the card was checked only in Chromium with made-up numbers; Safari/WebKit and real records were not checked). The Perplexity and Jev price re-checks before 2026-11-11 and 2026-11-15 stay on L2, unchanged.
+
+Open, for later packages and the owner (the packages' "left for later"):
+- **Owner questions:** none. W10-A, W10-B and W10-C each say nothing needs the owner's decision.
+- W10-A: `contracts/models.py` (price cards, usage, receipts, owner policy, authorized order intents and the agents' output contracts), `application/model_invocations.py` and `application/transport_evidence.py` (the journals the gateway writes for each paid call) are imported by protected code but are not protected paths; protecting the transitive imports of protected code is a broader choice than D261 (the kernel already imports `application/ledger.py`, `application/execution.py` and `adapters/brokers/paper.py`). The runtime evidence collector reads `protected_financial_budget_origins` whole, bounded at 10,000 rows; each Perplexity call now adds two rows, on top of Jev's about 400 a day (it matters only for the economic and live evidence gates a paper subscription installation does not run). A route receipt settled by `conservative_charge` would have no sealed commitment (no caller uses it on either route); the audit would then refuse the route's rounds (fail closed, never free).
+- W10-B: the older dashboard's financial view (`api/financial.py` `_valuation`, not used by HQ) still reads every mark and every rate and keeps the last of tied marks, unlike the ledger's first; the forward producer's per-fill EUR values still call `Ledger._rates` (every rate) once per fill of a block, small on its retained copy. Optional: a second index on `valuation_marks (portfolio_id, asset, quote_currency)` would make the scorecard's other-currency check bounded too (about 0.34 of its 0.76 s at four weeks), and an incremental HQ scorecard cache would read only new prices.
+- W10-C: the day plans panel marks each buy by the arithmetic alone, without the coin cap, so after the sell-everything setting sold a coin whose exit had been cancelled it can still say a filled part "has no safety exit right now" while the card stays quiet; "Right now" still reads "All quiet" while a coin is bare (it says "2 things need you"); `fills` has no index on `intent_id`, so `Execution._filled_quantity`, called by the protection arithmetic for every entry, exit and close sell on every management step, scans every fill each time and grows with the scored test's fills like the price marks did (an index needs a state migration; the card itself makes one pass over the portfolio's fills per 30-second poll); the news-alarm settings' decimal checks raise `InvalidOperation` rather than `ValueError`, so neither the commands nor the in-service reader can name the field with the malformed number.
+- Still open from earlier waves: the step 17 decision after L3 (from the shadow log); the items in the build plan's "Later, not packaged" (the suite's speed, whole lots in replays, hourly scans widening the shortlist, Perplexity departments outside the AI allowance floor, scan retention, money limits on the live path, a partial close, HQ's wake log naming the Trader's position actions, the evidence collector's 10,000-row bound); the live pilot (T19) applies D248 to live orders through its own lifecycle (D260).
+
+Next: all ten cloud waves are merged; the local steps L1–L4 remain. **L1** (keep price data current: the Windows tasks, a collection pass, the Q2 import and the open-time check) and **L2** (real-data checks, including the Perplexity price re-check before 2026-11-11 and the Jev one before 2026-11-15) run on the PC. **L3** (install, each step with the owner's yes) no longer waits for any cloud package. **L4** (the scored practice test) follows L3. Owner: nothing needed now; as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Owner starts L1 and adds wave 10 before the install (D263), plan only — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`. Plan and decision log only: no code changed, nothing deployed or installed, no paid or exchange call, no order. The owner accepted the three recommendations of the 2026-10-18 briefing ([D263](docs/DECISIONS.md)):
+- **L1 starts now.** The owner registers the two Windows price tasks; the local session runs one full collection pass and the archive open-time check. A read-only coverage check on 2026-10-18 found the local candle file holds the 2026Q3 archive (1 July to 30 September) and collector candles from 13 October 10:30 to 15 October 23:00 UTC only (1- and 5-minute series); no Windows price task was registered.
+- **The 2026Q2 archive** (`Kraken_OHLCVT_2026Q2.zip`, 537,866,903 bytes by its HTTP headers) is being downloaded from assets.kraken.com into the private market folder for import.
+- **Wave 10** is planned in [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md): W10-A C7 protected spending files (D261) and protected Perplexity budget origins, W10-B C8 bounded price-mark reads for the ledger, money limits and scorecard, W10-C C9 an HQ card for a filled buy without a safety exit plus the `news-alarm-poll` malformed-number refusal. Reserved D264–D278 and state migrations 0047–0049; new owner decisions start at D280. L3 waits for wave 10.
+- Working rule for local sessions (D263): tell the owner before running any `trade-graph` command; the trading system starts only with the owner's yes at L3.
+
+Next: the wave 10 cloud session; on the PC, L1 (Windows tasks, collection pass, Q2 import, open-time check), then L2.
+
+---
+
+# Owner answers three open questions (D260–D262), no code change — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`. Decision log only: no code changed, nothing deployed, no paid, network or exchange call, no order. After the night shift for waves 8 and 9 ([NIGHT-2026-10-17.md](planning/handoffs/NIGHT-2026-10-17.md)), the owner answered the three open owner questions, each with the recommended answer:
+- **[D260](docs/DECISIONS.md):** D248's settlement of a lost acknowledgement (paper today) will also apply to live orders, but only through the live pilot's own lifecycle (T19), with nothing resent and the owner still reviewing unknown live effects. Live bindings are unchanged until T19 builds and commissions it; this authorizes no live trading.
+- **[D261](docs/DECISIONS.md):** `application/budget.py` and `application/gateway.py` become protected paths the deployed Engineer cannot edit, in a later package (added to `PROTECTED_PATH_PREFIXES` with a test, re-pinned at L3). Not yet in code.
+- **[D262](docs/DECISIONS.md):** the older fallback Leader keeps its R1 actions, `pause` and `mandate` (both only reduce risk; neither approves an individual trade, so D116 holds). Nothing changes.
+
+The build plan's "Only you can do these" row for the Leader question is marked done, and "Later, not packaged" lists D260 and D261 as decided work waiting for a package. Evidence: `python3 scripts/check_plan.py`, `python3 scripts/test_planning.py` and `python3 scripts/check_repository_hygiene.py` pass.
+
+Next: unchanged. Local steps L1–L4; L3 needs the owner's yes at each step of [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md).
+
+---
+
+# Cloud wave 9 merged (C6), not deployed — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. With this wave all nine cloud waves are merged. The merged result was pushed as the candidate branch `claude/night-candidate-wave9`; GitHub's `test` job, the full suite, passed on it (`3a6b298`), and the integration branch was pushed with one docs-only commit on top that records the result. Merged with `git merge --no-ff` on the integration head `e68e798`: W9-A C6 `95628ae` ([#23](https://github.com/krybaby7/trade-graph/pull/23), package head `6ce3ec4`, code `6d3ab17`); two integration commits before the shared files: `16950be` (the acceptance day's test made independent of which thread finishes first) and `cdb46e8` (the synthetic image probe made independent of how fast the machine runs, a wave 8 leftover found by this integration's related run; both below). Decisions [D255–D259](docs/DECISIONS.md) are copied from `planning/handoffs/W9-A.md`. **Nothing was deployed or installed.** No paid, model-provider, Jev/TypeSafe, Perplexity, news-feed, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on the synthetic USD10,000 paper account with the real protected subscription binding (synthetic CLI), the owner's folder served from a dictionary of synthetic files, scripted feeds labelled `synthetic_fixture` and a scripted Jev (`ScriptedJevHttp`) with a made-up key.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C6 the news check next to the installed service** ([NEWS-ALARM.md](docs/NEWS-ALARM.md) "In the installed service (W9-A)", [REVIEWED-NETWORK-ROUTES.md](docs/REVIEWED-NETWORK-ROUTES.md), [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md) steps 3, 13 and 17 and "News wake-ups: what step 17 needs"): once the owner adds the reviewed `news_feeds` route to the network profile and the proxy (step 3), the installed service reads the five news feeds every 5 minutes by itself, in its own thread beside the price collector, stores each headline as a dated source, and the event engine records whom an urgent headline would wake (shadow mode: nobody is woken). So the real evidence step 17 needs builds up after L3. The route admits only the five feed hosts and `api.typesafe.ai`. Jev stays off until the owner's `news-alarm.json` sets `jev.calls_enabled` and `typesafe.key` is in the owner folder; each Jev check then reserves within the owner policy's paid-call limits (`daily_paid_limit` per day, `monthly_operating` per month), gets an authenticated protected budget origin before anything is sent, and ends with a receipt or stays unresolved at its full hold. With Jev off, headlines are still stored and nothing is sent to TypeSafe; without the route nothing is fetched and the activity log says why (`news_route` `not_ready`). A feed that cannot be read is reported as lost with the reason and when it was last read, never as "no news", and `news-alarm-report` lists each feed's polls. HQ names a failed news step ("the news check's last step failed"; trading, protection and records are not affected). The watch list adds today's focus coins. `trade-graph news-alarm-poll` now refuses Jev checks on a protected installation's database (feeds-only polls still run). Three more protected paths: `application/news_installation.py`, `application/jev_checks.py` and `adapters/decisions/`. No migration.
+
+Integration:
+- No conflict: the package branched from `e68e798`, so the merge adds its 31 files unchanged. `uv run alembic heads` shows one head, 0044; W9-A's 0046 is unused, like 0043 and 0045. No dependency or price record changed (`pyproject.toml`, `uv.lock` and `planning/model-prices.json` untouched; `uv lock --check` passes). The package edited no shared planning file.
+- Reviewed against the plan's rules and the package section: no key or private data (hygiene check and a pattern scan of the wave diff; the only key-like string is the labelled `synthetic-jev-key-not-a-real-key-0255`), paid calls off (Jev's switch ships off, and with no `news_feeds` route in the profile, as shipped, nothing is fetched at all), no real orders (the news check places none and wakes nobody; T45's switch stays shadow), no cap on agent activity (D116: the 253 watched coins are T44's Jev question bound, three attempts per headline T44's retry rule, and the route audit's 500-row sweep and 5 s bound limit verification, fail closed with the reason, and never limit polls, alarms or wakes), and only its reserved numbers (D255–D259, no migration).
+- **Rule 4 deviation, checked.** The builder disclosed that `tests/integration/test_news_installation.py` (20 tests: the route's money rule, admission and protected origins) and `test_news_service_watch_list.py` (2) were written alongside `news_installation.py` and `service_watch_list` rather than before them, and checked them with mutations instead; the package's other eight new modules failed before the change. Re-run by the integration on the merged tree against `test_news_installation.py`, each mutation restored afterwards: not recording the protected origin fails 5 tests, dropping the money rule 2, not validating before dispatch 1, dropping the rolling sweep 1, skipping admission 5 (all five cases), as the builder found; and the integration's own: the monthly limit without the daily one 1, no route audit at each poll 2, and ignoring `jev.calls_enabled` 3 (with `test_news_poll_in_service.py`). So these tests fail without the protections they cover; they were still not written first, which is a deviation from rule 4 recorded here.
+- **D258, checked against D140–D144, D116 and AGENTS.md.** T44 (D141) reserved each Jev call through `BudgetGateway` under role `news_alarm` and purpose `news_alarm:jev` at its largest request (64,000 input tokens), the deployment's EUR allowance being the money limit, a check with no room sending nothing (`budget_refused`) and unknown usage staying `UNCERTAIN` at the full hold. The in-service route keeps all of that (the same role, purpose, hold, runner and receipts) and changes two things: the reservations carry their own deployment id, `deployment:news_alarm`, each with an authenticated protected origin (W1-A's open item: the protected gateway needs a task row, which Jev checks have not), and, because a subscription installation has no EUR deployment allowance, the money rule is the owner policy's `daily_paid_limit` per UTC day and `monthly_operating` per UTC month over the route's non-synthetic reservations in every open state, held and unresolved amounts included (`NewsRouteBudget._assert_room`). Those are the owner-protected envelope that every deployment budget must already stay within (`subscription_runtime.py`, `leadership.py`, `engineering_workflow.py`), and agents cannot change them. The rule limits money only, never how often the check runs or how many alarms it records (D116), and the USD5 alert stays an alert (D138 item 10). Unknown usage stays unresolved at the full hold (`test_the_owners_paid_call_limit_refuses_a_check_with_no_room_and_sends_nothing`: an answer without usage is `UNCERTAIN` at EUR 0.00274176 and counts against the limit), and interrupted attempts are recovered as unresolved at every poll. With the switch off (the default) no key is read, no reservation is made and nothing is sent to TypeSafe, while headlines are stored (`test_with_jev_off_headlines_are_stored_and_nothing_is_called`, `test_without_owner_settings_the_defaults_collect_headlines_and_jev_stays_off_without_reading_a_key`, and the switch-off case of `test_jev_stays_off_with_the_reason_unless_every_prerequisite_holds`, whose other four cases show the same for a missing key, a short key, a route without TypeSafe and a stale card). As in T44 and W8-A's route, the owner policy's `paid_calls_enabled` (the model gateway's switch) is not consulted; Jev's own switch is the gate (D137). Consistent; one note under "Open".
+- **The changed W8-A assertion, checked.** `test_perplexity_in_service.py::test_with_the_switch_off_the_same_day_runs_as_before` now expects one owner-file read, `subscription-network-profile.json`, instead of none. With `installed_news_poll` stubbed out, the original `reads == []` passes again, so the one read is the news check's own: it reads the profile to see whether its route is listed, and this profile lists none, so it reads nothing else. The profile holds route configuration and no key; nothing Perplexity-related is read, seeded or built, and the test's other assertions are unchanged. Necessary and harmless.
+- **The narrowed `news-alarm-poll`, checked.** The new guard refuses (exit 2, nothing sent or written) only when a Jev transport is set (scripted or real) and the database has a `protected_runtime_instances` row; feeds-only polls and ordinary paper databases are unchanged. W1-A's command contract tests (`tests/integration/test_news_alarm_cli.py`, 7) and the three new ones pass (10 passed). It removes only a path that would write Jev reservations without a protected origin into an installation whose witness re-verifies every reservation of its deployment: a safe narrowing.
+- **Thread timing, checked; integration commit `16950be`.** `test_news_poll_service.py` does not depend on machine speed: a frozen clock moved only by the test, a wait on the news step itself after every tick (60 s deadline), and a stop test that holds the first feed on a `threading.Event`; it still passed with the scripted feeds slowed to 2 s each. `test_news_poll_in_service.py` did depend on it: its scripted day runs 30 ticks and then stops, and the service's stop ends a news poll between feeds (D255), so the outcome depended on whether the news thread finished its one due poll before the main loop finished the ticks. In this container the ticks take about 10 s and the poll under 1 s, so it passed; with the scripted feeds slowed to 6 s each, the day test failed (`('stopped', 1, 0, 0, 0) == ('ok', 4, 3, 1, 0)`) and so did the Jev-off test (`1 == 4` headlines). The test's stop now first waits for the news step in flight (on the step itself, 60 s deadline), so the day lasts until the due poll has finished; every assertion is kept, no source changed, and the stop between feeds stays tested in `test_news_poll_service.py`. With feeds slowed to 6 s the module now passes (4 passed, 110 s), and at normal speed both thread modules passed three runs in a row (8 passed each).
+- **Integration commit `cdb46e8`** (wave 8's D248 in the image probe). The related run's one failure, `tests/security/test_deployment_image.py::test_synthetic_installed_probe_requires_manifest_sources_and_recovery_preserves_history` ("actual durable synthetic lost-ack paper order failed"), failed on every run in this container, alone and on the untouched base `e68e798` alike, so W9-A did not cause it; GitHub's runner passed it in wave 8 and on the package head. Cause: the timing wave 8 fixed in `3738704`, here in the synthetic deployment probe itself (`kernel/deployment_probe.py`, which the image's `probe` command runs at L3 step 2). The probe expected the lost acknowledgement's order `UNKNOWN` right after its entry cycle; since D248 a management step that runs after the candidate decided lets the cycle's last step settle it `OPEN` (seen here: `UNKNOWN` at 1.35 s, `OPEN` at 1.40 s). On a machine slower than GitHub's runner, which the owner's PC may be, step 2's image check would have failed the same way. The probe now accepts `UNKNOWN` or `OPEN` after the cycle and checks more than before: the submission's recorded timeout and exactly one order attempt right after the cycle, still one after the recovery, and the order `OPEN` after the recovery; the fill, the 30 OS attacks, the timeout recovery, the restart checks and the report are unchanged. The probe test now runs three ways: as timed, with the candidate returning before the first management step (`UNKNOWN`) and with one step after the decision (`OPEN`); the last failed before the change (and "as timed" in this container), and all pass after (`test_deployment_image.py`: 54 passed, twice). A protected kernel file changed, so the protected package hash changes, as with every wave; L3 step 2 builds and pins the new image anyway.
+- C6 is a cloud package, not a task in `planning/tasks.json`: recorded here and on the status board only. `planning/progress.json` is unchanged (nothing there names C6). **C6: met in source.** A scripted service day polls scripted feeds at start and every 5 minutes (by the injected clock, polls at 0, 5 and 10 minutes and none at 1, 4, 6 or 14; a restart within 5 minutes does not poll again; `test_news_poll_service.py`), records headlines and Jev answers with receipts bound to protected origins, and the engine records shadow routes (`test_news_poll_in_service.py`, `test_news_installation.py`); with Jev off, headlines are stored and nothing is called (both); the reviewed route (`tests/security/test_news_feeds_route.py`, `tests/unit/test_news_feed_route_fetcher.py`); the key, the dated card, the money rule and the origins (`test_news_installation.py`); lost feeds reported (`test_news_feed_health_report.py` and the lost-feed day); the watch list (`test_news_service_watch_list.py`); the command's refusal (`test_news_alarm_cli_installation.py`); the protected paths (`tests/unit/test_news_installation_paths.py`); HQ's words (`tests/unit/test_hq_news_poll_problem.py`); the L3 checklist's step 17 and "News wake-ups" rewritten as done or owner actions. The open collector question is decided (D259: it does not read `news_jev_attempts`).
+- Build plan: status board rows W9-A and L3, the status paragraph, "In one minute", the L3 step and the known failures.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container with 4 CPUs, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the merge (`95628ae`), the package's ten new modules (`tests/security/test_news_feeds_route.py`, `tests/unit/test_news_feed_route_fetcher.py`, `test_news_installation_paths.py`, `test_hq_news_poll_problem.py`, `tests/integration/test_news_installation.py`, `test_news_poll_service.py`, `test_news_poll_in_service.py`, `test_news_alarm_cli_installation.py`, `test_news_feed_health_report.py`, `test_news_service_watch_list.py`) with the changed `test_perplexity_in_service.py`: **103 passed, 0 failed, 0 skipped** (135 s, JUnit counts). `uv run alembic heads`: one head, 0044.
+- The integration's mutation checks and timing probes (above) ran on the merged tree; each change was restored afterwards (`git status` clean). After `16950be`, `test_news_poll_in_service.py` with `test_news_poll_service.py`: **8 passed** in each of three runs; with the scripted feeds slowed to 6 s each, `test_news_poll_in_service.py` 4 passed (before the change, its two polling tests tried that way failed).
+- On the merged tree (`16950be`), 208 related non-unit modules (of 305): the wave's own and the changed one, `test_provider_wire_schemas.py`, all of `tests/security`, and every module that mentions the news alarm, Jev, news wakes, the paper or subscription service or operation, the price collector, Perplexity, the subscription network, profile, proxy or reviewed routes, protected budget origins, the budget gateway or receipts, protected paths (`kernel.authority`, `PROTECTED_PATH`), the event engine or wakes, focus research, Leader news, day plans, money limits, HQ (`hq_`, `create_app`), migrations (`apply_migrations`, Alembic, `schema_migrations`), the protected financial service or the deployment image (found with `grep -rlE` over `tests`), in three parallel shards of whole modules (`uv run pytest -p no:cacheprovider -q -rfs`, JUnit reports, no parallel plugin), 27 min: **3,425 tests: 3,409 passed, 1 failed, 15 skipped**. The one failure is the image probe (fixed by `cdb46e8`, above); the skips are 14 in `tests/security/test_subscription_process_boundary.py` (bubblewrap is not in the container, as on GitHub) and one file-mode case the root container cannot make.
+- After `cdb46e8`: all of `tests/security` **463 passed, 0 failed, 14 skipped** (the bubblewrap cases); `tests/unit` **2,339 passed, 0 failed, 7 skipped** (28 s; 4 cross-checks talipp has no indicator for, 3 file-mode cases the root container cannot make); `node --test tests/js/hq_*.test.mjs` (Node 22.22.0): **92 passed, 0 failed**.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete (62 s); the artifact hygiene check on its report passed.
+- `uv run ruff check src tests` and the CI line `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- GitHub's `test` job on the package head `6ce3ec4` (push run 39087372849, job 117556662463, CPython 3.12.15): **8014 passed, 0 failed, 18 skipped**, pytest 65 min 52 s; offline acceptance 464 of 464; the artifact hygiene check passed. The pull_request run on the PR's merge ref (run 39087375914, job 117556672066): **8014 passed, 0 failed, 18 skipped**, pytest 76 min 10 s. Both ran before the two integration commits; on GitHub's runner the probe's candidate returns before the first management step, so the probe passed there.
+- **Full suite:** GitHub Actions `test` job (run 39091601279, job 117569344751) on candidate commit `3a6b298` (claude/night-candidate-wave9), CPython 3.12.15, paid and live calls off, pytest 77 min 1 s (job 79 min): 8016 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete; the artifact hygiene check passed. It includes both integration commits. The integration branch has the same tree plus the docs-only commit that records this result.
+
+Missing credentials and real-data checks: none needed for C6 in the cloud. Everything is synthetic and labelled; a scripted feed is not a feed test and a scripted Jev is not a Jev or paid-provider test. The cloud made no TypeSafe or feed request (the package forbids it). Owner steps: at **L2**, one real sample of each feed (W1-A's open item), with a key the opt-in Jev smoke, and the re-read of TypeSafe's models page, because the 2026-10-15 Jev card refuses real calls from **2026-11-15** (a re-checked price is a new dated card under `jev.price_card` in the owner's `news-alarm.json`); Perplexity's re-check before 2026-11-11 stays on L2 as well; at **L3**, step 3's `news_feeds` route in `subscription-network-profile.json` and on the reviewed proxy (with the profile's re-pin and the proxy's new review) and, for Jev, `news-alarm.json` with `calls_enabled` and `typesafe.key`; step 13 shows `news_route` `ready`. Not checked: the real proxy container, network profile and image (no Docker in the cloud).
+
+Open, for later packages and the owner:
+- **Owner questions:** W9-A raises none ("nothing needs your decision now"). Still open from earlier waves, unchanged: W8-B's question for the live pilot (T19: should D248's settlement of a lost acknowledgement also apply to live orders; recommended yes, through the pilot lifecycle), W8-A's (make `application/budget.py` and `application/gateway.py` protected paths; recommended yes in a later package; W9-A confirms they are still not protected), and the fallback Leader's R1 actions (recommended keep).
+- Integration note on D258: the route's limits count Jev's own reservations only. Today that is all the paid spending the owner's paid-call envelope covers (the subscription deployment spends no EUR, and Perplexity has no money limit during testing, D125, D138 item 4), but if a later route is put under the same envelope, its limits should sum across the routes. If the route audit ever exceeded its 5 s bound, Jev checks would stop with the reason (fail closed) while headlines continue; at the expected ~6,000 reservations a month it costs about 0.35 s a poll (the package's measure).
+- W9-A, found and not changed: the runtime evidence collector reads whole tables bounded at 10,000 rows, which Jev's ~200 route reservations a day reach in about 50 days (it matters only for the economic and live evidence gates, which a paper subscription installation does not run); the route's protected origins are authenticated but outside the subscription deployment's file witness, so a restored older state file could drop recent Jev records (small amounts; the receipts were also in HQ); `news-alarm-poll`'s settings reader does not catch `decimal.InvalidOperation` (a malformed decimal stops the command with a traceback instead of the usual refusal; the in-service reader catches it); W8-A's Perplexity route could adopt D258's scoped origins.
+- Still open from waves 7 and 8: the step 17 decision itself (after L3, from the shadow log); the leftovers listed in the wave 8 entry below.
+
+Next: all nine cloud waves are merged; the local steps L1–L4 remain. **L1** (keep price data current) and **L2** (real-data checks: now with one real sample of each feed, the Jev smoke if a key is installed, the Jev price re-check before 2026-11-15 and the Perplexity one before 2026-11-11) can run any time. **L3** (install, each step with the owner's yes) is no longer waiting for a cloud package: step 12 (Research and the Leader on Perplexity, W8-A) and step 17 (news wake-ups, W9-A, once the shadow log shows real alarms) are now unblocked; step 3 lists the owner files and routes for both. **L4** (the scored practice test) follows L3. Owner: nothing needed now; as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 8 merged (C3, C4, C5), not deployed — 2026-10-18
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave8`; GitHub's `test` job passed on it and the same commit (`f90bda1`) was pushed to the integration branch. Merged in the plan's order, each with `git merge --no-ff`, on the integration head `e7ffca4`: W8-B C4 `72a5a19` ([#22](https://github.com/krybaby7/trade-graph/pull/22), package head `dd873ba`, code `f69a085`), W8-C C5 `e0fc7aa` ([#20](https://github.com/krybaby7/trade-graph/pull/20), `b48ddaf`, code `c8df666`), W8-A C3 `e207e8a` ([#21](https://github.com/krybaby7/trade-graph/pull/21), `011b5be`, code `641ec6f`); two integration commits: `9c3ae19`, between the W8-C and W8-A merges (HQ's day plans panel and the Trader's close), and `3738704`, after the shared files (W8-B's lost-acknowledgement test made independent of timing, found by GitHub's test job on the package head; both below). Decisions [D240–D254](docs/DECISIONS.md) are copied from `planning/handoffs/W8-A.md`, `W8-B.md` and `W8-C.md`. **Nothing was deployed or installed.** No paid, model-provider, Perplexity, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on the synthetic USD10,000 paper account, scripted quotes and paper brokers (some injecting faults), scripted departments, a scripted Perplexity transport with a made-up key, synthetic collector records and fixtures built from synthetic facts.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C4 the Trader's exit tools** ([DAY-PLANS.md](docs/DAY-PLANS.md) "Closing a position or moving its exit", [EVENT-ENGINE.md](docs/EVENT-ENGINE.md)): when woken, the Trader can close a coin's day-plan position at once or move its safety exit to a new stop (with an optional target). Software cancels the old exit, checks with the (paper) broker that the cancel happened, then sells or puts the new exit on, as one recorded sequence; a step that is refused or gets no answer leaves the old exit in place (kept, or put back with its own terms), and after a crash the same request finishes from the records without selling twice. Software checks only facts (paper account, not paused, spot, a position, a quote, prices on the exchange's steps, the stop below the price); there is no confidence threshold, committee or approval (D116). A close also cancels the coin's waiting buys. Paper only. Two smaller fixes: in paper trading, an order whose confirmation was lost no longer blocks new buys of that coin once the broker shows it resting with every fill recorded (D248; live behaviour unchanged), and an index keeps "newest price of a coin" lookups fast. State migration 0044.
+- **C5 HQ** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md) "Today's trading"): the Money tab shows today's loss against the 3% limit (the money-limit guard's own reading; reading it records nothing), the Trader's day plans coin by coin (waiting buys, safety exits, fills, refused plans and plan events; read only while the panel is on screen), the scorecard (the paper result after every fee against keeping the cash and holding Bitcoin, cached for 60 seconds) and whether the price collector is working. A failing money-limit step is named in plain words instead of "a routine step is failing". The older "Pays for itself?" box now reads "Paper result against real costs" and says paper money never pays a real bill (D254). Phones keep the pinned chart library instead of downloading it on every page load. No migration.
+- **C3 Perplexity inside the installed service** ([PERPLEXITY-IN-SERVICE.md](docs/PERPLEXITY-IN-SERVICE.md), [REVIEWED-NETWORK-ROUTES.md](docs/REVIEWED-NETWORK-ROUTES.md), [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md) steps 3, 12 and 13): once the owner switches it on at step 12 (with the event engine on), Research's focus step and the Leader's news rounds run on Perplexity inside the protected process, through a separately reviewed network door that admits only `api.perplexity.ai`, with the key and dated price cards from the owner's protected folder, a reservation and a receipt (or an unresolved record) for every call, and every search result stored before a finding may cite it. With the switch off, as it ships, nothing changes. A repeated provider request id now stays unresolved instead of escaping as `IntegrityError` (W1-C's finding). The price collector modules are now protected paths (D244). Step 12 of the L3 checklist is no longer conditional; its prerequisites are done or named owner actions (step 3: the key file, the price file, the `paid_research` route in the network profile and on the reviewed proxy). No migration.
+
+Integration:
+- No conflict. Both W8-B and W8-A add to `PROTECTED_PATH_PREFIXES` in `kernel/authority.py`, at different places; both kept (W8-B's `application/day_plan_actions.py` after the T34 lines, W8-A's three paths at the end). `docs/DAY-PLANS.md` (W8-B and W8-C) merged with both sides kept. `migrations/versions/0044_day_plan_actions.py` keeps `down_revision = "0042"`: W8-A's 0043 is unused, so there is nothing to re-link, and `uv run alembic heads` shows one head, 0044 (0039 → 0042 → 0044); 0043 and 0045 stay unused like 0040 and 0041. No dependency or price record changed (`pyproject.toml`, `uv.lock` and `planning/model-prices.json` untouched; `uv lock --check` passes). No package edited a shared planning file.
+- Reviewed against the plan's rules and each package section: no key or private data (hygiene check and a pattern scan of each package diff; the only key-like strings are W8-A's labelled made-up test keys), paid calls off (W6-A's switch ships off and the route refuses synthetic calls, other providers and roles, fixtures and any tool but the software `web_search`), no real orders (position actions and D248 are paper only; live bindings are refused or unchanged), no cap on agent activity (one action per coin at a time is a consistency rule; 16 positions and 8 terms in a wake context and HQ's lists are document or page bounds with exact totals; D116), and each package used only its reserved numbers (D240–D244, none; D245–D249, 0044; D250–D254, none).
+- **D248, checked:** the reconcile change (`Execution._settles_lost_acknowledgement`) applies only when `mode == "paper"`, only to an intent whose submission had no answer (`UNKNOWN`, or `SUBMITTING` after a crash), and only when the recorded fills equal the broker's filled quantity; `CANCEL_PENDING` is not reopened and live keeps `UNKNOWN` (`tests/integration/test_reconcile_open_unknown.py` pins all four). It is exactly the plan's requested fix. The two changed expectations still prove no resend: `test_day_plan_recovery.py::test_a_crash_while_sending_is_reconciled_and_never_resent` still asserts one buy at the broker, one submission by the inner broker and none after the restart; `test_protected_financial_runtime.py::test_unknown_submit_reconciles_without_replay_after_restart` now also asserts the reservation still `held`, and still one `order_attempts` row (made independent of timing by `3738704`, below).
+- **D243, checked against AGENTS.md:** every Perplexity step and search reserves first (`PerplexityRouteBudget.reserve`: the route's own deployment id and fresh cards, a leased task of a department the owner switched on, never synthetic) and ends with a receipt or stays unresolved; a bill for another model than the card's, and a repeated request id, stay unresolved, never free. The owner's monthly limit (D138 item 4) is `PerplexitySpendGuard` over the route's deployment id, counting unresolved calls at their reserved maximum, and refuses only these rounds; the Trader, protection and records continue. The deployment's EUR allowance (`BudgetGateway._assert_room`) is skipped only for this route, so it cannot block D125's no-limit testing, while each wake task's allocation (the owner's paid root limit, W6-A) still bounds one round. With the switch off, `perplexity_departments` returns the handlers unchanged and reads, seeds and builds nothing (`test_perplexity_in_service.py`'s switch-off day), and `paper-config.json` still refuses `models` and `price_cards`, so `run_subscription_operation` keeps refusing any other separately billed configuration.
+- **Integration commit `9c3ae19`** (W8-B with W8-C): W8-C's day plans panel works out what a filled buy has without a safety exit with its own SQL copy of `DayPlanProtection.coverage`'s arithmetic (D251), and W8-B made a close's market sell part of that arithmetic (D246, `day_plan_action_orders`). Built side by side, the merged panel told the owner that a position the Trader had closed "has no safety exit right now" (seen on the merged tree with a synthetic close). `api/hq_plans.py` now counts each buy's part of a close sell the same way (outstanding, unknown or filled: its part; ended: what it sold, shared out in order), lists the sale under its buy ("The Trader's close: sell 5 SOL at the market price: sold."), keeps a plan listed while its close sell is out, and says when a buy or safety exit was cancelled at the Trader's request to close the position or move its exit (read from the action's `cancelling` steps); the words are in `hq_copy.PLANS`. W8-B added no day-plan event kind, `day_plan_events` cancel reason or order state, so nothing reads "Recorded at …". The plans contract is unchanged (a sale uses the `ExitView` shape). `tests/integration/test_hq_plans_trader_actions.py` (4 tests) failed before the change and passes after; with the coverage line removed, two fail (mutation check).
+- **Integration commit `3738704`** (W8-B's changed test): GitHub's `test` job on W8-B's head `dd873ba` (run 39071506614, job 117509916501, push event, CPython 3.12.15) failed one test, 1 failed, 7727 passed, 18 skipped in 44 min: `test_protected_financial_runtime.py::test_unknown_submit_reconciles_without_replay_after_restart`, `assert 'UNKNOWN' == 'OPEN'` right after the cycle, while it passed in the container. Cause: the protected runtime's management step reconciles and then dispatches, every 0.25 s while the candidate runs and once after it (`ProtectedPaperRuntime._cycle`). When the candidate returns before the first tick, as on GitHub's runner, the lost acknowledgement's submit goes out in the cycle's last step and nothing reconciles it until the recovery, so it is still `UNKNOWN`; in the slower container a tick dispatches it and the last step settles it `OPEN` (D248). Both are correct behaviour; only the test's expectation depended on timing (before D248 the state was `UNKNOWN` either way). Reproduced in the container by forcing the candidate to return before the first tick: the package's test fails every time at the same line. The test now runs both ways (`as_timed` accepts `UNKNOWN` or `OPEN` after the cycle; `returns_before_first_tick` expects exactly `UNKNOWN`), and both still prove what matters: the reservation held and one submission attempt after the cycle, then the recovery records the order `OPEN` with its venue order id, and a later fill makes it `FILLED` with still one attempt (no replay). No source changed. The module: **33 passed, 0 failed** (twice).
+- C3, C4 and C5 are cloud packages, not tasks in `planning/tasks.json`: recorded here and on the status board only. `planning/progress.json` is unchanged, and `scripts/update_progress_catalog.py` reproduces the committed `progress_catalog.json` byte for byte. Acceptance, per package section:
+  - **C4: met in source.** A Trader action in its wake reply (`PositionAction`, `position_actions` in `TraderWakeReply`; `tests/unit/test_position_action_contract.py`; `test_provider_wire_schemas.py` accepts the reply in both strict schemas); one recorded sequence that leaves a position without a safety exit only during the sell, with a refused or unknown step leaving the old exit (`test_day_plan_actions.py`; property tests over fills, partial fills, cancels, crashes and restarts in `tests/property/test_day_plan_action_properties.py`); applied from the wake answer with no threshold, committee or approval (`test_wake_position_actions.py`); the paper reconcile fix (`test_reconcile_open_unknown.py`); the valuation-mark index, with existing databases upgraded (`test_migration_0044.py`); the wake brief and `docs/EVENT-ENGINE.md`.
+  - **C5: met in source.** Today's loss and a money-limit failure in plain words (`test_hq_trading.py`, `tests/unit/test_hq_trading_contract.py`); the day plans per coin (`test_hq_plans.py`, `tests/unit/test_hq_plans_contract.py`, `tests/js/hq_plans.test.mjs`; with the Trader's actions, `test_hq_plans_trader_actions.py`); the scorecard with caching and the collector panel (`test_hq_trading.py`, `tests/js/hq_trading.test.mjs`); the chart-script caching (`test_hq_vendor_cache.py`); the reworded box (`tests/test_hq_trading_static.py`); the `trading` key in `api/hq_contract.py` and all nine `tests/fixtures/hq/snapshot_*.json`, keeping the other packages' keys. The package checked the Money tab in Chromium at phone, iPad and desktop sizes, light and dark.
+  - **C3: met in source.** A scripted day in the subscription operation with the switch on runs Research's focus step and one Leader news round through a scripted Perplexity transport, with receipts and stored sources, and with the switch off runs as before (`test_perplexity_in_service.py`); the reviewed route (`tests/security/test_reviewed_routes.py`); the key, the price cards, the route's money rule and the `web_search` route (`test_perplexity_installation.py`); the duplicate request id, test first (`test_receipt_duplicate_request_id.py`); the protected paths (`tests/unit/test_perplexity_installation_paths.py`); the L3 checklist. No real call was made; the price re-check is listed for L2.
+- Build plan: status board rows W8-A, W8-B and W8-C.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the W8-B merge (`72a5a19`), the package's six new modules (`tests/unit/test_position_action_contract.py`, `tests/integration/test_reconcile_open_unknown.py`, `test_migration_0044.py`, `test_day_plan_actions.py`, `test_wake_position_actions.py`, `tests/property/test_day_plan_action_properties.py`) with the two changed modules (`test_day_plan_recovery.py`, `test_protected_financial_runtime.py`) and `test_provider_wire_schemas.py`: **166 passed, 0 failed, 0 skipped** (89 s, JUnit counts).
+- After the W8-C merge (`e0fc7aa`), the package's six new Python modules (`tests/integration/test_hq_trading.py`, `test_hq_plans.py`, `test_hq_vendor_cache.py`, `tests/unit/test_hq_trading_contract.py`, `test_hq_plans_contract.py`, `tests/test_hq_trading_static.py`) with the changed `tests/test_hq_static.py`, `test_hq_charts_static.py`, `tests/integration/test_hq_projection.py` and `tests/test_hq_js_behaviour.py`: **222 passed, 0 failed, 0 skipped** (24 s); `node --test tests/js/hq_*.test.mjs` (Node 22.22.0): **92 passed, 0 failed**.
+- The integration commit (`9c3ae19`): `test_hq_plans_trader_actions.py` with every HQ plans, trading, static, payload, routes and projection module, `test_hq_js_behaviour.py` and `test_day_plan_actions.py`: **253 passed, 0 failed, 0 skipped** (32 s); the JS tests again 92 passed.
+- After the W8-A merge (`e207e8a`), the package's five new modules (`tests/integration/test_receipt_duplicate_request_id.py`, `tests/security/test_reviewed_routes.py`, `tests/integration/test_perplexity_installation.py`, `test_perplexity_in_service.py`, `tests/unit/test_perplexity_installation_paths.py`) with the changed `test_owned_subscription_service.py`: **102 passed, 0 failed, 0 skipped** (83 s). `uv run alembic heads`: one head, 0044.
+- On the merged tree (`e207e8a`), 252 related non-unit modules (252 of 298): the wave's own and the changed ones, `test_provider_wire_schemas.py`, and every module that mentions day plans, the event engine or wakes, reconciliation or execution (`Execution(`, `.dispatch(`, `UncertainExternal`, `UNKNOWN`, `DropAckBroker`), HQ or `create_app`, the subscription runtime, network, proxy or operation, budgets and receipts (`BudgetGateway`, `usage_receipts`, `ModelGateway`), Perplexity, web research, focus research, Leader news, protected paths (`kernel.authority`, `PROTECTED_PATH`), migrations (`apply_migrations`, Alembic, `schema_migrations`), wire or JSON schemas, `valuation_marks`, the price collector or the market-data service (found with `grep -rlE` over `tests`), in three parallel shards of whole modules (`uv run pytest -p no:cacheprovider -rfs`, JUnit reports, no parallel plugin), 33 min: **5019 passed, 0 failed, 16 skipped** (14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub; 2 file-mode cases the root container cannot make).
+- `tests/unit` (including `test_contracts.py`, `test_protocols.py`, `test_import_boundary.py` and the wave's four new unit modules): **2327 passed, 0 failed, 7 skipped** (28 s; 4 cross-checks talipp has no indicator for, 3 file-mode cases the root container cannot make). On the final tree with this entry, `tests/unit` with `tests/integration/test_progress_projection.py` and `test_progress_dashboard.py`: **2354 passed, 0 failed, 7 skipped** (the same skips); the plan workflow's `scripts/next_task.py --prompt` and `scripts/cost_model.py --json` run cleanly.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete (62 s); the artifact hygiene check on its report passed.
+- `uv run ruff check src tests` and the CI line `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- **Full suite:** GitHub Actions `test` job (run 39076440318, job 117524459419) on candidate commit `f90bda1` (claude/night-candidate-wave8), CPython 3.12.15, paid and live calls off, pytest 73 min 37 s (job 75 min): 7915 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete; the artifact hygiene check passed. The same commit was then pushed to the integration branch. The first candidate, `3eba102` (run 39074906187, job 117519918999, 42 min 32 s), had 1 failed, 7913 passed, 18 skipped: only W8-B's lost-acknowledgement test, the same failure as on the package head `dd873ba` (run 39071506614: 1 failed, 7727 passed, 18 skipped); `3738704` fixed it and the new candidate passed. The other package heads passed GitHub's `test` job on their own: W8-C `b48ddaf` 7760 passed, 0 failed, 18 skipped; W8-A `011b5be` 7752 passed, 0 failed, 18 skipped.
+
+Missing credentials and real-data checks: none needed for C3, C4 or C5 in the cloud. Everything is synthetic and labelled. A scripted Perplexity is not a paid-provider test and a scripted paper broker is not an exchange test. The cloud could not open Perplexity's pricing page on 2026-10-17 (proxy 403), so no new price card was added. Owner steps: at **L2**, the opt-in real Perplexity smoke (`trade-graph perplexity-smoke --confirm-paid-call`) and the re-check of Perplexity's official prices, because the 2026-10-12 Agent API card goes stale on **2026-11-11** (the Search API card on 2026-11-15) and a stale card refuses paid calls; at **L3**, the key file, the price file, the `paid_research` route in the network profile and on the reviewed proxy (step 3), then step 12's switch. Not checked: the real proxy container and network profile (no Docker in the cloud); Safari/WebKit and a real phone or iPad for the Money tab (Chromium only, with made-up numbers).
+
+Open, for later packages and the owner:
+- **Owner question (W8-B, for the live pilot T19):** should D248's settlement of a lost acknowledgement also apply to live orders, that is, should a live order whose confirmation was lost move from `UNKNOWN` to `OPEN` once Kraken shows it open with every fill recorded? Recommended: yes, but only through the pilot lifecycle, which records the venue order identity and keeps the owner's review of unknown live effects. Until the owner says so, live stays as it is.
+- **Owner question (W8-A):** `application/budget.py` and `application/gateway.py` (reservations and receipts) are not protected paths, although AGENTS.md says receipt collection is not agent-editable. Recommended: make them protected paths in a later package; nothing changes until then.
+- W8-A: the installed route's reservations carry their own deployment id and are outside the protected financial witness by design (D243); binding them to protected budget origins needs a verifier that does not re-scan every reservation on each call (relevant to W9-A's Jev checks). A transport raising an unexpected exception type would leave its reservation `RESERVED` (held at its maximum and counted as unresolved). `run_subscription_operation`'s result keeps `paid_authorization: False` and `billing_kind: "subscription"`; the route's state is the `perplexity_route` activity event. Perplexity departments still wait under the AI allowance floor.
+- W8-B: selling part of a position is not built (a close sells the coin's whole day-plan position). A coin the owner removed from a listed mandate cannot be closed by the Trader (the existing exit rule refuses decisions outside the list; its safety exit still protects it): worth a look with the owner's coin-list work. Day plans and position actions refuse every binding but paper (live is T19).
+- HQ: the wake log does not name the Trader's position actions yet (they are in `WakeOutcomeRecord.actions`; the day plans panel shows their effect since `9c3ae19`). From W8-C: `Ledger._marks` reads every valuation mark of the portfolio up to the moment asked, so the money-limit step, HQ's loss figure and the money facts grow with weeks of 10-second prices (W8-B's index serves "newest mark" reads, not this one); a "Needs you" card for a filled part left without a safety exit for minutes; the scored test period's scorecard (T43) in HQ; gzip for static files.
+- Still open from wave 7: the news poll next to the installed service (W9-A; checklist step 17).
+
+Next: W9-A (C6, the news check next to the installed service, using W8-A's reviewed-route design) can start once this wave is on the integration branch. Step L2 can run any time and now includes the Perplexity price re-check before 2026-11-11. Owner: two questions above for later, nothing needed now; as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Follow-up waves 8 and 9 planned before the install, not built — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`. Plan only: no code changed, nothing deployed, no paid or network call. On the owner's request, [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md) gains waves 8 and 9, built from the night report's "What comes next" and the open items in the W2–W7 handoffs:
+- **W8-A (C3):** Research's focus step and the Leader's news rounds on Perplexity inside the protected installed service, behind the owner switch, with a separately reviewed host list, the protected `web_search` route, the key from the owner's private file, dated price cards, the `BudgetGateway` duplicate-request-id fix, and the price-collector modules made protected paths. Closes L3 checklist step 12.
+- **W8-B (C4):** a Trader action to close a day-plan position early or move its safety exit, the paper reconcile fix for a lost acknowledgement, and an index on `valuation_marks`.
+- **W8-C (C5):** HQ shows today's loss against the limit, today's day plans, the scorecard and a price-collector panel; chart-script caching; reworded "Pays for itself?" box.
+- **W9-A (C6):** the 5-minute news poll next to the installed service through a second reviewed host list, with Jev on protected budget origins. Closes the evidence gap of L3 checklist step 17.
+- Reserved: D240–D259 and state migrations 0043–0046. New owner decisions start at D260. L3 now follows waves 1–9.
+- Open owner question (recorded in the plan, recommended answer "keep"): should the older fallback Leader keep its R1 actions, pausing the account and narrowing a mandate (W6-B)?
+
+Next: the owner launches the night lead for waves 8 and 9; local step L2 can run at the same time.
+
+---
+
+# Cloud wave 7 merged (T45), not deployed — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave7`; GitHub's `test` job passed on it and the night lead pushed the same commit (`3008446`) to the integration branch. Merged with `git merge --no-ff` on the integration head `9fa7efb`: W7-A T45 `d2b0a1c` ([#19](https://github.com/krybaby7/trade-graph/pull/19), package head `c03c95e`, code `b7d3782`). Decisions [D225–D229](docs/DECISIONS.md) are copied from `planning/handoffs/W7-A.md`. **Nothing was deployed or installed.** No paid, model-provider, feed, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on invented headlines on a synthetic feed, scripted Jev answers receipted as synthetic, scripted departments, a scripted Perplexity for the Leader's round and the synthetic USD10,000 paper account.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T45 news alarms wake people, shipped in shadow mode** ([NEWS-ALARM.md](docs/NEWS-ALARM.md) "Wake-ups (T45)"): when Jev rates a headline urgent, the event engine records whom it would wake and why: the Leader always, and the Trader too when the paper account holds the coin (or the headline is about Kraken itself while anything is held). An unrelated headline wakes nobody, and a headline that tries to give orders changes nothing. In shadow mode, the shipped setting, nobody is woken. The owner command `trade-graph news-wakes` shows the switch and the shadow evidence; `--live on` previews and `--live on --confirm --expect-revision <shown>` records an owner-policy revision with an audit row. It is refused while the service runs, and going live is refused until the shadow log holds a would-be wake-up from a live public feed with a real Jev answer, so fixtures alone can never switch it on. `--live off --confirm` goes back to shadow at any time. A woken department reads the headline as quoted data in a fixed note of at most 500 characters and gains no action from it: it cannot place, approve or block a trade. A wake made only of news alarms never moves a department's own next check-in. State migration 0042.
+- **HQ** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md) "Wake-ups"): the Wake log names a news wake-up's source ("A news alarm about SOL/USD from Kraken blog.", the headline as a quote) and its top line says how many wake-ups news alarms made, or in shadow mode would have made, today and in the last 7 days: the figures to look at before switching them on. W6-C's follow-up is done: with `event_engine: true`, the room tiles and the calendar show each department's next turn from its own check-in instead of the old fixed timers; with the engine off nothing changes.
+- **L3 checklist** ([L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md)): step 3 adds `"wake"` to `allowed_context_keys.leader` in the owner's subscription profile (the Leader reads why it was woken); new step 17, after L3, is the news wake-up decision, with what it needs ("News wake-ups: what step 17 needs").
+
+Integration:
+- No conflict. The package was based on `0595d98`; the integration branch had one later status-only commit, `9fa7efb`, with no file overlap. Shared lines checked by hand on the merged tree: `contracts/models.py` (`OwnerPolicy.news_wakes`, left out of the document when absent so every older revision hashes byte for byte), `contracts/wakes.py` (`CHECK_IN_KEEPING_KINDS`), `application/events/engine.py` (the router as its own guarded part, `news:<error>`, and the check-in rule in `_completed`), `application/leadership.py` and `application/subscription_runtime.py` (`wake` handed to Leader wake tasks and added to the protected `ROLE_CONTEXT_KEYS["leader"]`), `kernel/authority.py` (T38's protected paths kept, T45's four added), `adapters/persistence/migrate.py` (0039 then 0042). `migrations/versions/0042_news_wakes.py` has `down_revision = "0039"`, so Alembic has one head, 0042 (0035 → 0038 → 0039 → 0042); 0040 and 0041 stay unused. No dependency or price record changed (`pyproject.toml`, `uv.lock` and `planning/model-prices.json` untouched; `uv lock --check` passes). The package edited no shared planning file.
+- Reviewed against the plan's rules and the acceptance: no key or private data (hygiene check and a pattern scan of the diff found none), paid calls off (the change makes no paid call; Jev calls stay T44's and need the owner's key and switch), no real orders (the router writes routes and, only when live, wake triggers through `EventEngine.notify`), no cap on agent activity (the 500 verdicts read per portfolio and step and the 1,000 owner revisions read back are read bounds, the rest is read at the next step; the 8 coins named in a note and the 500-character note are document bounds; D116), and only W7-A's reserved numbers (D225–D229, migration 0042).
+- T45's acceptance is met in source, so `planning/progress.json` marks T45 done: a news alarm only adds wake-ups (`tests/property/test_news_wake_properties.py`: over random event sequences every trigger is delivered once and a news-only wake never moves a check-in; `test_news_wakes.py`: a news and a price alarm together, a busy department, a failing news source and an unreadable verdict hold back nothing); the headline is data (`test_news_wake_day.py`: an order-giving headline changes no order, plan, limit or policy; `test_subscription_leader_wakes.py`: the subscription Leader reads the alarm in `wake`; the Leader's Perplexity round reads it in its brief); the scripted day through the paper service (`test_news_wake_day.py`: a planted delisting wakes the Leader and the Trader holding the coin, an unrelated headline wakes nobody, shadow mode wakes nobody); going live is decided from T44's shadow evidence and HQ's wake counts (`test_news_wake_switch.py`: fixtures alone are refused and nothing is written; real shadow evidence records the revision and its audit row). The real shadow evidence and the switch itself are owner steps after L3 (checklist step 17), by the task's own acceptance.
+- Wave 6's open list and T39's evidence now mark W6-C's stale-timer follow-up done. Build plan: status board. `planning/progress.json` marks T45 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the merge (`d2b0a1c`), W7-A's nine new modules (`tests/unit/test_news_wake_contracts.py`, `tests/integration/test_migration_0042.py`, `test_news_wakes.py`, `test_news_wake_switch.py`, `test_subscription_leader_wakes.py`, `test_hq_news_wakes.py`, `test_hq_engine_turns.py`, `test_news_wake_day.py`, `tests/property/test_news_wake_properties.py`): **65 passed, 0 failed, 0 skipped** (94 s, JUnit counts).
+- On the merged tree (`d2b0a1c`), 140 related non-unit modules: W7-A's nine, `test_provider_wire_schemas.py`, the wake engine, cycle, service, scripted-day and wake property tests with the subscription Trader's wakes, W1-A's news-alarm tests (`test_news_alarm_cli.py`, `test_news_alarm_report.py`, `test_news_alarm_shadow.py`, `tests/property/test_news_alarm_rule_properties.py`, `tests/security/test_news_alarm_boundary.py`), the Leader, Leader-news and leadership tests, every subscription test (integration and security), the paper service, every HQ and dashboard module (with `tests/test_hq_js_behaviour.py`), every migration test, and every module that mentions the owner policy, protected paths, the event engine, the Leader allowlist (`ROLE_CONTEXT_KEYS`, `subscription_runtime`), the migration list (`apply_migrations`, Alembic), the news alarm, the leadership gateway or HQ (found with `grep -lE` over `tests`), in four parallel shards of whole modules (`uv run pytest -p no:cacheprovider -rfs`, JUnit reports), 23 min: **2210 passed, 0 failed, 14 skipped** (all 14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub). `uv run alembic heads`: one head, 0042.
+- `tests/unit` (including `test_contracts.py`, `test_protocols.py`, `test_import_boundary.py` and `test_news_wake_contracts.py`): **2270 passed, 0 failed, 7 skipped** (42 s; 4 cross-checks talipp has no indicator for, 3 file-mode cases the root container cannot make). On the final tree with this entry, `tests/unit` with `tests/integration/test_progress_projection.py` and `test_progress_dashboard.py`: **2297 passed, 0 failed, 7 skipped** (the same skips); the plan workflow's `scripts/next_task.py --prompt` and `scripts/cost_model.py --json` run cleanly.
+- `node --test tests/js/hq_*.test.mjs` (Node 22.22.0): **77 passed, 0 failed**.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete (87 s); the artifact hygiene check on its report passed.
+- `uv run ruff check src tests` and the CI line `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before the commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- **Full suite:** GitHub Actions `test` job (run 39054413899, job 117459336159) on candidate commit `3008446` (claude/night-candidate-wave7), CPython 3.12.15, paid and live calls off, 72 min 33 s: 7665 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks: none needed for T45 in the cloud. Everything is synthetic and labelled. Two switch tests label an invented poll `live_public` with a non-synthetic scripted transport to stand in for real L3 evidence (said in their docstrings); they are not a feed, Jev or paid-provider test. Real evidence needs the owner's Jev key (optional, console.typesafe.ai only) and the news poll next to the installed service (below). Not checked: Safari/WebKit and a real iPad; the package checked the Wake log in Chromium at phone, iPad and desktop sizes, light and dark, and the rooms with the engine on are covered by `tests/integration/test_hq_engine_turns.py`.
+
+Open, for later packages and the owner:
+- **The news poll next to the installed service is not built.** Real shadow evidence needs T44's `news-alarm-poll` running every 5 minutes against the installation's state database with the owner's Jev key, and a reviewed network route from the protected container to the five feed hosts and TypeSafe (the subscription market proxy admits only Kraken and Frankfurter, as for Perplexity). Until it exists nothing is routed in the installation and the switch cannot go live (checklist step 17).
+- `news-alarm-poll` still reports `"wakes_sent": 0` by design: the poll itself never wakes anyone; the engine does, by the owner's switch, whose state `news-wakes` shows. W1-A's command contract is unchanged.
+- Owner at L3 (step 3): add `"wake"` to `allowed_context_keys.leader` in the pinned subscription profile; without it the subscription Leader is still woken but does not see why.
+- Still open from wave 6 (see its entry): Research and the Leader on Perplexity in the installed service (checklist step 12); the Kraken request rate during the hourly ranking pass (step 13); whether the collector modules should be protected paths; the old Leader handler's `pause` and `mandate` actions; Leader rounds and the collector not shown in HQ; gap backfill inside the service; Perplexity Leader rounds waiting under the subscription allowance floor; and from wave 5 a Trader tool to close a day-plan position or move its exit, W4-A's reconcile finding, the scorecard in HQ, an index on `valuation_marks`, caching for the chart script.
+
+Next: waves 1–7 are merged, so every planned cloud package is built. Step L2 (first real practice-range reports, real feed and OKX recordings, one opt-in Perplexity smoke call and a Jev smoke call if the owner has a key) can run any time. Step L3 (installing the new engine) needs the owner's yes at each step of [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md). A follow-up build package should first close the installed-service gaps: the Perplexity wiring for Research and the Leader (checklist step 12) and the news poll next to the service (step 17). Owner: nothing to decide now; as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 6 merged (C2, T37, T38, T39), not deployed — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave6`; GitHub's `test` job passed on it and the night lead pushed the same commit (`0595d98`) to the integration branch. Merged in the plan's order, each with `git merge --no-ff`, on the integration head `096f800`: W6-D C2 `fec3fb9` ([#17](https://github.com/krybaby7/trade-graph/pull/17), package head `f16d2b8`, code `0be53b5`, docs `49e225a`), W6-A T37 `129e22d` ([#16](https://github.com/krybaby7/trade-graph/pull/16), `c3d0d1f`, code `c5d1871`), W6-B T38 `9674281` ([#18](https://github.com/krybaby7/trade-graph/pull/18), `7c2da30`, code `02fd19d`), W6-C T39 `96b32e7` ([#15](https://github.com/krybaby7/trade-graph/pull/15), `b6542ba`, code `f322dde`); then one integration commit, `132037f` (a switch-composition test and two doc notes, below). Decisions [D205–D224](docs/DECISIONS.md) are copied from `planning/handoffs/W6-A.md`, `W6-B.md`, `W6-C.md` and `W6-D.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic values, scripted departments, a scripted Perplexity with a made-up key and scripted Kraken answers.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **C2 install readiness** ([L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md), [KRAKEN-CANDLE-COLLECTION.md](docs/KRAKEN-CANDLE-COLLECTION.md) "In the service"): once installed, the service itself keeps the candle file (`market_data.sqlite` beside the database) current: the coins the team works with as their candles close, every eligible pair's hourly candles and a fresh coin scan every hour, the wider 5- and 15-minute history once a day, in its own thread so management never waits for it. This replaces the two Windows price tasks, which are removed at L3 once the collector is seen working. One Kraken request limiter now carries the collector, the hourly scan and any Trades backfill. The Trader's and Research's hourly numbers are read from the candle file for any coin (same `hourly-price-features-v3` numbers; the snapshot names its store); older installations keep `hourly_candles`. The AI Trader on the subscription can now answer a wake-up with its day plans (`TraderWakeReply`, with the wake and the practice-range strategy versions in its context). The new event engine sits behind one setting in `paper-config.json`, `event_engine`, that **ships off** and is turned on at L3. The image builder checks that NumPy and TA-Lib are pinned to a Python 3.12 Linux wheel before any download, and the image imports both before it is sealed. A written checklist names every L3 command in order.
+- **T37 focus coins on Perplexity** ([FOCUS-RESEARCH.md](docs/FOCUS-RESEARCH.md)): each morning, after the coin scanner's shortlist, Research can look up the news on those coins through Perplexity and name the day's focus coins, each with a reason and the saved web pages or scanner numbers behind it; only coins from the shortlist inside the owner's coin list (the engine checks this again). Its notes last the whole trading day instead of 47 minutes; it looks again when the Leader asks or at a time it chooses. An empty answer is a valid answer; a failed round is recorded as failed and the Trader is still woken and told why, never told "nothing today". The owner's protected switch that moves Research and the Leader to Perplexity, `trade-graph perplexity-departments` (preview, then `--confirm`), **ships off**. State migration 0038.
+- **T38 Leader news rounds** ([LEADER-NEWS-ROUNDS.md](docs/LEADER-NEWS-ROUNDS.md)): when woken, the Leader can skim crypto news and news about AI trading agents on Perplexity (every result saved before the AI reads it, a receipt for every call), ask Research for deep dives, leave the Trader one note and pass strategy ideas to Research or Optimisation for the practice range, always naming its next check-in. It cannot buy, sell, approve or block anything: a note is information (tested with a note saying "block every SOL entry" while the Trader's plan installed anyway). It uses the same switch as T37, off until L3. State migration 0039.
+- **T39 HQ wake log** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md) "Wake-ups"): in the Calendar tab, "Next check-ins" (each department's chosen time or the next day start, with today's routine step by step) and "Today's focus coins and alarms"; in the Story tab, the "Wake log": every wake-up with its reason, department, the AI allowance reading at that moment and what came of it. All from saved records through `GET /api/v1/hq/wakes`; looking at it starts nothing. No migration.
+
+Integration:
+- Conflicts only at the W6-B merge: `adapters/persistence/migrate.py` (0038 then 0039 kept, in number order) and `kernel/authority.py` `PROTECTED_PATH_PREFIXES` (W6-A's eight lines and W6-B's two kept). `migrations/versions/0039_leader_news_rounds.py` re-linked from `down_revision = "0035"` to `"0038"`; `alembic heads` shows one head, 0039 (0035 → 0038 → 0039). W6-C's 0040 and W6-D's 0041 stay unused. Auto-merged shared files checked by hand: `application/paper_service.py` keeps W6-D's collector task (`_collect_prices`, `request_stop`, `_start`, `_shutdown`) and W6-A's `_wake_task` (a department switched to Perplexity gets the owner's paid root allocation); `docs/EVENT-ENGINE.md` keeps W6-A's, W6-C's and W6-D's paragraphs. W6-D's `GatewayRole.reply_type_for`, `ROLE_CONTEXT_KEYS["trader"]` (`wake`, `practice_range`), market data, runtime, image builder and `deploy/Dockerfile.protected` changes had no overlap. No dependency or price record changed (`pyproject.toml`, `uv.lock` and `planning/model-prices.json` untouched; `uv lock --check` passes). No package edited a shared planning file.
+- **Integration commit `132037f`:** `tests/integration/test_leader_news_switch.py` composes W6-B's `LeaderNewsRounds(..., enabled=lambda: perplexity_enabled_for(database, "leader"), spend_policy=lambda: perplexity_setting(database).spend_policy, ...)` with W6-A's switch: with nothing recorded, or only Research switched on, the Leader stays off Perplexity and nothing is reserved or sent (fail closed); once the owner's switch is recorded the round runs with the owner's recorded spend rule (synthetic, scripted transport, no paid call). With the switch hard-wired on, the two fail-closed cases fail (mutation check). The installed-service construction is not wired. `docs/EVENT-ENGINE.md` gets W6-B's "built" note; the L3 checklist's step-12 prerequisites now say W6-A's wake allocation is merged and the composition is tested.
+- Reviewed against the plan's rules and each acceptance: no key or private data (hygiene check and a pattern scan of the wave diff: only the cloud container's generic worktree paths in three handoffs and a synthetic `sk-SYNTHETIC…` string in W6-C's redaction test), paid calls off (the Perplexity switch and the event engine ship off; every Perplexity call is reserved and receipted), no real orders, no cap on agent activity (the collector's cadences are public-data collection; the 40 triggers and 20 alarm items shown to a wake turn, the 20/30-wake HQ pages and the reply size bounds are document or page bounds with exact totals, D116), and each package used only its reserved numbers (D220–D224, none; D205–D209, 0038; D210–D214, 0039; D215–D219, none).
+- C2 is a cloud package, not a task in `planning/tasks.json`: recorded here and on the status board only. Its acceptance, the four bullets of the W6-D section: the hourly features read the candle store (`application/price_history.CandleStoreHistory`, `tests/integration/test_hourly_features_candle_store.py`); one price collector in the service with one shared limiter for the collector and the Trades backfill (`application/price_collector.py`, `service_market_data.py`, `adapters/market/rate_limit.KrakenRestLimiter`; `test_price_collector.py`, `test_price_collector_service.py`, `test_shared_rate_limit.py`, `tests/unit/test_shared_kraken_limiter.py`); the runtime layout includes the candle file and the image builder checks the NumPy and TA-Lib wheels (`test_install_wiring.py`, `tests/security/test_image_native_wheels.py`, `test_subscription_network.py`; the real build is an L3 step, no Docker in the cloud); the written L3 checklist (`docs/L3-INSTALL-CHECKLIST.md`). Met in source.
+- Build plan: status board (the L3 row and the L3 section point to the checklist). `planning/progress.json` marks T37, T38 and T39 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the W6-D merge (`fec3fb9`), the package's new and changed tests (`tests/unit/test_shared_kraken_limiter.py`, `test_trades_docs.py`, `tests/integration/test_shared_rate_limit.py`, `test_hourly_features_candle_store.py`, `test_price_collector.py`, `test_price_collector_service.py`, `test_subscription_trader_wakes.py`, `test_install_wiring.py`, `test_paper_feed_day_coins.py`, `tests/security/test_image_native_wheels.py`, `test_subscription_network.py`): **145 passed, 0 failed, 0 skipped** (53 s).
+- After the W6-A merge (`129e22d`), the package's tests (`tests/unit/test_focus_research_contracts.py`, `test_focus_scope.py`, `tests/integration/test_migration_0038.py`, `test_perplexity_switch.py`, `test_focus_research.py`, `test_focus_research_service.py`, `test_wake_cycle.py`) with W6-D's `test_subscription_trader_wakes.py`, `test_install_wiring.py` and `test_price_collector_service.py`: **68 passed, 0 failed, 0 skipped** (42 s).
+- After the W6-B merge (`9674281`), the package's tests (`tests/unit/test_leader_news_contracts.py`, `tests/integration/test_migration_0039.py`, `test_leader_news_rounds.py`, `test_leader_news_service.py`) with `test_migration_0038.py`, `test_migration_0035.py`, `test_perplexity_switch.py`, `test_focus_research.py` and `test_focus_research_service.py`: **112 passed, 0 failed, 0 skipped** (38 s).
+- After the W6-C merge (`96b32e7`), the package's tests (`tests/unit/test_hq_wakes_contract.py`, `tests/integration/test_hq_wakes.py`, `test_hq_wakes_routes.py`, `tests/test_hq_wakes_static.py`) with `tests/test_hq_static.py` and `tests/test_hq_js_behaviour.py`: **133 passed, 0 failed, 0 skipped** (82 s); `node --test tests/js/hq_*.test.mjs` (Node 22.22.0): **77 passed, 0 failed**.
+- The integration test `tests/integration/test_leader_news_switch.py`: **3 passed**.
+- On the merged tree with the integration test (`132037f`), 217 related non-unit modules: all of the wave's own, `test_provider_wire_schemas.py`, the wake engine, cycle, service, scripted-day and wake property tests, the subscription runtime, network and department-graph tests, the paper service, every HQ and dashboard module, the image builder and packaging tests, the candle store, collector, coin scanner and backfill tests, every migration test, and every module that mentions the paper service, the subscription operation, the paper runtime, protected paths, the migration list (`apply_migrations`, Alembic, `schema_migrations`), JSON or wire schemas, the event engine, the leadership gateway, the Trader workflow, the subscription runtime, the Kraken limiters, the hourly features, candle readiness, market context, the paper feed, the deployment image or image builder, HQ's copy, money and chart modules, `create_app`, Perplexity web research, the candle collection or backfill, runtime models or plugin staging (found with `grep -rlE` over `tests`), in four parallel shards of whole modules (`uv run pytest -p no:cacheprovider -rfs`, JUnit reports), 24 min: **4279 passed, 0 failed, 16 skipped** (14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub; 2 file-mode cases the root container cannot make; 1 warning: an existing image test's deliberate duplicate zip name). Then `tests/unit` (including `test_contracts.py`, `test_protocols.py` and `test_import_boundary.py`): **2258 passed, 0 failed, 7 skipped** (4 cross-checks talipp has no indicator for, 3 file-mode cases). On the final tree with this entry, `tests/unit` with `tests/integration/test_progress_projection.py`, `test_progress_dashboard.py` and `test_leader_news_switch.py`: **2288 passed, 0 failed, 7 skipped** (the same skips).
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed. The plan workflow's `scripts/next_task.py --prompt` and `scripts/cost_model.py --json` run cleanly.
+- `uv run ruff check src tests` and the CI line `uv run ruff check --no-cache src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches.
+- **Full suite:** GitHub Actions `test` job (run 39039860661, job 117416949304) on candidate commit `0595d98` (claude/night-candidate-wave6), CPython 3.12.15, paid and live calls off, 71 min 38 s: 7600 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks: none for C2, T37, T38 or T39 in the cloud. Everything is synthetic: Kraken answers (OHLC, AssetPairs, Ticker, rate-limit errors) scripted in Kraken's documented format, Perplexity Agent and Search API answers hand-written in the documented shapes, the subscription Trader a scripted CLI, clocks frozen or advanced by the tests. A scripted Perplexity is not a paid-provider test, and nothing ran against Kraken. L3-only checks: the real image build (downloading the NumPy and TA-Lib wheels), the first collector pass against Kraken, the candle file's growth (about 30 MB a day), the subscription provider accepting `TraderWakeReply` in a real turn, the owner profile's two new Trader context keys and the re-pinned manifest and network profile.
+
+Open, for later packages and the owner:
+- **Running Research and the Leader on Perplexity in the installed service is not built.** This is the main gap before L3 can switch Perplexity on. The L3 checklist's step 12 lists six prerequisites: paid-enabled Research and Leader handlers inside the protected process (today `run_subscription_operation` refuses `models` and `price_cards`); a pinned, separately reviewed route to both Perplexity endpoints (the market proxy admits only Kraken and Frankfurter); the key from the owner's private file (D154); re-verified price cards (the 2026-10-12 card goes stale on 2026-11-11); the wake allocation (W6-A's `_wake_task`, now merged); and `event_engine: true`. Until then, with the engine on, each day's focus step is recorded as failed and the Trader works from the scanner shortlist (D223). The composition of the switch with the Leader's handler is tested (above); its installation is not.
+- **Kraken request rate:** the 10-second quote feed's requests (0.1 a second, 0.2 with the engine's day coins) are outside the shared limiter, and during the hourly ranking pass the total is above the 0.33 a second Kraken documents for a keyed counter (keyless counting is undocumented). Checklist step 13: watch for `rate_limited` or `throttled` stops and set `ranking_every_hours: 2` if they appear.
+- **Open question (protection):** W6-D's new modules `application/price_collector.py` and `application/service_market_data.py` are not protected paths (their cadences come from the protected `paper-config.json`). The integration did not change protection; whether the collector should be protected is for the owner or a later package.
+- **Owner question:** the old Leader handler, kept as the fallback for non-wake Leader tasks and switched-off wakes, still has its R1 portfolio-level `pause` and `mandate` actions (neither approves a trade, but a mandate without a coin stops new entries in it). T38's news rounds have neither.
+- **HQ (W6-C):** the room tiles and the main calendar still read the old fixed timers (`role_schedules`), which stop moving once the engine is on, so they would show stale turns: assigned to W7-A tonight. **Done in wave 7** (W7-A T45, D229, merge `d2b0a1c`): with `event_engine: true` the room tiles and the calendar take each department's next turn from its own check-in (`hq_wakes.engine_check_ins`); with the engine off nothing changes. A new wake trigger kind needs its words in `hq_copy.WAKES` (a test fails otherwise). Not built: showing the Leader's rounds and their spend in HQ, an HQ panel for the collector (the activity log shows `price_collection`).
+- **Not built:** gap backfill inside the service (run `backfill-trades` with the service stopped; otherwise it uses a second, uncoordinated limiter); an end-to-end test of the separately billed API Trader's wake path (the per-task reply applies to it, but only the subscription path is tested end to end); Research tasks made outside the engine need the old handler as `FocusResearch`'s fallback; widening the day's shortlist from the collector's hourly scans (an owner decision; the engine check and the workflow change together).
+- Perplexity Leader rounds wait under the subscription allowance floor although Perplexity spends no Codex allowance (conservative, unchanged; the owner may want them outside the floor later).
+- Load-sensitive tests to watch (not weakened): `tests/integration/test_plugin_staging.py::test_parent_work_quota_retains_unrun_attempts_instead_of_starting_another_child` (1.596 s against a 1.5 s bound under load in W6-B's run; 3 of 3 alone) and `tests/integration/test_hourly_history_refresh.py::test_slow_hour_boundary_refresh_finishes_before_next_role_inputs_while_management_continues`. Both passed in this integration's related run (2.4 s and 0.5 s of test time, four shards at once).
+- Still open from wave 5: a Trader tool to close a day-plan position or move its exit; W4-A's reconcile finding; the scorecard in HQ; an index on `valuation_marks`; caching for the chart script.
+
+Next: **wave 7 (W7-A T45, news alarms wake the Leader and the Trader) can start** once the full suite passes on the candidate commit; its dependencies T35, T38, T39 and T44 are done. Owner: nothing to decide now; as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off. Step L3 follows [L3-INSTALL-CHECKLIST.md](docs/L3-INSTALL-CHECKLIST.md) and skips its step 12 until the Perplexity wiring exists.
+
+---
+
+# Cloud wave 5 merged (T35, T42, T41), not deployed — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave5`; GitHub's `test` job passed on it and the night lead pushed the same commit (`e1008e5`) to the integration branch. Merged in the plan's order, each with `git merge --no-ff`: W5-A T35 `cd28455` ([#14](https://github.com/krybaby7/trade-graph/pull/14), package head `b84f5a2`, code `2711ee9`), W5-C T42 `bb8a837` ([#13](https://github.com/krybaby7/trade-graph/pull/13), `751bf0e`, code `cb114a5`), W5-B T41 `5fa9bf7` ([#12](https://github.com/krybaby7/trade-graph/pull/12), `72a2d8e`, code `9942f99`), on the integration head `d6feac5`; then one integration fix, `8cc7f50` (below). Decisions [D190–D204](docs/DECISIONS.md) are copied from `planning/handoffs/W5-A.md`, `W5-B.md` and `W5-C.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic values, scripted departments and scripted quotes.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T35 event engine** ([EVENT-ENGINE.md](docs/EVENT-ENGINE.md)): departments can now be woken by events instead of a fixed four-hour timer: the Trader when a price alarm goes off, a waiting buy fills, a safety exit closes a position or the daily loss limit stops new buying; any department when the Leader asks, at the time it chose for its own next check-in, or at the next day start if it chose none. Every day at the trading-day start (00:00 UTC) each portfolio's day runs once: the coin scanner, Research's focus coins from the shortlist, the Trader's day plans, and at the day end Learning's review. Nothing limits how often anyone is woken; what arrives while a department is busy is batched into its next wake, never dropped; every wake is saved with its reasons, its triggers and the AI allowance reading; a restart neither loses nor repeats a wake, and a wake left over from a day that already ended never places an order. Under the allowance floor new AI waits while management and safety exits go on. **It is off in the installed service**: `PaperService` runs it only when given `event_engine=EngineOptions(...)`, because the real AI Trader does not yet answer a wake with day plans (W6-D tonight). The contracts W6-A, W6-B, W6-C and W7-A build on are in `contracts/wakes.py` and the guide. State migration 0035.
+- **T42 scorecard** ([SCORECARD.md](docs/SCORECARD.md)): `trade-graph scorecard [--start] [--end] [--format json|text]` scores one paper account over a period from the ledger: the result after every fee against keeping the dollars and against buying Bitcoin at the start and selling at the end (with the same fee), trades, win rate, average win and loss, worst fall and longest losing run, in USD with EUR reporting, and beside it the AI spending of the same days from receipts (unknown costs shown as unknown, never zero; practice money never pays for AI). Every scorecard says that working software, economic evidence and permission for real money are three separate gates, and it judges none of them. It reads only and writes nothing; no migration (0037 unused). Not shown in HQ yet.
+- **T41 HQ price charts** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md)): a "Price charts" panel in HQ's Money tab draws each coin the team works with (today's day-plan coins, coins held, coins with alarms, the scanner's shortlist, BTC and ETH) as candles at 1, 5, 15 or 60 minutes with the Trader's chosen indicators, alarm lines, waiting buys, safety exits and fills, every line also written out in words. Data comes only from saved records through `GET /api/v1/hq/chart` (candles from the candle file opened read-only, indicators from the indicator engine); the drawing library is TradingView Lightweight Charts 5.2.1 (Apache-2.0), vendored under `web/static/vendor/lightweight-charts/` with its licence, notice and `VENDOR.json`, loaded from HQ itself with a pinned integrity only when the panel is shown; the attribution line and TradingView link sit under every chart. `trade-graph dashboard --market-database` names the candle file (default `runtime/market_data.sqlite`). Source S46. No migration (0036 unused).
+
+Integration:
+- One conflict: `src/trade_graph/kernel/authority.py`, where W5-A and W5-C each appended to `PROTECTED_PATH_PREFIXES`; both are kept (the wake contract and `application/events/`, then `application/scorecard.py`). No other conflict: the three packages were based on `b09cae4`, and the integration branch had moved only by the status-only commit `d6feac5`. State migration 0035 is registered after 0034 in `adapters/persistence/migrate.py`; Alembic 0035 has down revision 0034, one head; W5-B and W5-C use no migration, so nothing was re-linked or renumbered. Source S46 was free and keeps its number. No dependency or price record changed: `uv.lock` and `planning/model-prices.json` are untouched (`uv lock --check` passes); `pyproject.toml` only adds the vendor folder to the package data. No package edited a shared planning file.
+- **Integration fix `8cc7f50`:** the W5-B branch head fails `uv run ruff check --no-cache src tests` with one import-order error (I001) in `tests/chart_support.py`, although its handoff reports a pass; the imports were sorted, nothing else changed.
+- Reviewed against the plan's rules and each task's acceptance: no key or private data (hygiene check and a pattern scan of the wave diff), paid calls off, no real orders (the engine installs day plans only through T34's paper-only `DayPlans.install`), no cap on agent activity (no limit on triggers, wakes or check-ins; the 16 focus coins, 16 day plans and 16 wake requests per answer and the 500-row read batch are document and read bounds, D116), and each package used only its reserved numbers (D190–D194 and 0035; D195–D199; D200–D204). The engine is opt-in and off by default; the chart page's only outside address is the attribution link the licence asks for, and its policy stays `script-src 'self'`.
+- Shared code reviewed: `application/paper_service.py` (W5-A: `event_engine=` replaces `_schedules`' fixed timers only when given, skips an obsolete wake before any snapshot or attempt, hands each quote to T33's price watcher, reports engine failures as `wakes:` in the tick); `application/ai_spending.py` (W5-C: `period_spending` added, HQ's report unchanged; W2-C's tests pass); `kernel/trade_metrics.py` (one classmethod, `TradeFill.from_fill_record`); `application/ledger.py` (one read-only `fx_rate`); `api/app.py`, `cli.py`, `dashboard.py`, the HQ page, scripts and stylesheet (W5-B); `scripts/build_protected_image.py` now accepts `.txt` package files (the chart licence and notice).
+- Build plan: status board. `planning/progress.json` marks T35, T41 and T42 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the W5-A merge (`cd28455`), the package's own tests (`tests/unit/test_wake_contracts.py`, `tests/integration/test_migration_0035.py`, `test_wake_engine.py`, `test_wake_cycle.py`, `test_wake_service.py`, `test_scripted_day.py`, `tests/property/test_wake_properties.py`) with `tests/integration/test_provider_wire_schemas.py`, `tests/unit/test_contracts.py`, `test_protocols.py` and `test_import_boundary.py`: **129 passed, 0 failed, 0 skipped** (40 s).
+- After the W5-C merge (`bb8a837`), the package's own tests (`tests/integration/test_scorecard.py`, `test_scorecard_cli.py`, `test_ai_spending_period.py`, `tests/property/test_scorecard_properties.py`, `tests/unit/test_scorecard_stays_offline.py`, `test_trade_metrics.py`) with W2-C's `tests/integration/test_ai_spending.py`, `test_ai_spending_cli.py`, `test_hq_spending.py`, `tests/property/test_ai_spending_properties.py` and `tests/unit/test_wake_contracts.py`: **104 passed, 0 failed, 0 skipped** (33 s).
+- After the W5-B merge (`5fa9bf7`), the package's new and changed tests (`tests/integration/test_hq_chart.py`, `test_hq_chart_routes.py`, `test_market_data_readonly.py`, `tests/unit/test_hq_chart_contract.py`, `tests/test_hq_charts_static.py`, `tests/test_hq_static.py`) with `tests/test_hq_template.py` and `tests/test_hq_js_behaviour.py`: **139 passed, 0 failed, 0 skipped** (23 s); `node --test tests/js/hq_charts.test.mjs`: **12 passed, 0 failed**; `uv run python scripts/vendor_lightweight_charts.py --check`: the vendored copy matches its pins.
+- On the merged tree with the fix (`8cc7f50`), 161 related non-unit modules: all of the wave's own, and every module that mentions the paper service, the subscription operation, protected paths, the migration list (`apply_migrations`, Alembic, `sqlite_master`, `schema_migrations`), JSON or wire schemas, the alarm queue or price watcher, day plans, `kernel.authority`, the trade metrics, AI spending, the ledger, `create_app`, `dashboard_runtime`, the CLI parser, `hq_copy`, the image builder or `pyproject` (found with `grep -rlE` over `tests`), plus every HQ and dashboard module, `test_provider_wire_schemas.py`, `test_import_boundary.py` and `test_hourly_history_refresh.py`; four parallel shards of whole modules (`uv run pytest -p no:cacheprovider -rfs`) with `tests/unit` alongside, 23 min: **3011 passed, 0 failed, 15 skipped** (14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not in the container, as on GitHub; 1 file-mode case the root container cannot make). `tests/unit`: **2180 passed, 0 failed, 7 skipped** (4 cross-checks talipp has no indicator for, 3 file-mode cases). On the final tree with this entry, `tests/unit` with `tests/integration/test_progress_projection.py`: **2201 passed, 0 failed, 7 skipped** (the same skips).
+- `uv run ruff check --no-cache src tests` and the CI line `uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed (after `8cc7f50`). `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. `uv lock --check`: the lockfile matches. A pattern scan of the wave diff for key formats, e-mail addresses and private paths found nothing private (only the cloud container's generic worktree paths in two handoffs).
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed.
+- **Full suite:** GitHub Actions `test` job (run 39020715997, job 117361802700) on candidate commit `e1008e5` (claude/night-candidate-wave5), CPython 3.12.15, paid and live calls off, 51 min 50 s: 7347 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks: none for T35, T41 or T42 in the cloud. The engine is scripted end to end; the real AI Trader and Research on wakes, a real scan with a live ticker and real candles come with W6-A, W6-D and step L3. The charts were checked in a test browser (Chromium) with made-up prices only: the owner opens HQ's Money tab on a phone and an iPad, in light and dark, at L2 or L3 once the price collector fills `runtime/market_data.sqlite`. No real paper run exists to score yet.
+
+Open, for later packages and the owner:
+- W6-D (tonight): the real subscription Trader on wakes: `TraderWakeReply` as its reply type for wake tasks, the `wake` context key in the protected `ROLE_CONTEXT_KEYS["trader"]` (and the owner's pinned subscription profile at L3), its result under `wake_outcome`, and the switch in `run_subscription_operation` and `PaperRuntimeConfig` that passes `event_engine=EngineOptions(...)`. Until then the installed service keeps its fixed timers. W6-D also owns the hourly scan in the service, the live ticker for the day start's scan, and the candle file kept current for the price watcher's candle and indicator alarms and for HQ's charts (the dashboard process needs read access to it; keep `.txt` in the image builder's suffixes).
+- Not built: a Trader tool to close a day-plan position or move its exit (cancel the exit, reconcile, then sell or re-protect). A plain sell of protected coins is still refused because the exit reserves them.
+- Not changed (W4-A's finding, passed to W5-A): `Execution.reconcile` leaves an `UNKNOWN` intent `UNKNOWN` while the broker reports it open, which blocks new buys of that coin on the older order path. W5-A's handoff proposes a fix for its own package, test first: when the broker answers `open` or `partially_filled` and the recorded fills equal its filled quantity, move the intent to `OPEN`/`PARTIALLY_FILLED` with its venue order id, in paper at least, and decide separately for live pilot effects.
+- The scorecard is not in HQ yet (D204): a later HQ package would cache it (about 3.5 s over four weeks of 10-second prices) and keep within the 80 KB payload budget. T43 calls `compute_scorecard(...)` with the test's start and end.
+- A later migration could add an index on `valuation_marks (portfolio_id, asset, observed_at)`: every "newest price of a coin" read (execution, the daily loss limit, HQ, the scorecard) scans the table, which grows by one row per coin about every 10 seconds (found by W5-C).
+- HQ sends `Cache-Control: no-store`, so each page load that opens a chart fetches the 198 KB chart script again; gzip or long-lived caching for `/static/vendor/` is later work.
+- Load-sensitive test to watch: `tests/integration/test_hourly_history_refresh.py::test_slow_hour_boundary_refresh_finishes_before_next_role_inputs_while_management_continues` expects two management loops within 50 ms of wall time; W5-A saw it fail once under five parallel pytest processes (it passed 5 of 5 alone). In this integration's related run (five pytest processes at once) it passed.
+
+Next: **wave 6 (W6-D install readiness, W6-A focus coins, W6-B Leader news, W6-C HQ wake log) can start** once the full suite passes on the candidate commit. Owner: as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 4 merged (T34), not deployed — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave4`; GitHub's `test` job passed on it and the night lead pushed the same commit (`b09cae4`) to the integration branch. Merged with `git merge --no-ff`: W4-A T34 `2b6a4f7` ([#11](https://github.com/krybaby7/trade-graph/pull/11), package head `a193b8c`, code `20dac09`), on the integration head `de43cc2`. Decisions [D185–D189](docs/DECISIONS.md) are copied from `planning/handoffs/W4-A.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic values and scripted quotes.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T34 Trader day plans** ([DAY-PLANS.md](docs/DAY-PLANS.md)): the Trader can write one plan per focus coin and trading day: the practice-range strategy version it follows, the menu indicators and alarms it watches, resting limit buys below the price, each with a safety stop below it and an optional take-profit above it, and a short rationale and invalidation. Software checks the plan against fixed rules only (paper account, the owner's money limits recorded, not paused, plain spot pair, a practice-range confirmation report exists for the strategy version, prices and sizes exactly on the coin's steps and above its minimums, every buy resting below the market and ending by the end of the trading day, and the per-coin and total shares counting every waiting buy as if filled), saves the plan, every order and every alarm before anything is sent, and never rests an order twice after a crash or retry. The moment a buy fills, even partly, its safety exit is saved in the same step and sent at once, so a position is never left unprotected while the Trader sleeps; a pause cancels the waiting buys and keeps the safety exits, and expired buys are cancelled. A new plan for a coin first cancels and settles the old plan's waiting buys. Nobody approves, scores or votes on a plan (no confidence threshold, committee or Leader approval), and plans can be written and revised without limit. **Plans stay off until the owner records the money limits at step L3** (`trade-graph money-limits --confirm`), and the Trader's morning turn that writes plans comes with W5-A. State migration 0034.
+- **Fixed: the paper partial-fill bug wave 3 recorded as open** (D189, `kernel/fills.py`): on a quote without a volume figure, a crossed resting buy filled half of what remained without rounding, so the digits grew until the books refused a fill (`decimal.Inexact` after 26 such quotes). Partial fills are now rounded down to the coin's lot and finish cleanly at the minimum; the same order now ends in 18 whole-lot fills. The practice range does not pass the lot yet, so its replays and golden results are unchanged.
+
+Integration:
+- No merge conflicts: the package was based on `ce17fcb`, and the integration branch had moved only by the status-only commit `de43cc2`. State migration 0034 is registered after 0033 in `adapters/persistence/migrate.py`; Alembic 0034 has down revision 0033, one head. No dependency or price record changed: `pyproject.toml`, `uv.lock` and `planning/model-prices.json` are untouched. The package edited no shared planning file.
+- Reviewed against the plan's rules and T34's acceptance: no key or private data, paid calls off, no real orders (day plans refuse every binding but paper), no cap on agent activity (the 16 entries, 16 alarms and 8 indicators per plan are document envelopes; plans may be written and revised without limit, D116), no confidence, approval or vote field, and only W4-A's reserved numbers (D185–D189, 0034) are used.
+- Shared contracts reviewed: `AuthorizedOrderIntent.take_profit_price` and `BrokerCapabilities.native_take_profit` are left out of saved documents when unset, so existing intents and capability records serialise byte for byte as before; `Execution` gains the fill hook (inside the fill's own transaction, nested as a savepoint), `place_protection(..., take_profit_price=, protective=)`, `dispatch(protection_only=)` and `cancel_intents`; a take-profit exit is refused at dispatch by a broker without `native_take_profit`; `kernel/authority.py` adds `pause_allows_protection` and makes the three new modules protected paths; the paper broker passes its lot to the fill engine and carries a take-profit leg on a sell stop (one cancels the other); the paper service runs the day-plan management step after the money-limit step and sends protective exits right after the quote that filled an entry.
+- The partial-fill rounding bug recorded as open by wave 3 is marked fixed in its entry below and in T32's progress evidence. Build plan: status board. `planning/progress.json` marks T34 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container, no `TRADE_GRAPH_*` variable set, so paid and live calls are off):
+- After the merge (`2b6a4f7`), the package's own tests (`tests/unit/test_day_plan_contract.py`, `tests/unit/test_fill_engine_lots.py`, `tests/integration/test_day_plans.py`, `test_day_plan_recovery.py`, `test_day_plan_service.py`, `test_migration_0034.py`, `test_paper_partial_fill_lots.py`, `tests/property/test_day_plan_protection_properties.py`): **105 passed, 0 failed, 0 skipped** (29 s).
+- 84 related modules (the package's six non-unit modules among them): every non-unit module that mentions the paper broker, the fill engine (`fill_order_on_*`, `trigger_exit_on_*`), `kernel.authority`, `AuthorizedOrderIntent`, `BrokerCapabilities`, protected paths, pause rules, the paper service, the money limits, the practice range or day plans (found by `grep -rlE` over `tests`), plus `test_provider_wire_schemas.py`, `test_venue_conformance.py`, the execution, broker identity, paper runtime, paper live mapping, financial transition, live pilot dispatch, append-only fill replay, owner-expense upgrade, checkpoint and expenses modules, the paper soak and both end-to-end tests (`tests/e2e/test_dashboard_loop.py`, `tests/e2e/test_offline.py`), in four parallel shards of whole modules (`uv run pytest -p no:cacheprovider -rfs`), 5 min: **1530 passed, 0 failed, 0 skipped**.
+- `tests/unit` (including `test_contracts.py` and `test_protocols.py`), in the fourth shard: **2138 passed, 0 failed, 7 skipped** (4 cross-checks talipp has no indicator for, 3 file-mode checks the root container cannot make). On the final tree with this entry, `tests/unit` with `tests/integration/test_progress_projection.py`: **2159 passed, 0 failed, 7 skipped** (the same skips).
+- `uv run ruff check src tests` and the CI line `uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before the commit): passed. `git diff --check`: clean. A pattern scan of the wave diff for key formats, e-mail addresses and private paths found nothing private (only the cloud container's generic worktree path in the handoff).
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed.
+- **Full suite:** GitHub Actions `test` job (run 39010257667, job 117331111013) on candidate commit `b09cae4` (claude/night-candidate-wave4), CPython 3.12.15, paid and live calls off, 65 min 53 s: 7189 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks: none for T34. At step L3 the owner runs `trade-graph money-limits` (preview), then `trade-graph money-limits --confirm` with the paper service stopped; until then every day plan is refused, as D138 requires. The first real day plans run in the scored paper test after L3 and W5-A; a scripted quote is not a live feed test.
+
+Open, for later packages and the owner:
+- Owner, step L3: `trade-graph money-limits --confirm` (W3-A) gates every day plan.
+- W5-A (T35): the Trader's daily turn writes `DayPlan`s and calls `DayPlans.install` under the service's execution lock with a `request_id` from its task and coin; wake reasons are fills of `day_plan_entries` intents, fills of `day_plan_exits` intents (the broker order's `fill_terms` reason says stop or take-profit) and the plan's alarms; `DayPlans.status` is the plan's state for the Trader's context. A Trader tool to close a day-plan position or move its exit (cancel the exit, reconcile, then sell or re-protect) is not built: today a plain sell of protected coins is refused as insufficient balance.
+- Passed to W5-A (found by W4-A outside its scope): `Execution.reconcile` leaves an `UNKNOWN` intent `UNKNOWN` while the broker reports it open (only filled, cancelled and not-found answers move it), so a lost acknowledgement blocks new entries on that coin until the order fills or is cancelled; a day-plan replacement cancels it, which resolves it.
+- T19 (live): day plans refuse every binding but paper; per-fill exits can be below a real venue's minimum order value, so a live version merges or resizes them.
+- Practice range (W2-A follow-up): passing the instrument's lot to `fill_order_on_candle` would make replays fill whole lots, but it changes replay results, so it needs its own decision.
+- W5-B (T41) and W6-C (T39): HQ views of plans, entries, exits, refusals and plan events (nothing is shown yet).
+
+Next: **wave 5 (W5-A event engine, W5-C scorecard, W5-B HQ charts) can start** once the full suite passes on the candidate commit. Owner: as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 3 merged (T32), not deployed — 2026-10-17
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave3`; GitHub's `test` job passed on it and the night lead pushed the same commit (`ce17fcb`) to the integration branch. This is the second candidate: the first (`290713e`) failed the full suite with two Leader wire-schema failures that W3-A then fixed (see Evidence), and it never reached the integration branch. Merged with `git merge --no-ff`: W3-A T32 `ba14f1a` ([#10](https://github.com/krybaby7/trade-graph/pull/10), package head `53fc001`, code `837a57f`; first merged as `918a0ec` at `9fb6041`). Decisions [D180–D184](docs/DECISIONS.md) are copied from `planning/handoffs/W3-A.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic values and scripted quotes.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T32 money limits and coin list** ([MONEY-LIMITS.md](docs/MONEY-LIMITS.md)): once the owner records them, the paper account stops new buying for the rest of the trading day after losing the daily limit (D138: 3%) of the day's starting value, fees included; resting buys are cancelled, while protective exits, sales and reconciliation keep working and nothing is sold off; buying resumes at the next day start (default 00:00 UTC). No coin may take more than the per-coin share (20%) and coins together no more than the total (80%), counting every order still waiting as if it had filled. Under the coin rule an entry needs a pair that passed every check of the coin scanner's newest scan (no scan in 2 hours means no new buying, never a guess). Futures, perpetuals, swaps, staking or earn variants and leverage are refused, and any deposit or transfer that looks like interest or a reward is flagged for the owner (D127). The owner command `trade-graph money-limits` previews the D138 values and, with `--confirm`, records them as one audited owner-policy revision with a matching mandate; it is refused while the paper service runs. Until then the Trader's day-plan orders (W4-A) stay off. Agents cannot record or raise these values; the Leader may only narrow them. State migration 0033.
+
+Integration:
+- No merge conflicts. State migration 0033 is registered after 0032 in `adapters/persistence/migrate.py`; Alembic 0033 has down revision 0032, one head. No dependency or price record changed: `pyproject.toml`, `uv.lock` and `planning/model-prices.json` are untouched. The package edited no shared planning file.
+- Reviewed against the plan's rules: no key or private data, paid calls off, no real orders, no cap on agent activity (these are owner money limits, D116), and only W3-A's reserved numbers (D180–D184, 0033) are used.
+- The shared execution change (D181) was reviewed against T05 and broker conformance: it changes only how `authorize` and the dispatch re-check value exposure (every entry and resting entry as if filled at the highest of its price, the buy quote and the mark, against the equity left after their fees and mark shortfall) and moves the balance check before the exposure check, so an order the account cannot pay for says so. The paper broker's fills, partial fills, minimums, precision, same-bar exclusion and the ledger path are unchanged; the venue conformance, paper soak, end-to-end, execution, paper service, broker and authority modules pass after the first merge (below); the later fix touches only the mandate's JSON schema and the mandate check.
+- Build plan: status board. `planning/progress.json` marks T32 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container):
+- **First candidate failed the full suite.** GitHub Actions `test` job 117269384964 on the first candidate `290713e` (package merged at `9fb6041` as `918a0ec`), 38 min: 7080 passed, **2 failed**, 18 skipped. Both failures were the Leader on the OpenAI wire in `tests/integration/test_provider_wire_schemas.py` (`test_actual_six_role_wire_dialects_and_original_typed_replies[OpenAIAdapter-leader]` and `test_real_six_role_schema_goes_through_gateway_http_fixture[leader-OpenAIAdapter]`); the base `868cda0` passes that file 65 of 65. Cause: W3-A's new `Mandate.coin_scope` was in the contract's JSON schema but left out of a listed mandate's document, and OpenAI's strict wire requires every schema property, so the Leader's serialised mandate change no longer matched its own schema. The integration's related-module run (below) had not included that file. W3-A fixed it on its branch (`837a57f`, head `53fc001`): the field is `SkipJsonSchema`, so schema and document agree and a model-made mandate is always listed (only the owner command sets `owner_rule`); under the coin rule a listed mandate may name any pair the rule covers (`owner_scope_covers` moved to `kernel/authority.py`); two new tests fail before and pass after; D180 and D183 say so. W3-A then ran 113 modules (every one that mentions `Mandate`, `OwnerPolicy`, the Leader reply, the wire schemas or schema exports, with all of its own) on its branch: 2832 passed, 0 failed, 14 skipped (bubblewrap is not in the container). The package was merged again on the untouched base as `ba14f1a`.
+- After the second merge (`ba14f1a`): `tests/integration/test_provider_wire_schemas.py` **65 passed, 0 failed**; the package's own tests (`test_money_limit_rules.py`, both money-limit property files, `test_money_limits.py`, `test_money_limits_cli.py`, `test_migration_0033.py`) with `tests/unit/test_hq_refusal_copy.py`: **177 passed, 0 failed, 0 skipped**; 68 modules that use the Leader reply, the mandate and owner-policy checks, the JSON and wire schemas, the authority or the paper runtime (found by `grep -rlE` over `tests`, including the wire-schema file, the paper soak, execution, paper service and all of the package's integration and unit modules), 32 min: **1764 passed, 0 failed, 14 skipped** (all 14 in `tests/security/test_subscription_process_boundary.py`: bubblewrap is not in the container); `tests/unit` with `tests/integration/test_progress_projection.py` on the final tree: **2120 passed, 0 failed, 7 skipped** (4 cross-checks talipp has no indicator for, 3 file-mode checks the root container cannot make).
+- On the first merge (`918a0ec`), the package's tests together with every module that uses the changed execution, authority, paper service, paper runtime, owner-policy and HQ wording code, including venue (broker) conformance, broker identity, the paper soak, both end-to-end tests, the execution, paper fill, paper service and authority modules and the accounting and fill-engine property tests (98 files, `uv run pytest -p no:cacheprovider -rf`, no `TRADE_GRAPH_*` variable set, so paid and live calls are off), 36 min: **2194 passed, 0 failed, 0 skipped**.
+- `uv run ruff check src tests` and the CI line `uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before the commit): passed. `git diff --check`: clean. A pattern scan of the wave diff for key formats, e-mail addresses and private paths found nothing.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on both merges (with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`): 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed.
+- **Full suite:** GitHub Actions `test` job (run 38999619551, job 117299581747) on the second candidate commit `ce17fcb` (claude/night-candidate-wave3), CPython 3.12.15, paid and live calls off, 49 min 41 s: 7084 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks: none for T32. At step L3 the owner runs `trade-graph money-limits` (preview), then `trade-graph money-limits --confirm` with the paper service stopped, to record the D138 values.
+
+Open, for later packages and the owner:
+- **Fixed in wave 4 by W4-A (D189, `kernel/fills.py`).** For W4-A (pre-existing in W1-B's quote path, found by W3-A, not fixed here): on a quote without a volume figure, a crossed resting limit fills half of its remainder, never rounded to the instrument's quantity increment, so the decimals keep growing; after about 29 such quotes `Execution._consume_reservation` raises `decimal.Inexact` inside `record_fill` (reproduced on the untouched base `868cda0`). The live paper feed sets Kraken's 24-hour volume on its quotes, so mainly synthetic or other feeds hit it, but W4-A's resting entries make it likelier; rounding partial fills down to the quantity increment would fix it.
+- Live (off and out of T32's scope): `LiveService._management` does not run the money-limit step (`enforce_money_limits`), and the protected live financial service (`kernel/financial_service.py`) still reads `allowed_symbols`. A future live package adds both.
+- HQ: a failure of the new step shows as "a routine step is failing" (`money_limits:` is not one of HQ's known problem prefixes), and the day's loss status (`MoneyLimitGuard.status(...).document()`) is not shown in HQ yet (W5-B, W6-C or later).
+- Found at the integration review, not changed: the D127 symbol check refuses any pair whose name contains PERP, SWAP or FUTURE, so a plain spot token with such a ticker (for example PERP, if listed) is refused as an entry. That is the cautious side; a reviewer may narrow the words later.
+- Contracts for the next waves: W4-A installs each day-plan entry with `Execution.authorize(portfolio_id, decision, day_plan=True)` and protective exits with `place_protection` (never gated); W5-A runs `await execution.enforce_money_limits(portfolio_id)` at the day start and after price updates, and a new stop (activity event `daily_loss_limit_reached`) is a natural Trader wake.
+
+Next: **wave 4 (W4-A T34 day plans) can start** once the full suite passes on the candidate commit. Owner: as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 2 merged (T29, T31, T40), not deployed — 2026-10-16
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session for the night shift. The merged result was pushed as the candidate branch `claude/night-candidate-wave2`; GitHub's `test` job passed on it and the night lead pushed the same commit (`4c134c0`) to the integration branch. Merged in the plan's order, each with `git merge --no-ff`: W2-A T29 `0d5d9f2` ([#9](https://github.com/krybaby7/trade-graph/pull/9), package head `904d5c2`), W2-B T31 `c4a8002` ([#8](https://github.com/krybaby7/trade-graph/pull/8), `a95e872`), W2-C T40 `cfa74d1` ([#7](https://github.com/krybaby7/trade-graph/pull/7), `c6e1c22`). Decisions [D165–D179](docs/DECISIONS.md) are copied from `planning/handoffs/W2-*.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or network call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic, scripted or recorded public data.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T29 practice range** ([PRACTICE-RANGE.md](docs/PRACTICE-RANGE.md)): `trade-graph practice-range-register`, `practice-range-study`, `practice-range-run`, `practice-range-report` and `practice-range-verify` replay a written-down strategy version on stored candles, with the paper account's cautious fills, under each fee profile (Kraken starting tier, Kraken after USD10,000, OKX Europe). A study tunes on earlier days and confirms once on later days it can never tune on. Each report gives trades, win rate, average win and loss, the result after fees against cash, holding BTC and holding the coin, the worst fall and the longest losing run, and says it is evidence for the Trader, not a pass mark, proof of profit or permission for real money. Two example strategies (`slow-trend-pullback`, `range-reversion`) are unproven starting points. OKX public candles are their own source (`candles-okx-import`; `candles-okx-fetch` is the only command that uses the network, for L2). The result sums are in the protected kernel (`kernel/trade_metrics.py`) for the scorecard (W5-C). State migration 0030; candle database version 0002 (an existing candle file upgrades on open with every row kept).
+- **T31 coin scanner** ([COIN-SCANNER.md](docs/COIN-SCANNER.md)): `trade-graph scan-coins` ranks every Kraken USD pair by 24-hour traded volume, typical hourly swing against the round-trip fee (TA-Lib NATR), spread (one public Ticker request per scan) and 24-hour trend (ROCP), and keeps the top 10 with every input, its source time and the ranking version; `coin-shortlist` shows the newest list. Left out: stablecoins, yield tokens, currencies, pairs not trading normally, thin pairs (under USD500,000 a day or a spread above 0.50%), unreviewed coins whose price sits still like a stablecoin's (the price-peg check), and U, STBL, UNITAS, CAP, DEBIT, RE and ST until someone reviews them. A replay on old history is always labelled optimistic. No AI is used. State migration 0031. Nothing runs it every hour yet (W5-A or W6-D).
+- **T40 HQ AI spending** ([HQ-DASHBOARD.md](docs/HQ-DASHBOARD.md)): an "AI spending" panel on the Money tab shows Perplexity and Jev costs per department from receipts, with actual, estimated and not-yet-known costs apart ("up to" an amount, never zero), how each department uses the ChatGPT allowance over 7 days, and the testing total next to the prepaid credit the owner recorded. Past USD20 of Perplexity testing (USD5 for Jev), Needs you shows a "Keep an eye on" card; nothing is paused. Practice money never appears in the panel. `trade-graph ai-spending-report`; `trade-graph ai-spending-record` previews and writes only with `--confirm`. State migration 0032.
+
+Integration:
+- Conflicts arose only in `adapters/persistence/migrate.py`, where each package added one line after 0029. The state migrations are registered in numeric order 0030, 0031, 0032. Alembic was re-linked (0031's down revision is now 0030 and 0032's is 0031; both had 0029), with one head, `0032`. No dependency or price record changed: `pyproject.toml`, `uv.lock` and `planning/model-prices.json` are untouched.
+- Reviewed against the plan's rules: no key or private data, paid calls off, no real orders, no cap on agent activity, and no package used another's reserved numbers. The only new network paths are keyless public market reads behind owner commands (`candles-okx-fetch`; the one Ticker request of a live `scan-coins`); the tests block the network.
+- Sources [S44](docs/90-SOURCES.md) (OKX API v5 `history-candles`) and S45 (Kraken Ticker) were added, as W2-A and W2-B asked, both marked not yet verified because the cloud got HTTP 403 from both hosts. Build plan: status board. `planning/progress.json` marks T29, T31 and T40 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container):
+- After each merge, the package's own tests: W2-A 139 passed (its 114 and the 25 candle store tests it changed); W2-B 112 passed (its 75 with every state-migration test from 0025 to 0031); W2-C 162 passed (its 71 with the HQ projection, the HQ JavaScript behaviour and the 0030 and 0031 migration tests), and `node --test tests/js/hq_spending.test.mjs` 10 passed.
+- All three packages' new tests and the related files named in their handoffs, run together after the last merge (156 files, `uv run pytest -p no:cacheprovider -rf` with `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`), 10 min: **3945 passed, 0 failed, 9 skipped** (5 file-mode checks the container cannot make because it runs as root, 4 cross-checks for which talipp has no indicator). On the final tree with this entry, the unit tests and every integration file that reads documents or planning files: 2456 passed, 0 failed, 8 skipped.
+- `uv run ruff check src tests` and the CI line `uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before the commit): passed. `git diff --check`: clean. A pattern scan of the whole wave diff for common key formats found nothing.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the merged tree: 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed.
+- **Full suite:** GitHub Actions `test` job (run 38975744115, job 117224635295) on candidate commit `4c134c0` (claude/night-candidate-wave2), CPython 3.12.15, paid and live calls off, 47 min 53 s: 6929 passed, 0 failed, 18 skipped; offline acceptance 464 of 464, gate complete. The same commit was then pushed to the integration branch.
+
+Missing credentials and real-data checks (step L2 on the owner's PC): the first real practice-range reports on the imported Kraken history, under all three profiles; a real OKX recording (okx.com refused the cloud, so T29's "recorded OKX public fixture" is for now a labelled synthetic OKX-format fixture, as the W2-A package section prescribes); the first real scan and one recorded Ticker answer (kraken.com refused the cloud); the swing needs about 30 days of hourly collector candles per pair, so the collector must keep running (L1); the first real AI receipts, and a look at the AI spending panel on a phone and an iPad, light and dark.
+
+Open, for later packages and the owner:
+- T31's recorded fixtures have 120 hourly candles and NATR 14 needs 710, so the recorded scan ranks no pair (every pair is excluded with its reason); a ranked shortlist is shown deterministic on synthetic candles and by property tests. A longer recorded series comes with L1 and L2.
+- Contracts for the next waves: T32 (W3-A) reads `CoinScanStore.coin_rule` (unknown when the newest live scan is over 2 hours old or failed; W3-A decides what unknown means); T34 (W4-A) reads `PracticeRangeStore.has_report` and `reports_for`; T42 (W5-C) reuses `kernel/trade_metrics.py` and `application.ai_spending.spending_report`; T37 (W6-A) reads `CoinScanStore.latest()`.
+- The older T15 "Pays for itself?" box on the Money tab compares practice results with the real costs the owner entered. The new panel never offsets AI costs against practice gains; whether the older box's wording should change is an owner or reviewer question (found by W2-C, not changed).
+- `application/pair_classification.py`'s `VERIFICATION_NOTE` still says the scanner "will add" a price-peg check; it does now. Hourly scans add about 1.5–2 MB a day to the state database; a retention rule needs an owner decision later. The strategy grammar is not yet an R1 Engineer artifact class. Practice-range limits: one replay reads at most 100,000 candles, volume-share fill quantities are not rounded to a lot, and a tuning replay's indicator warm-up may read an earlier study's confirmation days (values only, never a fill).
+
+Next: **wave 3 (W3-A T32 money limits and coin list) can start** once the full suite passes on the candidate commit. Owner: as before, switch on the price schedule (L1) and check that Perplexity auto top-up is off.
+
+---
+
+# Cloud wave 1 merged (T44, T28, T36, T33, C1), not deployed — 2026-10-16
+
+Branch `claude/day-trader-engine-20261012`, integrated by a cloud session and pushed. Merged in the plan's order, each with `git merge --no-ff` (W1-D's late handoff evidence as `39af56b`): W1-E C1 `fff2792` ([#6](https://github.com/krybaby7/trade-graph/pull/6), package head `74ee9c8`), W1-B T28 `934d20d` ([#2](https://github.com/krybaby7/trade-graph/pull/2), `8fdb323`), W1-D T33 `87a7c75` ([#5](https://github.com/krybaby7/trade-graph/pull/5), `2d7f48e`), W1-C T36 `36cc045` ([#4](https://github.com/krybaby7/trade-graph/pull/4), `105d5cc`), W1-A T44 `c4bde76` ([#3](https://github.com/krybaby7/trade-graph/pull/3), `24904b1`). Decisions [D140–D164](docs/DECISIONS.md) are copied from `planning/handoffs/W1-*.md`. **Nothing was deployed or installed.** No paid, model-provider, exchange or news-feed call was made, no order was placed and no key exists in the cloud; all new behaviour is tested on synthetic or scripted data.
+
+What changed for the owner (all in source; it reaches the PC at step L3):
+- **T44 news alarm, shadow mode** ([NEWS-ALARM.md](docs/NEWS-ALARM.md)): `trade-graph news-alarm-poll` reads five free feeds (Kraken status and blog, CoinDesk, Cointelegraph, Decrypt) and stores each new headline. With Jev switched on (off by default; needs a key), it asks Jev three fixed questions per headline and logs whom it would have woken. Nobody is woken. `news-alarm-report` shows headlines, answers, would-be alarms and Jev's daily cost. State migration 0026.
+- **T28 fill engine** ([FILL-ENGINE.md](docs/FILL-ENGINE.md)): one cautious fill and safety-exit module in the protected kernel, shared by the paper account and the coming practice range. A waiting order fills only when the price trades past it; a gap through a stop fills at the worse price. Three dated fee records: Kraken starting tier 0.40% / 0.80%, Kraken after USD10,000 of 30-day volume 0.22% / 0.38%, OKX Europe 0.10% / 0.20%. **Behaviour change once installed:** a paper stop exit now fills at the gapped bid less 0.10% slippage (D147).
+- **T36 Perplexity research connection** ([PERPLEXITY-RESEARCH.md](docs/PERPLEXITY-RESEARCH.md)): Claude Sonnet 5.5 through Perplexity's Agent API. The software runs each web search itself, stores every result before the model reads it, rejects a finding that cites anything else, and writes a receipt for every call. An owner monthly limit pauses only these rounds. `trade-graph perplexity-smoke` only previews; a real call needs `--confirm-paid-call` and the private key file (step L2). Research and the Leader are not switched over yet (W6-A, W6-B). State migration 0028.
+- **T33 price alarms** ([PRICE-ALARMS.md](docs/PRICE-ALARMS.md)): saved alarms on a price, a completed candle or a T27 indicator. Each fires once, then waits to be re-armed by its owning department. Fired alarms go to a stored per-department queue that the event engine (W5-A) will deliver one batch per wake. A stopped price feed is reported, never read as a quiet market. No AI is used and nothing limits how many alarms exist. State migration 0029. Nothing calls the watcher yet (W5-A).
+- **C1 green checks:** the 20 known test failures are fixed at their causes. Mission Control's progress page reads the current plan again (the `todo` status and full timestamps). The GitHub test job may now run 120 minutes; at 45, every run since 2026-10-09 had been cancelled.
+
+Integration:
+- Conflicts arose only in `adapters/persistence/migrate.py`, `tests/integration/test_migration_0025.py`, `tests/integration/test_owner_checkins.py` and the one-line `planning/model-prices.json`. State migrations are registered in numeric order 0026, 0028, 0029. W1-B needed none, so 0027 stays unused; the runner does not need contiguous numbers. Alembic was re-linked to 0025 → 0026 → 0028 → 0029 (0028's down revision is now 0026 and 0029's is 0028), with one head. The 0025 tests keep both sides' checks: 0025 is registered once, right after 0024, every version is in order, and the Alembic head is the newest registered version. The price file keeps every dated record (W1-C's two Perplexity entries, W1-A's `typesafe:jev-1.13.0`); no existing entry was edited.
+- Reviewed against the plan's rules: no key or private data, paid calls and Jev calls off by default, no real orders, no cap on agent activity, and no package edited another's reserved numbers. W1-E changed one security test, `test_subscription_egress_boundary::test_fixed_provider_proxy_is_the_only_child_egress_setting`, which needed bubblewrap on the host (it failed on GitHub's runner too). Its subject is the composed proxy command, which is never run, so it now stands in a root-owned binary for `bwrap`. No isolation code changed, and a new test shows that a host without bubblewrap still fails closed. It was kept.
+- Sources [S42](docs/90-SOURCES.md) (the five news feeds) and S43 (the OKX fee page) were added, as W1-A and W1-B asked. Build plan: status board, the known-failures paragraph (none now), the cloud-container note and the install step (`uv python install 3.12`, then `uv sync --frozen --group dev --python 3.12`; the container's default is 3.13). `planning/progress.json` marks T28, T33, T36 and T44 done, and the packaged `progress_catalog.json` is regenerated with `scripts/update_progress_catalog.py`.
+- **W1-D's evidence came after its code was merged.** When it was merged, W1-D's handoff still had `EVIDENCE_PLACEHOLDER`, `HEAD_PLACEHOLDER` and `PR_PLACEHOLDER`. Its session then pushed the evidence (`6a068f2`, handoff only), merged as `39af56b`. Its full suite at `2d7f48e`, run in seven slices after a single run hit that container's 2-hour limit: 6,338 passed, 14 failed, 23 skipped. All 14 also fail on the untouched base `435db71` in the same container: the 13 known failures and the bubblewrap egress test. That is no new failure. Its 114 package and migration tests passed again after the merge here.
+
+Evidence (CPython 3.12.13 from `uv python install 3.12`, `uv sync --frozen --group dev --python 3.12`, in a cloud container):
+- After each merge, the package's own and related tests: W1-E's changed files all passed (including the three financial files and the egress test); W1-B 88 fill-engine and execution tests and 94 broker-conformance, paper-service and pause tests; W1-D 114; W1-C 158 with the migration tests and 302 related (transport, gateway, cost, expense, contracts, import boundary); W1-A 315 with all four new migration tests and the files its handoff names. All passed.
+- **Full suite** `uv run pytest -p no:cacheprovider -rf` at `c4bde76` (all five merges), with CI's `TRADE_GRAPH_PAID_CALLS_ENABLED=false` and `TRADE_GRAPH_LIVE_ENABLED=false`, 105 min: **6664 passed, 0 failed, 23 skipped**. That is no failure at all, so no base comparison was needed; W1-E's run at its own head was 6297 passed. The commit that adds this entry changes only documents, planning files and the packaged snapshot; the tests that read them were re-run on it (results in that commit's message).
+- `uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py`: all checks passed. `python3 scripts/check_plan.py`: 46 tasks valid. `python3 scripts/test_planning.py`: 11 OK. `python3 scripts/check_repository_hygiene.py` (and `--staged` before each commit): passed. `git diff --check`: clean. A pattern scan of the whole wave diff for common key formats found nothing.
+- CI's offline acceptance step `scripts/verify_offline_acceptance.py` on the final tree: 464 of 464 passed, 40 of 40 cases passed, gate complete; the artifact hygiene check on its report passed.
+
+Missing credentials and real-data checks (step L2 on the owner's PC): one real sample of each news feed (every feed host and TypeSafe's documentation were refused from the cloud); an optional opt-in Jev call if the owner gets a key; one real Perplexity call with the D125 test key, confirming the endpoints, field names and both prices (the Search API is priced high at USD0.005 per request, unconfirmed); re-reading Kraken's and OKX's fee pages (unreachable from the cloud; the records keep the build-plan figures and say so). The 2026-10-12 Perplexity price card goes stale on 2026-11-11.
+
+Open, for later packages:
+- W1-C found that a repeated provider request id raises `IntegrityError` out of `BudgetGateway.commit` and leaves the reservation `RESERVED`. Not fixed; it belongs to the gateway's owner.
+- Before real Jev calls under the protected deployment (W6-D, L3), bind Jev checks to protected budget origins and decide whether the runtime evidence collector reads `news_jev_attempts`.
+- The paper broker's take-profit and one-cancels-the-other orders, and quote-path marketable limits charged as takers, go to T34 (W4-A).
+- Suite speed: the run took 105 minutes here against W1-E's 54, and the GitHub job limit is 120. W1-E traced about half the time to `runtime_environment_sha256()` re-hashing the standard library on every pin check; that is protected engineering code, so a fix needs its own package or an owner decision. Smoke tasks keep a 270 s deadline while each cycle call may run 600 s.
+
+Next: **wave 2 can start** (W2-A T29 practice range, W2-B T31 coin scanner, W2-C T40 HQ spending), then its integrator. Owner: as before, switch on the price schedule (L1), check that Perplexity auto top-up is off, and optionally get a Jev key.
+
+---
+
+# Owner decisions settled; cloud build plan; branch on GitHub — 2026-10-16
+
+Branch `claude/day-trader-engine-20261012`, pushed to GitHub (`origin`) as the integration base for cloud sessions. Plan and documents only: no code changed, nothing deployed, no paid or private-exchange call.
+- **[D138](docs/DECISIONS.md):** the owner accepted every recommendation in the build plan's "Decisions that need you" (1–10): 3% daily loss limit, 20% per coin and 80% total, the rule-based coin list, the Perplexity budget method (USD20 alert while testing, then about 1.5× observed per month), no practice-range pass mark, 00:00 UTC day start, a scored test of at least four weeks and 30 trades, the 40% AI allowance floor, the stock source later, and the D137 news-alarm defaults. They reach the installation through an owner policy revision at deployment.
+- **[D139](docs/DECISIONS.md) and [CLOUD-BUILD-PLAN.md](docs/CLOUD-BUILD-PLAN.md):** the remaining tasks are 18 cloud packages in 7 waves (wave 1: T44, T28, T36, T33 and C1, a clean test suite), an integration session per wave, and local steps L1–L4 for private data, credentialed smoke tests, installation and the scored run (T43). Packages write `planning/handoffs/<package>.md` instead of this file or `planning/progress.json`; decision numbers D140–D239 and state migrations 0026–0042 are reserved per package.
+
+Found on the owner's PC, done outside this file's earlier entries (night of 2026-10-15, UTC; private store in the WSL user's data folder, not in Git):
+- **The 2026Q3 Kraken archive was imported** (`Kraken_OHLCVT_2026Q3.zip`, 576,348,633 bytes, 10,054 members, run from the `candle-collector-runtime` checkout under the collection lock). 5-, 15- and 60-minute import, 22:30–22:36Z: status ok, 9,055,201 rows read, 9,046,369 inserted, 8,832 duplicates (an earlier BTC/USD 15-minute probe), 0 rejected, 0 outside the quarter, 672 USD pairs in 2,016 series; 7 catalog pairs absent from the file (DEBIT, DNA, EURR, PNT, USDR, USDSUI, ZCHF). 1-minute BTC/USD and ETH/USD: 263,843 inserted, 0 rejected. Coverage checked for BTC, ETH and SOL: 2026-07-01 00:00Z to 2026-09-30 23:59Z. The candle file is about 1.13 GB.
+- The open-time convention the importer assumed is **not yet checked** against the collector: the archive ends 30 September and the collector's candles start 13 October. Plan step L1 checks it with a one-slot Trades backfill.
+- October is mostly missing: only the 2026-10-13/15 smoke runs and one scheduled-runner test (2026-10-15 21:05Z, 1-minute BTC/USD and ETH/USD, 1,440 candles) are stored.
+- Commits `138aa5a` (scheduled collection runner with one lock and kept reports, tests in `tests/unit/test_run_candle_collection_script.py`) and `6d01220` (`scripts/register_candle_schedule.ps1`). **The Windows tasks are not installed:** Windows refused task creation from the agent session. The owner runs the script or permits it (plan step L1).
+
+Checks: `python3 scripts/check_plan.py`, `python3 scripts/test_planning.py`, `python3 scripts/check_repository_hygiene.py` and `git diff --check` (results in the commit that adds this entry). Before the push, the 152 commits not yet on GitHub were scanned for credentials and private data: the hygiene script passed, the Perplexity test key's value appears nowhere in them, and no common key pattern matched.
+
+Next: cloud wave 1 on the owner's start (T44, T28, T36, T33, C1) and local step L1. Owner: switch on the price schedule, check Perplexity auto top-up is off, and optionally get a Jev key.
+
+---
+
+# Phase D1 data foundation (T25–T27) in source, not deployed — 2026-10-15
+
+Branch `claude/day-trader-engine-20261012` (WSL worktree `day-trader-engine-20261012`), not pushed. Streams were built in three worktrees and merged: archive and Trades backfill `a35e959` (stream head `9d07a75`), collector `09b3c2a` (`dea575e`), indicators `272b01c` (`882ad04`); integration fixes and documents follow (tip `987bba8`). Decisions [D132–D136](docs/DECISIONS.md). **Nothing was deployed, pushed or run against the installation;** the stopped service, its containers and `/opt/trade-graph-subscription` were not touched. No paid, private-exchange or Perplexity call was made. The only network use was public Kraken GET requests: recording fixtures (about 25 spaced requests), a few small live smoke runs, and read-only header checks of the three quarterly archive files.
+
+What exists (all in `src/trade_graph`, with documents in `docs/`):
+- **T25** — a separate private candle file (`runtime/market_data.sqlite`, [CANDLE-STORE.md](docs/CANDLE-STORE.md)): append-only revisions, receipt-time availability, point-in-time and replay reads, coverage reports. The Kraken USD pair list with stablecoin, yield-token and currency marks ([PAIR-CATALOG.md](docs/PAIR-CATALOG.md)). A bounded, rate-limited collector for 1, 5, 15 and 60 minutes ([KRAKEN-CANDLE-COLLECTION.md](docs/KRAKEN-CANDLE-COLLECTION.md)): `trade-graph collect-kraken-candles`, `candle-coverage`.
+- **T26** — a local-file Kraken OHLCVT archive importer ([KRAKEN-ARCHIVE-IMPORT.md](docs/KRAKEN-ARCHIVE-IMPORT.md)): `import-kraken-archive`. A public Trades backfill with a resumable cursor, source reconciliation and precedence ([KRAKEN-TRADES-BACKFILL.md](docs/KRAKEN-TRADES-BACKFILL.md)): `backfill-kraken-trades`, `reconcile-candles`.
+- **T27** — TA-Lib 0.8.2 and NumPy 2.5 locked; a 26-entry indicator menu with bounded settings; an engine that reads completed candles through the store and reports missing candles per indicator; cross-checks against pandas-ta-classic and talipp (test-only) and hand-derived reference values ([INDICATOR-MENU.md](docs/INDICATOR-MENU.md)). The hourly Trader fields are `hourly-price-features-v3`, computed by TA-Lib; `pullback_from_high`, `pullback_depth` and `midpoint_distance` are retired and `highest_high_20` is new. Stored v1 and v2 snapshots stay readable (v2-made fixtures are tested).
+
+Evidence:
+- Full suite, `uv run pytest -p no:cacheprovider -rf` at `28689d4` (36 min): **6274 passed, 20 failed, 12 skipped** (was 4070 passed at `3b7f062`). 18 failures are the known set: `e2e/test_dashboard_loop`, 4 `test_paper_soak`, 5 of the 6 flaky `test_plugin_staging` cases, 3 `test_progress_dashboard`, 4 `test_progress_projection` and `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers`. Two were new. `test_kraken_catalog::test_the_fixture_is_a_small_recorded_excerpt_with_the_required_cases` was my merge's fault (the combined fixtures README had a different heading); fixed in `987bba8` and passing. `test_financial_recovery::test_recovered_legacy_subscription_rows_are_sealed_before_first_normal_checkpoint[usage]` hit the 2-second ledger-replay helper limit under full-suite load (it is timing-sensitive under load, as earlier runs noted) and passed twice alone. `test_engineer_isolation` passed this time. `ruff check src tests` passes. `python3 scripts/check_plan.py` valid.
+- Every stream was written test-first and then reviewed by two independent reviewers (acceptance evidence with mutation checks; invariants and adversarial inputs). Their findings were reproduced before each fix: for example an id-gap taint lost on a backfill resume, a ZIP with missing bytes escaping as a traceback, a rate-limit answer to the pair list not stopping the run, the same indicator value differing with the requested count, and hand-written max/min passing the "no in-house formula" test.
+- **Live smoke, labelled `live_public_smoke`, not a test** (2026-10-15, BTC/USD and ETH/USD, kept in ignored `runtime/market/`): `collect-kraken-candles --smoke` exit 0, status ok, 3 requests, 1,440 candles stored, 677 USD pairs listed, 591 eligible. `backfill-kraken-trades --smoke` for BTC/USD 12:45–13:00Z: 3 requests, 3,000 trades, 1 candle built, no id gaps. `reconcile-candles` of that slot against Kraken's own candle: open, high, low, close, volume and trade count identical; only vwap differed (Kraken rounds it to one decimal), by 0.00004%. One slot only.
+- Synthetic end-to-end: 95 days of 15-minute candles for five pairs imported from a synthetic archive with a planted gap, replayed in one window read; benchmark of 525,600 synthetic candles at about 22,000 per second and about 107 bytes each.
+
+Findings that change earlier assumptions:
+- Kraken's OHLC fills quiet minutes with flat zero-volume rows; it does not omit them. A missing collected candle means "not collected" ([CANDLE-STORE.md](docs/CANDLE-STORE.md) corrected). `since` is inclusive for OHLC and Trades.
+- Trades backfill cost: BTC/USD makes about 164,000 trades a day (about 165 requests, 8 minutes at the safe rate per day of gap); BAT/USD about 13,700. A 90-day backfill of a busy pair is about 12 hours.
+- Disk: about 118 bytes per candle. A first pass over 591 pairs at 5, 15 and 60 minutes plus BTC/ETH at 1 minute is about 151 MB, then about 29 MB a day (2.6 GB a quarter). All 591 pairs at 1 minute would add about 9 GB a quarter.
+- This PC's clock ran about 153 seconds ahead of Kraken's on every request (Windows Time service stopped). That is the safe direction for availability times; the collector refuses a run if the clock goes backwards.
+
+Not done or open:
+- **No real Kraken archive has been imported.** The importer is verified on synthetic archives only, and the file layout (timestamp unit, candle open or close, folders in the ZIP) is unconfirmed. Nothing was downloaded. Quarterly files are 576 MB (2026Q3), 538 MB (Q2) and 524 MB (Q1); the complete archive is about 10 GB in five parts. The owner decides on the download.
+- **Nothing is scheduled.** The collector must run again within each window (1-minute candles reach back 12 hours, 5-minute 2.5 days, 15-minute 7.5 days, 60-minute 30 days) or gaps appear. A full pass is about 1,775 requests and about 98 minutes at the safe rate. Two collectors at once are not coordinated.
+- 1-minute detail is limited to BTC/USD and ETH/USD by default. `--one-minute-pairs` takes a list or `all`. The owner decides which pairs keep 1-minute detail.
+- 608 of 677 USD coins are not individually reviewed for stablecoin or yield status; reports list them. Names that need a human look: U, STBL, UNITAS, CAP, DEBIT, RE, ST and USDE. The scanner (T31) is meant to add a price-peg check. It is not built.
+- Two rate limiters exist (`rate_limit.py` for the collector, `trades_rate_limit.py` for the backfill) with the same counter model but different settings; unify them when one service process runs both (event engine). The `slow-trend-pullback` template now reads `highest_high_20` and `latest_close`; a database that already exists keeps its old template until the owner approves replacing its stored baseline (the retired ingredient is supplied meanwhile). Undefined oscillator readings in a market with no movement are still labelled `ready`. The owner dashboard's trend label still divides two averages (display only; D136 reads D118 as exempting it).
+- Before deploying: build the protected image with the NumPy and TA-Lib wheels (`scripts/build_protected_image.py` was not exercised), re-pin the kernel manifest, and add the candle file to the runtime layout. The hourly features still read `hourly_candles`; moving them to the new store is later work.
+
+Next: Phase D2 (T28 first) after the owner's go-ahead and decisions above; T44 (Jev shadow) is the owner's next task by D137.
+
+---
+
+# Jev news alarm planned as the next task, not built — 2026-10-15
+
+Branch `claude/day-trader-engine-20261012`, not pushed. Plan and documents only: no code, no Jev or other paid call, nothing deployed.
+- **Owner decision [D137](docs/DECISIONS.md):** the next task is a news alarm built on Jev, TypeSafe AI's decision model. Jev only notices important headlines between Leader news rounds. It does not rank coins, label market types, check strategy rules or estimate prices. Recommended defaults wait for the owner: feeds, a 5-minute check, pinned `jev-1.13.0`, wake the Leader (and the Trader for held coins), and a USD5 testing alert.
+- **Tasks:** T44 (phase DN, ready now) runs the Jev connection, headline collection, receipts and would-wake logging in shadow mode. T45 turns the alarms into real wake-ups after T35, T38 and T39. Both sit right after T27 in `planning/tasks.json`, so `scripts/next_task.py --prompt` offers T44 first. Build plan section "DN — News alarm with Jev", owner decision 10, and source S40 (TypeSafe's official models and API pages, read 2026-10-15).
+- **Missing credential:** no Jev key exists. The owner signs up at console.typesafe.ai. T44 can be built and tested without a key.
+- **Phase D1 note:** T25–T27 are merged in source with decisions D133–D136 (`28689d4`); their status entry and progress evidence are in the section above.
+
+Checks:
+- `python3 scripts/check_plan.py`: 46 tasks valid.
+- `python3 scripts/test_planning.py`: 11 OK. `test_day_trader_plan_order` was updated for the DN tasks and their place in the order.
+- `scripts/next_task.py`: ready tasks are T44, T28 and T36.
+- `git diff --check`: clean.
+- `tests/integration/test_progress_projection.py` and `test_dashboard.py`: only the 4 known `test_progress_projection` failures. The packaged `progress_catalog.json` already lacked T23–T43 and still does.
+
+Next: T44 on the owner's go-ahead. Owner: confirm the D137 defaults and get a Jev key. The open D1–D7 decisions in the build plan are unchanged.
+
+---
+
+# Owner follow-ups to the D114 fix list, not deployed — 2026-10-13
+
+Branch `claude/day-trader-engine-20261012`, not pushed; nothing deployed or started. Owner decisions recorded as [D130](docs/DECISIONS.md):
+- **Unusable Trader answers fail only their turn** (`548d9c3`). The cases are a schema or check failure, research cited outside the snapshot, an unknown strategy, a cut-off, declined or temporary model answer, and a state change during the turn. The task is FAILED with `failure_scope: turn` and a `trader_turn_set_aside` event, without a system pause. Lost credentials, unknown outcomes, quota, budget, exhausted attempts and software exceptions still pause. HQ words these turns plainly. Tests: `tests/integration/test_trader_turn_failure_scope.py` (failed on the prior commit with `KeyError: 'failure_scope'`; the lost-credentials case pauses before and after), `tests/unit/test_hq_turn_failure_copy.py`, and the updated `test_order_refusal.py::test_malformed_trader_reply_fails_only_that_turn`.
+- **A euro reference-rate outage no longer blocks buys** (`3b7f062`). The paper and live feeds keep their quotes, retry after 5 minutes and record `reference_fx_health` start and end events. Tests: `tests/integration/test_reference_fx_outage.py` (the old code raised `OSError` out of the poll, which marked the feed failed); `test_feed_diagnostics` now covers only the metadata and ticker stages.
+- **Provisional money-risk settings** (`5943d5c`, docs only): 3% daily loss, 20% per coin, 80% total, a rule-based coin list, and a Perplexity budget at about 1.5 times the observed cost after testing. They are applied when T32 is built and revisited in a bankroll session.
+
+Checks: `uv run ruff check src tests` passed. Related runs gave 584 passed with 1 known failure, then 196, then 358 passed. Full suite at `3b7f062` (36 min): **4070 passed, 20 failed, 8 skipped**. That is the known set listed below plus `test_engineer_isolation::test_checker_wall_and_output_limits_are_enforced`, a timing case that passed alone twice and also fails under load on the base.
+
+---
+
+# Day-trader build plan and D114 fix list in source, not deployed — 2026-10-13
+
+Branch `claude/day-trader-engine-20261012` (WSL worktree `day-trader-engine-20261012`), not pushed. **Nothing was deployed, started or run against the installation**; the stopped service, its containers and `/opt/trade-graph-subscription` were not touched. No paid, private-exchange or Perplexity call was made.
+
+- **Plan** (`3838a2d`): tasks T23–T43 (release R2, phases D0–D7; T30 is LATER) and [the build plan](docs/DAY-TRADER-BUILD-PLAN.md) with the owner decisions still open. `scripts/next_task.py` now lists ready R1 and R2 tasks.
+- **D114 fix list** (T23, T24; `71aa92a`..this commit; defaults in [D129](docs/DECISIONS.md)):
+  - Hourly features v2: windows anchor at the newest available completed candle (at most 2 h late), per-field `stale` status and missing hours; a pending newest candle no longer withholds every field (`223f5e0`).
+  - Trader and Research snapshots carry `latest_close`, up to 24 recent completed candles available at as-of and the missing slots (`ebf1d47`, `88a87ab`).
+  - Schedules stay on their persisted grid; a fresh Trader task in the normal subscription operation waits up to 300 s after the hour for the just-closed candle; `history.expected_candle` says plainly whether it was stored (`d07296c`, `6cf81a2`).
+  - Exposure checks compare USD with native USD equity; a carried EUR reference rate only labels EUR views; other-currency cash uses the inverse reference rate (`12f5be1`, `e1415ad`).
+  - A refused order is a recorded decision plus `order_refused` event, shown to the next Trader turn (`portfolio.recent_order_refusals`) and in HQ in plain words; the task succeeds and no system pause is set (`ab0c42d`, `8d7e9f1`, `a3594ed`, `e3e1015`, `b4fe523`).
+  - Default mandate is `["slow-trend-pullback"]`; `trade-graph mandate-cleanup` previews and `--confirm` installs a new revision for older databases (refused while the service runs); FLATTEN exits work under a named-strategy mandate (`71aa92a`, `c1626c2`, `da384f3`, `95d55b4`).
+  - `tests/integration/test_first_run_replay.py` (`0de75e7`) replays the first run end to end on the subscription path with synthetic data: a Saturday with a stale EUR rate, candle wait, latest close and stale-or-ready features, an authorized buy, a refused buy without a pause, and the refusal shown on the next turn. It fails on the pre-fix source.
+
+Evidence (WSL, synthetic data only):
+- Each fix was written test-first; every new test file failed on `3838a2d` (for example `KeyError: 'latest_close'`, `StaleState: provisional valuation`, `('FAILED', 'MANAGE_ONLY') == ('SUCCEEDED', 'RUNNING')`, next due `04:00:07` instead of `04:00:00`, `invalid choice: 'mandate-cleanup'`) and passes now. An independent reviewer re-ran each track's new tests against the pre-fix source.
+- `uv run ruff check src tests`: all checks passed. `python3 scripts/check_plan.py`: 44 tasks valid; `python3 scripts/test_planning.py`: 11 OK.
+- Combined targeted run of all tracks' related files: 894 passed, 1 failed (the pre-existing timeout assertion below).
+- Full suite `uv run pytest -p no:cacheprovider -rf`, at `6cf81a2` (35 min): 4043 passed, 18 failed, 8 skipped; at `daae41d` (34 min): **4053 passed, 19 failed, 8 skipped**. All failures already fail on the base: `e2e/test_dashboard_loop` (`KeyError: 'degraded'`), 4 `test_paper_soak` CLI tests, 6 `test_plugin_staging` 0.3-second-limit cases (flaky under load), 3 `test_progress_dashboard` and 4 `test_progress_projection` (Mission Control rejects the `updated_at` timestamp; `/progress` now redirects signed-out readers to `/login` with 303, which the stale 401 assertion misreads; it is not a privacy leak), and `test_subscription_smoke::test_cycle_runs_only_fresh_research_and_trader_through_protected_handlers` (timeout/max-output assertion).
+
+Before deploying (owner-approved, as before): re-pin the protected kernel manifest and reseal the image (every `.py` change alters the digest), then deploy through the financial-manifest transition with the paper account in MANAGE_ONLY. Re-collect any Kraken read-only venue observation afterwards, because `execution.py`, `ledger.py` and `books.py` are part of its source digest. Then, with the service stopped and after `trade-graph backup`, run `trade-graph mandate-cleanup` on the state database and `--confirm` only on the owner's yes.
+
+Open follow-ups (not in this slice):
+- ~~A malformed Trader reply, research cited outside the snapshot or a stale snapshot still fails the turn and sets the system MANAGE_ONLY pause~~ (resolved by D130, see above).
+- ~~A Frankfurter outage still marks the feed failed, which blocks buys~~ (resolved by D130, see above).
+- A refused turn still counts as a failed version-trial sample. Dispatch-time rejections are not yet in `recent_order_refusals`. HQ shows a Trader task waiting for its candle as an ordinary queued task.
+- Research carries the history twice (market and sources); widening the coin list (T31/T32) needs per-symbol budgeting.
+- `api/financial._mark_maximum_age` finds no mandate before a new revision's creation time and falls back to the policy quote age (same value today).
+- Mission Control accepts neither the `todo` status nor the full `updated_at` timestamp.
+
+Next: Phase D1 (T25–T27) after the owner's go-ahead. Owner decisions in the build plan: daily loss limit, maximum per coin, paper coin list, Perplexity budget after testing, trading-day start, test-run length.
+
+---
+
+# Trade Graph HQ final full-suite check, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009` at `67a774d`. `uv run ruff check src tests` passed. Full suite (`uv run pytest -p no:cacheprovider -rf`, 36 min): 3948 passed, 23 failed, 8 skipped (Node tests skipped in WSL; Windows Node runs them). Of the 23:
+- 19 are the failures already recorded for base `3504248`: 3 `test_progress_dashboard`, 4 `test_progress_projection`, 1 `test_subscription_smoke`, 4 `test_paper_soak` and the e2e dashboard loop (`KeyError: 'degraded'` before the page this branch edited), plus `test_plugin_staging`'s 0.3-second-limit cases, which are flaky on both commits (6 of 6 this run).
+- 4 failed only in this full run: 2 in `test_financial_recovery_history` and 2 in `test_financial_transition`. Run alone, both files passed 56 of 56, twice in a row. They are timing-sensitive under full-suite load, not caused by this branch's changes. The earlier full run at `b1252c5` did not show them.
+
+Desktop visual check (headless Edge, synthetic fixtures only, 1 440×900 light and dark): independent reviewer found nothing remaining. Not deployed; going live needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained.
+
+---
+
+# Trade Graph HQ visual-check fixes (round 2), not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `1021655` (decision D113). **Nothing was deployed, pushed or run against the installation.**
+- **Punctuation stays with a time or word:** opening or closing punctuation that touches a tappable time, term or amount is kept on its line with it (`span.hq-nobreak`, `white-space: nowrap`). The allowance card reads "(tomorrow 3:00)." instead of leaving ")." alone on the next line at 1 366, 1 440 and 1 600 px. An opened time's full-time box and technical codes may still wrap, so nothing overflows on a phone.
+- **Fixture copy and times:** the busy fixture's waiting turn says the real "Waiting to finish."; the "At … it decides without research notes." and "It decides at … without research notes." lines in quiet, live and reader, and every Pause card's "These would wait" list, use time tokens built with the real copy and `_waiting_turns` (so they show the reader's own time, not Cairo clock words). The real list names every scheduled department, so quiet, busy and allowance-paused now list four.
+- **Desktop balance (≥ 1 200 px):** when the right-hand column would end more than 300 px below Story, Your bills (then Review check-ins) moves into the bottom row, stacked in its first third (`balanceDecide` in `hq-render.js`, run after renders and size changes, never while the focus is in the panel). The document order, anchors, iPad and phone layouts are unchanged. At 1 440 px the blank under Story falls from 834 to 119 px (safety stop), 695 to 223 (allowance paused), 1 328 to 614 (silent), 1 615 to 901 (empty) and 1 671 to 956 (offline); quiet, busy, the busy week, live and reader are unchanged.
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` gave 284 passed, 8 skipped (Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 45 passed. Headless Edge at 1 440×900 (dark and light): no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty, silent, busy and live snapshots; no punctuation apart from its time or word at 1 024 to 1 600 px; resizing to 1 199, 1 023, 800 and 390 px puts the panels back.
+
+---
+
+# Trade Graph HQ visual-check fixes (round 1), not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `b14c8ee` (decision D112). **Nothing was deployed, pushed or run against the installation.**
+- **Calendar groups chain by gap:** a deadline joins its group when it is at most 1 hour after the group's latest member, up to 12 hours from its first (`CALENDAR_GROUP_GAP_SECONDS`, `CALENDAR_GROUP_SPAN_SECONDS`; the contract checks `until` against the 12 hours). The busy synthetic week's 40 note expiries are now one row ("40 research notes stop being used", 19:30 to 02:00 tomorrow in Cairo) instead of four identical ones; 63.6 KB for 14 days. A range ending on another day says so in the agenda ("to 2:00 tomorrow") and Up next. One note reads "A research note stops being used".
+- **Week strip:** chip titles keep words whole (no break inside a word; a non-breaking hyphen in "Your check‑in"; soft hyphens only where a short label needs one on an iPad, e.g. "Allow-ance refill"; a department name stays on one line with an ellipsis if its column is too narrow). Chips show only the start time. Short labels for allowance refills, extra reviews, review time limits, trial ends and permission ends.
+- **Desktop columns:** Prompt settings and Help & glossary are one full-width, two-column row below both columns (`.hq-decide-more`; phones, the tab bar and iPad portrait unchanged). The left-column gap under Story on the busy week went from about 770 px under Story to none, with about 700 px under Your bills instead; on quiet it fell from about 1 950 px to about 200 px.
+- **Small fixes:** the "Authorised model" field's placeholder is "the model I authorised for Trade Graph", not this page's address; a calendar warning is one text beside its icon ("at 12:56." without a gap).
+- **Fixtures:** future department turns, estimates and Up next regenerated with the real `_future_turns` (no 40–56 h gap; research and learning series too), allowance lines from the real `allowance_plain` ("Refills tomorrow 3:00", a time, not "Mon 00:00 UTC"), and the real copy for the stuck Leader job (no second "won't retry"), the safety-stop turn problem and the Leader's last turn.
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -q -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` passed (8 Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 43 passed. Headless Edge at 1440×900 (light and dark) and 1024: no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty, silent, busy and live snapshots; 900 and 375 px layouts match the previous commit except the one extra "tomorrow" line.
+
+---
+
+# Trade Graph HQ desktop-check fixes, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, after `6aa968d`. Five issues from the owner's desktop visual check (decision D111). **Nothing was deployed, pushed or run against the installation.**
+- **Calendar groups:** research-note expiries (and improvement-idea expiries and Engineer time limits) of the same department, status and texts within two hours of the group's first are one item with the additive, omit-not-null `count` and `until` keys and a counted title, e.g. "13 research notes stop being used", shown as "19:30 to 21:30" in the agenda, "19:30–21:30" in the week strip and "Between … and …" in Up next. The ten expiry items are now the ten soonest groups. The busy synthetic week drops from 10 single expiry items to 4 grouped ones (62.6 KB for 7 days, 63.2 KB for 14 days).
+- **Conditions said once:** the estimates condition ("Only if the team is running and not paused …") is one line above the agenda, and an equal condition on consecutive future rows of one day is shown on the first only. Up next keeps each turn's condition (U1).
+- **Desktop (≥ 1024 px):** the two columns flow independently (floats; page order, anchors, iPad and phone layouts unchanged), so a tall "Needs you" no longer leaves a gap under the map.
+- **Up next:** the line under the clock time is "in 2 h" today, then "tomorrow" or the date.
+- **Fixtures:** Learning's cadence is every 3½ days (`302400`), with its next turn 3½ days after its last and the real copy ("Learning finished its turn (every 3½ days).").
+
+Checks: `uv run ruff check src tests` passed; `uv run pytest -q -p no:cacheprovider tests/test_hq_*.py tests/unit/test_hq_*.py tests/integration/test_hq_*.py tests/integration/test_live_home.py` passed (8 Node tests skipped in WSL); Windows Node `node --check` on all `hq*.js` and `node --test tests/js/hq_*.test.mjs` gave 39 passed. Headless Edge at 1440×900 (light and dark), 1024, 900 and 375 px: no horizontal overflow and no script errors on the busy-week, quiet, safety-stop, allowance-paused, empty and silent snapshots.
+
+---
+
+# Trade Graph HQ review fixes integrated in source, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`. Review base `721bc8a`; `claude/hq-fix-wp1` (backend B1–B20, decision D110) merged as `9e60e8f` and `claude/hq-fix-wp2` (frontend F1–F13) as `b1252c5`, both `--no-ff` without conflicts; integration fix `070b0b4` plus this status commit. This closes the HQ review fix plan: 49 findings, all real. **Nothing was deployed, pushed or run against the installation**; every check used temporary databases or fixtures. Shipping still needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained ([D105](docs/DECISIONS.md)). By owner choice, the second independent review round was skipped.
+
+What changed for the owner:
+- **Wording and safety:** a live account is never called "practice", in the page, prompts or help. "Pause AI" never weakens a stronger Leader pause. The Stop card and holdings see a new open order at once. The safety-stop cause comes only from evidence close in time, and its Stop preview says "Partly reversible" and "Not recommended".
+- **Calendar and turns:** the calendar and room tiles never show an impossible or past turn as normal. Overdue tiles say Waiting, Due now or Overdue, and Up next shows each turn's condition. Overdue items sit under "Now", and estimated turns more than 48 hours ahead appear as one "about every …" series per department.
+- **Money and counts:** an unreadable reserve rule says so, never "none" (the review prompt says it too). "Since you last looked" says "at least" when the story was cut. Long AI-allowance waits are counted in full, and older story pages are always reachable.
+- **Using the page:** open panels and messages survive the 30-second refresh. Bill wizards move focus at each step and take the share as a percentage. Unsent requests expire after 24 h, and resent ones say "Already done". The page fits on a phone, with HQ's own footer.
+- **Robustness:** the story endpoint answers 422, never 500, for odd dates. Redaction is anchored. HQ never takes the database lock. A busy week fits the 80 KB payload budget.
+
+Contract cross-check (FIX-PLAN §1): the backend emits all three additive keys: `team.allowance.stop_line_state`, `departments[].next.status` and `calendar.estimates`. All are omit-not-null and validated by `hq_contract.py`. All nine fixtures carry them. Real snapshots from a fresh database, the offline demo loop and the busy synthetic week (7 and 14 days) validate. Rendered through the HQ scripts in the Node harness, they show no script errors and no "undefined"/"NaN"/"null" text. The Story `window_start`/`next_before` meaning matches the client's "at least" logic. One mismatch was fixed (`070b0b4`): the review prompt ignored `stop_line_state`.
+
+Commands (WSL2 Ubuntu unless noted; temporary databases only):
+- `uv run ruff check src tests`: all checks passed.
+- **Full suite, run once at `b1252c5`:**
+  - Command: `uv run pytest -q -p no:cacheprovider`, which took 33.5 min.
+  - Totals: 3965 collected, **3940 passed, 17 failed, 8 skipped**. The failure count comes from the short summary. The project's `addopts -q` plus `-q` hides pytest's own total line, so the totals are derived from collect-only, the 17 listed failures and the 8 skips seen in a rerun of the only test files that can skip.
+  - All 17 failures are known and fail the same way on base `3504248`:
+    - 3 `test_progress_dashboard`
+    - 4 `test_progress_projection`
+    - 1 `test_subscription_smoke`
+    - 4 `test_paper_soak` (database open `ProgrammingError`)
+    - 4 of the 6 flaky `test_plugin_staging` 0.3 s cases
+    - `e2e/test_dashboard_loop`, failing at line 37 with `KeyError: 'degraded'`. A copy of that test without that one assertion passes, including the branch's added `/journal` page.
+  - The 8 skips are `tests/test_hq_js_behaviour.py` (no Node in WSL).
+- **After `070b0b4`:**
+  - `tests/test_hq_static.py tests/test_hq_template.py tests/test_dashboard_pages.py tests/test_hq_js_behaviour.py`: 87 passed, 8 skipped.
+  - With Windows Node v24.14.1: `node --check` passed on all 7 `hq*.js` files, and `node --test tests/js/hq_*.test.mjs` gave 36 passed.
+- **Synthetic smoke (FastAPI test client, 30 warm requests per route):**
+  - Fresh `trade-graph init` database: `/` 200 (30.4 KB, p95 6.7 ms), `/journal` 200 (83.1 KB, p95 10.8 ms), `/api/v1/hq` 200 (17.1 KB, p95 7.2 ms), `/api/v1/hq/story` 200 (p95 4.9 ms).
+  - Offline demo loop database: `/` 200 (59.7 KB, p95 9.2 ms), `/journal` 200 (120.4 KB, p95 21.0 ms), `/api/v1/hq` 200 (44.1 KB, p95 9.9 ms), `/api/v1/hq/story` 200 (p95 5.7 ms).
+  - Both databases: signed-out `/` and `/journal` redirect to `/login`, and extreme story dates give 422 (or 200 for the far future), never 500.
+  - Busy synthetic week: 65.9 KB (7 days) and 66.5 KB (14 days), within the 80 KB budget.
+
+Synthetic only. There was no real installation data, no Windows Edge or iPad check, and no 768 px or full light/dark browser pass. The Stop preview's "Partly reversible" wording was not checked in a browser. Owner question Q1 (guided safety-stop recovery) is unchanged. T17/T21, funded/economic/live and off-host acceptance are unchanged.
+
+---
+
+# Trade Graph HQ integrated in source, not deployed — 2026-10-10
+
+Branch `claude/super-dashboard-20261009`, based on deployed source `3504248` plus the frozen HQ contract `35da7f4`. Work packages merged in spec order: WP3 owner check-ins (`5c9b534`), WP1 HQ read model (`88c75f8`), WP2 HQ page (`3a984bb`); WP4 integration `a313014` and its docs commit. **Nothing was deployed, pushed or run against the installation.** Shipping needs the owner-approved financial-manifest transition with every portfolio in MANAGE_ONLY and the service drained ([D105](docs/DECISIONS.md)); implementers do not deploy.
+
+What changed for the owner: after sign-in, `/` is [Trade Graph HQ](docs/HQ-DASHBOARD.md), a plain-language, phone-first home built only from saved records (right now, needs you, up next, HQ map, calendar, story, money, decide). The previous home moved unchanged to `/journal` (keeps `?end_at=`); every other page is under "Detailed views". New routes: `GET /api/v1/hq`, `GET /api/v1/hq/story`, owner-only `GET`/`POST /api/v1/owner/checkins`. Migration `0025` adds the append-only owner check-in store. HQ decisions reuse the existing owner endpoints with fixed bodies (D107); no new authority. AI/allowance state never uses the cached readiness verdict (D106).
+
+Commands (WSL2 Ubuntu, isolated temporary databases only):
+- `uv run ruff check src tests` — all checks passed.
+- `uv run pytest -p no:cacheprovider` (full suite, at `a313014`) — 3839 passed, 18 failed in 35 min. Every failure also fails on base `3504248` (checked in a temporary `git archive` copy): `e2e/test_dashboard_loop` (the "sk-" check matches "task-capacity"), 3 `test_progress_dashboard`, 4 `test_progress_projection`, 1 `test_subscription_smoke`, 4 `test_paper_soak` (database open `ProgrammingError`), and 5 `test_plugin_staging` resource cases whose trusted replay must finish within a 0.3 s wall clock (flaky on both: 4–6 of 6 fail on base and branch across repeated runs).
+- Focused HQ/dashboard/security set (24 files including `tests/security`) after the final edits — 773 passed. New WP4 tests `test_hq_routes`, `test_hq_owner_writes`, `test_migration_0025` — 18 passed.
+- Synthetic smoke with the real CLI `init` (USD10,000 paper, EUR reporting) and the offline demo loop: `/`, `/journal`, `/progress`, `/api/v1/hq` and `/api/v1/hq/story` all 200; signed-out `/` and `/journal` redirect to `/login`. `/api/v1/hq` is 17 KB (fresh) and 44 KB (demo loop), median 6.5 / 9.5 ms and p95 7.6 / 11.1 ms over 40 warm requests.
+- Synthetic browser check (throwaway 127.0.0.1 server over the demo loop database, session injected server-side): 1440×900 light, 768×1024 light, 375×812 dark; no console or CSP errors, no horizontal scroll at 375 px; "Detailed views" opens without JavaScript; Pause then Resume previews and confirms against the real endpoints (owner config read, then POST, both 200); the journal cutoff form goes to `/journal?end_at=…`.
+
+Not done or still open: check-in plan/done/skip, the `.ics` download, bill entry and the plain-HTTP-from-LAN copy fallback were exercised by tests and WP2's fixture browser run, not in this browser session. No real installation data, Windows Edge or iPad check. Open owner questions Q1 (guided safety-stop recovery), Q2 (check-ins in the review snapshot) and Q3 (ship together) keep their recommended defaults. Unrelated pre-existing failures above remain. T17/T21, funded/economic/live and off-host acceptance are unchanged.
+
+---
+
+# Live owner dashboard deployed — 2026-10-09
+
+Branch `codex/live-dashboard-20261009`; executable source `c488e67`, based on newer capacity/logging source `493c25c`. Final immutable image `sha256:34abee6a44d00647f3e53bc8fd1febce6b7399fa18875146309f9677969c477b`, Python 3.12.15 / SQLite 3.53.4. Exactly one NORMAL paper worker and RUNNING owner controls are verified after authenticated reconciliation/resume. Original database inode, capability key, witness scopes, financial/native/task/account history, earlier failures and the accepted historical observation gap remain. Strategy, schedules, Sol-only routing, empty fallback, quota reserve and disabled live/billed/extra routes are preserved. No inference or trade was forced; an existing scheduled task subsequently completed and applied naturally.
+
+Home separates operational health from economic coverage; it exposes safe department/native/application work and attempt usage, immutable owner bill/allocation evidence, historical economic periods and a complete scoped authenticated review export. HTML navigation redirects to sign-in; API authentication/CSRF remain. Browser reads reuse quota metadata, while owner admission and dispatch/retries retain fresh guard checks. See [dashboard use](docs/LIVE-DASHBOARD.md) and [sanitized review](docs/reviews/2026-10-09-live-dashboard.md).
+
+Final focused tests: 302 passed, zero failures/errors/skips. Ruff, Node syntax, repository hygiene, plan validation and diff checks pass. Actual installed image/source/mount/network verification, 1000 concurrent WAL commits, ownership/integrity/foreign-key checks and all nine actual Linux isolation checks pass. These probes made zero inference/provider API requests. Actual Windows Edge synthetic and deployed sign-in/home/API authentication/export/decision/offline/mobile checks pass without browser script errors or horizontal overflow; the final image was reconfirmed in Windows Edge. Development tests used isolated temporary databases, never the operating database.
+
+Two supported new-AI pauses: 13:23:31–13:33:18 UTC (587.293 seconds) and 13:53:29–13:56:21 UTC (172.396 seconds), three hours later in Cairo. Management continued until graceful worker exit; no AI work was in flight. The first handover retained a temporary management-only admission refusal caused by the copied old isolation-proof pointer; the pointer was rebound to actual new-image proof, preserving policy. Both transitions preserve old scopes and immutable prefixes. Previous containers, private backups and diagnostic evidence remain. See the review for the initial process-wait/expiry-format observations and final manual-control freshness regression.
+
+Operational health is measurable from service heartbeat, control state, retained work and resource counters. Reported usage has missing fields/attempt coverage; configured routing is separate from unknown native model echo/internal retries. Native USD capital and current reporting cash/exposure are measurable, but inception FX, owner bill/completeness evidence and accepted recovery limitations leave complete trading/net economic conclusions unknown. No actual owner bill was invented or entered. Sanitized source is published on `codex/live-dashboard-20261009`; private runtime/evidence stays local. Private operating records, exact financial observations, token totals and browser/export artifacts are not published. T17/T21, funded/economic/live and off-host acceptance remain open; the full suite was not rerun.
+
+---
+
+# Subscription capacity repair deployed — 2026-10-09
+
+The recovered paper installation runs one NORMAL worker after the supported authenticated manifest transition and reconciled owner resume. Subscription-only limits are now finite 192 tasks / 1 GiB RAM / one CPU / no additional swap. The create specification and exact independent verifier changed together; existing isolation and all non-subscription limits are preserved. Controller-launched worker diagnostics now retain three rotating 256 KiB sanitized event files rather than losing all operational output.
+
+Branch `codex/resource-capacity-20261009`; executable commits `986c19d`/`97f1290`, image verifier `60cf18e`/`905e2c7`. Deployed immutable image `sha256:8f949f8052cd734932f1b345b5aab47258f8e4d0caafd3875f6209f33eb9717d`, Python 3.12.15 / SQLite 3.53.4, unchanged dependency lock/native tools/graph and paper strategy configuration. The original database inode/key, independent witness, historical financial/AI records and accepted reporting recovery gap remain. The naturally scheduled Trader completed and applied its result; no inference was forced. Whole-container resource limits produced no new events in the observed run. This is bounded operational evidence, not worst-case capacity or full historical/economic acceptance.
+
+196 focused deployment/diagnostic/controller/service tests and 92 financial continuity tests pass; actual installed image/WAL/ownership/isolation checks pass. A transient synthetic startup observer read is now retried within the existing finite readiness bound. Actual account, quota, scheduling and inspection details are private. Research expiry alignment is documented only; schedules and strategy are unchanged. See [capacity repair and diagnostics](docs/reviews/2026-10-09-subscription-capacity.md) for measured cause, verification and logging limits. T17/T21 remain in progress; broader acceptance statuses are unchanged.
+
+---
+
+# Normal paper operation resumed; repaired Trader verified — 2026-10-08
+
+The owner separately authorized normal paper AI on the recovered installation.
+The documented management-to-NORMAL handover completed without replacing the
+database, clearing history or replaying failed work. Authenticated Owner Resume
+returned RUNNING after reconciliation at 17:55:41 UTC. The first existing scheduled
+Trader inference completed at 17:56:02 UTC and its decision persisted at
+17:56:04 UTC: one application attempt produced a validated, persisted `no_action` decision and report using
+fresh, feature-ready inputs and the repaired native/reporting context.
+
+Executable source remains `780dce1`, immutable image
+`sha256:4d0ee615aa0e15d535aa2025422404891ab6acc9fdef6f9ea90d6f99ec9ed1e7`,
+Python 3.12.15 / SQLite 3.53.4. The management subprocess exited gracefully; both
+service leases and inode ownership were released before authenticated Start
+Trading launched one continuous NORMAL worker with the owner pause still in
+force. Financial integrity, foreign keys, protected prefixes and retained
+terminal AI records passed before resume. The accepted eleven known historical
+public/reporting gaps, possible additional reporting loss and the recovery's
+new evaluation period remain explicit.
+
+Fresh official metadata admitted the configured Sol-only route; every dispatch
+and retry retains the strictly-more-than-40% guard, comprising a 30-point reserve
+and 10 points of headroom, with a maximum 30-second metadata age. The shorter
+quota window remains unavailable. Protected `gpt-6.1-sol` selection, empty
+fallback, ordinary included allowance and no spendable credits were verified.
+Configured selection is not a provider model echo. Live trading, separately
+billed APIs and paid extras remain disabled; normal schedules remain enabled.
+
+Retained totals after this Trader task are 16 subscription attempts and 14
+invocations. All prior failures and unknown costs remain. Historical Research
+and Learning successes are retained; repaired Research publication, Leader and
+Optimisation success remain unverified, and Engineer has no actual installation
+run. Completed inference alone is not successful departmental application.
+No order or fill was created by this run. No profitability or broader task
+acceptance claim follows from the successful no-trade decision.
+
+Independent post-task verification through 18:01:30 UTC found one NORMAL worker,
+a current heartbeat, owner RUNNING, a responsive authenticated dashboard and the
+visible historical-gap banner. Protected files/session/database identity and all
+prior attempt/invocation rows remained unchanged. Post-task accounting and a
+consistent private checkpoint passed. Financial reporting remains provisional
+because the preserved history and unknown cost limitations remain.
+
+Final observation at 18:07:12 UTC confirmed RUNNING and current 18:00 UTC
+features, with 80% reported weekly allowance. An intermittent recovery-panel
+verification warning was traced to cross-process witness-lock contention;
+a direct retry verified the same accepted gap, and full integrity/FK checks
+passed. The final overview displayed the gap banner again. This display limitation
+is retained in the evidence rather than hidden by a state or history change.
+
+See [resume evidence and verification limits](docs/reviews/2026-10-08-normal-paper-resume.md).
+The prior MANAGE_ONLY handoff below is historical.
+
+---
+
+# Partial-history recovery deployed; AI remains paused — 2026-10-08
+
+The owner-approved reporting-only recovery is running in a separate private
+installation. Originals, backup, original witness/keys and previous image are
+preserved outside Git. The authenticated incident records eleven known public
+price/reporting gaps plus possible additional reporting loss. Full historical
+continuity is not certified and the corruption cause remains unknown.
+
+Independent exact-record audit supports retained financial/AI continuity with
+explicit legacy-witness proof limits. All 15 attempts/13 invocations, failures and
+unknown usage/costs remain. Full SQLite integrity, foreign keys, balanced Decimal
+accounting and protected financial-prefix validation pass. No account reset,
+manufactured missing payload or AI replay occurred.
+
+Deployed executable source `780dce1`, image
+`sha256:4d0ee615aa0e15d535aa2025422404891ab6acc9fdef6f9ea90d6f99ec9ed1e7`,
+Python 3.12.15 / SQLite 3.53.4. Authenticated database-identity recovery and then
+manifest transition preserved original witness commitments. Exactly one
+MANAGE_ONLY management worker runs inside the dashboard's protected container;
+one owner holds both service leases, the inode lock excludes a second owner,
+and no AI task was claimed. Dashboard: <http://localhost:8000/> (authenticated
+pages and login verified). Fresh Kraken quotes, completed hourly history and
+reporting FX have actual receipt times; all ten required features per symbol are
+ready. A consistent private checkpoint passes integrity/FK checks.
+
+184 focused regressions and independent 147-case review selection passed, plus
+actual-image lock/WAL/isolation probes, Ruff, hygiene and planning checks. See
+[dated evidence and limits](docs/reviews/2026-10-08-partial-history-recovery.md).
+Registered operating checkout: `first-paper-cycle`; integration branch:
+`codex/paper-recovery-20261008`. Sol-only, empty fallback and the existing quota
+guard remain unchanged. AI, live trading, separately billed APIs and extras remain
+disabled. No inference was initiated for recovery. A later dashboard Stop was
+respected; explicit owner instruction then restored one MANAGE_ONLY worker and
+all post-start checks passed again.
+
+The next owner step is a separate explicit normal-paper AI resume instruction.
+The operator must hand over from the management subprocess to one NORMAL worker
+while the owner pause persists, verify fresh quota/readiness, then use authenticated
+Owner Resume with the current revision. The exact order is in the
+[normal operating runbook](docs/NORMAL-PAPER-OPERATION.md). Historical acceptance
+and broader economic/live gates remain unchanged.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
+# Non-destructive recovery audited; continuity gap keeps installation stopped — 2026-10-08
+
+The owner explicitly authorized a separate private recovery copy and a supported
+recovery path. Originals remain unchanged: damaged database and any surviving
+sidecars, original witness, protected owner files/keys, healthy backup, incident
+evidence and previous image. A private preservation manifest verified all copied
+file hashes. AI remains paused; live trading, separately billed APIs and paid
+extras remain disabled.
+
+The newest verified healthy backup passes full SQLite integrity and foreign-key
+checks. Native journal postings balance using Decimal; the retained paper account
+has no orders or fills. All 15 attempts and 13 invocations match retained incident
+evidence, including failures and unknown usage/costs. The existing witness MAC,
+scope, checkpoint and committed prefixes verify without creating fresh authority.
+
+Continuity is **not** verified after the backup cutoff. Independent raw-page and
+official SQLite recovery-tool checks found at least seven post-backup valuation identities
+whose full payloads are absent, plus four missing public-observation payloads.
+Exact identities and page/row evidence remain private; damaged trees cannot prove that these are the only lost rows. Recoverable newer marks,
+FX and observations are preserved separately as unpromoted evidence. A header
+repair or successful SELECT over a damaged tree is not an authoritative recovery.
+
+No recovery approval was installed, no witness was resealed, no database was
+switched, no AI task was replayed, and no dashboard/management service was restarted.
+The actual deployed image remains the previous image from source 6bf6697; its
+dashboard container is stopped. The registered operating checkout remains
+first-paper-cycle, branch codex/normal-paper-2026-10-07. Recovery integration is
+on codex/paper-recovery-20261008, verified source e2bae96; test/build evidence is recorded in
+[the recovery review](docs/reviews/2026-10-08-paper-recovery.md).
+
+Source checks passed: 173 financial regressions, nine independently written regression cases, and an independent 150-case recovery/checkpoint/transition/budget/locking selection. An immutable candidate image using SQLite 3.53.4 passed actual reserved-lock retention, descriptor lifetime, single-owner exclusion and 1,000 concurrent WAL commits on isolated WSL ext4 storage, followed by full integrity and foreign-key checks. The original installation was never mounted for these checks. This is candidate-image evidence, not a deployment or production acceptance.
+
+Windows reports healthy storage and WSL ext4 has available space with no matching
+kernel I/O/filesystem errors. Detailed hardware counters are unavailable. These
+observations do not establish the corruption cause, which remains **unknown**.
+
+The next operational step is locating authentic complete payloads for the missing
+records in another backup or retained evidence. After continuity is proven, use
+the reviewed authenticated identity recovery, then manifest transition, then one
+MANAGE_ONLY management/dashboard worker and public-data validation. AI still
+requires a later explicit authenticated owner resume and fresh quota admission.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
+# Repair checkpoint; deployment blocked by storage corruption — 2026-10-08
+
+The authenticated owner MANAGE_ONLY control was applied before repair work and
+achieved `managing`. Public collection, reconciliation and dashboard initially
+continued, with no in-flight subscription attempts. A consistent private backup,
+the existing financial witness, all owner files and all 15 retained attempts were
+preserved before source changes. No AI call was initiated for this repair.
+
+The existing worker subsequently exited during an unexpected storage failure.
+The dashboard first reported SQLite malformed-image errors; later fresh reads
+reported `file is not a database`. Earlier full host/container integrity checks
+had both passed. The damaged database and available evidence are retained, and
+the old dashboard container is stopped. A forensic copy with only its header
+repaired fails full integrity checks across several trees; it is not authoritative.
+The verified pre-repair backup remains intact. No restore, reseal, database
+replacement, manifest transition, deployment or resume has been performed.
+
+The registered operating checkout is `first-paper-cycle`, branch
+`codex/normal-paper-2026-10-07`, rather than the main Linux checkout. Integrated repair source is `7be13b1`; the equivalent sanitized publication
+source is `4570876` on `codex/paper-repair-2026-10-08`, preserving the newer remote
+manual review schedule. All five requested source repairs and the reproduced
+SQLite-lock defect repair are implemented. Final regression/review evidence is
+recorded in the linked repair evidence: **363 focused regressions passed** and
+**108 independent continuity checks passed**, with no unresolved review findings.
+Ruff, staged hygiene and planning checks passed. The installed image remains the previous image from source
+`6bf6697`; its dashboard container is stopped and new repairs are not deployed. See [repair evidence](docs/reviews/2026-10-08-paper-repair.md).
+Only `gpt-6.1-sol`, empty fallback and the existing strictly-more-than-40% reported
+quota guard remain configured. Live trading, separately billed APIs and extras
+remain disabled. Leader's original cause is still unknown.
+
+Earlier dated sections below are historical evidence, not current service status.
+
+---
+
+# Normal paper operation running — 2026-10-07
+
+The owner authorized morning operation and replaced the overnight start hold.
+Existing owner controls reconciled/resumed the hold and started one normal paper
+service at 08:12:48 UTC. The graph and loopback dashboard are running; normal
+future schedules remain enabled. There is no mandatory one-cycle stop.
+
+The owner's [manual review schedule and fresh-context prompts](docs/PAPER-REVIEW-SCHEDULE-2026-10-07.md)
+cover 7 October 12:30/16:30/20:30 local, optional bedtime, and 8 October 12:30.
+This documentation starts no review job, model work or runtime change and records
+no additional operating results.
+
+The first actual operating results are recorded in the
+[morning evidence review](docs/reviews/2026-10-07-morning-paper-operation.md).
+The active protected source remains **`6bf6697`**. New source `c056faf` adds
+citation guidance and sanitized native diagnostics and passes relevant checks,
+but its image update is blocked by the project's unimplemented financial manifest
+continuity transition. The exact verified prior image/pins were restarted on the
+**current database and witness**, preserving all records. No database rollback or
+additional inference occurred. At 08:50:15 UTC the graph reported RUNNING, a fresh
+heartbeat, AI available and no AI blockers; normal future schedules remain enabled.
+
+- Native WSL Codex 0.160.1 uses ChatGPT subscription authentication. All six AI
+  departments and every retry are pinned to **gpt-6.1-sol**; protected
+  `fallback_profiles: []` and the sole-model catalog were verified. Provider model
+  echo is unavailable; configured/pinned model is not mislabeled as an echo.
+- Fresh weekly metadata is mandatory. Every reported supported window must have
+  **strictly more than 40% remaining** before each dispatch/application retry:
+  **30% reserve + 10 percentage points of headroom**. Missing shorter readings,
+  reporting lag, shared-account consumption and unbounded active-call percentage
+  consumption prevent an exact all-window or post-call floor guarantee.
+  Metadata/model unavailability pauses new AI; management and dashboard continue.
+- Refreshed public Kraken BTC/USD and ETH/USD each have 168 completed hourly
+  candles through Oct 7 08:00 UTC, with zero gaps. Quotes were freshly acquired
+  before AI work. The latest available ECB reference is dated Oct 6; EUR reporting
+  remains provisional. This path makes no private Kraken requests.
+- Research and Trader have completed validated invocations and applied results.
+  Research retained two attributed findings; Trader recorded a legitimate
+  `no_action`. Learning also succeeded. No orders/fills were created, and native
+  accounting/financial tables match the prestart backup. Any paper orders/fills
+  are **local Trade Graph simulations**, not Kraken-hosted orders.
+- Initial Leader work failed on three native attempts. Optimisation inference
+  completed but its applied result failed citation validation. Both remain failed
+  records, with unknown costs; neither is counted as departmental success.
+  A narrow citation-interface fix preserves strict validation but is not deployed.
+  Original native error details were discarded, so their exact cause is still
+  unknown. Deploying both fixes requires the missing protected continuity
+  transition; this is existing project design, not an obsolete diagnostic gate.
+- At the first post-run observation: five invocations, seven application attempts,
+  four completed attempts and three failed attempts. Internal native retry counts,
+  unreported usage fields, attributable shared fees and all-in costs remain unknown.
+  Recorded zero API expenses do not mean subscription work was free.
+- Relevant quota/migration/recovery/dashboard checks passed (218 focused cases at
+  `6bf6697`); the integrated citation/diagnostics follow-up passed 149 selected
+  cases at `2a5cb82`, followed by 164 final selected cases at `c056faf`. The existing
+  manifest-transition refusal regression also passes. Overlapping runs are not
+  summed. Both image probes/production inspections passed; active-image source,
+  running security/network and model policy were reverified after recovery.
+  No unrelated full-suite gate.
+
+Original checkpoint `e36e447`, Windows local changes, original databases, owner
+settings and private evidence are preserved. Sanitized publication uses a new
+fast-forward checkpoint on the established working branches. Exact account
+readings are excluded from current public files; previously published history is
+retained because force-push/history rewriting is not authorized. Main is unchanged.
+Real trading, separately billed APIs, paid extras and purchases remain disabled.
+Earlier dated sections below are retained historical evidence, not current policy.
+
+---
+
+# Historical owner model selection checkpoint — 2026-10-07
+
+The owner selected **GPT-6.1 Sol only**, exact ID `gpt-6.1-sol`, for all six
+departments and retries through the current Codex subscription. [D97](docs/DECISIONS.md)
+and the [normal operating runbook](docs/NORMAL-PAPER-OPERATION.md) record this
+choice and disable authorization for alternate-model/provider fallback.
+
+At that documentation-only checkpoint, the last prepared primary route already selected this model and had no admitted
+fallback. The private PC must verify its protected primary profile, empty fallback
+list and single-model catalog. This documentation-only checkpoint makes no new
+claim about PC configuration, current service state or actual inference results.
+No runtime records, owner files, acceptance states or source behavior changed.
+
+---
+
+# Normal paper preparation complete; graph awaiting owner start — 2026-10-07
+
+The latest owner instruction is **do not start the graph**; wait for an explicit
+green light tomorrow morning. The prepared normal paper dashboard is available at
+<http://127.0.0.1:8000>. At 2026-10-06 23:16:50 UTC it reports **STOPPED**, zero
+active graph services, MANAGE_ONLY owner hold, AI available and live unavailable.
+A web server running is not a graph run. No start or scheduled model work occurred.
+
+Source **fbed4be**, integration branch `codex/normal-paper-2026-10-07`, preserves
+original `e36e447`, both original databases, owner settings and private evidence.
+[Normal operating evidence](docs/reviews/2026-10-07-normal-paper-operation.md) and
+[normal runbook](docs/NORMAL-PAPER-OPERATION.md) supersede diagnostic limits below;
+older sections are retained historical records, not current operating policy.
+
+- Native WSL **Codex 0.160.1**, ChatGPT subscription, configured **gpt-6.1-sol**:
+  actual authentication/account metadata, ordinary allowance, credential refresh
+  directory, protected provider egress and final-image process isolation verified.
+  No interactive login is currently required. The configured model has not run.
+- Normal departmental scheduling/recurring Optimisation, supported native retries,
+  configurable application attempts and independently verified subscription fallback
+  are implemented. No mandatory diagnostic, one-cycle cap or postcycle pause.
+  The current owner hold remains authoritative. Claude is installed but signed out;
+  no fallback route is currently configured/admitted. Billed APIs/extras remain off.
+- Public refresh at **2026-10-06 23:09:42 UTC**: BTC/USD and ETH/USD each have
+  **168 completed hourly candles**, Sep 29 23:00 through Oct 6 23:00 UTC, zero gaps.
+  Captured quotes were 0.792074s / 0.378020s old; ECB USD/EUR **0.88739**, dated
+  Oct 6, retrieved at 23:09:42 UTC. Data ages while stopped and must refresh at start.
+- Research/model/application attempts **0**, Trader decisions **0**, proposed orders
+  **0**, paper fills **0**. No validated Research or legitimate model no-trade result
+  exists yet. Existing **USD10,000** virtual cash remains intact, no open positions
+  or orders; dashboard valuation EUR8873.9. Trading/net economic PnL and shared
+  subscription cost remain unknown/null. Paper orders will be **local Trade Graph
+  simulations**, not Kraken-hosted orders. No private Kraken request occurred.
+- Final source focused verification includes 126 usage/adapter/profile/departments
+  checks and the final 129 receipt/pricing/adapter regressions; overlapping runs are
+  not summed. Ruff, planning checks, actual nine-boundary image probes and strict
+  production container inspection pass. No unrelated full-suite prerequisite added.
+  Exact private quota/runtime receipts and original evidence remain outside Git.
+
+No primary subscription connection blocker remains. Hosted research-search result
+integration and a signed-in compatible fallback are missing optional capabilities;
+short-window capacity, auto-reload setting, attributable usage and costs remain
+unknown. These are disclosed rather than fabricated or relabeled as zero. The
+remaining actual normal graph/Research/Trader evidence awaits the owner's start.
+
+---
+
+# First actual Kraken-data paper cycle — 2026-10-07
+
+**Operating milestone pending owner subscription login.** Tested source `643f185`,
+branch `codex/first-paper-cycle-2026-10-07`, descends from preserved `e36e447`.
+[Concrete operating evidence](docs/reviews/2026-10-07-first-paper-cycle.md) and
+[exact owner login command](docs/FIRST-PAPER-CYCLE.md#owner-login-and-included-usage-check)
+supersede the earlier native-install/egress limitations below.
+
+- Native WSL Claude 2.1.292 is signature/checksum verified and separately installed;
+  final protected image, actual nine-check isolation, strict production mount
+  inspection and public HTTP transport pass. Native subscription login is absent;
+  extra usage/auto-reload disabled status and Claude capacity need owner verification.
+- Final public refresh: 168 completed BTC/USD and ETH/USD hourly candles each,
+  latest close 2026-10-06 22:00 UTC, zero gaps. Final stored quotes were 19.625036s /
+  18.9596s old at 22:26:17 UTC. ECB USD/EUR 0.88739 dated 2026-10-06 was retrieved
+  22:25:59 UTC. Freshness must be renewed after login.
+- Diagnostic Research, normal Research, Trader and Leader inference attempts: 0.
+  No validated Research, Trader decision, simulated order or fill. This is not a
+  recorded model no-trade. Original USD10,000 portfolio/financial journal,
+  owner budget and mandate remain intact. Explicit owner pause is now MANAGE_ONLY,
+  achieved managing; service stopped and portfolio flat/no open orders.
+- Three journaled native invocations maximum, each 120s / 4096 tokens / one turn / 256KiB;
+  zero CLI transport/timeout retries and one structured attempt, no application
+  retries/repair/fallback/API billing. A valid diagnostic gates the cycle;
+  fresh quotes precede Trader. Model-free continuous management works without auth.
+- 445 selected source tests pass, zero failures/errors/skips, 47.190s; Ruff and
+  planning checks pass. All 95 pre-existing private files and progress sidecar
+  preserved. Dashboard read evidence retained privately. No private Kraken request,
+  purchase, real order or withdrawal. Unknown subscription/preparation/shared costs
+  are not counted as free. Shared Codex capacity was observed privately and is not Claude
+  quota; the short-window reading was unavailable.
+
+Functioning commands include the runbook's native version/auth-status checks,
+`PYTHONPATH=src "$VIRTUAL_ENV/bin/python" -m pytest` from the repository root with
+the reviewed virtual environment activated and the recorded selected tests, and
+the protected image's `check-subscription`. The credential-free
+actual image probes/public transport passed. `research-subscription` and
+`boot-subscription` are implemented/tested bounded phases, **not credentialed
+successes**. Protected operating-state migration and actual inference remain
+pending. No task acceptance status or live authority was advanced.
+
+---
+
+# Implementation status — owner startup controls and recorded checkpoints
+
+## Current owner startup implementation — 2026-10-06
+
+Tested source **b1ca4c5**, branch `codex/start-controls-2026-10-06`, based on clean WSL
+checkpoint `937437e708bda23a0286de7d9c10fa4e6de9b219`. This section supersedes the
+older preflight limitations below. The independent Windows checkout is preserved.
+
+- **Dashboard/controller implemented:** Start Trading starts or attaches to one
+  locked service; Start Optimisation queues one bounded owner cycle. Automatic
+  scheduling and pending automatic descendants are disabled. Starts, failures,
+  quota blocks and interruption recovery are durable and visible. Pause keeps
+  protection active; nonflat Stop retains management until verified flat.
+- **Subscription adapter implemented/tested, operationally blocked:** all six roles
+  use one provider/model, one journaled invocation per task, local structured
+  validation, deadlines/cancellation and no retry/repair/fallback. Actual WSL
+  namespace tests deny synthetic private files and host access. Invalid/changed
+  subscription admission blocks AI while deterministic management continues.
+- **Protected live path implemented/tested, disabled and not commissioned:** exact
+  image/config/account/owner admission precedes credential construction. Limits,
+  durable attempts, uncertain reconciliation and duplicate suppression remain
+  protected. Live Resume queues locally; only the exclusive worker can apply it
+  after whole-account reconciliation/current grant checks. It cannot create authority.
+
+**Research model/result: none; inference attempts: 0.** Windows Codex 0.125.0
+had verified ChatGPT login earlier; the final login-status check cannot parse
+the current `ultra` reasoning setting, even with a per-command `high` override.
+Existing configuration/login files are unchanged. Current CLI login is unverified.
+Current official 0.160.1 retains built-in request/stream
+retries 4/5 without a supported zero-retry override. No update solves that blocker.
+Windows Claude 2.1.280 is logged out; documented controls need native 2.1.285+.
+Neither native WSL CLI is installed. Official native login, disabled extra usage/
+credits/purchases, root-pinned CLI and actual intended-image isolation remain
+required. A subscription-specific protected provider-egress assembly is also
+**not implemented/verified**: standard image networking is off and live egress
+permits Kraken/FX. Login alone cannot commission the route. See
+[subscription evidence and official sources](docs/SUBSCRIPTION-ADAPTER.md).
+
+Read-only official Codex account metadata was observed during that historical
+preparation. Exact account capacity, reset and credit readings are retained
+privately. The shorter-window reading was unavailable. These Windows observations
+did not establish WSL admission or Research usage. Claude quota and subscription
+fee/preparation/model cost attribution remained unknown, not free. Real expenses,
+live allocation and virtual paper capital remained separate.
+
+Public history was **not refreshed**. Retained coverage: 168 completed hourly
+candles each BTC/USD and ETH/USD, 2026-09-29 14:00 through 2026-10-06 14:00 UTC,
+zero gaps at collection; current freshness is not claimed. Separately billed model
+calls, purchases, private Kraken requests, real orders and withdrawals: **0**.
+No continuous paper AI operation or live authorization occurred.
+
+Verification: **435 final-source tests pass**, zero failures/skips, in 39.96 seconds:
+startup/subscription/isolation/controller/live, private SQLite, dashboard financial
+projections, manual cycles and public proxy controls. Unknown subscription
+inference/shared fees keep economic P&L and all-in costs provisional/null;
+recorded expenses, allowance, trading P&L and virtual capital remain unchanged.
+Independent review passes 84 financial/dashboard tests and 17 proxy tests, with
+no remaining critical finding. Earlier 275, 245 and 48-test slices passed.
+The frozen 90d4f55 full run stopped after **2,905 passed / one failed** on a stale
+test expectation about explicit `trust_env`. Correction 98af9a4 passes all 227
+unit/funded-profile regressions. Collected node IDs match successful XML results
+across these runs and the final 435-test slice: **all 2,998 collected cases covered**.
+This is combined verification, not a clean monolithic final-source full run.
+An earlier interrupted run exposed private-file/soak regressions; both were fixed
+and retested. Source/tests Ruff, JavaScript syntax, 23-task DAG and 16 planning/
+progress tests pass. The final offline wheel installs into the previously frozen
+dependency environment; all 58 packages are compatible. Installed imports, private
+0018 storage, CLI/manual scheduling and unknown-fee projections pass. One final
+disposable deterministic paper tick created no orders, AI calls or expense receipts.
+A new protected image was not built or commissioned. Historical image evidence
+does not certify this source. See [verification](docs/reviews/2026-10-06-start-controls.md).
+
+From the repository root:
 
 ```bash
-python3 scripts/check_plan.py
-python3 scripts/test_planning.py
-python3 scripts/next_task.py --prompt
-python3 scripts/cost_model.py
+uv run --frozen trade-graph dashboard --database runtime/trade_graph.sqlite --session-file runtime/owner-session.json
+uv run --frozen trade-graph subscription-status --provider codex
+uv run --frozen trade-graph subscription-status --provider claude
+uv run --frozen trade-graph run --mode paper --database runtime/trade_graph.sqlite --once
 ```
 
-These run planning checks/calculations and emit an implementation task packet. They do not invoke a coding agent or start the future `trade-graph` application. Record actual application startup/test commands here as implementation proceeds.
+Open `http://127.0.0.1:8000/progress` using the existing private owner session.
+Start Trading currently supplies deterministic paper management; AI/Optimisation
+stay unavailable until protected subscription admission. `--once` is a bounded
+deterministic paper tick. Protected live commands/provisioning are documented in
+[the commissioning guide](docs/LIVE-STARTUP-COMMISSIONING.md).
 
-## Future updates
+Next: native Claude login/disabled extras, approved provider egress and actual
+intended-image isolation, then exactly one refreshed public Research diagnostic.
+Continuous paper evaluation is a separate gate. Live additionally needs actual
+read/trade-only Kraken provisioning, whole-account/uncertainty/restart/alert
+verification, independent signed reviews, separate real allocation/loss allowance,
+current protected image and explicit owner live grant. T17–T22 acceptance is
+unchanged. Tests, Research inference, continuous paper and live operation remain
+separate evidence.
 
-Record current branch/commit, completed task IDs, commands/results, credentialed versus synthetic checks, failures and next eligible task. Preserve newer work and unfinished implementation.
+The clean WSL installation fast-forwarded to tested source **b1ca4c5** on
+`codex/orchestrator-takeover-2026-10-04`. The dashboard alone restarted on loopback
+8000 with its existing session/database: WSL and Windows login returned HTTP 200;
+authenticated progress is paper/IDLE, AI blocked, live disabled, automatic
+Optimisation false, with zero graph worker starts or subscription invocations.
+All existing financial/progress table rows and all 30 protected-file contents/modes
+match the consistent backups. The only old-table addition is schema version 0018;
+new provider metadata records the observed quota and refusal. No owner policy or
+budget changed. Sanitized verification documentation follows this tested source;
+the final local checkpoint is reported with the handoff. No push.
+
+**Owner continuation focus, 2026-10-05:** finish the existing crypto paper
+operation and forward evaluation. Read [the reassessed next steps](docs/CRYPTO-NEXT-STEPS.md).
+The [multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is saved and deferred.
+The direction notes preserve task acceptance status. The Mission Control
+dashboard continuation below adds presentation and bounded test tracking;
+the round 4 full-suite, installed-wheel and protected-image evidence remains
+historical and does not certify this newer source.
+
+## Owner-local bounded Research preflight — 2026-10-06
+
+The WSL checkout fast-forwarded from `9dedf97` to `e920cb7`. The real existing
+paper database now retains **168 completed hourly candles each for BTC/USD and
+ETH/USD**, covering 2026-09-29 14:00 through 2026-10-06 14:00 UTC, with **zero gaps**.
+A single bounded public-data tick refreshed quotes/FX, created no decisions and
+reported no failures. Private consistent backups and preservation manifests
+confirm financial/order/decision/budget/expense/authority records, retained
+private Kraken evidence, progress history and owner-session bytes unchanged.
+The stale dashboard process was restored on loopback using the same database
+and session; WSL and Windows `/login` returned HTTP 200. Windows checkout local
+changes were untouched.
+
+**AI analysis is blocked before inference.** Installed official Codex 0.125.0
+is logged in through ChatGPT, and its official account/rate-limit metadata was
+verified without starting a thread or turn. Its built-in provider's automatic
+retries cannot be disabled using the documented provider configuration;
+installed Claude Code 2.1.280 is logged out. Shared Codex config was restored
+byte-for-byte after read-only compatibility checks. No Research model call,
+real model/result, direct API spend, private Kraken request or live operation
+occurred. Exact available quota and unknown subscription/preparation costs are
+recorded in an ignored private preflight receipt, not a fabricated usage bill.
+
+A public-only packet, prompt and locally checked result schema are prepared
+privately. No production subscription adapter or continuous graph operation
+was configured, and T17–T22 acceptance is unchanged. **162 relevant tests passed**;
+full-suite/wheel/image checks were not rerun. See the
+[commands, preservation evidence, official sources and exact next step](docs/reviews/2026-10-06-research-subscription-preflight.md).
+Documentation checkpoint branch: `codex/research-diagnostic-2026-10-06`, source
+base `e920cb7`. Next: official Claude subscription login plus quota/extra-usage
+verification and a tested zero-retry isolated Research invocation, or an official
+Codex zero-retry configuration. Refresh the public snapshot before inference.
+
+## Bounded public Kraken hourly history — 2026-10-06
+
+Verified source: `ce4dbb7cca688a657e65095bd3d5eabb435ab166` on
+`codex/kraken-hourly-history-2026-10-06`, based on `9dedf976`.
+Documentation follows that verified source. The integration publication target
+is `codex/orchestrator-takeover-2026-10-04`; no merge to `main` is required.
+The sanitized source/documentation checkpoint `25611438809ecadb3436c7338b0378b36efc4a83`
+was fast-forward published and independently matched to the remote branch on
+2026-10-06. This publication record follows that checkpoint. No force push,
+`main` merge or new GitHub CI result is claimed.
+
+An additive 0017 migration retains immutable completed BTC/USD and ETH/USD
+hourly candle revisions alongside existing financial records and snapshots.
+The public collector makes at most two fixed OHLC GETs, accepts 1–719 hours,
+bounds each response to 1 MiB with a ten-second timeout, and always excludes
+Kraken's final uncommitted candle. It has no account/credential request route.
+Restart deduplicates unchanged evidence without renewing its availability.
+
+Research and Trader now receive the fields requested by their pinned active
+strategy templates in their actual retained worker snapshots and model
+requests. Decimal precision 50/ROUND_HALF_EVEN, documented 20/50-hour means,
+20-hour pullback and 24-hour range definitions, source manifests and actual
+receipt-time availability accompany explicit insufficient/gapped/stale or
+unsupported history. Future closes and later receipts cannot enter earlier
+as-of inputs. Retained contexts remain unchanged after later collection and
+restart. See [formulas, limits and operations](docs/KRAKEN-PRICE-HISTORY.md).
+
+Verified on locked Python **3.12.15** under WSL2:
+
+- **354 relevant tests passed** in 45.05 seconds, covering exact arithmetic,
+  malformed/public transport bounds, revisions/deduplication/restart, additive
+  migration preservation, actual Research/Trader worker snapshots and requests,
+  concurrent writer/clock boundaries, future/later-available exclusion,
+  explicit missing history, evidence citations and existing paper controls.
+- Full source/test Ruff, the 23-task DAG/reference validator, ten planning
+  checks, repository/staged hygiene and diff checks passed. Independent
+  collector, storage and context reviews found no blocking findings.
+- The final wheel built offline. A fresh isolated wheel installation acquired
+  the unchanged locked runtime dependencies; installed CLI, 0017 migration,
+  two scripted collections, exact features, context module and installed
+  strategy templates passed. The initial offline-only install lacked cached
+  dependencies; no lockfile or dependency versions were changed.
+- An **actual public HTTPS smoke** in a separate disposable paper database
+  collected **60 BTC/USD + 60 ETH/USD completed candles**, with zero missing
+  requested hours and two GETs. Both latest closes were
+  `2026-10-06T12:00:00Z`; post-response availability was
+  `12:33:32.636891Z` and `12:33:34.371941Z` respectively. These are actual
+  public observations, distinct from synthetic checks; raw candle/runtime
+  files are excluded from Git.
+
+Bounded owner-PC command, from the updated WSL2 checkout and existing private
+paper database:
+
+```bash
+uv run --frozen trade-graph collect-kraken-history --database runtime/trade_graph.sqlite --hours 168
+```
+
+This session preserved the original Windows local modification, owner WSL2
+checkout, financial/runtime databases and private owner evidence. No private
+account request, owner database initialization/reset, paid model call or live
+order occurred. USD10,000 virtual capital/EUR reporting and separate real
+budget controls remain unchanged. Full-suite, protected-image rebuild and
+intended-host acceptance were not rerun; funded/forward economic evidence,
+complete venue conformance and **all remaining T17–T22 gates stay pending**.
+
+## Historical authenticated Kraken read-only observation — 2026-10-06
+
+The owner-local retained **BTC/USD authenticated read-only observation**
+completed from `2026-10-06T12:05:45.367049Z` to
+`2026-10-06T12:05:46.457662Z`, verified/imported at
+`2026-10-06T12:05:46.500666Z`. A read-only, allowlisted extraction from the
+private Mission Control sidecar reports collector-owned HTTPS, **four
+authenticated private reads**, and verified completed instrument, account-fee,
+balance, open-order and bounded-native-history stages. The source matched at
+import; the owner-local source checkpoint was `9dedf976ef18944e96e7127ca1e2ce7006d0d243`.
+
+This records the verified redacted historical projection. Its original
+**60-second freshness window has expired**; importing or documenting it does
+not renew freshness. This coding session made no private-account requests
+and did not rerun credentials or reverify the native private evidence.
+Credentials, account identifiers, balances, raw payloads and verification
+keys are excluded from the public checkpoint. Both earlier and successful
+observations and the owner's financial/runtime records remain retained.
+
+Still pending: unrequested order lookups and earlier history; owner
+eligibility/account identity; key-permission inventory and withdrawal
+absence; protected-ledger reconciliation; write/cancel uncertainty and native
+stop conformance; partial-fill reserve bounds; intended-host/dependency
+admission; full T17–T22 acceptance, funded/economic evidence, protected image,
+production and live authorization. The read-only observation establishes
+scoped authenticated connectivity, not full venue conformance. Earlier
+pending statements below describe their original historical checkpoints.
+
+## Kraken public-catalog compatibility fix — 2026-10-06
+
+Source fix: `571765f05f45c5e2871c6ed56b13d363490d4e92` on
+`codex/fix-kraken-one-character-assets-2026-10-06`, based on the clean owner
+checkpoint `5f7225e`. An owner-local redacting script located the retained
+observation and matched its displayed projection ID without exposing private
+scope, keys or native account responses. It reported only `instruments`,
+`ValidationFailure`, and request method `Assets`.
+
+The hash-matched retained **public** Assets response contains valid one-character
+asset names/altnames. The old minimum of two characters fails before the selected
+BTC/USD AssetPairs request. A length-only fix still failed on the public catalog's
+`USD_CREDIT`; the final bounded grammar admits one to 32 characters, beginning
+with an ASCII alphanumeric and allowing alphanumerics, dots and underscores
+thereafter. Alias identity, exact selected-pair scope, coherent metadata
+publication, Decimal normalization and all read/write authority controls remain.
+
+Verified on locked Python 3.12.15: **264 relevant synthetic tests passed**, including
+29 new catalog/boundary/invalid-input/default-disabled-write cases. Both one-character
+and underscore regressions failed before their fixes. Command:
+`uv run pytest tests/integration/test_kraken_live_adapter.py
+tests/integration/test_kraken_identity_recovery.py tests/integration/test_venue_conformance.py
+tests/integration/test_kraken_onboarding.py tests/integration/test_kraken_onboarding_flow.py
+tests/unit/test_repository_hygiene.py`. Full source/test Ruff, planning validation,
+repository/staged hygiene and diff checks passed. Independent review found no blockers.
+
+A public-only replay of the entire retained Assets response plus an actual
+public HTTPS AssetPairs GET through `KrakenRestTransport` passed and returned
+exactly BTC/USD. No private Kraken requests, order dispatch, paid calls or
+owner-local command rerun occurred. Before/after private digest/mode comparisons
+confirmed retained evidence and runtime records unchanged. Services were not
+restarted. The owner will rerun the bounded command; authenticated stages,
+full-suite/wheel/image verification and T17–T22 acceptance remain pending.
+
+## Owner-local Kraken read-only implementation — 2026-10-05
+
+Integrated source checkpoint `7cd5605` on
+`codex/orchestrator-takeover-2026-10-04`, descended from `caae082`.
+The CLI and dashboard implementation commits are `12277de` and `4ab5e0d`.
+Development used isolated WSL2 Linux-home worktrees, followed by a fast-forward
+into the existing checkout. The earlier local setup evidence below was preserved.
+
+`uv run trade-graph kraken-read-only --database runtime/trade_graph.sqlite
+--owner-directory ~/.local/share/trade-graph-owner/kraken --symbol BTC/USD`
+now provides hidden owner-terminal credential entry, exact typed authorization,
+separate signed/pinned private intent and bounded native collection. It validates
+the existing policy, active artifact, version/generation and current retained
+proof before importing an allowlisted historical projection. Defaults are
+60 seconds, 128 requests, five history pages and a seven-day history window;
+the signed grant expires after two minutes. Credentials remain in the local
+collector process and are not saved. Private grants and retained native evidence
+remain outside the checkout and financial runtime directory.
+
+Mission Control calls this **Kraken read-only account check**. Browser Run stays
+disabled and provides CLI instructions. Results show verified completed stages,
+original observation/verification times, actual owned HTTPS versus synthetic
+injected transport, private-read counts and pending checks. Missing stages and
+unrequested order lookups remain pending. Historical freshness expires from
+the original observation time; imports do not renew it or claim full reconciliation.
+
+Verified **655 relevant synthetic tests passed**, with no final failures/skips,
+including the complete command/backend/collector/verifier/import/API/HTML path
+and a retained partial permission failure. Full source/test Ruff, JavaScript
+syntax, staged and repository hygiene, and diff checks passed. An isolated
+in-app Chromium check confirmed the disabled button, readable pending gates,
+expanded-result refresh and the change from fresh to stale after 60 seconds,
+with no console errors. The initial broader fixture run had one database-mode
+warning failure under umask 0022; the documented private umask 0077 resolved it.
+The full suite, installed wheel and protected image were not rerun/rebuilt.
+
+Before and after integration, private digests confirmed the financial database,
+existing progress history, planning acceptance, lockfile, owner-session file and
+earlier local evidence remained unchanged. No runtime account was initialized
+or reset, and no authenticated Kraken request or paid model call was made.
+The existing loopback dashboard was reloaded onto the new source using the same
+database and session file. Windows `http://localhost:8000/login` returned HTTP
+200; a read-only preflight validated the existing policy/artifact scope without
+requesting credentials. Financial records and retained history stayed unchanged.
+Actual account connectivity, owner identity, permission inventory, withdrawal
+absence, ledger reconciliation and T17–T22 acceptance remain pending. The owner
+can configure a read-only key privately and run the command next; see
+[permissions and instructions](docs/KRAKEN-ONBOARDING.md).
+
+## Owner Windows/WSL2 local setup — 2026-10-05
+
+Scoped local operation was verified on the owner's Windows PC using WSL2
+Ubuntu 26.04.1 LTS, Linux x86_64 and the Linux-home checkout
+`~/trade-graph`. Implementation branch:
+`codex/orchestrator-takeover-2026-10-04`; source checkpoint:
+`caae08262b67edb38aa2854f99cf68ec5f13a020`. Python 3.12.15 and the
+unchanged committed lockfile were installed with
+`uv sync --frozen --group dev --python 3.12`.
+
+No existing Linux runtime database was found. A fresh USD10,000 virtual paper
+account with EUR reporting was initialized once. Its runtime directory and
+owner-session file were verified at 0700 and 0600 respectively. The dashboard
+is running on loopback; the actual Windows browser address is
+`http://localhost:8000/login`. Windows localhost returned HTTP 200;
+authenticated login, `/progress` and `/api/v1/progress` returned HTTP 200,
+and unauthenticated progress access returned HTTP 401. The session token was
+kept out of command output and chat.
+
+Actual owner-authorized Mission Control results, retained in the private
+`runtime/progress-runs.sqlite` sidecar: local rehearsal passed all **14**
+scripted checks, with zero external provider calls and no Kraken orders;
+all **four actual Kraken public checks** passed (server time, online status,
+BTC/ETH pair rules and bid/ask spreads). Private-account connectivity and
+order execution were not tested. **36 targeted dashboard/progress/CLI tests**,
+Ruff for source/tests, the 23-task DAG validator and **10 planning tests**
+passed. The full suite and protected image/host acceptance were not run.
+
+`trade-graph doctor` returned **degraded**, with database integrity/schema
+current and warnings for a provisional financial result, pending model
+routing and no persisted market observations. Its separate network/public
+probe fields remain pending; Mission Control's public-check evidence does
+not populate those fields. The bounded paper service `run --mode paper
+--once` completed one tick with reconciled recovery, zero decisions and no
+failures. Paid calls and live trading remained disabled; actual spend was
+zero. No continuous trading service was started.
+
+Private local setup, doctor and maintenance reports are retained under
+`runtime/`; no tokens or private financial records are published in Git.
+This scoped evidence supersedes earlier statements that this local dashboard
+path had not been tested. Historical cloud proxy failures remain historical.
+T17–T22 acceptance states and all funding, private-account, economic,
+protected-host/image, production and live-authority gates remain unchanged.
+
+## Kraken onboarding continuation — 2026-10-05
+
+**Latest host direction:** test on the owner's existing Windows PC using WSL2
+Ubuntu; defer a cloud-server purchase. The [local guide](docs/WINDOWS-LOCAL-TESTING.md)
+provides initial dashboard and no-paid checks. The local evidence above now
+records scoped Windows/WSL2 verification. Current model adapters use direct APIs;
+Claude Code/Codex subscription-backed runtime adapters are not implemented.
+[The interface review](docs/reviews/2026-10-05-local-subscription-options.md)
+records official noninteractive CLI capabilities worth investigating; current
+subscription eligibility/permitted use and a compatible gateway remain unverified.
+
+The owner reports completed Kraken verification and Kraken Pro access. No
+credentials or authenticated account observation were supplied or run here.
+The [onboarding guide](docs/KRAKEN-ONBOARDING.md) records the PC-first arrangement,
+iPad viewing path and first bounded read-only account check. The local dashboard
+is verified on loopback; iPad access remains unverified.
+The owner-local command and verified historical Mission Control import are now
+implemented and tested synthetically, as recorded above. Actual authenticated
+account behavior is still unverified. These changes grant no task acceptance,
+spending or live authority.
+
+## Mission Control continuation — 2026-10-05
+
+The authenticated dashboard now includes `/progress`: an interactive department
+map, the 23-task roadmap, evidence milestones, actual runtime activity and a
+persistent Kraken test tracker. Login opens this view. Source checkouts refresh
+planning state; installed wheels use a labelled packaged progress snapshot.
+Project acceptance remains **17 done / 4 in progress / 2 blocked**.
+
+Owner-started checks are limited to the existing isolated offline loop and four
+fixed Kraken public GETs. Results live in a private sidecar database, not the
+financial journal. Account reconciliation, order validation and real-order tests
+remain unavailable here. Serving or refreshing the view starts no test, trading
+service or paid model request. See [the guide](docs/MISSION-CONTROL.md).
+
+Verified: **191 targeted tests passed**, full source/test Ruff, Node syntax,
+planning/DAG and ten planning checks. Actual Chromium desktop/mobile checks
+passed graph selection, all/blocked roadmap filters, expanded-detail retention,
+owner-started rehearsal/status refresh, offline snapshots and recovery, without
+horizontal overflow or browser script errors. The actual rehearsal passed all
+14 scripted checks without external AI calls or Kraken orders. An actual public
+check failed at connection through this cloud environment's proxy; no public,
+private-account or real-order success is claimed. An offline wheel includes the
+new modules, catalog, template and static assets. This is scoped dashboard
+verification; the 2,544-test suite and protected image were not rerun/rebuilt.
+See [the continuation review](docs/reviews/2026-10-05-mission-control.md).
+
+## Historical published round 4 checkpoint
+
+Updated: 2026-10-05. All six T17–T22 implementation/review streams are integrated;
+local verification is complete. **Actual acceptance gates remain open.** T00–T16
+retain their recorded completion scopes: 17 of 23 tasks are complete. No funded
+soak, authenticated venue collection, live pilot or production rollout is running.
+
+Verified source: `153c6a5adf9a7bd7b99a1f1c3a21cc2c3c05eb0c`.
+Tree: `f00d10dc928a60fb6617279f1707ad1aa5301995`.
+Branch: `codex/orchestrator-takeover-2026-10-04`; continuation from `1cb4e5a`.
+Previous checkpoints, branches and worktrees remain preserved. Final documentation
+follows verified source without package/README/image-input changes. This checkpoint
+was verified locally on 2026-10-04. GitHub publication was verified on 2026-10-05
+at `48fecba2c62df14fa1b56dbcd653f9ec381c79de` on the integration branch;
+this publication record follows that commit. The existing implementation branch
+is `cursor/trade-graph-r1-548a`. No merge to `main` or new CI outcome is claimed.
+The runtime workflow now allows 45 minutes for the measured 25-minute full suite.
+All 26 linked workspaces were audited; no omitted implementation was found.
+See [the publication audit](docs/reviews/2026-10-05-publication-audit.md).
+Default: USD10,000 virtual capital, EUR reporting; real operating budget separate;
+paid calls and live trading disabled.
+
+## Working implementation
+
+The installed paper service, six durable handlers, R1 artifact Engineer,
+authenticated dashboard, deterministic accounting, management, backup/offline
+restore and reconciliation remain available. See [operations](docs/operations.md).
+
+This round adds exact service binding and actual process restart proof;
+preregistered four-arm paper producers and immutable historical verification;
+signed native asset fees/rebates, append-only earlier-fill correction and protected
+paper auxiliary fee holds; authenticated owner incident review and exact paper/live
+scope mapping; complete bounded financial/cost checkpoints with a separate local
+rollback witness and provider reservation/settlement publication; strict optional
+provider proxy preparation; and commissioned synthetic Secretary application
+generation, compatible sidecar activation, fenced health recovery and source rollback.
+
+See [the round 4 review](docs/reviews/2026-10-04-next-contracts.md),
+[financial continuity](docs/FINANCIAL-CHECKPOINTS.md),
+[provider profile](docs/FUNDED-PAPER-PROFILE.md),
+[application commissions](docs/APPLICATION-COMMISSIONS.md) and
+[application preparation](docs/APPLICATION-PREPARATION.md).
+
+## Verified results
+
+- **2,544 full tests passed**, zero failures/errors/skips; independent JUnit count.
+- **464 mapped tests and all 40 applicable A01–A38/A43–A44 cases passed**, with
+  identical clean source before/after. A39–A42 production/intended-host acceptance
+  remains pending.
+- Ruff for source/tests/four verification scripts, ten planning tests, 23-task
+  DAG/reference validation, diff checks and tracked/staged/exact-artifact hygiene passed.
+- A fresh exact-commit archive built/installed its wheel offline after frozen
+  dependency acquisition. Isolated installed imports, migrations 0001–0016, all
+  14 demo checks/four fills, zero restart submissions/provider calls, maintenance,
+  actual backup/offline restore, preflight and unfunded-soak refusal passed.
+  Installed fee/replay/cold restart and actual two-process lost-ack service proof
+  passed. Actual commissioned application generation/activation/health/restart/
+  rollback retained all financial, expense and application facts without repeated work.
+- A fresh whole-source immutable image passed four actual inspected containers,
+  30 child OS attacks, five owner-loader attacks, the memory bound, lost-ack
+  reconciliation, management during failure, finance-preserving rollback, zero
+  restart dispatch and default service boot/clean stop. Root checked all 150
+  protected installed source/artifact hashes and 166 build-context source files.
+- No new public GET probe, funded provider, private venue or intended-host success
+  is claimed. Historical public probes failed through the configured proxy.
+
+Python 3.12.14; unchanged lock SHA256:
+`1ac5a01f8beae2c1156273feb5e664e500d6672349264e2838dd823f1c67ae39`.
+Full JUnit `/tmp/trade-graph-r4-final.xml`;
+mapped gate `/tmp/trade-graph-r4-final-acceptance.json`;
+installed evidence `/tmp/trade-graph-r4-installed-9z4c__6j/installation.json`;
+image pin `/tmp/trade-graph-r4-image-153c6a5/image-pin.json`;
+image proof `/tmp/trade-graph-r4-image-proof-153c6a5/proof.json`.
+Image ID `sha256:8466abac94a81d2c88c13a81afb619d0ab47d0dd29971a4035da15263072b8d5`.
+Private machine artifacts remain outside Git and may be transient. Exact hashes,
+review findings and limits are recorded in [the review](docs/reviews/2026-10-04-next-contracts.md).
+The [previous takeover review](docs/reviews/2026-10-04-orchestrator-takeover.md)
+remains historical evidence.
+
+## Remaining acceptance and implementation
+
+| Task | Remaining work |
+| --- | --- |
+| T17 — in progress | Owner-designated installation, approved public connectivity/current model routes/prices, separate funding/private credentials/paid permissions, actual paper soak/receipts/invoices, intended-host restart, encrypted off-host restore and delivered alerts. Local restart proof is implemented. |
+| T18 — in progress | Untouched actual future four-arm blocks, authenticated market/billing provenance, complete failed/shared costs, actual baseline execution and dependence/regime/useful-decision assessment. Historical producers and exact paper/live mapping are implemented; larger economic-source history needs design. |
+| T19 — in progress | Eligible least-privilege actual native account/venue conformance; complete funding/transfer/permission/protection proofs; factual future partial-fill bounds and identified fee/rate semantics. Larger replay, finer execution ties and late fee-only amendments remain contract work. |
+| T20 — blocked | Genuine T17/T18/T19/T21 evidence, full external account history, explicit owner capital/loss/all-role expense permissions and protected live commissioning; then separately authorized measured pilot/protection/stop evidence. Mapping and incident review never grant/resume live authority. |
+| T21 — in progress | Actual intended-host/image/distribution admission and adversarial/recovery evidence there; externally protected rollback anchor; protected key rotation, database migration, interrupted-checkpoint recovery and manifest transition procedures. Provider profile needs separately reviewed public market/FX routing plus actual owner setup before funded soak. |
+| T22 — blocked | Genuine T18/T21 evidence, broader owner class grants, production scheduling/routing/admission, funded commissioning and broader compatible migration/deployment proof. The commissioned Secretary route is implemented in explicit synthetic preparation. |
+
+Bounds are distinct: complete economic source 8 MiB/20,000 rows; native initial
+audit/new correction 4,096 rows/8 MiB; complete financial checkpoint scans
+1,000,000 processed rows/512 MiB/five seconds. Scans and long normal Ledger/FIFO
+projections are not incremental. The local witness cannot defeat restoring the
+whole host/database/witness. The provider profile refuses public-data routing;
+adding credentials alone will not close these technical gaps.
+
+Next, prepare the owner-designated host and reviewed provider/public-data routes,
+then perform authorized funded paper observation. Genuine T18 forward collection
+and separately authorized T19 conformance can proceed in parallel when their
+inputs are available. T20/T22 remain prerequisite and owner-authority gated.
+
+## Working commands
+
+```bash
+uv sync --frozen --group dev --python 3.12
+uv run ruff check src tests scripts/check_repository_hygiene.py scripts/verify_offline_acceptance.py scripts/build_protected_image.py scripts/verify_protected_image.py
+uv run pytest --junitxml=/tmp/trade-graph-verification-new.xml
+uv run python scripts/verify_offline_acceptance.py --report /tmp/trade-graph-acceptance-new.json
+python3 scripts/check_plan.py
+python3 scripts/test_planning.py
+uv run trade-graph demo --offline --work /tmp/trade-graph-demo-new
+```
+
+Use fresh artifact paths. Protected composition requires explicit owner pins.
+Offline plugin/application preparation does not install default production routes
+or broader class grants. Live readiness remains closed.

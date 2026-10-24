@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Sign in{% endblock %}
+{% block eyebrow %}Private dashboard{% endblock %}
+{% block heading %}Sign in to Trade Graph{% endblock %}
+{% block description %}Use a session issued by the local protected service to open the portfolio dashboard.{% endblock %}
+{% block content %}
+<section class="panel login-panel"><h2 class="panel-title">Local session</h2><form class="control-form" data-login><label class="field">Session token<input type="password" name="session_token" required autocomplete="off" spellcheck="false"></label><p class="small muted">Enter the token from your private session file. The service sets an HttpOnly session cookie; the browser does not store this token in page content or local storage.</p><div class="form-actions"><button class="button" type="submit">Open dashboard</button></div><p class="form-result" role="status" aria-live="polite"></p></form></section>
+{% endblock %}

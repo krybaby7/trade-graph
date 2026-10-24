@@ -7,6 +7,7 @@ runtime/
 *.db-shm
 *.db-wal
 *.sqlite*
+*.db.lock
 *.pem
 *.key
 __pycache__/
@@ -22,3 +23,6 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+
+# Third-party trade exports dropped in for research (large, untrusted data)
+strategies/*.csv

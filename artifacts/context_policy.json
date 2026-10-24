@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "max_general_lessons": 8,
+  "always_include": ["mandate_obligations", "active_safety"]
+}

@@ -2,6 +2,12 @@
 
 ## Assignment
 
+Current owner continuation choice, 2026-10-05: prioritize the existing crypto
+paper experiment using [docs/CRYPTO-NEXT-STEPS.md](docs/CRYPTO-NEXT-STEPS.md).
+The broader [multi-asset direction](docs/MULTI-ASSET-DIRECTION.md) is recorded
+for later and deferred. Preserve the original completion evidence; the new
+plan identifies concrete runtime follow-up work without asserting acceptance.
+
 Implement Trade Graph in this repository: an autonomous cost-aware crypto-trading organisation with Leadership (Leader, software-first Secretary, Improvement Engineer), Research, Trading (one AI Trader plus deterministic execution), Learning and Graph Optimisation (software accounting/journal plus periodic analyst).
 
 The default virtual account is **USD10,000** following the owner's updated instruction; initial reporting remains EUR. EUR100 is not an operating restriction. Keep native USD and actual FX provenance, with USD spot pairs initially. Paper capital is not an API allowance or live authorization. See docs/10-PAPER-CAPITAL.md.
@@ -25,7 +31,7 @@ python3 scripts/next_task.py --prompt
 python3 scripts/cost_model.py
 ```
 
-These standard-library utilities validate/select planning work and calculate estimates. They neither start trading nor invoke a coding provider. Give the emitted task packet to the coding orchestrator, which should implement dependency-ready work beginning with T00, then continue through the R1 gate. Add real application source, migrations, commands and tests during those tasks.
+These standard-library utilities validate/select planning work and calculate estimates. They neither start trading nor invoke a coding provider. T00–T16 have evidence-backed completion; preserve their implementation and continue the remaining T17–T22 work from the current verified checkpoint. Read the status and task evidence before selecting a slice. Continue concrete source, command and test implementation while preserving the separate funded, external-evidence and owner-authority gates.
 
 After contracts are agreed, independent broker/data, provider/budget and presentation tasks may run in separate worktrees. One integration owner coordinates contracts, migrations and dependency files. Parallel implementation is not an instruction to run permanent runtime agents for every package.
 

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "feeds": [
+    {"feed_id": "kraken-status", "publisher": "Kraken status page", "url": "https://status.kraken.com/history.atom", "kind": "exchange_status", "format": "atom"},
+    {"feed_id": "kraken-blog", "publisher": "Kraken blog", "url": "https://blog.kraken.com/feed", "kind": "exchange_announcements", "format": "rss"},
+    {"feed_id": "coindesk", "publisher": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "kind": "news_outlet", "format": "rss"},
+    {"feed_id": "cointelegraph", "publisher": "Cointelegraph", "url": "https://cointelegraph.com/rss", "kind": "news_outlet", "format": "rss"},
+    {"feed_id": "decrypt", "publisher": "Decrypt", "url": "https://decrypt.co/feed", "kind": "news_outlet", "format": "rss"}
+  ],
+  "poll_interval_seconds": 300,
+  "check_window_seconds": 3600,
+  "max_attempts_per_headline": 3,
+  "extra_watch_coins": [],
+  "rule": {"version": "news-alarm-rule-v1", "urgent_threshold": "0.5"},
+  "testing_alert_usd": "5",
+  "jev": {
+    "calls_enabled": false,
+    "model": "jev-1.13.0",
+    "key_directory": "~/.local/share/trade-graph-owner/typesafe",
+    "deployment_id": "deployment",
+    "fx_rate": "1",
+    "fx_buffer": "1.02",
+    "timeout_seconds": 10
+  }
+}

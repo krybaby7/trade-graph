@@ -1,0 +1,804 @@
+{
+  "schema": "trade-graph.hq.desk.v1",
+  "as_of": "2026-10-22T00:30:00.000Z",
+  "headline": [
+    {
+      "t": "text",
+      "v": "Playbook revision 2. 2 coins chosen today. Lab: 0 queued, 0 running."
+    }
+  ],
+  "playbook": {
+    "state": "shown",
+    "headline": [
+      {
+        "t": "term",
+        "key": "playbook",
+        "v": "Playbook"
+      },
+      {
+        "t": "text",
+        "v": " revision 2, set by the desk "
+      },
+      {
+        "t": "time",
+        "at": "2026-10-16T08:00:00.000Z",
+        "style": "relative_clock"
+      },
+      {
+        "t": "text",
+        "v": "; 2 revisions so far."
+      }
+    ],
+    "revision": 2,
+    "set_at": "2026-10-16T08:00:00.000Z",
+    "revisions_total": 2,
+    "why": {
+      "label": "In their words",
+      "text": "The dip version is confirmed now."
+    },
+    "choices": [
+      {
+        "market_type": "rising",
+        "stance": "follow_trend",
+        "strategy_refs": [
+          "slow-trend-pullback@1"
+        ],
+        "text": [
+          {
+            "t": "text",
+            "v": "Rising: follow the trend with slow-trend-pullback@1."
+          }
+        ],
+        "reason": {
+          "label": "In their words",
+          "text": "Follow the trend with the pullback version."
+        },
+        "reports": 0
+      },
+      {
+        "market_type": "sideways",
+        "stance": "buy_dips",
+        "strategy_refs": [
+          "dip-rebound@1"
+        ],
+        "text": [
+          {
+            "t": "text",
+            "v": "Sideways: buy dips with dip-rebound@1."
+          }
+        ],
+        "reason": {
+          "label": "In their words",
+          "text": "Rest maker bids after dips inside the range."
+        },
+        "reports": 2
+      },
+      {
+        "market_type": "falling",
+        "stance": "wait",
+        "strategy_refs": [],
+        "text": [
+          {
+            "t": "text",
+            "v": "Falling: wait in cash."
+          }
+        ],
+        "reason": {
+          "label": "In their words",
+          "text": "The seed strategies lost more than cash after fees in falling months."
+        },
+        "reports": 0
+      },
+      {
+        "market_type": "unclear",
+        "stance": "wait",
+        "strategy_refs": [],
+        "text": [
+          {
+            "t": "text",
+            "v": "Unclear: wait in cash."
+          }
+        ],
+        "reason": {
+          "label": "In their words",
+          "text": "No known type, no trade."
+        },
+        "reports": 0
+      }
+    ],
+    "previous": [
+      {
+        "t": "text",
+        "v": "It replaced revision 1 from "
+      },
+      {
+        "t": "time",
+        "at": "2026-10-16T08:00:00.000Z",
+        "style": "day_clock"
+      },
+      {
+        "t": "text",
+        "v": "."
+      }
+    ]
+  },
+  "stances": {
+    "state": "shown",
+    "headline": [
+      {
+        "t": "text",
+        "v": "Today's "
+      },
+      {
+        "t": "term",
+        "key": "stance",
+        "v": "stance"
+      },
+      {
+        "t": "text",
+        "v": " for 2 coins: BTC/USD waits (falling), SOL/USD buys dips (sideways)."
+      }
+    ],
+    "day_start": "2026-10-22T00:00:00.000Z",
+    "day_end": "2026-10-23T00:00:00.000Z",
+    "items": [
+      {
+        "symbol": "BTC/USD",
+        "stance": "wait",
+        "at": "2026-10-22T00:30:00.000Z",
+        "text": [
+          {
+            "t": "text",
+            "v": "Wait in cash."
+          }
+        ],
+        "shown": {
+          "status": "current",
+          "market_type": "falling",
+          "text": [
+            {
+              "t": "text",
+              "v": "Falling when it chose (software's label)."
+            }
+          ]
+        },
+        "now": {
+          "status": "current",
+          "market_type": "falling",
+          "text": [
+            {
+              "t": "text",
+              "v": "Falling now (labelled just now)."
+            }
+          ]
+        },
+        "reason": {
+          "label": "In their words",
+          "text": "It is falling: the playbook waits in cash, which costs no fee."
+        },
+        "news": 0
+      },
+      {
+        "symbol": "SOL/USD",
+        "stance": "buy_dips",
+        "at": "2026-10-22T00:30:00.000Z",
+        "text": [
+          {
+            "t": "text",
+            "v": "Buy dips with dip-rebound@1."
+          }
+        ],
+        "shown": {
+          "status": "current",
+          "market_type": "sideways",
+          "text": [
+            {
+              "t": "text",
+              "v": "Sideways when it chose (software's label)."
+            }
+          ]
+        },
+        "now": {
+          "status": "current",
+          "market_type": "sideways",
+          "text": [
+            {
+              "t": "text",
+              "v": "Sideways now (labelled just now)."
+            }
+          ]
+        },
+        "reason": {
+          "label": "In their words",
+          "text": "Range-bound: buy dips with the confirmed version."
+        },
+        "news": 0
+      }
+    ],
+    "more_stances": 0
+  },
+  "lab": {
+    "state": "shown",
+    "headline": [
+      {
+        "t": "text",
+        "v": "The "
+      },
+      {
+        "t": "term",
+        "key": "strategy_lab",
+        "v": "strategy lab"
+      },
+      {
+        "t": "text",
+        "v": ": 0 queued, 0 running; 4 finished so far."
+      }
+    ],
+    "queued": 0,
+    "running": 0,
+    "next": [],
+    "results": [
+      {
+        "request_id": "wake:2b2ba705-34d6-42c7-a140-732102ef3985:3",
+        "at": "2026-10-16T08:00:00.000Z",
+        "status": "done",
+        "tone": "good",
+        "text": [
+          {
+            "t": "text",
+            "v": "Confirmed dip-rebound@1 on SOL/USD over 8 Sep to 15 Sep: 2 reports."
+          }
+        ],
+        "reason": null,
+        "reports": [
+          {
+            "run_id": "pr-ccf2443504e04f9cbea2d1c01641e842",
+            "text": [
+              {
+                "t": "text",
+                "v": "With kraken-spot-starting-tier fees: 10 trades, result after fees "
+              },
+              {
+                "t": "money",
+                "amount": "925.275540449472351969024",
+                "currency": "USD",
+                "display": "$925.28"
+              },
+              {
+                "t": "text",
+                "v": "; holding SOL/USD over the same days made "
+              },
+              {
+                "t": "money",
+                "amount": "-215.8666603084736",
+                "currency": "USD",
+                "display": "−$215.87"
+              },
+              {
+                "t": "text",
+                "v": ", so the strategy did "
+              },
+              {
+                "t": "money",
+                "amount": "1141.142200757945951969024",
+                "currency": "USD",
+                "display": "$1,141.14"
+              },
+              {
+                "t": "text",
+                "v": " better."
+              }
+            ],
+            "trades": 10,
+            "result": {
+              "amount": "925.275540449472351969024",
+              "currency": "USD",
+              "display": "$925.28"
+            },
+            "versus_hold": {
+              "amount": "1141.142200757945951969024",
+              "currency": "USD",
+              "display": "$1,141.14"
+            },
+            "tone": "good"
+          },
+          {
+            "run_id": "pr-789bed9b01b247a2b273861b5ae74aff",
+            "text": [
+              {
+                "t": "text",
+                "v": "With okx-eea-spot fees: 10 trades, result after fees "
+              },
+              {
+                "t": "money",
+                "amount": "1679.107255424394249514944",
+                "currency": "USD",
+                "display": "$1,679.11"
+              },
+              {
+                "t": "text",
+                "v": "; holding SOL/USD over the same days made "
+              },
+              {
+                "t": "money",
+                "amount": "-97.74644904278",
+                "currency": "USD",
+                "display": "−$97.75"
+              },
+              {
+                "t": "text",
+                "v": ", so the strategy did "
+              },
+              {
+                "t": "money",
+                "amount": "1776.853704467174249514944",
+                "currency": "USD",
+                "display": "$1,776.85"
+              },
+              {
+                "t": "text",
+                "v": " better."
+              }
+            ],
+            "trades": 10,
+            "result": {
+              "amount": "1679.107255424394249514944",
+              "currency": "USD",
+              "display": "$1,679.11"
+            },
+            "versus_hold": {
+              "amount": "1776.853704467174249514944",
+              "currency": "USD",
+              "display": "$1,776.85"
+            },
+            "tone": "good"
+          }
+        ],
+        "more_reports": 0
+      },
+      {
+        "request_id": "wake:2b2ba705-34d6-42c7-a140-732102ef3985:2",
+        "at": "2026-10-16T08:00:00.000Z",
+        "status": "done",
+        "tone": "good",
+        "text": [
+          {
+            "t": "text",
+            "v": "Tuned dip-rebound@1 on SOL/USD over 1 Sep to 8 Sep: 2 reports."
+          }
+        ],
+        "reason": null,
+        "reports": [
+          {
+            "run_id": "pr-d91455b92a7b414895c493e76470eba6",
+            "text": [
+              {
+                "t": "text",
+                "v": "With kraken-spot-starting-tier fees: 10 trades, result after fees "
+              },
+              {
+                "t": "money",
+                "amount": "1340.09987972935113447408",
+                "currency": "USD",
+                "display": "$1,340.10"
+              },
+              {
+                "t": "text",
+                "v": "; holding SOL/USD over the same days made "
+              },
+              {
+                "t": "money",
+                "amount": "-101.2599965380608",
+                "currency": "USD",
+                "display": "−$101.26"
+              },
+              {
+                "t": "text",
+                "v": ", so the strategy did "
+              },
+              {
+                "t": "money",
+                "amount": "1441.35987626741193447408",
+                "currency": "USD",
+                "display": "$1,441.36"
+              },
+              {
+                "t": "text",
+                "v": " better."
+              }
+            ],
+            "trades": 10,
+            "result": {
+              "amount": "1340.09987972935113447408",
+              "currency": "USD",
+              "display": "$1,340.10"
+            },
+            "versus_hold": {
+              "amount": "1441.35987626741193447408",
+              "currency": "USD",
+              "display": "$1,441.36"
+            },
+            "tone": "good"
+          },
+          {
+            "run_id": "pr-fc568d3817444b189b657f76530d71be",
+            "text": [
+              {
+                "t": "text",
+                "v": "With okx-eea-spot fees: 10 trades, result after fees "
+              },
+              {
+                "t": "money",
+                "amount": "2052.515598589160577951078",
+                "currency": "USD",
+                "display": "$2,052.52"
+              },
+              {
+                "t": "text",
+                "v": "; holding SOL/USD over the same days made "
+              },
+              {
+                "t": "money",
+                "amount": "18.2438184441168",
+                "currency": "USD",
+                "display": "$18.24"
+              },
+              {
+                "t": "text",
+                "v": ", so the strategy did "
+              },
+              {
+                "t": "money",
+                "amount": "2034.271780145043777951078",
+                "currency": "USD",
+                "display": "$2,034.27"
+              },
+              {
+                "t": "text",
+                "v": " better."
+              }
+            ],
+            "trades": 10,
+            "result": {
+              "amount": "2052.515598589160577951078",
+              "currency": "USD",
+              "display": "$2,052.52"
+            },
+            "versus_hold": {
+              "amount": "2034.271780145043777951078",
+              "currency": "USD",
+              "display": "$2,034.27"
+            },
+            "tone": "good"
+          }
+        ],
+        "more_reports": 0
+      },
+      {
+        "request_id": "wake:2b2ba705-34d6-42c7-a140-732102ef3985:1",
+        "at": "2026-10-16T08:00:00.000Z",
+        "status": "done",
+        "tone": "good",
+        "text": [
+          {
+            "t": "text",
+            "v": "Set up the study dip-sep: tune 1 Sep to 8 Sep, confirm 8 Sep to 15 Sep."
+          }
+        ],
+        "reason": null,
+        "reports": [],
+        "more_reports": 0
+      },
+      {
+        "request_id": "wake:2b2ba705-34d6-42c7-a140-732102ef3985:0",
+        "at": "2026-10-16T08:00:00.000Z",
+        "status": "done",
+        "tone": "good",
+        "text": [
+          {
+            "t": "text",
+            "v": "Registered dip-rebound@1."
+          }
+        ],
+        "reason": null,
+        "reports": [],
+        "more_reports": 0
+      }
+    ],
+    "more_results": 0,
+    "families": [
+      {
+        "strategy_id": "dip-rebound",
+        "text": [
+          {
+            "t": "text",
+            "v": "dip-rebound: 1 version, 1 study, 2 tuning runs and 2 confirmation runs; confirmed: dip-rebound@1."
+          }
+        ],
+        "versions": 1,
+        "studies": 1,
+        "tune_runs": 2,
+        "confirm_runs": 2,
+        "confirmed": [
+          "dip-rebound@1"
+        ]
+      },
+      {
+        "strategy_id": "slow-trend-pullback",
+        "text": [
+          {
+            "t": "text",
+            "v": "slow-trend-pullback: 1 version, 1 study, 0 tuning runs and 1 confirmation run; confirmed: slow-trend-pullback@1."
+          }
+        ],
+        "versions": 1,
+        "studies": 1,
+        "tune_runs": 0,
+        "confirm_runs": 1,
+        "confirmed": [
+          "slow-trend-pullback@1"
+        ]
+      }
+    ],
+    "more_families": 0
+  },
+  "news": {
+    "state": "shown",
+    "headline": [
+      {
+        "t": "text",
+        "v": "The news the desk read at its last turn, "
+      },
+      {
+        "t": "time",
+        "at": "2026-10-22T00:30:00.000Z",
+        "style": "relative_clock"
+      },
+      {
+        "t": "text",
+        "v": ": the Leader's newest round, finished "
+      },
+      {
+        "t": "time",
+        "at": "2026-10-22T00:30:00.000Z",
+        "style": "relative_clock"
+      },
+      {
+        "t": "text",
+        "v": "; no Jev verdict on its coins in the 24 hours before."
+      }
+    ],
+    "read_at": "2026-10-22T00:30:00.000Z",
+    "round": {
+      "at": "2026-10-22T00:30:00.000Z",
+      "summary": {
+        "label": "In their words",
+        "text": "Synthetic round of day 7: Bitcoin slides; Kraken delays SOL deposits."
+      },
+      "headlines": [
+        {
+          "text": {
+            "label": "In their words",
+            "text": "Kraken delays SOL deposits; trading unaffected."
+          },
+          "source": null
+        },
+        {
+          "text": {
+            "label": "In their words",
+            "text": "A public benchmark of AI trading agents after fees."
+          },
+          "source": null
+        }
+      ],
+      "more_headlines": 0,
+      "desk_note": {
+        "label": "In their words",
+        "text": "Kraken reports delayed SOL deposits; trading is unaffected. Your call."
+      },
+      "ideas": [],
+      "more_ideas": 0
+    },
+    "inbox": [
+      {
+        "at": "2026-10-16T08:00:00.000Z",
+        "idea": {
+          "label": "In their words",
+          "text": "Buy dips in sideways markets: rest bids after a dip below the range and leave falling coins alone; fees decide, so trade less."
+        },
+        "text": [
+          {
+            "t": "text",
+            "v": "Sent to the desk "
+          },
+          {
+            "t": "time",
+            "at": "2026-10-16T08:00:00.000Z",
+            "style": "day_clock"
+          },
+          {
+            "t": "text",
+            "v": "; the desk cited it in 4 lab requests."
+          }
+        ]
+      }
+    ],
+    "more_inbox": 0,
+    "jev": [
+      {
+        "t": "text",
+        "v": "Jev, the news alarm, is in shadow mode: its verdicts wake nobody until you switch news wake-ups on. No verdict on the desk's coins in the 24 hours before."
+      }
+    ],
+    "verdicts": [],
+    "more_verdicts": 0
+  },
+  "split": {
+    "state": "shown",
+    "headline": [
+      {
+        "t": "text",
+        "v": "Since "
+      },
+      {
+        "t": "time",
+        "at": "2026-10-16T08:00:00.000Z",
+        "style": "date"
+      },
+      {
+        "t": "text",
+        "v": ": 2 trades and 1 still held, result after fees "
+      },
+      {
+        "t": "money",
+        "amount": "-7.0476",
+        "currency": "USD",
+        "display": "−$7.05"
+      },
+      {
+        "t": "text",
+        "v": ", split by strategy version, "
+      },
+      {
+        "t": "term",
+        "key": "market_type",
+        "v": "market type"
+      },
+      {
+        "t": "text",
+        "v": " at entry and the desk's stance (the same figures as the Scorecard)."
+      }
+    ],
+    "period_start": "2026-10-16T08:00:00.000Z",
+    "currency": "USD",
+    "result": {
+      "amount": "-7.0476",
+      "currency": "USD",
+      "display": "−$7.05"
+    },
+    "by_choice": [
+      {
+        "key": "dip-rebound@1|sideways|buy_dips",
+        "text": [
+          {
+            "t": "text",
+            "v": "dip-rebound@1 when sideways, buying dips: 2 trades (1 won, 1 lost) and 1 still held, result after fees "
+          },
+          {
+            "t": "money",
+            "amount": "-7.0476",
+            "currency": "USD",
+            "display": "−$7.05"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        "trades": 2,
+        "open_positions": 1,
+        "result": {
+          "amount": "-7.0476",
+          "currency": "USD",
+          "display": "−$7.05"
+        },
+        "tone": "attention"
+      }
+    ],
+    "more_choices": 0,
+    "by_strategy": [
+      {
+        "key": "dip-rebound@1",
+        "text": [
+          {
+            "t": "text",
+            "v": "dip-rebound@1: 2 trades (1 won, 1 lost) and 1 still held, result after fees "
+          },
+          {
+            "t": "money",
+            "amount": "-7.0476",
+            "currency": "USD",
+            "display": "−$7.05"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        "trades": 2,
+        "open_positions": 1,
+        "result": {
+          "amount": "-7.0476",
+          "currency": "USD",
+          "display": "−$7.05"
+        },
+        "tone": "attention"
+      }
+    ],
+    "more_strategies": 0,
+    "by_market_type": [
+      {
+        "key": "sideways",
+        "text": [
+          {
+            "t": "text",
+            "v": "Sideways at entry: 2 trades (1 won, 1 lost) and 1 still held, result after fees "
+          },
+          {
+            "t": "money",
+            "amount": "-7.0476",
+            "currency": "USD",
+            "display": "−$7.05"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        "trades": 2,
+        "open_positions": 1,
+        "result": {
+          "amount": "-7.0476",
+          "currency": "USD",
+          "display": "−$7.05"
+        },
+        "tone": "attention"
+      }
+    ],
+    "by_stance": [
+      {
+        "key": "buy_dips",
+        "text": [
+          {
+            "t": "text",
+            "v": "Buying dips: 2 trades (1 won, 1 lost) and 1 still held, result after fees "
+          },
+          {
+            "t": "money",
+            "amount": "-7.0476",
+            "currency": "USD",
+            "display": "−$7.05"
+          },
+          {
+            "t": "text",
+            "v": "."
+          }
+        ],
+        "trades": 2,
+        "open_positions": 1,
+        "result": {
+          "amount": "-7.0476",
+          "currency": "USD",
+          "display": "−$7.05"
+        },
+        "tone": "attention"
+      }
+    ],
+    "note": [
+      {
+        "t": "text",
+        "v": "Evidence about simulated paper trading, split by the choice behind each trade's first buy; a small sample proves little, and this is never proof of profit or permission for real money."
+      }
+    ]
+  }
+}

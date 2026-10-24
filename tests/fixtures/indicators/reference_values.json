@@ -1,0 +1,2379 @@
+{
+ "schema_version": 1,
+ "note": "Expected values are exact (fractions or decimals). They were derived from the cited definitions in exact rational arithmetic (first with a throwaway script that is not committed), then checked against TA-Lib. Each case's derivation is written out so it can be repeated with a calculator. Where the definition does not decide the number (the cases with a convention: MACD's fast-average seed, the smoothing seed of ADX and the directional indicators, the Parabolic SAR start) the pinned number is TA-Lib's own, found by matching its output to a candidate rule, and the case says so. Cases marked definition_boundary need no source: the value follows from the definition alone.",
+ "published_numeric_examples": "None. The StockCharts ChartSchool worked examples are downloadable spreadsheets (cs-rsi.xls, cs-adx.xls, cs-atr.xls, cs-bbands.xls and similar). They were not downloaded in this task, so no published numeric example could be sourced.",
+ "cases": [
+  {
+   "id": "sma-3",
+   "entry": "SMA",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "12",
+     "12",
+     "38/3",
+     "40/3",
+     "14",
+     "40/3",
+     "40/3"
+    ]
+   },
+   "source": {
+    "definition": "Arithmetic mean of the last N closes; see https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential",
+    "derivation": "Closes 11,12,13,11,14,15,13,12,15. Each value is the mean of the latest 3 closes: (11+12+13)/3=12, (12+13+11)/3=12, (13+11+14)/3=38/3, (11+14+15)/3=40/3, (14+15+13)/3=14, (15+13+12)/3=40/3, (13+12+15)/3=40/3.",
+    "convention": null
+   }
+  },
+  {
+   "id": "ema-3",
+   "entry": "EMA",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "12",
+     "23/2",
+     "51/4",
+     "111/8",
+     "215/16",
+     "407/32",
+     "887/64"
+    ]
+   },
+   "source": {
+    "definition": "EMA with k=2/(N+1) started from the plain mean of the first N closes; see https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential",
+    "derivation": "k=2/(3+1)=1/2. The first value (index 2) is the plain mean of the first 3 closes, (11+12+13)/3=12. Then value = 1/2 x close + 1/2 x previous: 11 gives 23/2, 14 gives 51/4, 15 gives 111/8, 13 gives 215/16, 12 gives 407/32, 15 gives 887/64.",
+    "convention": null
+   }
+  },
+  {
+   "id": "wma-3",
+   "entry": "WMA",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "37/3",
+     "71/6",
+     "77/6",
+     "14",
+     "83/6",
+     "77/6",
+     "41/3"
+    ]
+   },
+   "source": {
+    "definition": "Linearly weighted mean, newest close weighted N and oldest 1, divided by N(N+1)/2 (TA-Lib function list)",
+    "derivation": "Weights 1,2,3 from oldest to newest, divided by 6: (11x1+12x2+13x3)/6=74/6=37/3, (12x1+13x2+11x3)/6=71/6, (13x1+11x2+14x3)/6=77/6, (11+28+45)/6=14 ... and so on.",
+    "convention": null
+   }
+  },
+  {
+   "id": "dema-3",
+   "entry": "DEMA",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     null,
+     "161/12",
+     "709/48",
+     "41/3",
+     "2395/192",
+     "2747/192"
+    ]
+   },
+   "source": {
+    "definition": "P. Mulloy, Technical Analysis of Stocks & Commodities, January 1994: 2*EMA - EMA(EMA)",
+    "derivation": "EMA1 (k=1/2) is 12, 23/2, 51/4, 111/8, 215/16, 407/32, 887/64 from index 2. EMA2 is the EMA of EMA1, started at index 4 from the mean of the first 3 EMA1 values, (12+23/2+51/4)/3=145/12, then 1/2 x EMA1 + 1/2 x previous EMA2. DEMA = 2 x EMA1 - EMA2; at index 4 that is 2x51/4 - 145/12 = 161/12.",
+    "convention": null
+   }
+  },
+  {
+   "id": "bbands-3",
+   "entry": "BBANDS",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3,
+    "nbdevup": 2.0,
+    "nbdevdn": 1.0
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "upper": [
+     null,
+     null,
+     "13.632993161855",
+     "13.632993161855",
+     "15.161104924516",
+     "16.732679675729",
+     "15.632993161855",
+     "15.827771591183",
+     "15.827771591183"
+    ],
+    "middle": [
+     null,
+     null,
+     "12",
+     "12",
+     "38/3",
+     "40/3",
+     "14",
+     "40/3",
+     "40/3"
+    ],
+    "lower": [
+     null,
+     null,
+     "11.183503419072",
+     "11.183503419072",
+     "11.419447537742",
+     "11.633660162136",
+     "13.183503419072",
+     "12.086114204409",
+     "12.086114204409"
+    ]
+   },
+   "source": {
+    "definition": "J. Bollinger, Bollinger on Bollinger Bands (2001); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands",
+    "derivation": "Middle = mean of the last 3 closes. The spread is the population standard deviation of those 3 closes; for 11,12,13 it is sqrt(2/3)=0.816496580928. Upper = 12 + 2 x 0.816496580928 = 13.632993161855, lower = 12 - 1 x 0.816496580928 = 11.183503419072 (nbdevup=2, nbdevdn=1). Irrational values are written to 12 decimals.",
+    "convention": null
+   }
+  },
+  {
+   "id": "sar-rise-reversal",
+   "entry": "SAR",
+   "basis": "hand_derived",
+   "params": {
+    "acceleration": 0.02,
+    "maximum": 0.2
+   },
+   "columns": {
+    "high": [
+     "20",
+     "22",
+     "24",
+     "26",
+     "28",
+     "25",
+     "23",
+     "22",
+     "21",
+     "24",
+     "27"
+    ],
+    "low": [
+     "18",
+     "20",
+     "22",
+     "24",
+     "26",
+     "22",
+     "20",
+     "19",
+     "18",
+     "20",
+     "23"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     "18",
+     "18.08",
+     "18.3168",
+     "18.777792",
+     "19.51556864",
+     "28",
+     "27.84",
+     "27.4864",
+     "26.917216",
+     "18"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/parabolic-sar",
+    "derivation": "Step 0.02, maximum 0.2. Wilder's rule: next SAR = SAR + AF x (EP - SAR), AF grows by the step each time a new extreme point (EP) is made, up to the maximum. TA-Lib starts long: SAR(1)=low(0)=18, EP=high(1)=22, AF=0.02. SAR(2)=18+0.02x4=18.08; high(2)=24 is a new EP so AF=0.04: SAR(3)=18.08+0.04x(24-18.08)=18.3168; EP 26, AF 0.06: SAR(4)=18.777792; EP 28, AF 0.08: SAR(5)=19.51556864 (low 22 stays above it, no reversal). SAR(6) would be 20.1944 but low(6)=20 is below it, so the trend reverses: SAR(6)=EP=28, new EP=20, AF back to 0.02. Then SAR(7)=28+0.02x(20-28)=27.84, EP 19, AF 0.04: SAR(8)=27.4864, EP 18, AF 0.06: SAR(9)=26.917216. SAR(10) would be 26.3822 but high(10)=27 is above it, so the trend reverses again: SAR(10)=EP=18. Wilder's optional cap by the prior two lows or highs never binds from the third value on; TA-Lib does not apply it at the first step (observed).",
+    "convention": "TA-Lib start (long, SAR=first low) and no cap at the first step (observed)"
+   }
+  },
+  {
+   "id": "midprice-3",
+   "entry": "MIDPRICE",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "12",
+     "23/2",
+     "12",
+     "25/2",
+     "14",
+     "27/2",
+     "14"
+    ]
+   },
+   "source": {
+    "definition": "Midpoint of the highest high and lowest low over N bars (TA-Lib function list)",
+    "derivation": "Over the latest 3 bars: (highest high + lowest low)/2. Index 2: highs 12,13,14 and lows 10,11,11 give (14+10)/2=12; index 3: highs 13,14,13 and lows 11,11,9 give (14+9)/2=23/2.",
+    "convention": null
+   }
+  },
+  {
+   "id": "highest-high-3",
+   "entry": "HIGHEST_HIGH",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "14",
+     "14",
+     "15",
+     "16",
+     "16",
+     "16",
+     "17"
+    ]
+   },
+   "source": {
+    "definition": "Maximum of the last N highs (TA-Lib MAX applied to the high column)",
+    "derivation": "Highest of the latest 3 highs: indices 0-2 are 12,13,14 so 14; indices 1-3 are 13,14,13 so 14; indices 2-4 are 14,13,15 so 15.",
+    "convention": null
+   }
+  },
+  {
+   "id": "lowest-low-3",
+   "entry": "LOWEST_LOW",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "10",
+     "9",
+     "9",
+     "9",
+     "12",
+     "11",
+     "11"
+    ]
+   },
+   "source": {
+    "definition": "Minimum of the last N lows (TA-Lib MIN applied to the low column)",
+    "derivation": "Lowest of the latest 3 lows: indices 0-2 are 10,11,11 so 10; indices 1-3 are 11,11,9 so 9; indices 2-4 are 11,9,12 so 9.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rsi-3",
+   "entry": "RSI",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "50",
+     "1300/17",
+     "3500/43",
+     "50",
+     "14000/361",
+     "100900/1451"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/relative-strength-index-rsi (first averages are simple, later averages are (previous x (N-1) + current) / N)",
+    "derivation": "Changes: +1, +1, -2, +3, +1, -2, -1, +3. First averages are simple means of the first 3 changes: gain (1+1+0)/3=2/3, loss (0+0+2)/3=2/3, so RSI=100x(2/3)/(2/3+2/3)=50 at index 3. Next change +3: gain=(2/3x2+3)/3=13/9, loss=(2/3x2+0)/3=4/9, RSI=100x13/17=1300/17. Later values repeat the (previous x 2 + current)/3 smoothing.",
+    "convention": null
+   }
+  },
+  {
+   "id": "macd-2-3-2",
+   "entry": "MACD",
+   "basis": "hand_derived",
+   "params": {
+    "fastperiod": 2,
+    "slowperiod": 3,
+    "signalperiod": 2
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "macd": [
+     null,
+     null,
+     null,
+     "0",
+     "5/12",
+     "37/72",
+     "11/432",
+     "-599/2592",
+     "4715/15552"
+    ],
+    "signal": [
+     null,
+     null,
+     null,
+     "1/4",
+     "13/36",
+     "25/54",
+     "37/216",
+     "-377/3888",
+     "3961/23328"
+    ],
+    "histogram": [
+     null,
+     null,
+     null,
+     "-1/4",
+     "1/18",
+     "11/216",
+     "-7/48",
+     "-1043/7776",
+     "6223/46656"
+    ]
+   },
+   "source": {
+    "definition": "G. Appel (1979); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/macd-moving-average-convergence-divergence-oscillator",
+    "derivation": "TA-Lib convention. Slow EMA(3), k=1/2, starts at index 2 from the mean of closes 11,12,13 = 12. TA-Lib starts the fast EMA(2), k=2/3, at the same index from the mean of the two closes ending there, (12+13)/2=25/2, instead of running it from index 1. MACD(2)=25/2-12=1/2 (not yet output). Index 3: slow=1/2x11+1/2x12=23/2, fast=2/3x11+1/3x25/2=23/2, so MACD=0. The signal EMA(2), k=2/3, starts at index 3 from the mean of the first two MACD values, (1/2+0)/2=1/4; histogram =0-1/4=-1/4. Standalone EMAs (talipp, pandas-ta-classic) start the fast line earlier and give different early values; see docs/INDICATOR-MENU.md.",
+    "convention": "TA-Lib seeding of the fast average (see derivation)"
+   }
+  },
+  {
+   "id": "stoch-3-2-2",
+   "entry": "STOCH",
+   "basis": "hand_derived",
+   "params": {
+    "fastk_period": 3,
+    "slowk_period": 2,
+    "slowd_period": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "slow_k": [
+     null,
+     null,
+     null,
+     null,
+     "185/3",
+     "1775/21",
+     "775/14",
+     "45/2",
+     "130/3"
+    ],
+    "slow_d": [
+     null,
+     null,
+     null,
+     null,
+     "715/12",
+     "1535/21",
+     "5875/84",
+     "545/14",
+     "395/12"
+    ]
+   },
+   "source": {
+    "definition": "G. Lane; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/stochastic-oscillator-fast-slow-and-full",
+    "derivation": "Raw %K = 100 x (close - lowest low of 3) / (highest high of 3 - lowest low of 3): index 2 is 100x(13-10)/(14-10)=75, index 3 is 100x(11-9)/(14-9)=40, index 4 is 100x(14-9)/(15-9)=250/3. Slow K = mean of 2 raw values: index 4 is (40+250/3)/2=185/3. Slow D = mean of 2 slow K values.",
+    "convention": null
+   }
+  },
+  {
+   "id": "cci-3",
+   "entry": "CCI",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "175/2",
+     "-100",
+     "1100/13",
+     "1400/19",
+     "-500/7",
+     "-1000/11",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "D. Lambert, Commodities magazine (1980); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/commodity-channel-index-cci",
+    "derivation": "Typical price TP=(high+low+close)/3: 11, 12, 38/3. Mean of TP = 107/9. Mean absolute deviation = (8/9+1/9+7/9)/3=16/27. CCI = (TP - mean)/(0.015 x deviation) = (7/9)/(0.015x16/27) = 175/2 at index 2.",
+    "convention": null
+   }
+  },
+  {
+   "id": "mfi-3",
+   "entry": "MFI",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ],
+    "volume": [
+     "100",
+     "120",
+     "90",
+     "150",
+     "110",
+     "130",
+     "80",
+     "140",
+     "100"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "8600/141",
+     "19825/322",
+     "1550/23",
+     "102300/1343",
+     "5720/141",
+     "5625/161"
+    ]
+   },
+   "source": {
+    "definition": "G. Quong and A. Soudack (1989); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/money-flow-index-mfi",
+    "derivation": "TP=(high+low+close)/3 per bar: 11, 12, 38/3, 11, ... Money flow = TP x volume, positive when TP rose from the previous bar, negative when it fell. Index 3 uses bars 1-3: +12x120=1440, +38/3x90=1140, -11x150=1650. MFI=100x(1440+1140)/(1440+1140+1650)=8600/141.",
+    "convention": null
+   }
+  },
+  {
+   "id": "willr-3",
+   "entry": "WILLR",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "-25",
+     "-60",
+     "-50/3",
+     "-100/7",
+     "-75",
+     "-80",
+     "-100/3"
+    ]
+   },
+   "source": {
+    "definition": "L. Williams; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/williams-r",
+    "derivation": "-100 x (highest high of 3 - close) / (highest high of 3 - lowest low of 3). Index 2: -100x(14-13)/(14-10)=-25; index 3: -100x(14-11)/(14-9)=-60.",
+    "convention": null
+   }
+  },
+  {
+   "id": "roc-2",
+   "entry": "ROC",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "200/11",
+     "-25/3",
+     "100/13",
+     "400/11",
+     "-50/7",
+     "-20",
+     "200/13"
+    ]
+   },
+   "source": {
+    "definition": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/rate-of-change-roc",
+    "derivation": "100 x (close / close 2 bars earlier - 1). Index 2: 100x(13/11-1)=200/11; index 3: 100x(11/12-1)=-25/3.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rocp-2",
+   "entry": "ROCP",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "2/11",
+     "-1/12",
+     "1/13",
+     "4/11",
+     "-1/14",
+     "-1/5",
+     "2/13"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close, (close - close N bars earlier) / close N bars earlier (TA-Lib function list, ROCP); the same quantity as ROC divided by 100.",
+    "derivation": "Index 2: 13/11-1=2/11; index 3: 11/12-1=-1/12; index 4: 14/13-1=1/13; index 5: 15/11-1=4/11; index 6: 13/14-1=-1/14; index 7: 12/15-1=-1/5; index 8: 15/13-1=2/13. These are the roc-2 values divided by 100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rocp-1",
+   "entry": "ROCP",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 1
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     "1/11",
+     "1/12",
+     "-2/13",
+     "3/11",
+     "1/14",
+     "-2/15",
+     "-1/13",
+     "1/4"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close, (close - close N bars earlier) / close N bars earlier (TA-Lib function list, ROCP). One bar is the hourly return used by the hourly price features.",
+    "derivation": "Index 1: 12/11-1=1/11; index 2: 13/12-1=1/12; index 3: 11/13-1=-2/13; index 4: 14/11-1=3/11; index 5: 15/14-1=1/14; index 6: 13/15-1=-2/15; index 7: 12/13-1=-1/13; index 8: 15/12-1=1/4.",
+    "convention": null
+   }
+  },
+  {
+   "id": "mom-2",
+   "entry": "MOM",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "2",
+     "-1",
+     "1",
+     "4",
+     "-1",
+     "-3",
+     "2"
+    ]
+   },
+   "source": {
+    "definition": "Close minus the close N bars earlier (TA-Lib function list)",
+    "derivation": "Close minus the close 2 bars earlier: 13-11=2, 11-12=-1, 14-13=1, 15-11=4, ...",
+    "convention": null
+   }
+  },
+  {
+   "id": "adx-2",
+   "entry": "ADX",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "800/11",
+     "16850/297",
+     "763225/12771",
+     "848365/25542",
+     "294162535/7100676",
+     "377518299805/7427307096"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "TA-Lib convention, N=2. Per bar: +DM = high rise if it beats the low fall and is positive; -DM the mirror; TR = max(high-low, |high-previous close|, |low-previous close|). TA-Lib seeds the smoothed sums with the first N-1 values (TR(1)=2, +DM(1)=1, -DM(1)=0) and applies S = S - S/N + x from index N, so index 2 has TR sum 2-1+3=4 and +DM sum 1-1/2+1=3/2: +DI=100x1.5/4=75/2, -DI=0, DX=100. Index 3: +DI=25/2, -DI=100/3, DX=500/11. The first ADX (index 2N-1=3) is the mean of the DX values at indices 2 and 3, (100+500/11)/2=800/11; later ADX=(previous x (N-1) + DX)/N. Wilder's textbook seed (sum of the first N values) gives different early numbers that converge; see docs/INDICATOR-MENU.md.",
+    "convention": "TA-Lib seeding of the smoothed sums (see derivation)"
+   }
+  },
+  {
+   "id": "plus-di-2",
+   "entry": "PLUS_DI",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "75/2",
+     "25/2",
+     "475/14",
+     "875/26",
+     "35/2",
+     "125/14",
+     "10475/258"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Same smoothing as the ADX case. Index 2: 100 x (3/2) / 4 = 75/2; index 3: smoothed +DM 1/2... (3/2 - 3/4 + 0 = 3/4), smoothed TR 4 - 2 + 4 = 6, so 100 x (3/4) / 6 = 25/2.",
+    "convention": "TA-Lib seeding of the smoothed sums (see derivation)"
+   }
+  },
+  {
+   "id": "minus-di-2",
+   "entry": "MINUS_DI",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "100/3",
+     "100/7",
+     "100/13",
+     "20",
+     "1300/49",
+     "1300/129"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Same smoothing as the ADX case. -DM is 0 at indices 1 and 2, so -DI=0 at index 2; index 3: low falls 11 -> 9 so -DM=2 and the smoothed -DM is 0 - 0 + 2 = 2; smoothed TR is 6, so -DI=100x2/6=100/3.",
+    "convention": "TA-Lib seeding of the smoothed sums (see derivation)"
+   }
+  },
+  {
+   "id": "aroon-3",
+   "entry": "AROON",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ]
+   },
+   "expected": {
+    "down": [
+     null,
+     null,
+     null,
+     "100",
+     "200/3",
+     "100/3",
+     "0",
+     "100",
+     "200/3"
+    ],
+    "up": [
+     null,
+     null,
+     null,
+     "200/3",
+     "100",
+     "100",
+     "200/3",
+     "100/3",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "T. Chande, Technical Analysis of Stocks & Commodities, September 1995; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/aroon",
+    "derivation": "Window of the latest 4 bars (N+1). Up = 100 x (3 - bars since the highest high) / 3; down uses the lowest low. Index 3: highs 12,13,14,13 peak at index 2 (1 bar ago) so up=200/3; lows 10,11,11,9 bottom at index 3 (0 bars ago) so down=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "atr-2",
+   "entry": "ATR",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "5/2",
+     "13/4",
+     "29/8",
+     "53/16",
+     "101/32",
+     "197/64",
+     "517/128"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-true-range-atr",
+    "derivation": "TR(1)=max(2,|13-11|,|11-11|)=2, TR(2)=3, TR(3)=max(4,|13-13|,|9-13|)=4. First ATR (index 2) is the mean of the first 2 TR values, 5/2; then (previous x 1 + TR)/2: index 3 is (5/2+4)/2=13/4.",
+    "convention": null
+   }
+  },
+  {
+   "id": "natr-2",
+   "entry": "NATR",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "12",
+     "13",
+     "14",
+     "13",
+     "15",
+     "16",
+     "15",
+     "14",
+     "17"
+    ],
+    "low": [
+     "10",
+     "11",
+     "11",
+     "9",
+     "12",
+     "13",
+     "12",
+     "11",
+     "13"
+    ],
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "250/13",
+     "325/11",
+     "725/28",
+     "265/12",
+     "2525/104",
+     "4925/192",
+     "2585/96"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978) (ATR) divided by the close and multiplied by 100 (TA-Lib function list)",
+    "derivation": "100 x ATR / close. Index 2: 100 x (5/2) / 13 = 250/13; index 3: 100 x (13/4) / 11 = 325/11.",
+    "convention": null
+   }
+  },
+  {
+   "id": "obv-flat-bar",
+   "entry": "OBV",
+   "basis": "hand_derived",
+   "params": {},
+   "columns": {
+    "close": [
+     "10",
+     "11",
+     "11",
+     "10",
+     "12"
+    ],
+    "volume": [
+     "5",
+     "3",
+     "4",
+     "2",
+     "6"
+    ]
+   },
+   "expected": {
+    "value": [
+     "5",
+     "8",
+     "8",
+     "6",
+     "12"
+    ]
+   },
+   "source": {
+    "definition": "J. Granville (1963); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/on-balance-volume-obv",
+    "derivation": "Start with the first volume, 5. Close rises 10->11: +3 = 8. Close unchanged: stays 8. Close falls 11->10: -2 = 6. Close rises 10->12: +6 = 12.",
+    "convention": null
+   }
+  },
+  {
+   "id": "stddev-3",
+   "entry": "STDDEV",
+   "basis": "hand_derived",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "11",
+     "12",
+     "13",
+     "11",
+     "14",
+     "15",
+     "13",
+     "12",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0.816496580928",
+     "0.816496580928",
+     "1.247219128925",
+     "1.699673171198",
+     "0.816496580928",
+     "1.247219128925",
+     "1.247219128925"
+    ]
+   },
+   "source": {
+    "definition": "Population standard deviation of the last N closes; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/standard-deviation-volatility",
+    "derivation": "Population standard deviation of the latest 3 closes (divide by 3, not 2). For 11,12,13: sqrt(((1)^2+0+(1)^2)/3)=sqrt(2/3)=0.816496580928; for 12,13,11 the same; for 13,11,14 the mean is 38/3 and the result is 1.247219128925.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rsi-only-rises",
+   "entry": "RSI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "100",
+     "100",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/relative-strength-index-rsi (first averages are simple, later averages are (previous x (N-1) + current) / N)",
+    "derivation": "No losses at all, so the average loss is 0 and RSI is 100 by definition.",
+    "convention": null
+   }
+  },
+  {
+   "id": "rsi-only-falls",
+   "entry": "RSI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "6",
+     "5",
+     "4",
+     "3",
+     "2",
+     "1"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/relative-strength-index-rsi (first averages are simple, later averages are (previous x (N-1) + current) / N)",
+    "derivation": "No gains at all, so the average gain is 0 and RSI is 0 by definition.",
+    "convention": null
+   }
+  },
+  {
+   "id": "adx-steady-rise",
+   "entry": "ADX",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15",
+     "16"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14"
+    ],
+    "close": [
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "100",
+     "100",
+     "100",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar rises by exactly 1 with a range of 2, so each TR is 2, each +DM is 1 and each -DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: +DI=50, -DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "plus-di-steady-rise",
+   "entry": "PLUS_DI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15",
+     "16"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14"
+    ],
+    "close": [
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "50",
+     "50",
+     "50",
+     "50",
+     "50"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar rises by exactly 1 with a range of 2, so each TR is 2, each +DM is 1 and each -DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: +DI=50, -DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "minus-di-steady-rise",
+   "entry": "MINUS_DI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15",
+     "16"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14"
+    ],
+    "close": [
+     "9",
+     "10",
+     "11",
+     "12",
+     "13",
+     "14",
+     "15"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar rises by exactly 1 with a range of 2, so each TR is 2, each +DM is 1 and each -DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: +DI=50, -DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "adx-steady-fall",
+   "entry": "ADX",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "16",
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10"
+    ],
+    "low": [
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9",
+     "8"
+    ],
+    "close": [
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "100",
+     "100",
+     "100",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar falls by exactly 1 with a range of 2, so each TR is 2, each -DM is 1 and each +DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: -DI=50, +DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "plus-di-steady-fall",
+   "entry": "PLUS_DI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "16",
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10"
+    ],
+    "low": [
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9",
+     "8"
+    ],
+    "close": [
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar falls by exactly 1 with a range of 2, so each TR is 2, each -DM is 1 and each +DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: -DI=50, +DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "minus-di-steady-fall",
+   "entry": "MINUS_DI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "16",
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10"
+    ],
+    "low": [
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9",
+     "8"
+    ],
+    "close": [
+     "15",
+     "14",
+     "13",
+     "12",
+     "11",
+     "10",
+     "9"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "50",
+     "50",
+     "50",
+     "50",
+     "50"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+    "derivation": "Every bar falls by exactly 1 with a range of 2, so each TR is 2, each -DM is 1 and each +DM is 0. The ratio of the smoothed sums is 1/2 whatever the seeding: -DI=50, +DI=0, DX=100, ADX=100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "willr-close-at-high",
+   "entry": "WILLR",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "10",
+     "12",
+     "14"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10"
+    ],
+    "close": [
+     "9",
+     "11",
+     "14"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "L. Williams; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/williams-r",
+    "derivation": "The close equals the highest high of the window, so -100 x 0/(14-8) = 0.",
+    "convention": null
+   }
+  },
+  {
+   "id": "willr-close-at-low",
+   "entry": "WILLR",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "10",
+     "9",
+     "8"
+    ],
+    "low": [
+     "7",
+     "6",
+     "5"
+    ],
+    "close": [
+     "8",
+     "7",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "-100"
+    ]
+   },
+   "source": {
+    "definition": "L. Williams; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/williams-r",
+    "derivation": "The close equals the lowest low of the window, so -100 x (10-5)/(10-5) = -100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "stoch-close-at-high",
+   "entry": "STOCH",
+   "basis": "definition_boundary",
+   "params": {
+    "fastk_period": 3,
+    "slowk_period": 1,
+    "slowd_period": 1
+   },
+   "columns": {
+    "high": [
+     "10",
+     "12",
+     "14"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10"
+    ],
+    "close": [
+     "9",
+     "11",
+     "14"
+    ]
+   },
+   "expected": {
+    "slow_k": [
+     null,
+     null,
+     "100"
+    ],
+    "slow_d": [
+     null,
+     null,
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "G. Lane; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/stochastic-oscillator-fast-slow-and-full",
+    "derivation": "The close equals the highest high, so raw %K = 100 x (14-8)/(14-8) = 100; smoothing of length 1 changes nothing.",
+    "convention": null
+   }
+  },
+  {
+   "id": "stoch-close-at-low",
+   "entry": "STOCH",
+   "basis": "definition_boundary",
+   "params": {
+    "fastk_period": 3,
+    "slowk_period": 1,
+    "slowd_period": 1
+   },
+   "columns": {
+    "high": [
+     "10",
+     "9",
+     "8"
+    ],
+    "low": [
+     "7",
+     "6",
+     "5"
+    ],
+    "close": [
+     "8",
+     "7",
+     "5"
+    ]
+   },
+   "expected": {
+    "slow_k": [
+     null,
+     null,
+     "0"
+    ],
+    "slow_d": [
+     null,
+     null,
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "G. Lane; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/stochastic-oscillator-fast-slow-and-full",
+    "derivation": "The close equals the lowest low, so raw %K = 0; smoothing of length 1 changes nothing.",
+    "convention": null
+   }
+  },
+  {
+   "id": "mfi-only-inflow",
+   "entry": "MFI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "11",
+     "12",
+     "13",
+     "14",
+     "15"
+    ],
+    "low": [
+     "9",
+     "10",
+     "11",
+     "12",
+     "13"
+    ],
+    "close": [
+     "10",
+     "11",
+     "12",
+     "13",
+     "14"
+    ],
+    "volume": [
+     "5",
+     "6",
+     "7",
+     "8",
+     "9"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "100",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "G. Quong and A. Soudack (1989); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/money-flow-index-mfi",
+    "derivation": "The typical price rises on every bar, so all money flow is positive and MFI = 100 x pos/(pos+0) = 100.",
+    "convention": null
+   }
+  },
+  {
+   "id": "mfi-only-outflow",
+   "entry": "MFI",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "15",
+     "14",
+     "13",
+     "12",
+     "11"
+    ],
+    "low": [
+     "13",
+     "12",
+     "11",
+     "10",
+     "9"
+    ],
+    "close": [
+     "14",
+     "13",
+     "12",
+     "11",
+     "10"
+    ],
+    "volume": [
+     "5",
+     "6",
+     "7",
+     "8",
+     "9"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     null,
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "G. Quong and A. Soudack (1989); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/money-flow-index-mfi",
+    "derivation": "The typical price falls on every bar, so all money flow is negative and MFI = 0.",
+    "convention": null
+   }
+  },
+  {
+   "id": "aroon-steady-rise",
+   "entry": "AROON",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "high": [
+     "10",
+     "11",
+     "12",
+     "13",
+     "14"
+    ],
+    "low": [
+     "8",
+     "9",
+     "10",
+     "11",
+     "12"
+    ]
+   },
+   "expected": {
+    "down": [
+     null,
+     null,
+     null,
+     "0",
+     "0"
+    ],
+    "up": [
+     null,
+     null,
+     null,
+     "100",
+     "100"
+    ]
+   },
+   "source": {
+    "definition": "T. Chande, Technical Analysis of Stocks & Commodities, September 1995; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/aroon",
+    "derivation": "The newest bar holds the highest high (up=100) and the oldest bar of the window holds the lowest low (down=0).",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-ema",
+   "entry": "EMA",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "source": {
+    "definition": "EMA with k=2/(N+1) started from the plain mean of the first N closes; see https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential",
+    "derivation": "Every close is 5, so every average is 5.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-stddev",
+   "entry": "STDDEV",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "Population standard deviation of the last N closes; https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/standard-deviation-volatility",
+    "derivation": "Every close is 5, so there is no dispersion at all and the standard deviation is 0.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-bbands",
+   "entry": "BBANDS",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 3,
+    "nbdevup": 2.0,
+    "nbdevdn": 2.0
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "upper": [
+     null,
+     null,
+     "5",
+     "5",
+     "5",
+     "5"
+    ],
+    "middle": [
+     null,
+     null,
+     "5",
+     "5",
+     "5",
+     "5"
+    ],
+    "lower": [
+     null,
+     null,
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "source": {
+    "definition": "J. Bollinger, Bollinger on Bollinger Bands (2001); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands",
+    "derivation": "Zero standard deviation, so both bands sit on the middle line, 5.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-roc",
+   "entry": "ROC",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/rate-of-change-roc",
+    "derivation": "The close never changes: 0 percent.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-rocp",
+   "entry": "ROCP",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "Change of the close over N bars as a fraction of the earlier close (TA-Lib function list, ROCP).",
+    "derivation": "The close never changes: a fractional change of 0.",
+    "convention": null
+   }
+  },
+  {
+   "id": "flat-mom",
+   "entry": "MOM",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "close": [
+     "5",
+     "5",
+     "5",
+     "5",
+     "5",
+     "5"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "0",
+     "0",
+     "0",
+     "0"
+    ]
+   },
+   "source": {
+    "definition": "Close minus the close N bars earlier (TA-Lib function list)",
+    "derivation": "The close never changes, so the close minus the earlier close is always 0.",
+    "convention": null
+   }
+  },
+  {
+   "id": "steady-atr",
+   "entry": "ATR",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "11",
+     "11",
+     "11",
+     "11",
+     "11"
+    ],
+    "low": [
+     "9",
+     "9",
+     "9",
+     "9",
+     "9"
+    ],
+    "close": [
+     "10",
+     "10",
+     "10",
+     "10",
+     "10"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "2",
+     "2",
+     "2"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978); https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-true-range-atr",
+    "derivation": "Every true range is 11-9=2, so every average is 2.",
+    "convention": null
+   }
+  },
+  {
+   "id": "steady-natr",
+   "entry": "NATR",
+   "basis": "definition_boundary",
+   "params": {
+    "timeperiod": 2
+   },
+   "columns": {
+    "high": [
+     "11",
+     "11",
+     "11",
+     "11",
+     "11"
+    ],
+    "low": [
+     "9",
+     "9",
+     "9",
+     "9",
+     "9"
+    ],
+    "close": [
+     "10",
+     "10",
+     "10",
+     "10",
+     "10"
+    ]
+   },
+   "expected": {
+    "value": [
+     null,
+     null,
+     "20",
+     "20",
+     "20"
+    ]
+   },
+   "source": {
+    "definition": "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978) (ATR) divided by the close and multiplied by 100 (TA-Lib function list)",
+    "derivation": "ATR 2 divided by the close 10, times 100, is 20 percent.",
+    "convention": null
+   }
+  }
+ ]
+}

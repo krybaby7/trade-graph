@@ -6,10 +6,12 @@ import json
 import sys
 from check_plan import ROOT, load_json, validate
 
+CURRENT_RELEASES = {'R1', 'R2'}
+
 def ready_tasks(plan: dict, progress: dict, include_later: bool = False) -> list[dict]:
     states = progress['tasks']
     return [t for t in plan['tasks']
-            if (include_later or t['release'] == 'R1')
+            if (include_later or t['release'] in CURRENT_RELEASES)
             and states[t['id']]['status'] == 'todo'
             and all(states[d]['status'] == 'done' for d in t['deps'])]
 
@@ -37,7 +39,7 @@ def main() -> int:
         print('Default paper balance: USD10,000; EUR reporting; real paid budget separately owner-configured.')
         print(json.dumps(task, indent=2))
         print('Claim the task, implement and test it, commit checkpoints, and update progress with actual evidence.')
-        print('Continue with dependency-ready R1 tasks after validation; do not mark mocks as credentialed verification.')
+        print('Continue with dependency-ready R1/R2 tasks after validation; do not mark mocks as credentialed verification.')
         print('No permission to spend real money or enable live trading is granted by this task packet.')
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:

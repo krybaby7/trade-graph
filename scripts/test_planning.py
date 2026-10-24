@@ -17,7 +17,41 @@ class PlanningTests(unittest.TestCase):
 
     def test_task_dag(self):
         self.assertEqual(validate(self.plan, self.actual_progress), [])
-        self.assertEqual(len(self.plan['tasks']), 23)
+        self.assertEqual(len(self.plan['tasks']), 46)
+
+    def test_day_trader_plan_order(self):
+        by_id = {t['id']: t for t in self.plan['tasks']}
+        day = [t['id'] for t in self.plan['tasks'] if t['phase'].startswith('D')]
+        # D137: the Jev news alarm (phase DN) sits right after T27 so it is offered next.
+        self.assertEqual(day, [f'T{i}' for i in range(23, 28)] + ['T44', 'T45'] + [f'T{i}' for i in range(28, 44)])
+        self.assertEqual({i for i in day if by_id[i]['release'] != 'R2'}, {'T30'})
+        self.assertEqual(by_id['T30']['release'], 'LATER')
+        for i in day:
+            self.assertTrue(by_id[i]['deps'])
+            self.assertTrue(all(int(d[1:]) < int(i[1:]) for d in by_id[i]['deps']), i)
+        def ancestors(task_id):
+            seen, stack = set(), list(by_id[task_id]['deps'])
+            while stack:
+                d = stack.pop()
+                if d not in seen:
+                    seen.add(d)
+                    stack.extend(by_id[d]['deps'])
+            return seen
+        self.assertLessEqual({'T28', 'T29', 'T32', 'T33'}, ancestors('T34'))
+        self.assertLessEqual({'T35'}, ancestors('T37') & ancestors('T38'))
+        news_alarm = {'T44', 'T45'}
+        self.assertEqual(ancestors('T43') & set(day), set(day) - {'T30', 'T43'} - news_alarm)
+        self.assertEqual(ancestors('T44') & set(day), {'T23', 'T24'})
+        self.assertLessEqual({'T35', 'T38', 'T39', 'T44'}, ancestors('T45'))
+        for t in self.plan['tasks']:
+            if not t['phase'].startswith('D'):
+                self.progress['tasks'][t['id']].update(status='done', evidence=['synthetic-test-only'])
+        def ready():
+            return [t['id'] for t in ready_tasks(self.plan, self.progress)]
+        self.assertEqual(ready(), ['T23', 'T24'])
+        for i in ('T23', 'T24'):
+            self.progress['tasks'][i].update(status='done', evidence=['synthetic-test-only'])
+        self.assertEqual(ready(), ['T25', 'T44', 'T28', 'T36'])
 
     def test_initial_ready(self):
         self.assertEqual([t['id'] for t in ready_tasks(self.plan, self.progress)], ['T00'])

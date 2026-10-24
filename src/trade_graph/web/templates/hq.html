@@ -1,0 +1,295 @@
+{% extends 'base.html' %}
+{#- Trade Graph HQ. The server renders a readable first paint (headline, times, needs-you titles);
+    hq-*.js replaces it from the JSON island and keeps it current from GET /api/v1/hq. -#}
+{% macro dur(seconds) -%}
+{%- set s = seconds|int(0) -%}
+{%- if s < 60 -%}{{ s }} s
+{%- elif s < 3600 -%}{{ s // 60 }} min
+{%- elif s < 86400 -%}{{ s // 3600 }} h{% if (s % 3600) // 60 %} {{ (s % 3600) // 60 }} min{% endif %}
+{%- else -%}{{ s // 86400 }} d{% if (s % 86400) // 3600 %} {{ (s % 86400) // 3600 }} h{% endif %}
+{%- endif -%}
+{%- endmacro %}
+{#- First paint before the scripts run: dates in words ("9 Oct"), clock times as "16:05 UTC" (the server
+    doesn't know the viewer's time zone; hq-core.js rewrites both in local words). -#}
+{% macro day_month(at) -%}
+{%- set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] -%}
+{%- set m = at[5:7]|int(0) -%}{%- set d = at[8:10]|int(0) -%}
+{%- if 1 <= m <= 12 and 1 <= d <= 31 -%}{{ d }} {{ months[m - 1] }}{%- else -%}{{ at[:10] }}{%- endif -%}
+{%- endmacro %}
+{% macro segs(text) -%}
+{%- if text is sequence and text is not string -%}{%- for s in text -%}{%- if s is mapping -%}
+{%- if s.get('t') in ['text', 'term', 'link'] -%}{{ s.get('v', '') }}
+{%- elif s.get('t') == 'time' -%}{%- set at = s.get('at', '')|string -%}<time datetime="{{ at }}">{% if s.get('style') == 'date' %}{{ day_month(at) }}{% else %}{{ at[11:16] }} UTC{% endif %}</time>
+{%- elif s.get('t') in ['money', 'percent'] -%}{{ s.get('display', '') }}
+{%- elif s.get('t') == 'duration' -%}{{ dur(s.get('seconds')) }}
+{%- endif -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+{%- endmacro %}
+{% macro help(section, title) %}<button type="button" class="hq-help" data-hq-help="{{ section }}" aria-label="What am I looking at? {{ title }}">?</button>{% endmacro %}
+{% block title %}HQ{% endblock %}
+{% block body_class %}hq-page{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="/static/hq.css">
+  <script src="/static/hq-core.js" defer></script>
+  <script src="/static/hq-glossary.js" defer></script>
+  <script src="/static/hq-render.js" defer></script>
+  <script src="/static/hq-prompts.js" defer></script>
+  <script src="/static/hq-decide.js" defer></script>
+  <script src="/static/hq-checkins.js" defer></script>
+  <script src="/static/hq-charts.js" defer></script>
+  <script src="/static/hq-wakes.js" defer></script>
+  <script src="/static/hq-plans.js" defer></script>
+  <script src="/static/hq-desk.js" defer></script>
+  <script src="/static/hq.js" defer></script>
+{% endblock %}
+{% block eyebrow %}Trade Graph{% endblock %}
+{% block heading %}Trade Graph HQ{% endblock %}
+{% block description %}What the team is doing, what needs you and what comes next.{% endblock %}
+{#- The HQ header below replaces the generic page heading once base.html wraps it in this block (WP4). -#}
+{% block page_heading %}{% endblock %}
+{#- HQ says it in plain words in its own footer (.hq-footer), so the generic journal footer is left out. -#}
+{% block page_footer %}{% endblock %}
+{% block content %}
+{% set snap = data if data is mapping else {} %}
+{% set live = operating_mode|default('paper') == 'live' %}
+{% set now = snap.get('now') if snap.get('now') is mapping else {} %}
+{% set attention = snap.get('attention') if snap.get('attention') is sequence and snap.get('attention') is not string else [] %}
+{% set departments = snap.get('departments') if snap.get('departments') is sequence and snap.get('departments') is not string else [] %}
+{% set need_count = now.get('attention_count', 0) %}
+<div class="hq-root" data-hq-root>
+  <header class="hq-header">
+    <div class="hq-header-top">
+      <h1 class="hq-title">Trade Graph HQ</h1>
+      <p class="hq-chips">{% if live %}<span class="hq-chip hq-chip-live">Live account</span>{% else %}<button type="button" class="hq-chip hq-chip-paper" data-term="practice_money">Practice money</button><button type="button" class="hq-chip hq-chip-safe" data-term="real_trading_off">Real trading: off</button>{% endif %}</p>
+    </div>
+    <div class="hq-header-bar">
+      <nav class="hq-anchors" aria-label="Jump to a part of HQ"><a href="#hq">HQ</a><a href="#calendar">Calendar</a><a href="#story">Story</a><a href="#money">Money</a><a href="#decide">Decide</a></nav>
+      <p class="hq-fresh" data-hq-fresh data-tone="ok"><span class="hq-fresh-mark" aria-hidden="true">●</span> <span>{% if snap.get('as_of') %}As of <time datetime="{{ snap.as_of }}">{{ (snap.as_of|string)[11:16] }} UTC</time>{% else %}Loading…{% endif %}</span></p>
+    </div>
+    <div class="hq-banner" data-hq-banner hidden></div>
+  </header>
+  <noscript><p class="hq-noscript">This page keeps itself up to date with JavaScript, which is switched off here. What you see was correct when the page loaded. <a href="/journal">Open the Account journal</a> for the detailed records.</p></noscript>
+
+  <section id="hq" class="hq-section hq-home" data-hq-section aria-label="HQ">
+    <div class="hq-slot hq-slot-welcome" data-hq="welcome" data-hq-hide-empty></div>
+    <div class="hq-slot hq-slot-notices" data-hq="notices" data-hq-hide-empty></div>
+    <div class="hq-board">
+    <article class="hq-panel hq-now" data-hq-now-card data-tone="{{ now.get('tone', 'calm') }}" data-code="{{ now.get('code', '') }}" aria-labelledby="hq-h-now">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-now" class="hq-panel-title">Right now</h2>
+        <span class="hq-now-chip" data-hq-now-chip></span>
+        {{ help('now', 'Right now') }}
+      </div>
+      <p class="hq-now-headline" data-hq-now-headline aria-live="polite">{% if now.get('headline') %}{{ segs(now.get('headline')) }}{% else %}Reading the latest records…{% endif %}</p>
+      <div class="hq-now-body" data-hq="now">{% if now.get('detail') %}<p class="hq-now-detail">{{ segs(now.get('detail')) }}</p>{% endif %}</div>
+    </article>
+    <div class="hq-side">
+    <article class="hq-panel hq-attention" aria-labelledby="hq-h-attention">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-attention" class="hq-panel-title">Needs you <span class="hq-count" data-hq-attention-count{% if not need_count %} hidden{% endif %}>{{ need_count }}</span></h2>
+        {{ help('attention', 'Needs you') }}
+      </div>
+      <div data-hq="attention">{% if attention %}<ul class="hq-attn-list">{% for item in attention if item is mapping %}<li class="hq-attn" data-sev="{{ item.get('sev', 'info') }}"><h3 class="hq-attn-title">{{ segs(item.get('title')) }}</h3></li>{% endfor %}</ul>{% elif snap %}<p class="hq-empty">Nothing needs you. You can relax.</p>{% endif %}</div>
+    </article>
+    <article class="hq-panel hq-upnext" aria-labelledby="hq-h-upnext">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-upnext" class="hq-panel-title">Up next</h2>
+        <a class="hq-head-link" href="#calendar">Calendar ›</a>
+        {{ help('upnext', 'Up next') }}
+      </div>
+      <div data-hq="upnext"></div>
+    </article>
+    </div>
+    <article class="hq-panel hq-map" aria-labelledby="hq-h-map">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-map" class="hq-panel-title">HQ map</h2>
+        {{ help('map', 'HQ map') }}
+      </div>
+      <div data-hq="map">{% if departments %}<ul class="hq-map-fallback">{% for dept in departments if dept is mapping %}<li><strong>{{ dept.get('name', '') }}</strong>: {{ segs(dept.get('light_text')) }}</li>{% endfor %}</ul>{% endif %}</div>
+    </article>
+    {#- W13-A: the Trading desk room reads its own endpoint (GET /api/v1/hq/desk) only while it is on screen. -#}
+    <article class="hq-panel hq-desk" aria-labelledby="hq-h-desk">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-desk" class="hq-panel-title">Trading desk room</h2>
+        {{ help('desk', 'Trading desk room') }}
+      </div>
+      <div data-hq="desk"><p class="hq-muted">The Trading desk room loads when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">The Trading desk room needs JavaScript, which is switched off here.</p></noscript>
+    </article>
+    </div>
+  </section>
+
+  <section id="calendar" class="hq-section" data-hq-section aria-label="Calendar">
+    <article class="hq-panel hq-calendar" aria-labelledby="hq-h-calendar">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-calendar" class="hq-panel-title">Calendar</h2>
+        {{ help('calendar', 'Calendar') }}
+      </div>
+      <div data-hq="calendar"></div>
+    </article>
+    <article class="hq-panel hq-checkins" aria-labelledby="hq-h-checkins"{% if snap.get('checkins') is none %} hidden{% endif %}>
+      <div class="hq-panel-head">
+        <h2 id="hq-h-checkins" class="hq-panel-title">Your check-ins</h2>
+      </div>
+      <div data-hq="checkins" data-hq-hide-empty></div>
+    </article>
+    {#- T39: each department's next check-in, today's steps, focus coins and alarms, read from GET /api/v1/hq/wakes
+        while the panel is on screen (hq-wakes.js); reading starts nothing. -#}
+    <article class="hq-panel hq-wakeplan" aria-labelledby="hq-h-wakeplan">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-wakeplan" class="hq-panel-title">Next check-ins</h2>
+        {{ help('wakeplan', 'Next check-ins') }}
+      </div>
+      <div data-hq="wakeplan"><p class="hq-muted">Wake-ups load when you open this part of HQ.</p></div>
+    </article>
+    <article class="hq-panel hq-watchlist" aria-labelledby="hq-h-watchlist">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-watchlist" class="hq-panel-title">Today's focus coins and alarms</h2>
+        {{ help('watchlist', "Today's focus coins and alarms") }}
+      </div>
+      <div data-hq="watchlist"><p class="hq-muted">Focus coins and alarms load when you open this part of HQ.</p></div>
+    </article>
+  </section>
+
+  <section id="story" class="hq-section" data-hq-section aria-label="Story">
+    <article class="hq-panel hq-story" aria-labelledby="hq-h-story">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-story" class="hq-panel-title">Story so far</h2>
+        {{ help('story', 'Story') }}
+      </div>
+      <div data-hq="story"></div>
+    </article>
+    {#- T39: every wake-up with its reasons and the AI allowance at that moment (GET /api/v1/hq/wakes). -#}
+    <article class="hq-panel hq-wakes" aria-labelledby="hq-h-wakes">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-wakes" class="hq-panel-title">Wake log</h2>
+        {{ help('wakes', 'Wake log') }}
+      </div>
+      <div data-hq="wakes"><p class="hq-muted">The wake log loads when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">The wake log needs JavaScript, which is switched off here.</p></noscript>
+    </article>
+  </section>
+
+  <section id="money" class="hq-section" data-hq-section aria-label="Money">
+    <article class="hq-panel hq-money-panel" aria-labelledby="hq-h-money">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-money" class="hq-panel-title">Scoreboard</h2>
+        {{ help('money', 'Money') }}
+      </div>
+      <div data-hq="money"></div>
+    </article>
+    {#- W8-C: today's loss against the daily loss limit and the scorecard, from the snapshot's trading block (first
+        paint: each headline); today's day plans read GET /api/v1/hq/plans while the panel is on screen (hq-plans.js).
+        Reading starts nothing. -#}
+    {% set trading = snap.get('trading') if snap.get('trading') is mapping else {} %}
+    {% set loss = trading.get('loss') if trading.get('loss') is mapping else {} %}
+    {% set scorecard = trading.get('scorecard') if trading.get('scorecard') is mapping else {} %}
+    {% set collector = trading.get('collector') if trading.get('collector') is mapping else {} %}
+    <article class="hq-panel hq-loss" aria-labelledby="hq-h-loss">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-loss" class="hq-panel-title">Today's loss limit</h2>
+        {{ help('loss', "Today's loss limit") }}
+      </div>
+      <div data-hq="loss">{% if loss.get('headline') %}<p class="hq-loss-head">{{ segs(loss.get('headline')) }}</p>{% endif %}</div>
+    </article>
+    <article class="hq-panel hq-plans" aria-labelledby="hq-h-plans">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-plans" class="hq-panel-title">Today's day plans</h2>
+        {{ help('plans', "Today's day plans") }}
+      </div>
+      <div data-hq="plans"><p class="hq-muted">Day plans load when you open this part of HQ.</p></div>
+      <noscript><p class="hq-muted">Day plans need JavaScript, which is switched off here. The Trading records page lists every order.</p></noscript>
+    </article>
+    <article class="hq-panel hq-scorecard" aria-labelledby="hq-h-scorecard">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-scorecard" class="hq-panel-title">Scorecard</h2>
+        {{ help('scorecard', 'Scorecard') }}
+      </div>
+      <div data-hq="scorecard">{% if scorecard.get('headline') %}<p class="hq-scorecard-head">{{ segs(scorecard.get('headline')) }}</p>{% endif %}</div>
+    </article>
+    <article class="hq-panel hq-allowance" aria-labelledby="hq-h-allowance">
+      <div class="hq-panel-head"><h2 id="hq-h-allowance" class="hq-panel-title">AI allowance</h2></div>
+      <div data-hq="allowance"></div>
+    </article>
+    {#- T40: real AI costs from receipts. First paint: each service's headline; hq-render.js adds the rest. -#}
+    {% set spending = snap.get('ai_spending') if snap.get('ai_spending') is mapping else {} %}
+    {% set services = spending.get('services') if spending.get('services') is sequence and spending.get('services') is not string else [] %}
+    <article class="hq-panel hq-spending" aria-labelledby="hq-h-spending">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-spending" class="hq-panel-title">AI spending</h2>
+        {{ help('spending', 'AI spending') }}
+      </div>
+      <div data-hq="spending">{% for item in services if item is mapping %}<p class="hq-spend-headline"><strong>{{ item.get('name', '') }}</strong>: {{ segs(item.get('headline')) }}</p>{% endfor %}</div>
+    </article>
+    <article class="hq-panel hq-market-panel" aria-labelledby="hq-h-market">
+      <div class="hq-panel-head"><h2 id="hq-h-market" class="hq-panel-title">Market weather</h2></div>
+      <div data-hq="market"></div>
+    </article>
+    {#- W8-C: the price collector's newest records (W6-D), from the snapshot's trading block. -#}
+    <article class="hq-panel hq-collector" aria-labelledby="hq-h-collector">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-collector" class="hq-panel-title">Price collector</h2>
+        {{ help('collector', 'Price collector') }}
+      </div>
+      <div data-hq="collector">{% if collector.get('headline') %}<p class="hq-collector-head">{{ segs(collector.get('headline')) }}</p>{% endif %}</div>
+    </article>
+    {#- T41: price charts, read from GET /api/v1/hq/chart only when the panel is shown (hq-charts.js). The
+        attribution line stays beside the chart box: Lightweight Charts' licence asks for it wherever a chart is shown,
+        and the script draws nothing without it (D196). -#}
+    <article class="hq-panel hq-charts" aria-labelledby="hq-h-charts" data-hq-charts>
+      <div class="hq-panel-head">
+        <h2 id="hq-h-charts" class="hq-panel-title">Price charts</h2>
+        {{ help('charts', 'Price charts') }}
+      </div>
+      <div class="hq-chart-controls" data-hq-chart-controls></div>
+      <p class="hq-chart-status" data-hq-chart-status>Charts load when you open them.</p>
+      <div class="hq-chart-box" data-hq-chart-box role="img" aria-label="Price chart"></div>
+      <p class="hq-chart-readout" data-hq-chart-readout></p>
+      <ul class="hq-chart-legend" data-hq-chart-legend></ul>
+      <noscript><p class="hq-muted">Charts need JavaScript, which is switched off here.</p></noscript>
+      <p class="hq-chart-attribution" data-hq-chart-attribution>Charts drawn with TradingView Lightweight Charts™ (Apache License 2.0). TradingView Lightweight Charts™ · Copyright (c) 2025 TradingView, Inc. · <a href="https://www.tradingview.com/" rel="noopener noreferrer" target="_blank">TradingView</a> · <a href="/static/vendor/lightweight-charts/LICENSE.txt">Licence</a> · <a href="/static/vendor/lightweight-charts/NOTICE.txt">Notice</a></p>
+    </article>
+  </section>
+
+  <section id="decide" class="hq-section" data-hq-section aria-label="Decide">
+    <article class="hq-panel hq-decide" aria-labelledby="hq-h-decide">
+      <div class="hq-panel-head">
+        <h2 id="hq-h-decide" class="hq-panel-title">Team controls</h2>
+        {{ help('decide', 'Decide') }}
+      </div>
+      <div data-hq="decide"></div>
+    </article>
+    <article class="hq-panel hq-review" aria-labelledby="hq-h-review">
+      <div class="hq-panel-head"><h2 id="hq-h-review" class="hq-panel-title">Review check-ins</h2></div>
+      <div data-hq="review"></div>
+    </article>
+    <article class="hq-panel hq-bills" aria-labelledby="hq-h-bills">
+      <div class="hq-panel-head"><h2 id="hq-h-bills" class="hq-panel-title">Your bills</h2></div>
+      <div data-hq="bills"></div>
+    </article>
+    {#- Long, rarely needed panels: on desktop one full-width row below both columns (hq.css), so the
+        right-hand column doesn't run far below the left; elsewhere they simply follow the bills. -#}
+    <div class="hq-decide-more">
+    <article class="hq-panel hq-prompt" aria-labelledby="hq-h-prompt">
+      <div class="hq-panel-head"><h2 id="hq-h-prompt" class="hq-panel-title">Prompt settings (this device only)</h2></div>
+      <div data-hq="prompt"></div>
+    </article>
+    <article class="hq-panel hq-help-panel" aria-labelledby="hq-h-help">
+      <div class="hq-panel-head"><h2 id="hq-h-help" class="hq-panel-title">Help &amp; glossary</h2></div>
+      <div data-hq="help"></div>
+    </article>
+    </div>
+  </section>
+  <p class="hq-footer">{% if live %}This page doesn't control a live account. Use Owner controls.{% else %}This is practice: no real trades happen. Real costs are only the bills you enter.{% endif %}</p>
+</div>
+<nav class="hq-tabs" aria-label="HQ sections">
+  <a class="hq-tab" href="#hq"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-hq"></use></svg><span>HQ</span></a>
+  <a class="hq-tab" href="#calendar"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-calendar"></use></svg><span>Calendar</span></a>
+  <a class="hq-tab" href="#story"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-story"></use></svg><span>Story</span></a>
+  <a class="hq-tab" href="#money"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-money"></use></svg><span>Money</span></a>
+  <a class="hq-tab" href="#decide"><svg class="hq-tab-icon" aria-hidden="true" focusable="false"><use href="/static/hq-icons.svg#tab-decide"></use></svg><span>Decide</span></a>
+</nav>
+<dialog class="hq-sheet" data-hq-sheet aria-labelledby="hq-sheet-title"><div class="hq-sheet-content" data-hq-sheet-content></div></dialog>
+<div class="hq-toast" role="status" aria-live="polite" data-hq-toast></div>
+<template data-hq-icon><svg class="hq-icon" aria-hidden="true" focusable="false"><use></use></svg></template>
+<script type="application/json" id="hq-snapshot">{{ snap|tojson }}</script>
+{% endblock %}

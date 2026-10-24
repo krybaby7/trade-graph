@@ -27,6 +27,18 @@ Funds reserved for an open order are a classification of existing funds, not add
 
 Use FIFO lots for initial internal realized/unrealized reporting, explicitly not a jurisdiction-specific tax report. Capitalize acquisition fees in lot cost and subtract disposal fees from sale proceeds, allocating partial fills proportionally. If a fee is paid in a third asset, reduce that asset's inventory and value the fee with an identified rate; account for its cost-basis disposal without charging the same fee twice. Fee rebates are signed amounts. Preserve original brokerage precision and rounding rules.
 
+`FillRecord.quote_cost`, when present, is the positive finite native quote principal
+excluding fees. Cash consideration, FIFO acquisition basis/disposal proceeds and
+buy reservation consumption use `quote_principal`; quantity and reported price
+remain unchanged. Legacy fills omit the new field and retain `quantity * price`
+and identical durable JSON. Native principal, quantities, fees, identified
+third-asset fee valuation and resulting cash/basis/proceeds must fit the protected
+28-digit arithmetic context without rounding before mutation. Existing proportional
+FIFO allocation remains a separate reporting policy. A genuine already executed
+native principal that exceeds its authorized limit or original reservation is
+conserved and linked to a durable execution incident; subsequent clean history
+cannot clear that incident or authorize new increases.
+
 Trading friction is already present in actual fill prices and fee debits. Spread/slippage are explanatory execution metrics against a contemporaneous reference; do not deduct them a second time from actual equity-based P&L. Estimated future liquidation fees may be shown as a separate conservative projection, not mixed with incurred costs.
 
 ## Primary performance equation
@@ -57,9 +69,18 @@ An external AI expense of USD1 using an explicitly hypothetical rate of EUR0.90/
 
 ## Marks and foreign exchange
 
-Store `base`, `quote`, decimal rate, source, observed time, valid-as-of time, retrieval time and rate kind. EUR invoices need no conversion. Convert USD provider accruals using an identified daily reference rate; reconcile actual invoice currency and conversion charges separately. Frankfurter's public API is a practical reference-FX source, not an executable intraday price [S17]. Carry the most recent available business-day rate with a stale/reference flag rather than fabricating weekend quotes.
+Store `base`, `quote`, decimal rate, source, observed time, valid-as-of time, retrieval time and rate kind. EUR invoices need no conversion. Convert USD provider accruals using an identified daily reference rate; reconcile actual invoice currency and conversion charges separately. Frankfurter's public API is a practical reference-FX source, not an executable intraday price [S17]. Carry the most recent available business-day rate with a stale/reference flag rather than fabricating weekend quotes. If the reference source is unavailable, the public feeds keep their quotes, retry after 5 minutes and record the outage; it affects EUR reporting labels only, not buying (D130).
 
-Use current venue bid/ask or a declared mark convention for trading inventory. Do not assume that a stablecoin is always worth one USD. Missing/stale FX or market data makes economic totals provisional and blocks new exposure when the execution freshness rule is violated. Reserve foreign-currency spending with an owner-approved conservative conversion buffer; do not accept an unbounded EUR obligation because the latest reference rate is unavailable.
+Use current venue bid/ask or a declared mark convention for trading inventory. Do not assume that a stablecoin is always worth one USD. Missing/stale FX or market data makes economic totals provisional and blocks new exposure when the execution freshness rule is violated. Exposure checks use equity in the account's native currency (USD for USD-quoted pairs), so a carried previous-business-day reporting rate flags only EUR views; a missing or stale native mark, or missing/stale FX needed to value a holding in another currency, still blocks new exposure (D114). Such a holding uses a direct rate, or else the inverse of the identified opposite reference rate (EUR cash in a USD account is EUR / the USD→EUR rate), keeping that rate's stale flag. Reserve foreign-currency spending with an owner-approved conservative conversion buffer; do not accept an unbounded EUR obligation because the latest reference rate is unavailable.
+
+Trader snapshots scope `portfolio.reporting_valuation` to its named reporting
+currency, equity amount and stale/provisional valuation flags. These flags do not
+establish uncertainty in native cash, inventory or order status. Native cash,
+inventory and reservations are exact persisted ledger projections at the snapshot
+time. `execution_state` and `open_orders` separately expose retained order
+uncertainty and bounded-list truncation; neither the local ledger projection nor
+an empty bounded order list proves current venue reconciliation. Deterministic
+freshness, valuation and execution authorization checks remain authoritative.
 
 Never silently revalue historical native expenses with today's FX rate. Corrections and invoice adjustments append records. Views can offer a restated analytical series, but retain the original valuation basis and version.
 

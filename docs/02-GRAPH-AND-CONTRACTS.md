@@ -1,5 +1,8 @@
 # 02 — Graph execution, departmental contracts and tools
 
+**Owner update, 2026-10-07:** Normal local paper operation supersedes the earlier diagnostic and manual-only restrictions. Enable configured departmental schedules and Optimisation, ordinary configurable execution limits, supported retries and compatible verified existing-subscription fallback. A first Research success or single paper cycle is not a startup gate, and the service does not pause automatically after its first cycle. Preserve accounting, contract validation, credential isolation and order reconciliation. Separately billed APIs, paid extras, purchases and real-money trading remain disabled. Paper operation is independent of live commissioning. See [the normal paper runbook](NORMAL-PAPER-OPERATION.md).
+
+
 ## Event-driven organisation
 
 Use durable application events and tasks rather than agents passing unrestricted chat transcripts. The scheduler is ordinary software. It runs maintenance continuously, checks persisted due times, coalesces related events and invokes a short graph only when useful. Each graph ends; organisational cycles continue through new persisted tasks. The financial ledger and execution service do not depend on a model remaining available.
@@ -39,7 +42,7 @@ The scheduler atomically claims a due task and establishes a renewable lease. Ex
 
 Schedule records retain `last_due_at`, `next_due_at`, missed-run policy and the last processed evidence/event cursor. On restart, coalesce missed strategy opportunities into one current decision rather than replaying yesterday's trading orders. Do replay unreconciled execution events and unfinished accounting exactly once at the application-record level. Use an injected clock for deterministic tests.
 
-Default task bounds: three delegation levels, twelve descendants per root task, and a shared root monetary ceiling; an Engineer task may use up to ten model attempts within that ceiling. Ordinary role tasks allow at most three total paid attempts, including a maximum of one schema-repair attempt. These limits are example configuration; the owner sets hard upper bounds and the Leader may allocate less. Disable or explicitly account for SDK-internal retries so they do not multiply application retries invisibly. Rate-limit waits and retries are delayed durable tasks, not tight loops.
+Default task bounds: three delegation levels, twelve descendants per root task, and a shared root monetary ceiling; an Engineer task may use up to ten model attempts within that ceiling. Ordinary role tasks allow at most three total paid attempts, including a maximum of one schema-repair attempt. These limits are example configuration; the owner sets hard upper bounds and the Leader may allocate less. Configure supported CLI/SDK-internal retries explicitly and retain the attempts the provider exposes; distinguish them from journaled application dispatches. Subscription work uses the existing plan allowance rather than inventing an API expense allocation. Unknown usage or cost remains unknown. Rate-limit waits and retries are delayed durable tasks, not tight loops.
 
 ## Invocation policy
 
@@ -49,7 +52,7 @@ Default task bounds: three delegation levels, twelve descendants per root task, 
 | Trader | Decision interval, material research, invalidation trigger, mandate change, actionable order issue | Four-hour routine opportunities, target six calls/day; coalesce related events, five-minute ordinary debounce | Decision record and zero or more typed intents |
 | Research | Daily market refresh, approaching expiry of a relied-on finding, Leader assignment, materially new event | One daily dossier initially; reuse strategy research until invalidated | Findings and testable strategy proposals |
 | Learning | Sufficient new comparable decisions/outcomes or a material incident | Twice-weekly check, run a model only with useful evidence; incident review can be earlier | Lesson revisions, hypotheses and validation proposals |
-| Optimisation | Accumulated usage/latency/errors or meaningful budget anomaly | Weekly review; urgent anomalies notify via software first | Workflow/cost improvement proposals |
+| Optimisation | Configured schedule, Leader assignment, owner Start Optimisation request or useful usage/latency/error evidence | Weekly default; coalesce active work and retain ordinary configured task limits | Workflow/cost improvement proposals under protected acceptance/deployment |
 | Leader | Startup, scheduled digest, material incident, completed improvement awaiting activation | Weekly routine review plus bounded exceptions | Mandate/config changes, tasks, pause profile, activation decision |
 | Engineer | Authorised task with budget and permitted change class | On demand only | Actual versioned patch/artifact, tests, attestation and summary |
 | Secretary | New reports, tasks, deadlines, priority events | Software at event time; synthesis is opt-in and charged | Digest, routing, overdue/blocked work, escalation |
@@ -67,6 +70,13 @@ A system version is a composite fingerprint: application commit/build, graph def
 **Mandate:** universe, strategy/experiment IDs, decision horizons, allowed order types, exposure/sizing ranges, discretionary experiment allocation, required data freshness, execution requirements, review/expiry time and resource allocation. Its envelope must be a subset of owner permissions. A mandate expires into manage-only, not abandonment.
 
 **Decision:** action (`enter`, `exit`, `hold`, `adjust_order`, `resize`, `no_action`), target instrument/position/order references, requested sizing in unambiguous units, optional limit/trigger price, time-in-force, execution deadline, concise rationale, supporting evidence, invalidation conditions, expected horizon, strategy/experiment ID, and snapshot/portfolio/mandate revisions. State uncertainty honestly; do not fabricate a numerical success probability. Any multi-leg plan declares dependency/order requirements; R1 normally uses one order per intent.
+
+Research reply citations are field-specific. Top-level `evidence_refs` must copy
+IDs from the snapshot's top-level `evidence_refs`. Every `findings[].source_ref`
+must instead copy one of the persisted `sources[].source_ref` values; a report or
+digest ID in `evidence_refs` alone is ineligible. If no supplied source supports a
+finding, omit it. Software rejects an ineligible source and rolls back the entire
+publication, including any earlier valid finding in the same reply.
 
 **ResearchFinding:** question, claim/summary, source URLs and publisher, publication/event/retrieval times where known, immutable source/excerpt hash, affected instruments, actionable relevance, uncertainty/counterevidence, validity horizon and invalidation triggers. Distinguish unknown publication time from retrieval time. A source refresh creates a new version; it does not rewrite what the Trader saw.
 
