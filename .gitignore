@@ -22,3 +22,6 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+
+# Third-party trade exports dropped in for research (large, untrusted data)
+strategies/*.csv
